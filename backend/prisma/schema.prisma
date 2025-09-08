@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Pratica {
+  id          String   @id @default(cuid())
+  nome        String
+  cliente     String
+  foro        String
+  controparte String?
+  pmGiudice   String?
+  numeroRuolo String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  comparti  Comparto[]
+  documenti Documento[]
+
+  @@map("pratiche")
+}
+
+model Comparto {
+  id        String @id @default(cuid())
+  praticaId String
+  key       String
+  nome      String
+  ordine    Int
+
+  pratica   Pratica     @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  documenti Documento[]
+
+  @@unique([praticaId, key])
+  @@map("comparti")
+}
+
+model Documento {
+  id               String   @id @default(cuid())
+  praticaId        String
+  compartoId       String
+  filename         String
+  mime             String
+  size             Int
+  s3Key            String   @unique
+  hash             String
+  ocrStatus        String   @default("pending") // pending, processing, completed, failed, low_confidence
+  ocrText          String?
+  ocrConfidence    Float?
+  ocrLayout        String?
+  classConfidence  Float?
+  classWhy         String?
+  tags             String   @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pratica  Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  comparto Comparto @relation(fields: [compartoId], references: [id], onDelete: Cascade)
+  jobs     Job[]
+
+  @@map("documenti")
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  type        String   // OCR, CLASSIFY
+  documentId  String
+  status      String   @default("pending") // pending, processing, completed, failed
+  progress    Int      @default(0)
+  error       String?
+  result      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documento Documento @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("jobs")
+}
