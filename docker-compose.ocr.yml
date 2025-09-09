@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  ocrmypdf:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    image: ocrmypdf-local:latest
+    container_name: ocrmypdf-toolbox
+    stdin_open: false
+    tty: false
+
+

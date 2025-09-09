@@ -137,46 +137,43 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         const ocrQueue = getOcrQueue()
         await ocrQueue.add('process-ocr', { documentId: documento.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime }, { jobId: job.id })
       } else {
-        // Run OCR inline in dev
+        // Run OCR asynchronously in dev and return immediately the job id
         const { ocrService } = await import('../services/ocr.js')
-        // Emit simulated progress via logs (client can poll job if needed)
-        let last = 0
-        const start = Date.now()
-        let result
-        try {
-          fastify.log.info({ msg: 'OCR inline start', jobId: job.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime })
-          result = await ocrService.extract(documento.s3Key, async (p, meta) => {
-            const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
-            if (percent - last >= 5) {
-              last = percent
-              const elapsedMs = Date.now() - start
-              await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
-              fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
-            }
-          })
-        } catch (e: any) {
-          const message = e?.message || 'OCR error'
-          await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: message } })
-          fastify.log.error(e)
-          return reply.status(500).send({ error: `Errore OCR: ${message}` })
-        }
-        await prisma.documento.update({
-          where: { id: documento.id },
-          data: {
-            ocrStatus: 'completed',
-            ocrText: result.pages.map(p => p.text).join('\n'),
-            ocrConfidence: result.avgConfidence,
-            ocrLayout: JSON.stringify(result.layout),
-          },
-        })
-        await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })
-        fastify.log.info({ msg: 'OCR inline finished', jobId: job.id })
+        ;(async () => {
+          let last = 0
+          const start = Date.now()
+          try {
+            fastify.log.info({ msg: 'OCR inline start', jobId: job.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime })
+            const result = await ocrService.extract(documento.s3Key, async (p, meta) => {
+              const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
+              if (percent - last >= 5) {
+                last = percent
+                const elapsedMs = Date.now() - start
+                await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
+                fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
+              }
+            })
+      await prisma.documento.update({
+        where: { id: documento.id },
+              data: {
+                ocrStatus: 'completed',
+                ocrText: result.pages.map(p => p.text).join('\n'),
+                ocrConfidence: result.avgConfidence,
+                ocrLayout: JSON.stringify(result.layout),
+              },
+            })
+            await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })
+            fastify.log.info({ msg: 'OCR inline finished', jobId: job.id })
+          } catch (e: any) {
+            const message = e?.message || 'OCR error'
+            await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: message } })
+            fastify.log.error({ msg: 'OCR inline failed', jobId: job.id, err: message })
+          }
+        })()
       }
 
-      // Update document status
-      if (config.ENABLE_QUEUE) {
-        await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'processing' } })
-      }
+      // Update document status immediately
+      await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'processing' } })
 
       return job
     } catch (error) {

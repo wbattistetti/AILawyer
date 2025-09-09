@@ -63,7 +63,6 @@ class NodeCanvasFactory {
   }
 }
 import { storageService } from '../lib/storage.js'
-import { PopplerOcrService } from './ocr-poppler.js'
 import { OcrResult } from '../types/index.js'
 import { config } from '../config/index.js'
 
@@ -134,6 +133,7 @@ export class TesseractOcrService implements IOcrService {
           useWorkerFetch: false,
           disableFontFace: true,
           disableRange: true,
+          canvasFactory: new NodeCanvasFactory(),
         } as any).promise
         const total = pdf.numPages
         console.log('OCR: PDF detected, total pages', total)
@@ -164,7 +164,7 @@ export class TesseractOcrService implements IOcrService {
               ctxAny.__drawImagePatched = true
             }
           }
-          const renderContext: any = { canvasContext: context, viewport, canvasFactory: factory }
+          const renderContext: any = { canvasContext: context, viewport }
           console.log('OCR: rendering page', { page: p, width: canvas.width, height: canvas.height })
           await (page as any).render(renderContext).promise
           // Pass a PNG buffer to tesseract to avoid cross-thread canvas issues
@@ -213,38 +213,15 @@ export class TesseractOcrService implements IOcrService {
   }
 }
 
-// Stub implementation for development
-export class StubOcrService implements IOcrService {
-  async extract(_s3Key: string): Promise<OcrResult & { layout: OcrLayoutPage[] }> {
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // Return mock OCR result
-    const mockText = `
-    TRIBUNALE DI MILANO
-    SEZIONE PENALE
-    
-    Procedimento penale n. 12345/2024
-    
-    Il presente documento contiene informazioni relative al procedimento penale.
-    Sono stati identificati i seguenti elementi:
-    - Avviso ex art. 415-bis c.p.p.
-    - Indagini preliminari
-    - Sequestro probatorio
-    
-    Data: ${new Date().toLocaleDateString('it-IT')}
-    `
-    
-    const confidence = Math.random() * 40 + 60 // Random between 60-100
-    
-    return {
-      pages: [{ text: mockText, confidence }],
-      avgConfidence: confidence,
-      layout: [{ page: 1, width: 1000, height: 1400, words: [{ text: 'TRIBUNALE', x0: 100, y0: 80, x1: 300, y1: 120 }] }]
-    }
+// Provider selector (ocrmypdf | tesseractjs)
+let _ocrService: IOcrService | undefined
+export const ocrService: IOcrService = (() => {
+  if (_ocrService) return _ocrService as IOcrService
+  if (config.OCR_ENGINE === 'ocrmypdf') {
+    const { OcrmypdfService } = require('./ocr-ocrmypdf.js')
+    _ocrService = new OcrmypdfService((key: string) => storageService.getObject(key))
+  } else {
+    _ocrService = new TesseractOcrService()
   }
-}
-
-// Export the service instance based on environment
-// Force real OCR engine (no stub)
-export const ocrService: any = new PopplerOcrService((key) => storageService.getObject(key))
+  return _ocrService as IOcrService
+})()

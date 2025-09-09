@@ -5,11 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 6500 --host 0.0.0.0",
+    "dev:frontend": "vite --port 6500 --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "dev:backend": "npm --prefix backend run dev",
     "dev:worker": "npm --prefix backend run worker",
-    "build:backend": "npm --prefix backend run build"
+    "build:backend": "npm --prefix backend run build",
+    "ocr:build": "docker compose -f docker-compose.ocr.yml build",
+    "ocr:test": "docker run --rm --network none ocrmypdf-local:latest ocrmypdf --version",
+    "dev:all": "powershell -NoProfile -Command \"$docker='C:/Program Files/Docker/Docker/Docker Desktop.exe'; if(-not (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)){ if(Test-Path $docker){ Start-Process -FilePath $docker -WindowStyle Minimized } }; try{ docker image inspect ocrmypdf-local:latest | Out-Null } catch { docker compose -f docker-compose.ocr.yml build }; Start-Process powershell -ArgumentList '-NoProfile','-Command','npm --prefix backend run dev' -WindowStyle Minimized; npm run dev\"",
+    "backend:up": "powershell -NoProfile -Command \"$docker='C:/Program Files/Docker/Docker/Docker Desktop.exe'; if(-not (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)){ if(Test-Path $docker){ Start-Process -FilePath $docker -WindowStyle Minimized } }; try{ docker image inspect ocrmypdf-local:latest | Out-Null } catch { docker compose -f docker-compose.ocr.yml build }; npm --prefix backend run dev\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",

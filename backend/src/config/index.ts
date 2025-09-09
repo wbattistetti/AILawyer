@@ -18,6 +18,12 @@ const configSchema = z.object({
   OCR_USE_STUB: z.coerce.boolean().default(false),
   POPPLER_PATH: z.string().optional(),
   THUMBS_DIR: z.string().default(path.resolve(process.cwd(), '..', 'uploads', '_thumbs')),
+
+  // OCR engine selection and settings
+  OCR_ENGINE: z.enum(['tesseractjs', 'ocrmypdf']).default('tesseractjs'),
+  OCR_LANG: z.string().default('ita+eng'),
+  OCRMYPDF_PATH: z.string().optional(),
+  OCR_TIMEOUT_SEC: z.coerce.number().default(900),
 })
 
 export const config = configSchema.parse(process.env)

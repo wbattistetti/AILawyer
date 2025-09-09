@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-// import { UploadPanel } from '@/components/upload/UploadPanel'
-import { Button } from '@/components/ui/button'
-import { api } from '@/lib/api'
-import { PdfReader } from '@/components/viewers/PdfReader'
-import { useToast } from '@/hooks/use-toast'
-import { Pratica, Comparto, Documento, UploadProgress } from '@/types'
+// import { UploadPanel } from '../../components/upload/UploadPanel'
+import { Button } from '../../components/ui/button'
+import { api } from '../../lib/api'
+import { PdfReader } from '../../components/viewers/PdfReader'
+import { useToast } from '../../hooks/use-toast'
+import { Pratica, Comparto, Documento, UploadProgress } from '../../types'
 import { ArrowLeft, Upload, RefreshCw, X } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
-import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '@/lib/constants'
-import { ThumbCard } from '@/components/viewers/ThumbCard'
+import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
+import { ThumbCard } from '../viewers/ThumbCard'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -25,6 +25,7 @@ export function PraticaCanvasPage() {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
   const [previewWidth, setPreviewWidth] = useState<number>(576) // px, ~36rem
   const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
+  const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
 
   // Dropzone: applicata alla colonna sinistra
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -171,37 +172,7 @@ export function PraticaCanvasPage() {
     })
   }
 
-  const handleDocumentClick = (documento: Documento) => {
-    setPreviewDoc(documento)
-  }
-
-  const handleMoveDocument = async (documentId: string, newCompartoId: string) => {
-    try {
-      const updatedDocument = await api.updateDocumento(documentId, {
-        compartoId: newCompartoId,
-      })
-
-      setDocumenti(prev => prev.map(doc => 
-        doc.id === documentId ? updatedDocument : doc
-      ))
-
-      toast({
-        title: 'Documento spostato',
-        description: 'Il documento è stato spostato nel nuovo comparto.',
-      })
-    } catch (error) {
-      console.error('Errore nello spostamento:', error)
-      toast({
-        title: 'Errore',
-        description: 'Impossibile spostare il documento.',
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const handleClearCompletedUploads = () => {
-    setUploads(prev => prev.filter(upload => upload.status !== 'completed'))
-  }
+  // Removed unused handlers
 
   const handleRefresh = () => {
     if (id) {
@@ -220,6 +191,49 @@ export function PraticaCanvasPage() {
 
   const handleTableAction = (documento: Documento) => {
     toast({ title: 'Azione tabella', description: 'Azione in arrivo per: ' + documento.filename })
+  }
+
+  // Queue OCR for a document and start polling job progress
+  const handleOcr = async (documento: Documento) => {
+    try {
+      setSelectedDocId(documento.id)
+      console.log('[OCR] queue request', documento.id, documento.filename)
+      toast({ title: 'OCR avviato', description: documento.filename })
+      // Queue job
+      const job = await api.queueOcr(documento.id)
+      setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
+
+      // Polling loop
+      let active = true
+      const poll = async () => {
+        if (!active) return
+        try {
+          const j = await api.getJob(job.id)
+          console.log('[OCR] job', j.status, j.progress)
+          setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: j.progress }))
+          if (j.status === 'completed' || j.status === 'failed') {
+            active = false
+            if (j.status === 'failed') {
+              toast({ title: 'OCR fallito', description: j.error || 'Errore sconosciuto', variant: 'destructive' })
+            } else {
+              toast({ title: 'OCR completato', description: documento.filename })
+              // Refresh documents to get updated OCR fields and status
+              if (id) await loadPraticaData(id)
+            }
+            // Clear progress overlay after a short delay
+            setTimeout(() => {
+              setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
+            }, 1500)
+            return
+          }
+        } catch {}
+        setTimeout(poll, 1000)
+      }
+      poll()
+    } catch (error) {
+      console.error('[OCR] queue error', error)
+      toast({ title: 'Errore', description: 'Impossibile avviare OCR', variant: 'destructive' })
+    }
   }
 
   if (isLoading) {
@@ -319,6 +333,8 @@ export function PraticaCanvasPage() {
                     onPreview={() => { setSelectedDocId(doc.id); handlePreview(doc) }}
                     onTable={() => { setSelectedDocId(doc.id); handleTableAction(doc) }}
                     onRemove={() => handleRemoveThumb(doc.id)}
+                    onOcr={() => handleOcr(doc)}
+                    ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
                   />
                 )
               })}

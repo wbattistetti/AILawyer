@@ -1,5 +1,5 @@
 import React from 'react'
-import { Eye, Table, Trash } from 'lucide-react'
+import { Eye, Table, Trash, ScanText } from 'lucide-react'
 
 interface ThumbCardProps {
   title: string
@@ -9,9 +9,11 @@ interface ThumbCardProps {
   onPreview?: () => void
   onTable?: () => void
   onRemove?: () => void
+  onOcr?: () => void
+  ocrProgressPct?: number | null
 }
 
-export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTable, onRemove }: ThumbCardProps) {
+export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTable, onRemove, onOcr, ocrProgressPct }: ThumbCardProps) {
   return (
     <div
       className="relative group select-none rounded-md"
@@ -19,8 +21,16 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTabl
       onClick={(e) => { e.stopPropagation(); onSelect?.() }}
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
-      <div className={`w-40 h-56 border rounded-sm bg-white overflow-hidden flex items-center justify-center ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+      <div className={`relative w-40 h-56 border rounded-sm bg-white overflow-hidden flex items-center justify-center ${selected ? 'ring-2 ring-blue-500' : ''}`}>
         <img src={imgSrc} alt={title} className="max-w-full max-h-full object-contain" />
+        {typeof ocrProgressPct === 'number' && (
+          <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
+            <div className="w-32 h-2 bg-black/10 rounded overflow-hidden">
+              <div className="h-full bg-blue-500" style={{ width: `${Math.max(0, Math.min(100, ocrProgressPct))}%` }} />
+            </div>
+            <div className="mt-1 text-[10px] text-black/70 font-medium">{Math.round(ocrProgressPct)}%</div>
+          </div>
+        )}
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
@@ -31,6 +41,14 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTabl
             aria-label="Anteprima"
           >
             <Eye className="w-4 h-4" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
+            aria-label="OCR"
+            title="Esegui OCR"
+          >
+            <ScanText className="w-4 h-4" />
           </button>
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"

@@ -105,21 +105,11 @@ export async function uploadRoutes(fastify: FastifyInstance) {
         if (pdftoppm) {
           const looksExe = /pdftoppm(\.exe)?$/i.test(pdftoppm)
           pdftoppm = looksExe ? pdftoppm : path.join(pdftoppm, binName)
+        } else {
+          pdftoppm = binName // rely on PATH
         }
-        // If still not resolvable, try to locate via 'where' (Windows) or 'which'
-        if (!pdftoppm || (!fs.existsSync(pdftoppm) && path.isAbsolute(pdftoppm))) {
-          try {
-            const locator = process.platform === 'win32' ? 'where' : 'which'
-            const res = await execa(locator, [binName], { shell: false, windowsHide: true })
-            const found = res.stdout.split(/\r?\n/).find(Boolean)
-            if (found) {
-              pdftoppm = found.trim()
-            }
-          } catch {}
-        }
-        // Final guard
-        if (!pdftoppm || (path.isAbsolute(pdftoppm) && !fs.existsSync(pdftoppm))) {
-          const payload = { error: 'pdftoppm non trovato', details: pdftoppm || '(non risolto)', hint: 'Imposta POPPLER_PATH nel backend/.env alla cartella o al file pdftoppm.exe' }
+        if (!fs.existsSync(pdftoppm) && path.isAbsolute(pdftoppm)) {
+          const payload = { error: 'pdftoppm non trovato', details: pdftoppm }
           fastify.log.error({ msg: 'preview: pdftoppm missing', ...payload, s3Key, srcPath, outPng, envPath: process.env.POPPLER_PATH })
           return reply.status(500).send(payload)
         }
@@ -128,9 +118,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
           const args = ['-singlefile', '-f', '1', '-l', '1', '-png', '-scale-to', '1000', srcPath, prefix]
           // Ensure PATH includes POPPLER_PATH so Windows can resolve the binary
           const envPath = process.env.PATH || ''
-          // If pdftoppm is an absolute path, also prepend its directory to PATH for dependent DLLs
-          const pdftoppmDir = path.isAbsolute(pdftoppm) ? path.dirname(pdftoppm) : ''
-          const injectedPath = [config.POPPLER_PATH, pdftoppmDir, envPath].filter(Boolean).join(process.platform === 'win32' ? ';' : ':')
+          const injectedPath = config.POPPLER_PATH ? `${config.POPPLER_PATH};${envPath}` : envPath
           fastify.log.info({ msg: 'preview: running pdftoppm', pdftoppm, args, injectedPath })
           await execa(pdftoppm, args, {
             shell: false,

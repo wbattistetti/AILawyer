@@ -288,3 +288,37 @@ Questo progetto è rilasciato sotto licenza MIT. Vedi il file `LICENSE` per i de
 ---
 
 **LegalFlow** - Gestione documentale intelligente per l'avvocatura penale moderna.
+
+## OCR nativo con OCRmyPDF (on-prem)
+
+1. Build dell'immagine OCR:
+
+```bash
+# dalla root del repo
+docker compose -f docker-compose.ocr.yml build
+```
+
+2. Configura backend/.env:
+
+```env
+OCR_ENGINE=ocrmypdf
+OCR_LANG=ita+eng
+OCRMYPDF_PATH=docker     # usa l'immagine locale
+OCR_TIMEOUT_SEC=900
+ENABLE_QUEUE=false
+OCR_USE_STUB=false
+LOG_OCR=1
+STORAGE_MODE=local
+```
+
+3. Avvia backend normalmente (npm run dev) e testa l'OCR:
+
+- Upload un PDF (UI) oppure via API upload
+- Avvia l'OCR:
+
+```bash
+# sostituisci <ID>
+curl -X POST http://localhost:3001/documenti/<ID>/queue-ocr
+```
+
+Nei log vedrai il progresso "Processing page X of Y". L'OCR gira interamente in locale; il container OCR viene eseguito con `--network none` (nessun accesso rete).
