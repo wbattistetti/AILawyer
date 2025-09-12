@@ -52,10 +52,10 @@ export class OcrmypdfService {
 
       child.stderr?.on('data', (d: Buffer) => {
         const line = d.toString()
-        const m = line.match(re)
-        if (m) {
-          cur = parseInt(m[1], 10)
-          total = parseInt(m[2], 10)
+        const m = line.match(re) as RegExpMatchArray | null
+        if (m && m[1] && m[2]) {
+          cur = parseInt(m[1] as string, 10)
+          total = parseInt(m[2] as string, 10)
           if (onProgress && total > 0) onProgress(Math.min(1, cur / total), { currentPage: cur, totalPages: total })
         }
         if (process.env.LOG_OCR === '1') console.log('[ocrmypdf]', line.trim())
@@ -70,6 +70,14 @@ export class OcrmypdfService {
 
       const text = fs.existsSync(sidecar) ? fs.readFileSync(sidecar, 'utf8') : ''
       const pages = [{ text, confidence: 0 }]
+      // Persist OCRed PDF alongside original: save to uploads with suffix .ocr.pdf
+      const ocrPdfBuffer = fs.readFileSync(outPdf)
+      const ocrPdfKey = s3Key.endsWith('.pdf') ? s3Key.replace(/\.pdf$/i, '.ocr.pdf') : s3Key + '.ocr.pdf'
+      // Save to local uploads dir for local mode consumers
+      const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
+      try { fs.mkdirSync(path.dirname(path.join(uploadsDir, ocrPdfKey)), { recursive: true }) } catch {}
+      fs.writeFileSync(path.join(uploadsDir, ocrPdfKey), ocrPdfBuffer)
+      ;(pages as any).ocrPdfKey = ocrPdfKey
       return { pages, avgConfidence: 0, layout: [] }
     } catch (e: any) {
       const msg = [e?.shortMessage, e?.stderr, e?.message].filter(Boolean).join(' | ')

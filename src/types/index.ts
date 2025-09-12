@@ -30,6 +30,7 @@ export interface Documento {
   ocrText?: string
   ocrLayout?: OcrLayoutPage[]
   ocrConfidence?: number
+  ocrPdfKey?: string
   classConfidence?: number
   classWhy?: string
   tags: string[]

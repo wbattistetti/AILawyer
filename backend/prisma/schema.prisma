@@ -54,6 +54,7 @@ model Documento {
   ocrText          String?
   ocrConfidence    Float?
   ocrLayout        String?
+  ocrPdfKey        String?
   classConfidence  Float?
   classWhy         String?
   tags             String   @default("[]")

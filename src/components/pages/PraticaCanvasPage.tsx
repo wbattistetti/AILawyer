@@ -4,9 +4,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
 import { PdfReader } from '../../components/viewers/PdfReader'
+import { OcrVerify } from '../../components/ocr/OcrVerify'
 import { useToast } from '../../hooks/use-toast'
 import { Pratica, Comparto, Documento, UploadProgress } from '../../types'
-import { ArrowLeft, Upload, RefreshCw, X } from 'lucide-react'
+import { ArrowLeft, Upload, RefreshCw, X, Columns } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
 import { ThumbCard } from '../viewers/ThumbCard'
@@ -21,6 +22,10 @@ export function PraticaCanvasPage() {
   const [documenti, setDocumenti] = useState<Documento[]>([])
   const [uploads, setUploads] = useState<UploadProgress[]>([])
   const [previewDoc, setPreviewDoc] = useState<Documento | null>(null)
+  const [activeTab, setActiveTab] = useState<'original' | 'ocr' | 'split'>('original')
+  const [syncPage, setSyncPage] = useState<number | null>(null)
+  const [syncScrollTop, setSyncScrollTop] = useState<number>(0)
+  const [syncMax, setSyncMax] = useState<number>(1)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
   const [previewWidth, setPreviewWidth] = useState<number>(576) // px, ~36rem
@@ -182,6 +187,17 @@ export function PraticaCanvasPage() {
 
   const handlePreview = (documento: Documento) => {
     setPreviewDoc(documento)
+    setActiveTab((documento.ocrPdfKey || documento.ocrText) ? 'split' : 'original')
+    // aggiorna recenti
+    try {
+      const raw = localStorage.getItem('recent_pratiche')
+      const list = raw ? JSON.parse(raw) as any[] : []
+      if (pratica) {
+        const item = { id: pratica.id, nome: pratica.nome, cliente: pratica.cliente, foro: pratica.foro }
+        const next = [item, ...list.filter(x => x.id !== item.id)].slice(0, 6)
+        localStorage.setItem('recent_pratiche', JSON.stringify(next))
+      }
+    } catch {}
   }
 
   const handleRemoveThumb = (documentId: string) => {
@@ -331,10 +347,12 @@ export function PraticaCanvasPage() {
                     selected={selectedDocId === doc.id}
                     onSelect={() => setSelectedDocId(doc.id)}
                     onPreview={() => { setSelectedDocId(doc.id); handlePreview(doc) }}
+                    onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
                     onTable={() => { setSelectedDocId(doc.id); handleTableAction(doc) }}
                     onRemove={() => handleRemoveThumb(doc.id)}
                     onOcr={() => handleOcr(doc)}
                     ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
+                    hasOcr={!!doc.ocrPdfKey}
                   />
                 )
               })}
@@ -410,16 +428,81 @@ export function PraticaCanvasPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex-1 overflow-hidden">
-                {previewDoc.mime?.startsWith('application/pdf') ? (
-                  <PdfReader fileUrl={api.getLocalFileUrl(previewDoc.s3Key)} />
-                ) : previewDoc.mime?.startsWith('image/') ? (
-                  <div className="w-full h-full overflow-auto p-2"><img src={api.getLocalFileUrl(previewDoc.s3Key)} alt={previewDoc.filename} className="max-w-full" /></div>
-                ) : (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    Anteprima non disponibile per questo formato. <a className="underline" href={api.getLocalFileUrl(previewDoc.s3Key)} target="_blank" rel="noreferrer">Scarica il file</a>.
-                  </div>
-                )}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {/* Tabs */}
+                <div className="border-b px-2 py-1 text-sm flex items-center gap-2">
+                  <button
+                    className={`px-2 py-1 rounded ${activeTab==='original' ? 'bg-muted font-medium' : 'hover:bg-muted'}`}
+                    onClick={() => setActiveTab('original')}
+                    title="Originale"
+                  >Originale</button>
+                  {(previewDoc.ocrPdfKey || previewDoc.ocrText) && (
+                    <button
+                      className={`px-2 py-1 rounded ${activeTab==='ocr' ? 'bg-muted font-medium' : 'hover:bg-muted'}`}
+                      onClick={() => setActiveTab('ocr')}
+                      title="OCR-ed"
+                    >OCR-ed</button>
+                  )}
+                  {(previewDoc.ocrPdfKey || previewDoc.ocrText) && (
+                    <button
+                      className={`px-2 py-1 rounded inline-flex items-center gap-1 ${activeTab==='split' ? 'bg-muted font-medium' : 'hover:bg-muted'}`}
+                      onClick={() => setActiveTab('split')}
+                      title="Affianca"
+                    ><Columns className="w-4 h-4" /> Affianca</button>
+                  )}
+                </div>
+                {/* Panel content */}
+                <div className="flex-1 overflow-hidden">
+                  {activeTab === 'original' && !previewDoc.ocrPdfKey ? (
+                    // Solo originale
+                    <>
+                      {previewDoc.mime?.startsWith('application/pdf') ? (
+                        <PdfReader fileUrl={api.getLocalFileUrl(previewDoc.s3Key)} />
+                      ) : previewDoc.mime?.startsWith('image/') ? (
+                        <div className="w-full h-full overflow-auto p-2"><img src={api.getLocalFileUrl(previewDoc.s3Key)} alt={previewDoc.filename} className="max-w-full" /></div>
+                      ) : (
+                        <div className="p-4 text-sm text-muted-foreground">
+                          Anteprima non disponibile per questo formato. <a className="underline" href={api.getLocalFileUrl(previewDoc.s3Key)} target="_blank" rel="noreferrer">Scarica il file</a>.
+                        </div>
+                      )}
+                    </>
+                  ) : activeTab === 'split' ? (
+                    // Affianca Originale e OCR-ed pagina per pagina
+                    <div className="grid grid-cols-2 gap-2 h-full">
+                      <div className="min-h-0">
+                        <PdfReader 
+                          fileUrl={api.getLocalFileUrl(previewDoc.s3Key)} 
+                          onVisiblePageChange={(p)=>setSyncPage(p)} 
+                          visiblePageExternal={syncPage ?? undefined}
+                          onScrollTopChange={(st, max)=>{ setSyncScrollTop(st); setSyncMax(max || 1) }}
+                        />
+                      </div>
+                      <div className="min-h-0">
+                        {previewDoc.ocrPdfKey ? (
+                          <PdfReader 
+                            fileUrl={api.getLocalFileUrl(previewDoc.ocrPdfKey)} 
+                            visiblePageExternal={syncPage ?? undefined} 
+                            onVisiblePageChange={(p)=>setSyncPage(p)}
+                            externalScrollTop={syncScrollTop}
+                            hideScrollbar
+                          />
+                        ) : (
+                          <div className="w-full h-full p-0"><OcrVerify documento={previewDoc} externalPage={syncPage ?? undefined} onPageChange={(p)=>setSyncPage(p)} /></div>
+                        )}
+                      </div>
+                    </div>
+                  ) : activeTab === 'ocr' ? (
+                    <div className="w-full h-full">
+                      { previewDoc.ocrPdfKey ? (
+                        <PdfReader fileUrl={api.getLocalFileUrl(previewDoc.ocrPdfKey)} />
+                      ) : (previewDoc.ocrText ? (
+                        <div className="w-full h-full p-0"><OcrVerify documento={previewDoc} /></div>
+                      ) : (
+                        <div className="p-4 text-sm text-muted-foreground">Nessun risultato OCR disponibile.</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}

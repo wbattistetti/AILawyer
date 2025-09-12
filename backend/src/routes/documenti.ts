@@ -153,13 +153,15 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                 fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
               }
             })
-      await prisma.documento.update({
-        where: { id: documento.id },
+            await prisma.documento.update({
+              where: { id: documento.id },
               data: {
                 ocrStatus: 'completed',
-                ocrText: result.pages.map(p => p.text).join('\n'),
+                // join per pagina con page break form-feed per UI paginata
+                ocrText: result.pages.map(p => p.text).join('\n\f\n'),
                 ocrConfidence: result.avgConfidence,
                 ocrLayout: JSON.stringify(result.layout),
+                ...(Array.isArray((result as any).pages) && (result as any).pages.ocrPdfKey ? { ocrPdfKey: (result as any).pages.ocrPdfKey } : {}),
               },
             })
             await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })

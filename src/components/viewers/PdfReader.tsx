@@ -8,13 +8,18 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url'
 
 interface PdfReaderProps {
   fileUrl: string
+  onVisiblePageChange?: (page: number) => void
+  visiblePageExternal?: number
+  onScrollTopChange?: (scrollTop: number, maxScroll: number) => void
+  externalScrollTop?: number
+  hideScrollbar?: boolean
 }
 
 interface PageRenderState {
   renderedScale: number
 }
 
-export function PdfReader({ fileUrl }: PdfReaderProps) {
+export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, onScrollTopChange, externalScrollTop, hideScrollbar }: PdfReaderProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any | null>(null)
@@ -26,6 +31,7 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
   const pageStates = useRef<Map<number, PageRenderState>>(new Map())
   const observers = useRef<Map<number, IntersectionObserver>>(new Map())
   const currentPageRef = useRef<number>(1)
+  const programmaticScrollRef = useRef(false)
 
   const dpr = useMemo(() => (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1), [])
 
@@ -75,7 +81,14 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
     canvas.style.height = Math.floor(viewport.height) + 'px'
 
     const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined
-    await page.render({ canvasContext: context, viewport, transform } as any).promise
+    // Cancel previous render if any by replacing the canvas reference
+    const renderTask = page.render({ canvasContext: context, viewport, transform } as any)
+    try {
+      await renderTask.promise
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('pdf render cancelled or failed', e)
+    }
     pageStates.current.set(pageNumber, { renderedScale: useScale })
   }, [pdfDoc, scale, dpr])
 
@@ -120,6 +133,13 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
       if (document.activeElement !== pageInputRef.current) {
         setPageInput(String(bestPage))
       }
+      if (onVisiblePageChange && !programmaticScrollRef.current) {
+        onVisiblePageChange(bestPage)
+      }
+      if (programmaticScrollRef.current) {
+        // reset the flag after the first update caused by programmatic scroll
+        programmaticScrollRef.current = false
+      }
     }
   }, [numPages])
 
@@ -132,6 +152,10 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
         ticking = true
         requestAnimationFrame(() => {
           updateCurrentPage()
+          if (onScrollTopChange) {
+            const max = el.scrollHeight - el.clientHeight
+            onScrollTopChange(el.scrollTop, max)
+          }
           ticking = false
         })
       }
@@ -171,9 +195,30 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
     const p = Math.max(1, Math.min(numPages || 1, parseInt(pageInput || '1', 10)))
     const el = document.getElementById(`pdf-page-${p}`)
     if (el && containerRef.current) {
+      programmaticScrollRef.current = true
       el.scrollIntoView({ block: 'start' })
     }
   }
+
+  // External page sync
+  useEffect(() => {
+    if (!visiblePageExternal || !numPages) return
+    if (visiblePageExternal === currentPageRef.current) return
+    const p = Math.max(1, Math.min(numPages, visiblePageExternal))
+    const el = document.getElementById(`pdf-page-${p}`)
+    if (el && containerRef.current) {
+      programmaticScrollRef.current = true
+      el.scrollIntoView({ block: 'start' })
+    }
+  }, [visiblePageExternal, numPages])
+
+  // External scroll sync (for split view single scrollbar)
+  useEffect(() => {
+    if (typeof externalScrollTop !== 'number') return
+    if (!containerRef.current) return
+    programmaticScrollRef.current = true
+    containerRef.current.scrollTop = externalScrollTop
+  }, [externalScrollTop])
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -199,7 +244,7 @@ export function PdfReader({ fileUrl }: PdfReaderProps) {
       </div>
 
       {/* Pages */}
-      <div ref={containerRef} className="flex-1 overflow-auto bg-muted/30 px-3 py-4">
+      <div ref={containerRef} className={`flex-1 ${hideScrollbar ? 'overflow-hidden' : 'overflow-auto'} bg-muted/30 px-3 py-4`}>
         <div className="mx-auto flex flex-col items-center gap-3" style={{ width: '100%' }}>
           {Array.from({ length: numPages || 0 }, (_, i) => i + 1).map(pageNumber => (
             <div

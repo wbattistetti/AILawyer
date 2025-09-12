@@ -26,6 +26,17 @@ const COMPARTI_DEFAULT = [
 ]
 
 export async function praticheRoutes(fastify: FastifyInstance) {
+  // List pratiche (simple, latest first)
+  fastify.get('/pratiche', async (_request, reply) => {
+    try {
+      const items = await prisma.pratica.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
+      return items
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nel recupero delle pratiche' })
+    }
+  })
+
   // Create pratica
   fastify.post<{ Body: PraticaCreateInput }>('/pratiche', async (request, reply) => {
     try {
@@ -117,10 +128,11 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
       })
 
-      const documenti = documentiRaw.map((d: any) => ({
-        ...d,
-        tags: typeof d.tags === 'string' ? (() => { try { return JSON.parse(d.tags) } catch { return [] } })() : (d.tags ?? []),
-      }))
+      const documenti = documentiRaw.map((d: any) => {
+        const tags = typeof d.tags === 'string' ? (() => { try { return JSON.parse(d.tags) } catch { return [] } })() : (d.tags ?? [])
+        const ocrLayout = typeof d.ocrLayout === 'string' ? (() => { try { return JSON.parse(d.ocrLayout) } catch { return undefined } })() : d.ocrLayout
+        return { ...d, tags, ocrLayout }
+      })
 
       return documenti
     } catch (error) {

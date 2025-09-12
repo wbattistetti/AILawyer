@@ -7,13 +7,15 @@ interface ThumbCardProps {
   selected?: boolean
   onSelect?: () => void
   onPreview?: () => void
+  onPreviewOcr?: () => void
   onTable?: () => void
   onRemove?: () => void
   onOcr?: () => void
   ocrProgressPct?: number | null
+  hasOcr?: boolean
 }
 
-export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTable, onRemove, onOcr, ocrProgressPct }: ThumbCardProps) {
+export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, ocrProgressPct, hasOcr }: ThumbCardProps) {
   return (
     <div
       className="relative group select-none rounded-md"
@@ -42,6 +44,17 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onTabl
           >
             <Eye className="w-4 h-4" />
           </button>
+          {hasOcr && (
+            <button
+              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white relative"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreviewOcr?.() }}
+              aria-label="Anteprima OCR"
+              title="Apri PDF OCR"
+            >
+              <Eye className="w-4 h-4" />
+              <span className="absolute -right-1 -top-1 text-[8px] bg-blue-500 text-white rounded px-0.5">OCR</span>
+            </button>
+          )}
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}

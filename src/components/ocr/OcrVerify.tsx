@@ -6,14 +6,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 
 interface OcrVerifyProps {
   documento: Documento
+  externalPage?: number
+  onPageChange?: (page: number) => void
 }
 
-export function OcrVerify({ documento }: OcrVerifyProps) {
+export function OcrVerify({ documento, externalPage, onPageChange }: OcrVerifyProps) {
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const [cropSrc, setCropSrc] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const layout: OcrLayoutPage | undefined = useMemo(() => documento.ocrLayout?.[0], [documento])
+  const pages = useMemo(() => (documento.ocrText ? (documento.ocrText.split('\f')) : ['']), [documento.ocrText])
+  const [pageIndex, setPageIndex] = useState(0)
+  // keep in sync with external page changes
+  React.useEffect(() => {
+    if (typeof externalPage === 'number' && externalPage - 1 !== pageIndex) {
+      setPageIndex(Math.max(0, externalPage - 1))
+    }
+  }, [externalPage])
+  const layout: OcrLayoutPage | undefined = useMemo(() => {
+    const lay: any = (documento as any).ocrLayout
+    if (!lay) return undefined
+    const arr = Array.isArray(lay) ? lay : (()=>{ try{ return JSON.parse(lay as string) } catch { return undefined } })()
+    if (!arr || !Array.isArray(arr)) return undefined
+    return arr.find((p: any) => p?.page === pageIndex + 1) || arr[0]
+  }, [documento, pageIndex])
   const fileUrl = useMemo(() => api.getLocalFileUrl(documento.s3Key), [documento.s3Key])
 
   const handleVerify = async () => {
@@ -60,16 +77,40 @@ export function OcrVerify({ documento }: OcrVerifyProps) {
     img.src = fileUrl
   }
 
+  const handleSave = async () => {
+    if (!textAreaRef.current) return
+    setSaving(true)
+    try {
+      await api.updateDocumento(documento.id, { ocrText: textAreaRef.current.value })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="h-full flex flex-col">
+      {/* Toolbar pagine */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs text-muted-foreground">Pagina</span>
+        <input type="number" className="w-16 border rounded px-2 py-1 text-sm" min={1} max={pages.length} value={pageIndex + 1} onChange={(e)=>{
+          const v = Math.max(1, Math.min(pages.length, parseInt(e.target.value||'1',10)))
+          setPageIndex(v-1)
+          onPageChange?.(v)
+        }} />
+        <span className="text-xs text-muted-foreground">/ {pages.length}</span>
+      </div>
+
       <textarea
         ref={textAreaRef}
-        className="w-full h-40 rounded-md border p-2 text-sm"
-        defaultValue={documento.ocrText || ''}
+        className="w-full flex-1 min-h-0 rounded-md border p-2 text-sm font-mono leading-5 resize-none"
+        defaultValue={pages[pageIndex] || ''}
       />
-      <div className="flex items-center space-x-2">
+      <div className="mt-2 flex items-center space-x-2">
         <Button size="sm" variant="outline" onClick={handleVerify}>
           Verify selezione
+        </Button>
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? 'Salvataggio…' : 'Salva'}
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>

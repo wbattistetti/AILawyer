@@ -2,10 +2,25 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Scale, FileSearch, Upload, Zap } from 'lucide-react'
+import { Scale, FileSearch, Upload, Zap, FolderOpen, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { api } from '@/lib/api'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Pratica } from '@/types'
 
 export function SplashPage() {
   const navigate = useNavigate()
+  const [recent, setRecent] = useState<Pratica[]>([])
+  const [open, setOpen] = useState(false)
+  const [all, setAll] = useState<Pratica[] | null>(null)
+
+  useEffect(() => {
+    // In assenza di un endpoint dedicato, mostriamo le ultime pratiche visitate salvate in localStorage
+    try {
+      const raw = localStorage.getItem('recent_pratiche')
+      if (raw) setRecent(JSON.parse(raw))
+    } catch {}
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
@@ -75,19 +90,76 @@ export function SplashPage() {
             </Card>
           </div>
 
-          {/* CTA Button */}
-          <div className="space-y-4">
+          {/* CTA / Open */}
+          <div className="grid md:grid-cols-2 gap-3 max-w-xl mx-auto">
             <Button 
               size="lg" 
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 text-lg font-semibold"
               onClick={() => navigate('/nuova-pratica')}
             >
-              Inizia Nuova Pratica
+              <Upload className="w-5 h-5 mr-2" /> Nuova pratica
             </Button>
-            <p className="text-sm text-slate-400">
-              Gestione documentale professionale per l'avvocatura penale
-            </p>
+            <Button 
+              size="lg" 
+              variant="outline"
+              className="px-6 py-4 text-lg"
+              onClick={() => setOpen(true)}
+            >
+              <FolderOpen className="w-5 h-5 mr-2" /> Apri pratica
+            </Button>
           </div>
+
+          {/* Recenti */}
+          <div className="mt-8 max-w-2xl mx-auto w-full">
+            <div className="flex items-center gap-2 text-slate-200 mb-2">
+              <Clock className="w-4 h-4" />
+              <span className="text-sm">Pratiche recenti</span>
+            </div>
+            {recent.length === 0 ? (
+              <div className="text-slate-400 text-sm">Nessuna pratica recente.</div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-3">
+                {recent.slice(0,4).map(p => (
+                  <button key={p.id} onClick={() => navigate(`/pratica/${p.id}`)} className="text-left p-3 rounded bg-white/10 hover:bg-white/15 transition">
+                    <div className="text-white font-medium truncate">{p.nome}</div>
+                    <div className="text-slate-300 text-xs truncate">{p.cliente} · {p.foro}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Modal Apri pratica */}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Apri pratica</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <button
+                  className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={async () => {
+                    try {
+                      // Carichiamo elenco pratiche recenti dal backend prendendo le ultime 10 per createdAt
+                      const res = await fetch('/api/pratiche')
+                      if (res.ok) {
+                        const data = await res.json()
+                        setAll(data)
+                      }
+                    } catch {}
+                  }}
+                >Carica elenco dal server</button>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {(all ?? recent).map(p => (
+                    <button key={p.id} onClick={() => { setOpen(false); navigate(`/pratica/${p.id}`) }} className="text-left p-3 rounded border hover:bg-muted">
+                      <div className="font-medium truncate">{p.nome}</div>
+                      <div className="text-xs text-muted-foreground truncate">{p.cliente} · {p.foro}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
