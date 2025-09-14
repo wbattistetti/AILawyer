@@ -53,15 +53,19 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         data,
       })
 
-      // Create default comparti
-      await prisma.comparto.createMany({
-        data: COMPARTI_DEFAULT.map(comparto => ({
-          praticaId: pratica.id,
-          key: comparto.key,
-          nome: comparto.nome,
-          ordine: comparto.ordine,
-        })),
-      })
+      // Create default comparti (compat fallback without createMany)
+      await prisma.$transaction(
+        COMPARTI_DEFAULT.map(comparto =>
+          prisma.comparto.create({
+            data: {
+              praticaId: pratica.id,
+              key: comparto.key,
+              nome: comparto.nome,
+              ordine: comparto.ordine,
+            }
+          })
+        )
+      )
 
       return pratica
     } catch (error) {
@@ -98,14 +102,18 @@ export async function praticheRoutes(fastify: FastifyInstance) {
 
       // If no comparti exist, create default ones
       if (comparti.length === 0) {
-        await prisma.comparto.createMany({
-          data: COMPARTI_DEFAULT.map(comparto => ({
-            praticaId: request.params.id,
-            key: comparto.key,
-            nome: comparto.nome,
-            ordine: comparto.ordine,
-          })),
-        })
+        await prisma.$transaction(
+          COMPARTI_DEFAULT.map(comparto =>
+            prisma.comparto.create({
+              data: {
+                praticaId: request.params.id,
+                key: comparto.key,
+                nome: comparto.nome,
+                ordine: comparto.ordine,
+              }
+            })
+          )
+        )
 
         comparti = await prisma.comparto.findMany({
           where: { praticaId: request.params.id },
