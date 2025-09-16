@@ -7,11 +7,12 @@ import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
 // import { PdfReader } from '../../components/viewers/PdfReader'
 import { VerifyPdfViewer } from '../viewers/VerifyPdfViewer'
+import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
 // import { OcrVerify } from '../../components/ocr/OcrVerify'
 import { useToast } from '../../hooks/use-toast'
 import { Pratica, Comparto, Documento, UploadProgress } from '../../types'
-import { ArrowLeft, Upload, RefreshCw, X } from 'lucide-react'
+import { ArrowLeft, Upload, RefreshCw } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
 import { ThumbCard } from '../viewers/ThumbCard'
@@ -25,7 +26,9 @@ export function PraticaCanvasPage() {
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [documenti, setDocumenti] = useState<Documento[]>([])
   const [uploads, setUploads] = useState<UploadProgress[]>([])
-  const [previewDoc, setPreviewDoc] = useState<Documento | null>(null)
+  // Client-side provisional thumbs for PDFs (by s3Key)
+  const [clientThumbByS3, setClientThumbByS3] = useState<Record<string, string>>({})
+  const [previewDoc] = useState<Documento | null>(null)
   // const [activeTab, setActiveTab] = useState<'original' | 'ocr' | 'split' | 'verify'>('original')
   const [syncPage, setSyncPage] = useState<number | null>(null)
   // removed unused scroll sync state after simplifying viewer
@@ -35,10 +38,7 @@ export function PraticaCanvasPage() {
   const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
   const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
   // Workspace (Tavolo)
-  type WSTab = { id: string; docId: string; title: string }
   const [viewMode, setViewMode] = useState<'archivio' | 'tavolo'>('archivio')
-  const [wsTabs, setWsTabs] = useState<WSTab[]>([])
-  const [wsActiveId, setWsActiveId] = useState<string | null>(null)
   // Simplified viewer: no split view metrics needed
   // Verify mode state
   const verifyDocRef = useRef<any | null>(null)
@@ -57,12 +57,13 @@ export function PraticaCanvasPage() {
     vpH: number
     gapPct: number
   } | null>(null)
-  const [verifyFontSize, setVerifyFontSize] = useState<number>(12)
+  // const [verifyFontSize, setVerifyFontSize] = useState<number>(12)
   const [verifyPageSize, setVerifyPageSize] = useState<Record<number, { width: number; height: number }>>({})
   const [verifyPinned, setVerifyPinned] = useState<boolean>(false)
   const [verifyEditText, setVerifyEditText] = useState<string>('')
   const [verifyDebug, setVerifyDebug] = useState<boolean>(false)
   const [verifyEnabled, setVerifyEnabled] = useState<boolean>(false)
+  const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null)
   const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null)
 
   // Dropzone: applicata alla colonna sinistra
@@ -244,11 +245,7 @@ export function PraticaCanvasPage() {
           if (d < bestDist) { best = l; bestDist = d }
         }
         const vpW = verifyPageSize[pageNum]?.width || lines.reduce((m,l)=> Math.max(m, l.x1), 0)
-        const hostRect = (overlayTarget || hostDiv).getBoundingClientRect()
-        const left = rect.left - hostRect.left + (best.x / (vpW || rect.width)) * rect.width
-        const right = rect.left - hostRect.left + (best.x1 / (vpW || rect.width)) * rect.width
-        const top = rect.top - hostRect.top + (best.y / (vpH || rect.height)) * rect.height
-        const bottom = rect.top - hostRect.top + (best.y1 / (vpH || rect.height)) * rect.height
+        // const hostRect = (overlayTarget || hostDiv).getBoundingClientRect()
         const lineHPdf = best.avgH || (best.y1 - best.y)
         const gapPdf = Math.max(lineHPdf * 0.5, 6 * (vpH / rect.height))
         const gapPct = 100 * (gapPdf / vpH)
@@ -294,18 +291,18 @@ export function PraticaCanvasPage() {
   useEffect(() => {
     if (id) {
       loadPraticaData(id)
-      // restore workspace (tabs + active)
+      // restore only viewMode for V2
       try {
         const raw = localStorage.getItem(`ws_${id}`)
         if (raw) {
           const ws = JSON.parse(raw)
-          if (Array.isArray(ws.tabs)) setWsTabs(ws.tabs)
-          if (ws.activeId) setWsActiveId(ws.activeId)
           if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') setViewMode(ws.viewMode)
         }
       } catch {}
     }
   }, [id])
+
+  // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 
   const loadPraticaData = async (praticaId: string) => {
     setIsLoading(true)
@@ -366,6 +363,27 @@ export function PraticaCanvasPage() {
 
     setUploads(prev => [...prev, ...newUploads])
 
+    // Helper: generate client-side PDF first-page thumb (non blocking)
+    const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const task = pdfjsLib.getDocument({ data: arrayBuffer })
+        const pdf = await task.promise
+        const page = await pdf.getPage(1)
+        const vp1 = page.getViewport({ scale: 1 })
+        const scale = targetW / vp1.width
+        const viewport = page.getViewport({ scale })
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.ceil(viewport.width)
+        canvas.height = Math.ceil(viewport.height)
+        const ctx = canvas.getContext('2d')!
+        await page.render({ canvasContext: ctx as any, viewport }).promise
+        return canvas.toDataURL('image/png')
+      } catch {
+        return ''
+      }
+    }
+
     // Process each file
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
@@ -379,6 +397,14 @@ export function PraticaCanvasPage() {
 
         // Get upload URL
         const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
+
+        // Fire client-side PDF thumb generation (non-blocking)
+        const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
+        if (isPdf) {
+          generateClientPdfThumb(file, 320).then((dataUrl) => {
+            if (dataUrl) setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+          }).catch(() => {})
+        }
         
         setUploads(prev => prev.map((upload, idx) => 
           idx === uploadIndex ? { ...upload, progress: 30 } : upload
@@ -443,69 +469,20 @@ export function PraticaCanvasPage() {
     }
   }
 
-  const handlePreview = (documento: Documento) => {
-    openFromArchive(documento)
-    // aggiorna recenti
-    try {
-      const raw = localStorage.getItem('recent_pratiche')
-      const list = raw ? JSON.parse(raw) as any[] : []
-      if (pratica) {
-        const item = { id: pratica.id, nome: pratica.nome, cliente: pratica.cliente, foro: pratica.foro }
-        const next = [item, ...list.filter(x => x.id !== item.id)].slice(0, 6)
-        localStorage.setItem('recent_pratiche', JSON.stringify(next))
-      }
-    } catch {}
-  }
+  // removed legacy handlePreview
 
   // ===== Workspace helpers =====
-  const persistWs = (tabs: WSTab[], activeId: string | null, mode: 'archivio'|'tavolo') => {
-    if (!id) return
-    try { localStorage.setItem(`ws_${id}`, JSON.stringify({ tabs, activeId, viewMode: mode })) } catch {}
-  }
+  // persistWs legacy placeholder (kept for backward compatibility)
+  // const persistWs = (_tabs: any, _activeId: string | null, mode: 'archivio'|'tavolo') => {
+  //   if (!id) return
+  //   try { localStorage.setItem(`ws_${id}`, JSON.stringify({ viewMode: mode })) } catch {}
+  // }
 
-  const openFromArchive = (doc: Documento) => {
-    setViewMode('tavolo')
-    setPreviewDoc(doc)
-    setWsTabs(prev => {
-      const found = prev.find(t => t.docId === doc.id)
-      if (found) {
-        setWsActiveId(found.id)
-        persistWs(prev, found.id, 'tavolo')
-        return prev
-      }
-      const tab: WSTab = { id: `tab_${doc.id}`, docId: doc.id, title: doc.filename }
-      const next = [...prev, tab]
-      setWsActiveId(tab.id)
-      persistWs(next, tab.id, 'tavolo')
-      return next
-    })
-  }
+  // removed legacy openFromArchive (use openInTable)
 
-  const closeWsTab = (tabId: string) => {
-    setWsTabs(prev => {
-      const next = prev.filter(t => t.id !== tabId)
-      let nextActive = wsActiveId
-      if (wsActiveId === tabId) nextActive = next.length ? next[next.length - 1].id : null
-      setWsActiveId(nextActive)
-      persistWs(next, nextActive, viewMode)
-      if (nextActive) {
-        const doc = documenti.find(d => `tab_${d.id}` === nextActive)
-        if (doc) setPreviewDoc(doc)
-      }
-      return next
-    })
-  }
+  // closeWsTab handled implicitly by DockWorkspace; keep function removed
 
-  const renderWsTabsBar = () => (
-    <div className="flex items-center gap-2 overflow-x-auto border-b bg-white px-2 py-1">
-      {wsTabs.map(t => (
-        <div key={t.id} className={`flex items-center gap-2 px-3 py-1 rounded cursor-pointer whitespace-nowrap ${t.id===wsActiveId?'bg-muted font-medium':'hover:bg-muted'}`} onClick={()=>{ setWsActiveId(t.id); const doc=documenti.find(d=>d.id===t.docId); if(doc) setPreviewDoc(doc); persistWs(wsTabs, t.id, viewMode) }}>
-          <span className="max-w-[14rem] truncate">{t.title}</span>
-          <button className="text-xs opacity-60 hover:opacity-100" onClick={(e)=>{ e.stopPropagation(); closeWsTab(t.id) }}>×</button>
-        </div>
-      ))}
-    </div>
-  )
+  // legacy tabs bar: replaced by DockWorkspace
 
   // Reusable viewer for a documento with Verify mode toggle
   const renderDocViewer = (doc: Documento) => (
@@ -595,17 +572,7 @@ export function PraticaCanvasPage() {
                 const text = (best.text || '').trim()
                 if (!text) { setVerifyHover(null); return }
                 setVerifyHover({ text, page: pageNum, pdfX0: best.x, pdfX1: best.x1, pdfY0: best.y, pdfY1: best.y1, vpW, vpH, gapPct })
-                try {
-                  const targetW = Math.max(10, ((best.x1 - best.x) / vpW) * rect.width - 6)
-                  const targetH = Math.max(8, ((best.y1 - best.y) / vpH) * rect.height - 2)
-                  const canvas = document.createElement('canvas')
-                  const ctx = canvas.getContext('2d')
-                  if (ctx) {
-                    let fs = Math.floor(targetH * 0.8)
-                    for (let i = 0; i < 6; i++) { ctx.font = `${fs}px Arial, sans-serif`; const w = ctx.measureText(text).width; if (w <= targetW) break; fs = Math.max(8, Math.floor(fs * 0.9)) }
-                    setVerifyFontSize(fs)
-                  }
-                } catch {}
+                // dynamic font sizing skipped for now
                 return
               }
 
@@ -662,17 +629,7 @@ export function PraticaCanvasPage() {
                 const text = (best.text || '').trim()
                 if (!text) { setVerifyHover(null); return }
                 setVerifyHover({ text, page: pageNum, pdfX0: best.x, pdfX1: best.x1, pdfY0: best.y, pdfY1: best.y1, vpW: pdfW, vpH: pdfH, gapPct })
-                try {
-                  const targetW = Math.max(10, ((best.x1 - best.x) / pdfW) * rect.width - 6)
-                  const targetH = Math.max(8, ((best.y1 - best.y) / pdfH) * rect.height - 2)
-                  const canvas = document.createElement('canvas')
-                  const ctx = canvas.getContext('2d')
-                  if (ctx) {
-                    let fs = Math.floor(targetH * 0.8)
-                    for (let i = 0; i < 6; i++) { ctx.font = `${fs}px Arial, sans-serif`; const w = ctx.measureText(text).width; if (w <= targetW) break; fs = Math.max(8, Math.floor(fs * 0.9)) }
-                    setVerifyFontSize(fs)
-                  }
-                } catch {}
+                // dynamic font sizing skipped for now
               } catch { if (verifyDebug) console.log('[VERIFY] ocrLayout parse error'); setVerifyHover(null) }
 
               // Fallback B: se non c'è ocrPdfKey né ocrLayout, prova PDF originale (come sopra)
@@ -729,9 +686,67 @@ export function PraticaCanvasPage() {
     // TODO: quando sarà disponibile l'endpoint di delete, chiamarlo qui
   }
 
-  const handleTableAction = (documento: Documento) => {
-    toast({ title: 'Azione tabella', description: 'Azione in arrivo per: ' + documento.filename })
+  // legacy alias removed
+
+  const openInTable = (documento: Documento) => {
+    try {
+      // Apri nel Tabset centrale di DockWorkspaceV2
+      setTimeout(() => {
+        dockV2Ref.current?.openDoc({ id: documento.id, title: documento.filename })
+      }, 0)
+      toast({ title: 'Aperto nel Tavolo', description: documento.filename })
+    } catch {
+      toast({ title: 'Errore', description: 'Impossibile aprire nel Tavolo', variant: 'destructive' })
+    }
   }
+
+  // Render Archivio come pane standalone (riutilizzato sia in vista Archivio sia nel pane sinistro di DockV2)
+  const renderArchivePane = () => (
+    <div
+      {...getRootProps()}
+      className={`w-full h-full min-h-full flex flex-col border-2 border-dashed rounded-md transition ${
+        isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300'
+      }`}
+      style={{ padding: '12px' }}
+      onClick={() => { if (documenti.length === 0) open() }}>
+      <input {...getInputProps()} />
+      {documenti.length === 0 && (
+        <div className="flex-1 flex items-center justify-center text-center">
+          <div>
+            <Upload className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm">Trascina qui i file della pratica oppure clicca per selezionarli</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
+      {documenti.map(doc => {
+        const isPdf = doc.mime?.startsWith('application/pdf') || doc.filename.toLowerCase().endsWith('.pdf')
+        const serverThumb = isPdf && doc.hash ? api.getThumbUrl(doc.hash) : ''
+        const clientThumb = clientThumbByS3[doc.s3Key]
+        const thumb = clientThumb || serverThumb || api.getLocalFileUrl(doc.s3Key)
+        return (
+          <ThumbCard
+            key={doc.id}
+            title={doc.filename}
+            imgSrc={thumb}
+            selected={selectedDocId === doc.id}
+            onSelect={() => setSelectedDocId(doc.id)}
+            onPreview={() => { setSelectedDocId(doc.id); openInTable(doc) }}
+            onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
+            onTable={() => { setSelectedDocId(doc.id); openInTable(doc) }}
+            onRemove={() => handleRemoveThumb(doc.id)}
+            onOcr={() => handleOcr(doc)}
+            ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
+            hasOcr={!!doc.ocrPdfKey}
+          />
+        )
+      })}
+      </div>
+    </div>
+  )
+
+  // Seed Tavolo: not needed in V2 (tabs managed by DockWorkspaceV2)
 
   // Queue OCR for a document and start polling job progress
   const handleOcr = async (documento: Documento) => {
@@ -799,10 +814,10 @@ export function PraticaCanvasPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen overflow-hidden bg-background grid" style={{ gridTemplateRows: 'auto 1fr' }}>
       
       {/* Header */}
-      <div className="border-b bg-white sticky top-0 z-10">
+      <div className="border-b bg-white">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -826,10 +841,6 @@ export function PraticaCanvasPage() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <div className="inline-flex rounded border overflow-hidden">
-                <button className={`px-3 py-1 text-sm ${viewMode==='archivio'?'bg-muted font-medium':''}`} onClick={()=>{ setViewMode('archivio'); persistWs(wsTabs, wsActiveId, 'archivio') }}>Archivio</button>
-                <button className={`px-3 py-1 text-sm ${viewMode==='tavolo'?'bg-muted font-medium':''}`} onClick={()=>{ setViewMode('tavolo'); persistWs(wsTabs, wsActiveId, 'tavolo') }}>Tavolo</button>
-              </div>
               <Button variant="outline" size="sm" onClick={handleRefresh}>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Aggiorna
@@ -843,68 +854,26 @@ export function PraticaCanvasPage() {
         </div>
       </div>
 
-      {/* Main Content (Drop + Thumbs + Preview) */}
-      <div className="container mx-auto px-4 py-6 h-[calc(100vh-120px)]">
-        <div className="flex h-full">
-          {/* Left: Archivio | Tavolo */}
-          <div className="flex-1 flex flex-col min-h-full" {...getRootProps()}>
-            <input {...getInputProps()} />
-            {viewMode === 'archivio' ? (
-            <div
-              className={`flex-1 h-full flex flex-col border-2 border-dashed rounded-md p-6 transition ${
-                isDragActive ? 'border-blue-500 bg-blue-50' : 'border-muted-foreground/30'
-              }`}
-              onClick={() => { if (documenti.length === 0) open() }}>
-              {documenti.length === 0 && (
-                <div className="flex-1 flex items-center justify-center text-center">
-                  <div>
-                    <Upload className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm">Trascina qui i file oppure clicca nell'area</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid [grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))] gap-6 items-start overflow-auto flex-1 p-1">
-              {documenti.map(doc => {
-                const isPdf = doc.mime?.startsWith('application/pdf')
-                const thumb = isPdf && doc.hash ? api.getThumbUrl(doc.hash) : api.getLocalFileUrl(doc.s3Key)
-                return (
-                  <ThumbCard
-                    key={doc.id}
-                    title={doc.filename}
-                    imgSrc={thumb}
-                    selected={selectedDocId === doc.id}
-                    onSelect={() => setSelectedDocId(doc.id)}
-                    onPreview={() => { setSelectedDocId(doc.id); handlePreview(doc) }}
-                    onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
-                    onTable={() => { setSelectedDocId(doc.id); handleTableAction(doc) }}
-                    onRemove={() => handleRemoveThumb(doc.id)}
-                    onOcr={() => handleOcr(doc)}
-                    ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
-                    hasOcr={!!doc.ocrPdfKey}
-                  />
-                )
-              })}
-              </div>
+      {/* Main Content: Archivio (sx) + Tavolo (dx) sempre insieme */}
+      <div className="h-full w-full overflow-hidden">
+        <DockWorkspaceV2
+          ref={dockV2Ref as any}
+          storageKey={`ws_dock_v2_${id}`}
+          docs={[]}
+          renderArchive={() => (
+            <div className="w-full h-full">
+              {renderArchivePane()}
             </div>
-            ) : (
-            <div className="flex-1 h-full flex flex-col border rounded-md overflow-hidden">
-              {renderWsTabsBar()}
-              <div className="flex-1 overflow-hidden">
-                {(() => {
-                  if (!wsActiveId) {
-                    return <div className="p-4 text-sm text-muted-foreground">Nessun documento aperto sul Tavolo. Apri dall'Archivio con doppio click.</div>
-                  }
-                  const doc = documenti.find(d => `tab_${d.id}` === wsActiveId)
-                  return doc ? renderDocViewer(doc) : <div className="p-4 text-sm">Documento non trovato.</div>
-                })()}
-              </div>
-            </div>
-            )}
-          </div>
+          )}
+          renderDoc={(docId) => {
+            const doc = documenti.find(d => d.id === docId)
+            if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
+            return renderDocViewer(doc)
+          }}
+        />
 
-          {/* Divider resizer between panels: only in Archivio mode with preview open */}
-          {viewMode === 'archivio' && previewDoc && (
+          {/* Divider resizer between panels: (legacy archivio preview) */}
+          {false && viewMode === 'archivio' && previewDoc && (
             <div
               className="w-1.5 cursor-col-resize mx-1 self-stretch bg-transparent hover:bg-blue-400/30"
               onMouseDown={(e) => {
@@ -956,36 +925,23 @@ export function PraticaCanvasPage() {
           )}
 
           {/* Right: Preview panel in Archivio */}
-          {viewMode === 'archivio' && previewDoc && (
+          {false && viewMode === 'archivio' && previewDoc && (
             <div
               className="relative bg-white border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
               style={{ width: previewWidth }}
             >
               <div className="px-3 py-2 border-b text-sm font-medium flex items-center justify-between">
-                <span className="truncate pr-2">{previewDoc.filename}</span>
-                <button
-                  className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
-                  aria-label="Chiudi"
-                  onClick={() => setPreviewDoc(null)}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+                <span className="truncate pr-2">{previewDoc?.filename || ''}</span>
+                <div />
+        </div>
               {/* Preview usa il nuovo viewer in modalità lite (senza overlay) */}
               <div className="h-[calc(100vh-180px)]">
-                <VerifyPdfViewer
-                  fileUrl={api.getLocalFileUrl(previewDoc.s3Key)}
-                  page={1}
-                  lines={null}
-                  onPageChange={() => {}}
-                  hideToolbar
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Nessun pannello destro in modalità Tavolo: il viewer occupa tutto il canvas sinistro */}
+                <div />
+          </div>
         </div>
+      )}
+
+          {/* Tavolo gestito interamente da DockWorkspaceV2 */}
       </div>
 
       {/* Overlay globale disattivato */}

@@ -1,0 +1,49 @@
+.dock-root {
+  /* ensure nothing overlays the strip and the strip starts from absolute left */
+}
+/* Hide FlexLayout internal tab header to avoid double strips */
+.flexlayout__tabset_header { display: none !important; }
+/* Hide any FlexLayout border (prevents secondary tab strips around edges) */
+.flexlayout__border_top,
+.flexlayout__border_bottom,
+.flexlayout__border_left,
+.flexlayout__border_right,
+.flexlayout__border {
+  display: block !important;
+}
+[class^="flexlayout__border"] { display: block !important; }
+
+.flexlayout__tab_button {
+  padding: 4px 10px;
+}
+
+.flexlayout__layout {
+  background: #ffffff;
+}
+
+.flexlayout__tab {
+  overflow: hidden;
+}
+
+.dock-tab, .dock-tab * {
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -moz-user-select: none;
+}
+
+.dock-strip {
+  position: static;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  height: 40px;
+  align-items: center;
+}
+
+.dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
+

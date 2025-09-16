@@ -1,5 +1,5 @@
-import React from 'react'
-import { Eye, Table, Trash, ScanText } from 'lucide-react'
+import React, { useState } from 'react'
+import { Eye, Table, Trash, ScanText, FileText } from 'lucide-react'
 
 interface ThumbCardProps {
   title: string
@@ -16,6 +16,7 @@ interface ThumbCardProps {
 }
 
 export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, ocrProgressPct, hasOcr }: ThumbCardProps) {
+  const [imgError, setImgError] = useState(false)
   return (
     <div
       className="relative group select-none rounded-md"
@@ -23,8 +24,20 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPrev
       onClick={(e) => { e.stopPropagation(); onSelect?.() }}
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
-      <div className={`relative w-40 h-56 border rounded-sm bg-white overflow-hidden flex items-center justify-center ${selected ? 'ring-2 ring-blue-500' : ''}`}>
-        <img src={imgSrc} alt={title} className="max-w-full max-h-full object-contain" />
+      <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden flex items-center justify-center ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+        {!imgError && imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={title}
+            className="max-w-full max-h-full object-contain"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-muted-foreground/70">
+            <FileText className="w-10 h-10 mb-1" />
+            <span className="text-[10px]">Anteprima non disponibile</span>
+          </div>
+        )}
         {typeof ocrProgressPct === 'number' && (
           <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
             <div className="w-32 h-2 bg-black/10 rounded overflow-hidden">
