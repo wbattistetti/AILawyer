@@ -11,11 +11,12 @@ interface ThumbCardProps {
   onTable?: () => void
   onRemove?: () => void
   onOcr?: () => void
+  onOcrQuick?: () => void
   ocrProgressPct?: number | null
   hasOcr?: boolean
 }
 
-export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, ocrProgressPct, hasOcr }: ThumbCardProps) {
+export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, onOcrQuick, ocrProgressPct, hasOcr }: ThumbCardProps) {
   const [imgError, setImgError] = useState(false)
   return (
     <div
@@ -75,6 +76,14 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPrev
             title="Esegui OCR"
           >
             <ScanText className="w-4 h-4" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcrQuick?.() }}
+            aria-label="OCR Veloce"
+            title="OCR Veloce"
+          >
+            <ScanText className="w-4 h-4 text-blue-600" />
           </button>
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"

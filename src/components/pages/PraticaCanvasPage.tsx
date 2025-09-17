@@ -16,6 +16,10 @@ import { ArrowLeft, Upload, RefreshCw } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
 import { ThumbCard } from '../viewers/ThumbCard'
+import { SearchProvider } from '../search/SearchProvider'
+import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
+import { buildPdfJsAdaptersFromDocs } from '../../features/entities/adapters/PdfJsDocAdapter'
+import { SearchPanelTree } from '../search/SearchPanelTree'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -551,10 +555,10 @@ export function PraticaCanvasPage() {
                       target.n += 1
                     }
                     const lines = aggs.map(ln => {
-                      const sorted = ln.parts.sort((a, b) => a.x - b.x)
-                      const text = sorted.map(p => p.str).join(' ').replace(/\.{2,}/g, ' ').replace(/\s+/g, ' ').trim()
+                      const sorted = ln.parts.sort((p1: any, p2: any) => p1.x - p2.x)
+                      const text = sorted.map((p: any) => p.str).join(' ').replace(/\.{2,}/g, ' ').replace(/\s+/g, ' ').trim()
                       const avgH2 = ln.n ? ln.sumH / ln.n : (ln.y1 - ln.y0)
-                      return { y: vpObj.height - ln.y1, y1: vpObj.height - ln.y0, x: ln.x0, x1: ln.x1, text, mid: ln.yMid, avgH: avgH2 }
+                      return { y: ln.y0, y1: ln.y1, x: ln.x0, x1: ln.x1, text, mid: ln.yMid, avgH: avgH2 }
                     })
                     setVerifyLinesByPage(prev => ({ ...prev, [pageNum]: lines }))
                   } catch {}
@@ -650,6 +654,7 @@ export function PraticaCanvasPage() {
               fileUrl={api.getLocalFileUrl(doc.s3Key)}
               page={syncPage || 1}
               lines={verifyLinesByPage[syncPage || 1] as any}
+              docId={doc.id}
               onPageChange={(p)=> setSyncPage(p)}
             />
 
@@ -737,6 +742,7 @@ export function PraticaCanvasPage() {
             onTable={() => { setSelectedDocId(doc.id); openInTable(doc) }}
             onRemove={() => handleRemoveThumb(doc.id)}
             onOcr={() => handleOcr(doc)}
+            onOcrQuick={() => handleOcr(doc, 'quick')}
             ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
             hasOcr={!!doc.ocrPdfKey}
           />
@@ -749,13 +755,13 @@ export function PraticaCanvasPage() {
   // Seed Tavolo: not needed in V2 (tabs managed by DockWorkspaceV2)
 
   // Queue OCR for a document and start polling job progress
-  const handleOcr = async (documento: Documento) => {
+  const handleOcr = async (documento: Documento, mode: 'quick' | 'full' = 'full') => {
     try {
       setSelectedDocId(documento.id)
       console.log('[OCR] queue request', documento.id, documento.filename)
       toast({ title: 'OCR avviato', description: documento.filename })
       // Queue job
-      const job = await api.queueOcr(documento.id)
+      const job = await api.queueOcr(documento.id, mode)
       setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
 
       // Polling loop
@@ -864,6 +870,94 @@ export function PraticaCanvasPage() {
             <div className="w-full h-full">
               {renderArchivePane()}
             </div>
+          )}
+          renderSearch={() => (
+            <SearchProvider defaultScope={'archive'} registry={{
+              getAllDocs: () => documenti.map(d => ({ id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: (d.mime?.includes('word') ? 'word' : 'pdf') })),
+              getOpenDocs: () => [],
+              ensureDocOpen: async (docId: string) => { const d = documenti.find(x=>x.id===docId); if (d) openInTable(d); return null },
+            }} onSearch={async(q, _scope)=>{
+              try {
+                const anyPdf: any = pdfjsLib as any
+                if (anyPdf && anyPdf.GlobalWorkerOptions && !anyPdf.GlobalWorkerOptions.workerSrc) {
+                  anyPdf.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js'
+                }
+              } catch {}
+              const targets = documenti.filter(d => (d.mime?.includes('pdf') || d.filename.toLowerCase().endsWith('.pdf')))
+              const groups: any[] = []
+              console.log('[ARCHIVE SEARCH] start', { q, targets: targets.length })
+              for (const d of targets) {
+                const fileUrl = api.getLocalFileUrl(d.ocrPdfKey || d.s3Key)
+                try {
+                  // Fetch as ArrayBuffer to avoid CORS/URL issues
+                  const res = await fetch(fileUrl)
+                  const buf = await res.arrayBuffer()
+                  const doc = await (pdfjsLib as any).getDocument({ data: new Uint8Array(buf), disableWorker: false }).promise
+                  const matches: any[] = []
+                  let ord = 0
+                  const total = doc.numPages || 0
+                  console.log('[ARCHIVE SEARCH] doc', d.filename, { pages: total })
+                  for (let p = 1; p <= total; p++) {
+                    const page = await doc.getPage(p)
+                    const content = await page.getTextContent()
+                    const items = content.items as any[]
+                    let buffer = ''
+                    const boxes: { x:number;y:number;w:number;h:number }[] = []
+                    for (const it of items) {
+                      const s = (it.str || '') as string
+                      const tx = it.transform
+                      const h = (it.height as number) || Math.abs(tx[5] - (tx[5] - (it.height as number))) || 0
+                      const cw = ((it.width as number) || 0) / Math.max(1, s.length)
+                      for (let i=0;i<s.length;i++){ const x=(tx[4] as number)+(cw*i); const y=(tx[5] as number)-h; boxes.push({x,y,w:cw,h}) }
+                      buffer += s + ' '
+                    }
+                    const hay = buffer.toLowerCase(); const needle = q.toLowerCase()
+                    let pos = 0
+                    while (true) {
+                      const idx = hay.indexOf(needle, pos); if (idx < 0) break
+                      const start = idx, end = idx + needle.length
+                      let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity
+                      for (let i=start;i<end && i<boxes.length;i++){ const c=boxes[i]; l=Math.min(l,c.x); t=Math.min(t,c.y); r=Math.max(r,c.x+c.w); b=Math.max(b,c.y+c.h) }
+                      if (isFinite(l)&&isFinite(t)&&isFinite(r)&&isFinite(b)){
+                        const vp = page.getViewport({ scale:1 })
+                        const x0Pct = l/vp.width, x1Pct = r/vp.width
+                        const y0Pct = (vp.height - b)/vp.height, y1Pct = (vp.height - t)/vp.height
+                        matches.push({ id: `${d.id}-${p}-${start}`, docId: d.id, docTitle: d.filename, kind:'pdf', page:p, q, x0Pct, x1Pct, y0Pct, y1Pct, charIdx:start, qLength: needle.length, snippet: buffer.slice(Math.max(0,start-40), Math.min(buffer.length,end+40)).trim(), score:0, ord: ord++ })
+                      }
+                      pos = end
+                    }
+                  }
+                  console.log('[ARCHIVE SEARCH] doc done', d.filename, { matches: matches.length })
+                  groups.push({ doc:{ id:d.id, title:d.filename, hash:d.hash||'', pages:0, kind:'pdf' }, matches })
+                } catch (err) {
+                  console.warn('[ARCHIVE SEARCH] doc error', d.filename, err)
+                  groups.push({ doc:{ id:d.id, title:d.filename, hash:d.hash||'', pages:0, kind:'pdf' }, matches:[] })
+                }
+              }
+              const total = groups.reduce((s,g)=> s + g.matches.length, 0)
+              console.log('[ARCHIVE SEARCH] done', { total })
+              return { id: String(Date.now()), query: q, scope: 'archive' as any, total, groups } as any
+            }}>
+              <SearchPanelTree showInput={true} />
+            </SearchProvider>
+          )}
+          renderPersons={() => (
+            <PersonCardsPanel
+              getAllDocsMeta={async () => documenti.map(d => ({ praticaId: d.praticaId, hash: d.hash, docId: d.id, title: d.filename, pages: 0 }))}
+              buildAdapters={async (docs) => {
+                const map = new Map(docs.map(m => [m.docId, m]))
+                const selected = documenti.filter(d => map.has(d.id))
+                return buildPdfJsAdaptersFromDocs(selected)
+              }}
+              onOpenOccurrence={(o) => {
+                // Open doc tab, then dispatch navigation event used by VerifyPdfViewer
+                const d = documenti.find(x => x.id === o.docId)
+                if (d) openInTable(d)
+                try {
+                  window.dispatchEvent(new CustomEvent('app:goto-match', { detail: { docId: o.docId, q: '', match: { id: o.id, docId: o.docId, docTitle: o.docTitle, kind: 'pdf', page: o.page, q: '', x0Pct: o.box.x0Pct, x1Pct: o.box.x1Pct, y0Pct: o.box.y0Pct, y1Pct: o.box.y1Pct, snippet: o.snippet, score: 1 } } }))
+                } catch {}
+              }}
+            />
           )}
           renderDoc={(docId) => {
             const doc = documenti.find(d => d.id === docId)

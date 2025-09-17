@@ -24,6 +24,11 @@ const configSchema = z.object({
   OCR_LANG: z.string().default('ita+eng'),
   OCRMYPDF_PATH: z.string().optional(),
   OCR_TIMEOUT_SEC: z.coerce.number().default(900),
+  // Quick OCR tuning
+  OCR_QUICK_MODE: z.coerce.boolean().default(false),
+  OCR_QUICK_DPI: z.coerce.number().default(180),
+  OCR_QUICK_LANG: z.string().default('ita'),
+  OCR_JOBS: z.coerce.number().default(0),
 })
 
 export const config = configSchema.parse(process.env)

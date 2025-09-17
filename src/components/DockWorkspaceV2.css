@@ -1,12 +1,10 @@
 .dockv2-root .flexlayout__tabset_header {
   display: flex !important; /* ensure native tab strip is visible */
 }
-.dockv2-root .flexlayout__border,
 .dockv2-root .flexlayout__border_top,
 .dockv2-root .flexlayout__border_bottom,
-.dockv2-root .flexlayout__border_left,
 .dockv2-root .flexlayout__border_right {
-  display: none !important; /* hide external borders to avoid duplicates */
+  display: none !important; /* keep only left border (Archivio/Search) visible */
 }
 .dockv2-root .flexlayout__layout {
   background: #fff;

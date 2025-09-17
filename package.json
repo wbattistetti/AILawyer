@@ -29,6 +29,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "flexlayout-react": "^0.7.14",
+    "idb": "8.0.3",
     "in": "0.19.0",
     "lucide-react": "^0.294.0",
     "pdfjs-dist": "^3.7.107",

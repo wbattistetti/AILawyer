@@ -22,14 +22,30 @@ export class OcrmypdfService {
       fs.writeFileSync(inputPdf, buf)
 
       const bin = config.OCRMYPDF_PATH || 'ocrmypdf'
-      const args = [
-        '--skip-text',
-        '--rotate-pages', '--deskew',
-        '--optimize', '3',
-        '--language', config.OCR_LANG,
-        '--sidecar', sidecar,
-        inputPdf, outPdf
-      ]
+      const jobs = config.OCR_JOBS && config.OCR_JOBS > 0 ? String(config.OCR_JOBS) : String(Math.max(1, Math.min(8, (os.cpus()?.length || 2) - 1)))
+
+      // Build args depending on quick vs full mode
+      const quick = !!config.OCR_QUICK_MODE
+      const args: string[] = []
+      args.push('--jobs', jobs)
+      args.push('--skip-text')
+      args.push('--rotate-pages')
+      if (!quick) args.push('--deskew')
+      // Optimize: 0 for quick, 3 for full
+      args.push('--optimize', quick ? '0' : '3')
+      // Disable cleaning filters in quick mode
+      if (quick) {
+        args.push('--clean', '0', '--clean-final', '0')
+        // Lower DPI to reduce raster cost
+        const dpi = Math.max(150, Math.min(300, config.OCR_QUICK_DPI))
+        args.push('--image-dpi', String(dpi), '--image-dpi-max', String(dpi + 20))
+        // Speed up tesseract
+        args.push('--tesseract-oem', '1', '--tesseract-psm', '6')
+      }
+      // Language: quick mode prefers OCR_QUICK_LANG if set
+      args.push('--language', quick ? (config as any).OCR_QUICK_LANG || config.OCR_LANG : config.OCR_LANG)
+      args.push('--sidecar', sidecar)
+      args.push(inputPdf, outPdf)
 
       // Docker wrapper: if OCRMYPDF_PATH === 'docker', run image with network none and mount tmp dir
       const useDocker = bin.toLowerCase() === 'docker'

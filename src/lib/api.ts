@@ -103,8 +103,8 @@ export const api = {
   },
 
   // Jobs
-  async queueOcr(documentId: string): Promise<Job> {
-    return fetchApi(`/documenti/${documentId}/queue-ocr`, {
+  async queueOcr(documentId: string, mode: 'quick' | 'full' = 'full'): Promise<Job> {
+    return fetchApi(`/documenti/${documentId}/queue-ocr?mode=${mode}`, {
       method: 'POST',
     })
   },

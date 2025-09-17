@@ -113,7 +113,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
   })
 
   // Queue OCR for documento
-  fastify.post<{ Params: { id: string } }>('/documenti/:id/queue-ocr', async (request, reply) => {
+  fastify.post<{ Params: { id: string }, Querystring: { mode?: 'quick' | 'full' } }>('/documenti/:id/queue-ocr', async (request, reply) => {
     try {
       const documento = await prisma.documento.findUnique({
         where: { id: request.params.id },
@@ -133,9 +133,10 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         },
       })
 
+      const mode = (request.query.mode === 'quick') ? 'quick' : 'full'
       if (config.ENABLE_QUEUE) {
         const ocrQueue = getOcrQueue()
-        await ocrQueue.add('process-ocr', { documentId: documento.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime }, { jobId: job.id })
+        await ocrQueue.add('process-ocr', { documentId: documento.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime, mode }, { jobId: job.id })
       } else {
         // Run OCR asynchronously in dev and return immediately the job id
         const { ocrService } = await import('../services/ocr.js')
@@ -144,6 +145,10 @@ export async function documentiRoutes(fastify: FastifyInstance) {
           const start = Date.now()
           try {
             fastify.log.info({ msg: 'OCR inline start', jobId: job.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime })
+            // Toggle quick mode at process level for this run
+            const prevQuick = process.env.OCR_QUICK_MODE
+            if (mode === 'quick') process.env.OCR_QUICK_MODE = 'true'
+            else process.env.OCR_QUICK_MODE = 'false'
             const result = await ocrService.extract(documento.s3Key, async (p, meta) => {
               const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
               if (percent - last >= 5) {
@@ -153,6 +158,8 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                 fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
               }
             })
+            // restore env
+            process.env.OCR_QUICK_MODE = prevQuick
       await prisma.documento.update({
         where: { id: documento.id },
               data: {
