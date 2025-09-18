@@ -23,7 +23,7 @@ export function PersonCardsPanel({
 }) {
   const [status, setStatus] = useState<'idle' | 'pending' | 'in_progress' | 'updated'>('idle');
   const [pending, setPending] = useState<DocMeta[]>([]);
-  const [filters, setFilters] = useState<Filters>({ sort: 'name', confMin: 0.7 });
+  const [filters, setFilters] = useState<Filters>({});
   const [persons, setPersons] = useState<PersonRecord[]>([]);
   // progress now tracked via docProgress
   const setBusyDoc = (_v: any) => {};
@@ -63,30 +63,12 @@ export function PersonCardsPanel({
             (p.phone?.toLowerCase().includes(q) ?? false)
           )
         }
-        if (f.hasCF) rows = rows.filter(p => !!p.tax_code)
-        if (f.hasDOB) rows = rows.filter(p => !!p.date_of_birth)
-        if (f.hasAddr) rows = rows.filter(p => !!p.address)
-        if (typeof f.confMin === 'number') rows = rows.filter(p => p.confidence >= (f.confMin ?? 0))
-        if (f.hasTitle) rows = rows.filter(p => (p.titles?.length ?? 0) > 0)
-        switch (f.sort) {
-          case 'confidence': rows.sort((a,b)=> b.confidence - a.confidence); break;
-          case 'occ': rows.sort((a,b)=> b.occCount - a.occCount); break;
-          default: rows.sort((a,b)=> a.full_name.localeCompare(b.full_name));
-        }
+        // Ordinamento e filtri avanzati rimossi; ordina alfabeticamente
+        rows.sort((a,b)=> a.full_name.localeCompare(b.full_name))
         setPersons(rows)
       } else {
         // Otherwise query IndexedDB
-        const rows = await searchPersons({
-          praticaId: praticaId ?? (await getAllDocsMeta())[0]?.praticaId,
-          q: f.q,
-          hasCF: f.hasCF,
-          hasDOB: f.hasDOB,
-          hasAddr: f.hasAddr,
-          hasTitle: f.hasTitle,
-          confMin: f.confMin,
-          sort: f.sort,
-          limit: 500
-        });
+        const rows = await searchPersons({ praticaId: praticaId ?? (await getAllDocsMeta())[0]?.praticaId, q: f.q, limit: 500 });
         setPersons(rows);
       }
     } finally {
@@ -118,12 +100,50 @@ export function PersonCardsPanel({
           const arr = prev ? [...prev] : []
           for (const it of items as any[]) {
             const pid = it.personKey
+            const normName = (it.full_name || '').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim()
             const now = Date.now()
-            const idx = arr.findIndex(p => p.id === pid)
+            // Find best match by same normalized name and compatible fields
+            let idx = arr.findIndex(p => p.id === pid)
+            if (idx === -1) {
+              let best = -1; let bestScore = -1
+              for (let i=0;i<arr.length;i++) {
+                const p = arr[i]
+                const pNorm = (p.full_name || '').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim()
+                if (pNorm !== normName) continue
+                if (!compatiblePreview(p, it.fields || {})) continue
+                const s = previewScore(p)
+                if (s > bestScore) { bestScore = s; best = i }
+              }
+              idx = best
+            }
             if (idx >= 0) {
               arr[idx].confidence = Math.max(arr[idx].confidence, it.confidence)
               arr[idx].occCount += 1
               arr[idx].updatedAt = now
+              // hydrate missing fields from this occurrence
+              arr[idx].date_of_birth = arr[idx].date_of_birth || it.fields?.date_of_birth
+              // normalize simple dotted dates
+              if (arr[idx].date_of_birth && /\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}/.test(arr[idx].date_of_birth)) {
+                const m = arr[idx].date_of_birth.match(/([0-3]?\d)[\.\/-]([01]?\d)[\.\/-]((?:19|20)\d{2})/)
+                if (m) arr[idx].date_of_birth = `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`
+              }
+              arr[idx].place_of_birth = arr[idx].place_of_birth || it.fields?.place_of_birth
+              arr[idx].tax_code = arr[idx].tax_code || it.fields?.tax_code
+              arr[idx].address = arr[idx].address || it.fields?.address
+              arr[idx].residence_address = arr[idx].residence_address || it.fields?.address
+              arr[idx].domicile_address = arr[idx].domicile_address || (it.fields as any)?.domicile
+              arr[idx].postal_code = arr[idx].postal_code || it.fields?.postal_code
+              arr[idx].city = arr[idx].city || it.fields?.city
+              arr[idx].province = arr[idx].province || it.fields?.province
+              arr[idx].phone = arr[idx].phone || it.fields?.phone
+              arr[idx].email = arr[idx].email || it.fields?.email
+              // hydrate domicile structured parts if present
+              const dCity = (it.fields as any)?.domicile_city
+              const dCap = (it.fields as any)?.domicile_postal_code
+              const dProv = (it.fields as any)?.domicile_province
+              if (!arr[idx].city && dCity) arr[idx].city = dCity
+              if (!arr[idx].postal_code && dCap) arr[idx].postal_code = dCap
+              if (!arr[idx].province && dProv) arr[idx].province = dProv
               if (it.title) {
                 const set = new Set(arr[idx].titles ?? [])
                 set.add(it.title)
@@ -137,6 +157,17 @@ export function PersonCardsPanel({
                 first_name: it.first_name,
                 last_name: it.last_name,
                 titles: it.title ? [it.title] : [],
+                date_of_birth: it.fields?.date_of_birth,
+                place_of_birth: it.fields?.place_of_birth,
+                tax_code: it.fields?.tax_code,
+                address: it.fields?.address,
+                residence_address: it.fields?.address,
+                domicile_address: (it.fields as any)?.domicile,
+                postal_code: it.fields?.postal_code,
+                city: it.fields?.city,
+                province: it.fields?.province,
+                phone: it.fields?.phone,
+                email: it.fields?.email,
                 confidence: it.confidence,
                 occCount: 1,
                 updatedAt: now,
@@ -271,4 +302,25 @@ function StatusPill({ status }: { status: 'idle' | 'pending' | 'in_progress' | '
 
 export default PersonCardsPanel;
 
-
+// Helpers for preview-time dedup/merge
+function previewScore(p: any): number {
+  let s = 0
+  if (p.date_of_birth) s += 3
+  if (p.place_of_birth) s += 2
+  if (p.tax_code) s += 3
+  if (p.address || p.residence_address) s += 2
+  if (p.city) s += 1
+  if (p.province) s += 1
+  if (p.email) s += 1
+  if (p.phone) s += 1
+  return s
+}
+function compatiblePreview(p: any, f: any): boolean {
+  const keys = ['date_of_birth','place_of_birth','tax_code','city','province']
+  for (const k of keys) {
+    const a = p?.[k]
+    const b = f?.[k]
+    if (a && b && String(a).trim() !== String(b).trim()) return false
+  }
+  return true
+}

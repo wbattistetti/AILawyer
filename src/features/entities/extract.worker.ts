@@ -78,25 +78,32 @@ const NON_NAME_WORDS = new Set<string>([
 function isLikelyPersonName(full: string): boolean {
   const rawParts = full.trim().split(/\s+/);
   const parts = rawParts.filter(p => p && !STOP_TOKENS.has(p.toLowerCase()));
-  // Count TitleCase OR ALLCAPS as name tokens
   const nameTokens = parts.filter(p => isTitle(p) || isUpper(p));
-  if (nameTokens.length < 2) return false;
-  // Last token should be TitleCase or ALLCAPS
-  const last = parts[parts.length - 1];
-  if (!(isTitle(last) || isUpper(last))) return false;
-  // Avoid cases like "Catania il" where trailing article slips in
-  if (/(?:\s|^)(il|la|lo)$/i.test(full.trim())) return false;
-  // Reject if contains blacklisted common nouns (except particles)
+  const hasTwoNames = nameTokens.length >= 2;
+  const last = parts[parts.length - 1] ?? '';
+  const lastOk = isTitle(last) || isUpper(last);
+  const hasTrailingArticle = /(\s|^)(il|la|lo)$/i.test(full.trim());
+  let containsBlacklisted = false;
   for (const p of parts) {
     const low = p.toLowerCase();
-    if (!new RegExp(`^${PARTICLE}$`, 'i').test(p) && NON_NAME_WORDS.has(low)) return false;
+    if (!new RegExp(`^${PARTICLE}$`, 'i').test(p) && NON_NAME_WORDS.has(low)) { containsBlacklisted = true; break; }
   }
-  return true;
+  const result = hasTwoNames && lastOk && !hasTrailingArticle && !containsBlacklisted;
+  try { dbg('name-check', { full, parts, nameTokens, last, hasTwoNames, lastOk, hasTrailingArticle, containsBlacklisted, result }) } catch {}
+  return result;
 }
 
 let cancelled = false;
 let lenientMode = false;
-const dbg = (...args: any[]) => { try { (console as any).log('[ENTITY][worker]', ...args) } catch {} }
+const dbg = (...args: any[]) => { try { if ((self as any).__ENTITY_DEBUG__) (console as any).log('[ENTITY][worker]', ...args) } catch {} }
+const dbgCase = (tag: string, payload: any) => {
+  try {
+    const s = JSON.stringify(payload).toLowerCase()
+    if (/(honda|\bsh\b|targato|intestato)/i.test(s)) {
+      ;(console as any).log('[ENTITY][diag]', tag, payload)
+    }
+  } catch {}
+}
 onmessage = (e: MessageEvent<WorkerIn>) => {
   try {
     const msg = e.data;
@@ -144,6 +151,10 @@ function isNameTok(tok: string): boolean {
   return isUpper(tok) || isTitle(tok) || new RegExp(`^${PARTICLE}$`, 'i').test(tok)
 }
 function isLowerWord(tok: string): boolean { return /^[a-zà-öø-ÿ]+$/.test(tok) }
+function isPlaceTok(tok: string): boolean {
+  // Accept TitleCase or ALLCAPS words as part of toponyms; allow particles
+  return isTitle(tok) || isUpper(tok) || new RegExp(`^${PARTICLE}$`, 'i').test(tok)
+}
 function unionBoxes(tokens: Token[], startTok: number, endTok: number): BoxPct {
   const slice = tokens.slice(startTok, endTok + 1)
   const x0 = Math.min(...slice.map(t => t.x0Pct))
@@ -151,6 +162,105 @@ function unionBoxes(tokens: Token[], startTok: number, endTok: number): BoxPct {
   const y0 = Math.min(...slice.map(t => t.y0Pct))
   const y1 = Math.max(...slice.map(t => t.y1Pct))
   return { x0Pct: x0, x1Pct: x1, y0Pct: y0, y1Pct: y1 }
+}
+
+function extractBirthContext(tokens: Token[], anchorTok: number): { pob?: string; dob?: string } {
+  // Scan to the right of anchor for patterns like:
+  //  - nato/a a|in <PLACE> , il <DATE>
+  //  - nato/a il <DATE>
+  //  - n. a <PLACE> il <DATE>
+  //  - n. <DATE>
+  const out: { pob?: string; dob?: string } = {}
+  const maxAhead = 25
+  const start = anchorTok + 1
+  const end = Math.min(tokens.length - 1, start + maxAhead)
+  // Build a small text window for date regex
+  const aheadText = tokens.slice(start, end + 1).map(t => t.text).join(' ')
+  const d1 = aheadText.match(RX.dob1)
+  const d2 = aheadText.match(RX.dob2)
+  if (d1) out.dob = `${d1[3]}-${String(d1[2]).padStart(2,'0')}-${String(d1[1]).padStart(2,'0')}`
+  else if (d2) out.dob = `${d2[2]}-${monthIdx(d2[1])}-${String(d2[1]).padStart(2,'0')}`
+
+  // Try to find a|in <PLACE>
+  let j = start
+  while (j <= end && isPunct(tokens[j].text)) j++
+  if (j <= end) {
+    const w = tokens[j].text.toLowerCase()
+    if (w === 'a' || w === 'in') {
+      j++
+      const kStart = j
+      let k = j
+      let placeTokens: string[] = []
+      for (; k <= end; k++) {
+        const t = tokens[k].text
+        const tl = t.toLowerCase()
+        if (isPunct(t) || tl === 'il') break
+        if (!isPlaceTok(t)) break
+        placeTokens.push(t)
+      }
+      if (placeTokens.length > 0) {
+        out.pob = placeTokens.join(' ').replace(/\s{2,}/g,' ').trim()
+      }
+    }
+  }
+  return out
+}
+
+function extractResidenceContext(text: string): { residence?: string; domicile?: string } {
+  const out: { residence?: string; domicile?: string } = {}
+  // resident[ea] in <addr>
+  const mRes = text.match(/\bresident[ea]\s+(?:in\s+)?([^,;\n]+)\b/i)
+  if (mRes) out.residence = mRes[1].trim()
+  // domiciliat[oa] in <addr>
+  const mDom = text.match(/\bdomiciliat[oa]\s+(?:in\s+)?([^,;\n]+)\b/i)
+  if (mDom) out.domicile = mDom[1].trim()
+  return out
+}
+
+function normalizeDob(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const m1 = raw.match(/([0-3]?\d)[\.\/-]([01]?\d)[\.\/-]((?:19|20)\d{2})/)
+  if (m1) {
+    const d = m1[1].padStart(2,'0'), mo = m1[2].padStart(2,'0'), y = m1[3]
+    return `${y}-${mo}-${d}`
+  }
+  const m2 = raw.match(new RegExp(String.raw`([0-3]?\d)\s+${MONTHS}\s+((?:19|20)\d{2})`, 'i'))
+  if (m2) {
+    const d = String(m2[1]).padStart(2,'0'), y = m2[2]
+    return `${y}-${monthIdx(m2[1])}-${d}`
+  }
+  return raw
+}
+
+function parseAddressParts(addr?: string): { address?: string; postal_code?: string; city?: string; province?: string } {
+  if (!addr) return {}
+  const s = addr.replace(/\s{2,}/g,' ').trim()
+  let postal_code: string | undefined
+  let city: string | undefined
+  let province: string | undefined
+  // Try CITY (PR) CAP
+  let m = s.match(/([A-ZÀ-Ü][A-Za-zÀ-ÖØ-öø-ÿ'’\-]+(?:\s+[A-ZÀ-Ü][A-Za-zÀ-ÖØ-öø-ÿ'’\-]+)*)\s*(?:\(([A-Z]{2})\))?\s*,?\s*(\d{5})\b/)
+  if (m) { city = m[1]; province = m[2]; postal_code = m[3] }
+  // Try CAP CITY (PR)
+  if (!city) {
+    m = s.match(/\b(\d{5})\s+([A-ZÀ-Ü][A-Za-zÀ-ÖØ-öø-ÿ'’\-]+(?:\s+[A-ZÀ-Ü][A-Za-zÀ-ÖØ-öø-ÿ'’\-]+)*)\s*(?:\(([A-Z]{2})\))?/)
+    if (m) { postal_code = m[1]; city = m[2]; province = m[3] }
+  }
+  // Province alone in parentheses anywhere
+  if (!province) {
+    const mp = s.match(/\(([A-Z]{2})\)/)
+    if (mp) province = mp[1]
+  }
+  // Address line: before city/cap chunk if available
+  let address = s
+  if (city || postal_code) {
+    // cut at the first occurrence of either city or CAP from the right
+    const idxCap = postal_code ? s.indexOf(postal_code) : -1
+    const idxCity = city ? s.indexOf(city) : -1
+    const cutIdx = [idxCap, idxCity].filter(i => i >= 0).sort((a,b)=>a-b)[0]
+    if (cutIdx >= 0) address = s.slice(0, Math.max(0, cutIdx)).replace(/[\s,;-]+$/,'').trim()
+  }
+  return { address, postal_code, city, province }
 }
 function charOffsetToTokenIndex(tokens: Token[], offset: number): number {
   let pos = 0
@@ -308,12 +418,35 @@ function detectOnPage(tokens: Token[], page: number): OccOut[] {
       const bbox = bboxForSubstring(tokens, off, full.length)
       const snippet = makeSnippet(text, off, full.length)
       const { first, last } = splitName(full)
-      const dob = (m.groups?.dob || '').trim()
+      const dob = normalizeDob((m.groups?.dob || '').trim())
       const pob = (m.groups?.pob || '').trim()
+      // try to pick up residence right after the enumeration segment
+      let resAddr: string | undefined, domAddr: string | undefined, resParts: any = {}, domParts: any = {};
+      try {
+        const tailStart = m.index! + m[0].length;
+        const tail = text.slice(tailStart, Math.min(text.length, tailStart + 240));
+        const a = extractResidenceContext(tail);
+        resAddr = a.residence || undefined; domAddr = a.domicile || undefined;
+        if (resAddr) resParts = parseAddressParts(resAddr);
+        if (domAddr) domParts = parseAddressParts(domAddr);
+      } catch {}
       hits.push({
         personKey: makeKey(full, dob || undefined, pob || undefined),
         full_name: full, first_name: first, last_name: last,
-        fields: { date_of_birth: dob || undefined, place_of_birth: pob || undefined },
+        fields: {
+          date_of_birth: dob || undefined,
+          place_of_birth: pob || undefined,
+          address: resParts.address,
+          city: resParts.city,
+          postal_code: resParts.postal_code,
+          province: resParts.province,
+          // @ts-ignore
+          raw_residence_text: resAddr,
+          // @ts-ignore
+          domicile: domParts.address,
+          // @ts-ignore
+          raw_domicile_text: domAddr,
+        },
         // Strong confidence: enumerated lists are reliable
         confidence: Math.min(1, 0.85 + (dob ? 0.05 : 0)),
         snippet, page, box: bbox
@@ -332,20 +465,48 @@ function detectOnPage(tokens: Token[], page: number): OccOut[] {
         if (/^\d+/.test(tail)) continue
       }
       const anchorTok = charOffsetToTokenIndex(tokens, m.index!)
-      try { dbg('leftwin', { page, anchor: aStr, anchorTok, win: leftWindowString(tokens, anchorTok, page) }) } catch {}
+      try { const win = leftWindowString(tokens, anchorTok, page); dbg('leftwin', { page, anchor: aStr, anchorTok, win }); if (/\b(honda|targato|intestato)\b/i.test(win)) dbgCase('pre-anchor-window', { page, win }) } catch {}
       const name = extractNameLeftOf(tokens, anchorTok, page)
       if (!name) { try { dbg('leftwin-noName', { page, anchor: aStr }) } catch {} ; continue }
       const { start, end, text: full, title } = name
       const { first, last } = splitName(full)
       const box = unionBoxes(tokens, start, end)
+      const birth = extractBirthContext(tokens, anchorTok)
+      const ctxTail = text.slice(m.index! + aStr.length, Math.min(text.length, m.index! + aStr.length + 240))
+      const addr = extractResidenceContext(ctxTail)
+      const resParts = parseAddressParts(addr.residence)
+      const domParts = parseAddressParts(addr.domicile)
+      const useIviCity = /\bivi\s+resident[ea]/i.test(ctxTail)
+      const resolvedResCity = resParts.city || (useIviCity ? birth.pob : undefined)
       const snippet = makeSnippet(text, Math.max(0, text.indexOf(full) - 20), full.length + 40)
-      try { dbg('match', { page, full, title: title || null, start, end }) } catch {}
+      try { dbg('match', { page, full, title: title || null, start, end, birth, addr: { residence: { ...resParts, city: resolvedResCity }, domicile: domParts }, ivi: useIviCity }) } catch {}
       hits.push({
         personKey: makeKey(full, undefined, undefined),
         full_name: full,
         first_name: first,
         last_name: last,
-        fields: {},
+        fields: {
+          date_of_birth: birth.dob,
+          place_of_birth: birth.pob,
+          address: resParts.address,
+          city: resolvedResCity,
+          postal_code: resParts.postal_code,
+          province: resParts.province,
+          // raw texts for backend normalization
+          // @ts-ignore
+          raw_residence_text: addr.residence,
+          // @ts-ignore
+          raw_domicile_text: addr.domicile,
+          // carry domicile parsed parts in non-standard keys for UI hydration
+          // @ts-ignore
+          domicile: domParts.address,
+          // @ts-ignore
+          domicile_city: domParts.city,
+          // @ts-ignore
+          domicile_postal_code: domParts.postal_code,
+          // @ts-ignore
+          domicile_province: domParts.province,
+        },
         title,
         confidence: Math.min(1, 0.75),
         snippet,
@@ -393,34 +554,7 @@ function detectOnPage(tokens: Token[], page: number): OccOut[] {
   }
 
   // 4) Lenient pass: trova sequenze Nome Cognome ovunque (con conf. più bassa)
-  if (lenientMode) {
-    let mAny: RegExpExecArray | null;
-    const anyRe = new RegExp(NAME_SEQ.source, 'giu');
-    while ((mAny = anyRe.exec(text))) {
-      const full = text.slice(mAny.index, mAny.index + mAny[0].length).replace(TITLES, '').trim();
-      if (!full) continue;
-      if (!isLikelyPersonName(full)) continue;
-      // Require an anchor within the next 120 chars to reduce false positives
-      const ctx = text.slice(mAny.index, Math.min(text.length, mAny.index + mAny[0].length + 120))
-      if (!/\b(nato(?:\/a)?(?:\s+a)?|n\.|residente|domiciliat[oa]|domicilio\s+eletto|residenza)\b/iu.test(ctx)) continue
-      const bbox = bboxForSubstring(tokens, mAny.index, full.length);
-      const snippet = makeSnippet(text, mAny.index, full.length);
-      const { first, last } = splitName(full);
-      const fields: any = {}; // no enrichment here
-      const conf = Math.min(1, 0.6); // medium confidence if near anchor
-      hits.push({
-        personKey: makeKey(full, undefined, undefined),
-        full_name: full,
-        first_name: first,
-        last_name: last,
-        fields,
-        confidence: conf,
-        snippet,
-        page,
-        box: bbox
-      });
-    }
-  }
+  // lenient mode disabled
 
   return dedup(hits);
 }

@@ -59,6 +59,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const pageNav = pageNavigationPlugin()
 	const searchPluginInstance = searchPlugin()
 	const scaleRef = useRef<number>(1)
+	const zoomDebounceRef = useRef<number | null>(null)
 
 	const [totalPages, setTotalPages] = useState<number>(0)
 	const [pageInput, setPageInput] = useState<string>('1')
@@ -418,7 +419,27 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 					</div>
 					<div className="ml-auto flex items-center gap-2">
 						<span className="text-xs w-10 text-right">{zoomPct}%</span>
-						<input type="range" min={50} max={300} step={1} value={zoomPct} onChange={(e)=>{ const v = parseInt(e.target.value,10); setZoomPct(v); const s = v/100; scaleRef.current = s; try{ (zoomPluginInstance as any).zoomTo(s) } catch{}; const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(s)); }} />
+						<input
+							type="range"
+							min={50}
+							max={300}
+							step={1}
+							value={zoomPct}
+							onChange={(e)=>{
+								const v = parseInt(e.target.value,10)
+								setZoomPct(v)
+								const s = v/100
+								scaleRef.current = s
+								if (zoomDebounceRef.current != null) {
+									window.clearTimeout(zoomDebounceRef.current)
+								}
+								zoomDebounceRef.current = window.setTimeout(() => {
+									try { (zoomPluginInstance as any).zoomTo(s) } catch {}
+									const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+									if (viewer) viewer.style.setProperty('--scale-factor', String(s))
+								}, 80)
+							}}
+						/>
 					</div>
 				</div>
 

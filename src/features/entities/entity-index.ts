@@ -24,6 +24,8 @@ export type PersonRecord = {
   place_of_birth?: string;
   tax_code?: string;
   address?: string;
+  residence_address?: string;
+  domicile_address?: string;
   postal_code?: string;
   city?: string;
   province?: string;
@@ -160,6 +162,8 @@ export async function searchPersons(f: PersonSearchFilters = {}) {
       p.full_name.toLowerCase().includes(q) ||
       (p.tax_code?.toLowerCase().includes(q) ?? false) ||
       (p.address?.toLowerCase().includes(q) ?? false) ||
+      (p.residence_address?.toLowerCase().includes(q) ?? false) ||
+      (p.domicile_address?.toLowerCase().includes(q) ?? false) ||
       (p.city?.toLowerCase().includes(q) ?? false) ||
       (p.email?.toLowerCase().includes(q) ?? false) ||
       (p.phone?.toLowerCase().includes(q) ?? false)
