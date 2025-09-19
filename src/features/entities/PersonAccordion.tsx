@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { type PersonRecord, type OccurrenceRecord } from './entity-index';
 import { Baby, Home, Mail, Phone, Hash, Building2 } from 'lucide-react';
+import { getPersonSummary } from '../events/event-index'
 
 export function PersonAccordion({ persons }: { persons: PersonRecord[]; onOpenOccurrence?: (o: OccurrenceRecord) => void }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export function PersonAccordion({ persons }: { persons: PersonRecord[]; onOpenOc
                   <span className="mr-2 inline-block text-[11px] px-2 py-0.5 rounded-full bg-neutral-200 align-middle">{p.titles[0]}</span>
                 ) : null}
                 <span className="align-middle">{properCaseName(p.full_name)}{typeof p.occCount === 'number' ? ` (${p.occCount})` : ''}</span>
+                <EventBadge name={p.full_name} />
               </div>
               {/* dettagli mostrati sotto */}
             </div>
@@ -36,6 +38,13 @@ export function PersonAccordion({ persons }: { persons: PersonRecord[]; onOpenOc
       ))}
     </div>
   );
+}
+
+function EventBadge({ name }: { name: string }) {
+  const s = getPersonSummary(name)
+  if (!s.total) return null
+  const kinds = Object.entries(s.byType).map(([k,v]) => `${k}:${v}`).join(' · ')
+  return <span className="ml-2 text-xs text-neutral-600 align-middle">Eventi {s.total} ({kinds})</span>
 }
 
 function Avatar({ name }: { name: string }) {

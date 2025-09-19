@@ -12,13 +12,14 @@ type Props = {
   renderPersons?: () => React.ReactNode
   renderDoc: (docId: string) => React.ReactNode
   storageKey?: string
+  renderEvents?: () => React.ReactNode
 }
 
 export type DockWorkspaceV2Handle = {
   openDoc: (doc: DocTab) => void
 }
 
-export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderDoc, storageKey = 'ws_dock_v2' }, ref) {
+export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderDoc, storageKey = 'ws_dock_v2', renderEvents }, ref) {
   const LayoutAny = Layout as any
   const initial: IJsonModel = useMemo(() => {
     // Start from a known good layout to avoid corrupted persisted models
@@ -76,6 +77,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     if (comp === 'archive') return <div className="w-full h-full overflow-auto bg-slate-50">{renderArchive()}</div>
     if (comp === 'search') return <div className="w-full h-full overflow-auto bg-white">{renderSearch ? renderSearch() : null}</div>
     if (comp === 'persons') return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
+    if (comp === 'events') return <div className="w-full h-full overflow-auto bg-white">{renderEvents ? renderEvents() : null}</div>
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }
       return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
@@ -105,7 +107,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] } ]
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' } ] }
+        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] }
       ]
     } as IJsonModel
   }
@@ -141,9 +143,11 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       const hasArchive = left.children.some((t: any) => t.component === 'archive')
       const hasSearch = left.children.some((t: any) => t.component === 'search')
       const hasPersons = left.children.some((t: any) => t.component === 'persons')
+      const hasEvents = left.children.some((t: any) => t.component === 'events')
       if (!hasArchive) left.children.push({ type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' })
       if (!hasSearch) left.children.push({ type: 'tab', name: 'Search', component: 'search', id: 'searchTab' })
       if (!hasPersons) left.children.push({ type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' })
+      if (!hasEvents) left.children.push({ type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' })
       if (typeof left.selected !== 'number') left.selected = 0
 
       return json

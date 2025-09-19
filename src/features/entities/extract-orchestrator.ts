@@ -1,6 +1,8 @@
 import { upsertOccurrences, upsertPersons, setDocSnapshot, type PersonRecord, type OccurrenceRecord, type DocSnapshot } from './entity-index';
 import { normalizeAddress } from '../../services/address/client';
 import type { Address } from '../../services/address/types';
+import { extractEvents } from '../../services/nlp/client'
+import { addBatch as addEventsToIndex } from '../events/event-index'
 
 export interface DocAdapter {
   getDocMeta(): Promise<{ praticaId?: string; docId: string; title: string; pages: number; hash: string }>;
@@ -47,7 +49,7 @@ export async function extractPersonsFromDocs(
     worker.addEventListener('message', handler);
 
     for await (const { page, tokens } of ad.streamPageTokens()) {
-      // Dump page 3 normalized text for debugging
+      // Optional debug page 3
       if (page === 3) {
         try {
           // @ts-ignore - we know worker's helper name
@@ -55,7 +57,21 @@ export async function extractPersonsFromDocs(
           console.log('[ENTITY][page3][raw]', sampleText?.slice(0, 2000) || '')
         } catch {}
       }
+      // Fire person extraction
       worker.postMessage({ type: 'page', payload: { page, tokens, docId: meta.docId, docTitle: meta.title } });
+
+      // Fire event extraction (best-effort, short timeout, non-blocking)
+      try {
+        const text = tokens.map(t => t.text).join(' ').replace(/\s+/g,' ').trim()
+        if (text.length > 24) {
+          extractEvents(text, { doc_id: meta.docId, page, title: meta.title }, { timeoutMs: 800 })
+            .then(res => {
+              if (!res.ok || !res.events?.length) return;
+              addEventsToIndex(meta.docId, res.events, meta.praticaId)
+            })
+            .catch(() => {})
+        }
+      } catch {}
     }
     worker.postMessage({ type: 'endDoc', docId: meta.docId });
 

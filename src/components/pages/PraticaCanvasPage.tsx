@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -20,6 +20,7 @@ import { SearchProvider } from '../search/SearchProvider'
 import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
 import { buildPdfJsAdaptersFromDocs } from '../../features/entities/adapters/PdfJsDocAdapter'
 import { SearchPanelTree } from '../search/SearchPanelTree'
+import { EventsTab } from '../../features/events/EventsTab'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -797,6 +798,26 @@ export function PraticaCanvasPage() {
     }
   }
 
+  useEffect(() => {
+    const onOpen = (e: any) => {
+      try {
+        const d = e?.detail || {}
+        if (!d?.docId) return
+        const doc = documenti.find(x => x.id === d.docId)
+        if (doc && dockV2Ref.current) {
+          dockV2Ref.current.openDoc({ id: doc.id, title: doc.filename })
+          // page sync handled by viewer via event elsewhere
+          const ev = new CustomEvent('app:goto-match', { detail: { docId: d.docId, match: d.match, q: d.q } })
+          window.dispatchEvent(ev)
+        }
+      } catch {}
+    }
+    window.addEventListener('app:open-doc', onOpen as any)
+    return () => window.removeEventListener('app:open-doc', onOpen as any)
+  }, [documenti])
+
+  const renderEvents = useCallback(() => <EventsTab currentDocId={selectedDocId || undefined} />, [selectedDocId])
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -865,7 +886,7 @@ export function PraticaCanvasPage() {
         <DockWorkspaceV2
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v2_${id}`}
-          docs={[]}
+          docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
           renderArchive={() => (
             <div className="w-full h-full">
               {renderArchivePane()}
@@ -964,6 +985,7 @@ export function PraticaCanvasPage() {
             if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
             return renderDocViewer(doc)
           }}
+          renderEvents={renderEvents}
         />
 
           {/* Divider resizer between panels: (legacy archivio preview) */}
