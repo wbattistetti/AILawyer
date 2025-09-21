@@ -10,6 +10,7 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: true,
     open: false,
+    hmr: { overlay: false },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

@@ -52,6 +52,62 @@ export interface VerifyPdfViewerProps {
 	docId?: string
 }
 
+// Simple token classifier for demo; replace with pseudonymizer
+function classifyToken(str: string): 'safe' | 'pseudo' | 'suspect' {
+	const raw = (str || '').trim()
+	if (!raw) return 'safe'
+	// Pseudonym tokens (already replaced): TL[...] or PREFIX_xxxx
+	if (/^TL\[[A-Z]+\]:\s*[A-Z_0-9-]+$/.test(raw) || /^[A-Z]{2,}_[0-9a-f]{4,}$/i.test(raw)) return 'pseudo'
+	// Pure punctuation or numbers
+	if (/^[\p{P}\p{S}]+$/u.test(raw)) return 'safe'
+	if (/^\d+[\d\s\.\-\/]*$/.test(raw)) return 'safe'
+	// Normalize accents/case
+	const norm = raw
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.toLowerCase()
+	// Short tokens are rarely informative PII
+	if (norm.length <= 2) return 'safe'
+	// Italian stopwords + connectors (expanded)
+	const STOP = new Set<string>([
+		'il','lo','la','l','i','gli','le',
+		'un','una','uno',
+		'di','del','dello','della','dei','degli','delle',"dell'",
+		'a','al','allo','alla','ai','agli','alle',"all'",
+		'da','dal','dallo','dalla','dai','dagli','dalle',"dall'",
+		'in','nel','nello','nella','nei','negli','nelle',"nell'",
+		'con','col','coi',
+		'su','sul','sullo','sulla','sui','sugli','sulle',"sull'",
+		'per','tra','fra','e','ed','o','oppure',
+		'che','non','come','anche','sono','era','furono',
+		'presso'
+	])
+	if (STOP.has(norm)) return 'safe'
+	// Common legal/admin nouns to be greyed (not PII)
+	const LEGAL = new Set<string>([
+		'cortese','attenzione','dottor','dottore','dottoressa','avvocato','avv','procura','procuratore','aggiunto','sostituto','repubblica','direzione','distrettuale','antimafia','ufficio','sezione','sez','proc','procedimento','penale','numero','n','rg','rgnr','registro','generale','atti','fascicolo','tribunale','corte','giudice','pm','pubblico','ministero'
+	])
+	if (LEGAL.has(norm)) return 'safe'
+	// Months and days
+	const MONTHS = new Set<string>(['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre','lunedi','martedi','mercoledi','giovedi','venerdi','sabato','domenica'])
+	if (MONTHS.has(norm)) return 'safe'
+	// Default: flag as suspect (to be reviewed)
+	return 'suspect'
+}
+
+function ensureAuditStyles() {
+	const id = 'audit-token-styles'
+	if (document.getElementById(id)) return
+	const style = document.createElement('style')
+	style.id = id
+	style.textContent = `
+	.tok-safe{ color:#bdbdbd !important; font-weight:400; }
+	.tok-pseudo{ color:#6f6f6f !important; background:rgba(0,0,0,.08); padding:0 .08em; border-radius:.16em; }
+	.tok-suspect{ background:#fff2b2; color:#111 !important; font-weight:600; border-radius:.16em; }
+	`
+	document.head.appendChild(style)
+}
+
 export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page, lines: _lines, onPageChange, hideToolbar: _hideToolbar, docId }) => {
 	const hostRef = useRef<HTMLDivElement | null>(null)
 	const scrollMode = scrollModePlugin()
@@ -75,6 +131,9 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
 	const drawingRef = useRef<{ page: number; startX: number; startY: number; x: number; y: number } | null>(null)
 
+	// Audit mode (digital text only)
+	const [audit, setAudit] = useState<boolean>(false)
+
 	// Search panel state
 	const [panelW, setPanelW] = useState<number>(320)
 	const [searchQ, setSearchQ] = useState<string>('')
@@ -96,6 +155,49 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 		})()
 		return () => { cancelled = true }
 	}, [fileUrl])
+
+	// Apply/clear audit style on text layers (digital text) and add page dim overlays + canvas filter
+	useEffect(() => {
+		const host = hostRef.current
+		if (!host) return
+		const apply = () => {
+			// 1) Text layer (when present): color spans per token class
+			const layers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
+			if (audit) ensureAuditStyles()
+			for (const layer of layers) {
+				if (audit) {
+					layer.setAttribute('data-audit', 'on')
+					layer.style.opacity = '1'
+					layer.style.mixBlendMode = 'normal'
+					layer.style.pointerEvents = 'none'
+					// classify each span
+					const spans = Array.from(layer.querySelectorAll('span')) as HTMLSpanElement[]
+					for (const sp of spans) {
+						const txt = sp.textContent || ''
+						const cls = classifyToken(txt)
+						sp.classList.remove('tok-safe','tok-pseudo','tok-suspect')
+						sp.classList.add(cls==='safe'?'tok-safe':cls==='pseudo'?'tok-pseudo':'tok-suspect')
+					}
+				} else {
+					layer.removeAttribute('data-audit')
+					layer.style.removeProperty('opacity')
+					layer.style.removeProperty('mix-blend-mode')
+					layer.style.removeProperty('pointer-events')
+					const spans = Array.from(layer.querySelectorAll('span')) as HTMLSpanElement[]
+					for (const sp of spans) { sp.classList.remove('tok-safe','tok-pseudo','tok-suspect') }
+				}
+			}
+			// 2) Canvas: fade so text layer colors are visible
+			const canvases = Array.from(host.querySelectorAll('.rpv-core__page-layer canvas')) as HTMLCanvasElement[]
+			for (const cv of canvases) {
+				if (audit) { (cv.style as any).opacity = '0.06' } else { cv.style.removeProperty('opacity') }
+			}
+		}
+		apply()
+		const mo = new MutationObserver(() => apply())
+		mo.observe(host, { subtree: true, childList: true })
+		return () => mo.disconnect()
+	}, [audit])
 
 	const searchMainThread = async (qRaw: string) => {
 		try {
@@ -413,6 +515,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 						<button className={`px-2 py-1 rounded border ${tool==='strike'?'bg-red-100 border-red-400':''}`} title="Barra" onClick={()=>setTool(tool==='strike'?'none':'strike')}>
 							<StrikethroughIcon size={16} />
 						</button>
+						<button className={`px-2 py-1 rounded border ${audit?'bg-gray-100 border-gray-400':''}`} title="Audit mode (testo digitale)" onClick={()=>setAudit(a=>!a)}>Audit</button>
 						<button className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
 							<MessageSquare size={16} />
 						</button>
@@ -443,7 +546,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 					</div>
 				</div>
 
-				<div ref={hostRef} className="flex-1 overflow-hidden">
+				<div ref={hostRef} className="flex-1 overflow-hidden" style={{ ['--scale-factor' as any]: String(scaleRef.current || 1) }}>
 					<Worker workerUrl="https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js">
 						<Viewer
 							fileUrl={fileUrl}
@@ -452,8 +555,8 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 							scrollMode={ScrollMode.Vertical}
 							initialPage={Math.max(0, (page || 1) - 1)}
 							onPageChange={(e) => { const cp = e.currentPage + 1; setPageInput(String(cp)); onPageChange?.(cp) }}
-							onDocumentLoad={(e) => { const total = (e as any).doc?.numPages || (e as any).document?.numPages || 0; if (total) { setTotalPages(total); setPageInput('1') } }}
-							onZoom={(e: any) => { const s = (e?.scale || e?.zoom) as number; if (typeof s === 'number') { scaleRef.current = s; setZoomPct(Math.round(s*100)); (window as any).__rpvLastZoomScale = s } }}
+							onDocumentLoad={(e) => { const total = (e as any).doc?.numPages || (e as any).document?.numPages || 0; if (total) { setTotalPages(total); setPageInput('1') } const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1)) }}
+							onZoom={(e: any) => { const s = (e?.scale || e?.zoom) as number; if (typeof s === 'number') { scaleRef.current = s; setZoomPct(Math.round(s*100)); (window as any).__rpvLastZoomScale = s; const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(s)) } }}
 						/>
 					</Worker>
 				</div>

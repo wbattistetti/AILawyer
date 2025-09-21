@@ -3,6 +3,9 @@ import { normalizeAddress } from '../../services/address/client';
 import type { Address } from '../../services/address/types';
 import { extractEvents } from '../../services/nlp/client'
 import { addBatch as addEventsToIndex } from '../events/event-index'
+import { PARSERS } from '../parsers'
+import { PARSERS_UNIFIED } from '../parsers/registry'
+import type { PageInput } from '../parsers/types'
 
 export interface DocAdapter {
   getDocMeta(): Promise<{ praticaId?: string; docId: string; title: string; pages: number; hash: string }>;
@@ -18,7 +21,7 @@ const log = (...args: any[]) => { try { console.log('[ENTITY][orchestrator]', ..
 export async function extractPersonsFromDocs(
   adapters: DocAdapter[],
   onProgress?: ProgressCb,
-  options?: { persist?: boolean; onStartDoc?: (info: { docId: string; title: string; pages: number }) => void; onDoneDoc?: (info: { docId: string }) => void; onOccurrence?: (items: any[], meta: { docId: string; title: string; pages: number; praticaId?: string }) => void }
+  options?: { persist?: boolean; onStartDoc?: (info: { docId: string; title: string; pages: number }) => void; onDoneDoc?: (info: { docId: string }) => void; onOccurrence?: (items: any[], meta: { docId: string; title: string; pages: number; praticaId?: string }) => void; signal?: AbortSignal }
 ) {
   const allPersons = new Map<string, PersonRecord>();
   const byName = new Map<string, Set<string>>(); // normalized name -> person ids
@@ -26,6 +29,7 @@ export async function extractPersonsFromDocs(
   const snapshots: DocSnapshot[] = [];
 
   const runDoc = async (ad: DocAdapter) => {
+    if (options?.signal?.aborted) return;
     const meta = await ad.getDocMeta();
     log('start', { docId: meta.docId, title: meta.title, pages: meta.pages })
     if (typeof options?.onStartDoc === 'function') {
@@ -49,6 +53,7 @@ export async function extractPersonsFromDocs(
     worker.addEventListener('message', handler);
 
     for await (const { page, tokens } of ad.streamPageTokens()) {
+      if (options?.signal?.aborted) break;
       // Optional debug page 3
       if (page === 3) {
         try {
@@ -64,7 +69,7 @@ export async function extractPersonsFromDocs(
       try {
         const text = tokens.map(t => t.text).join(' ').replace(/\s+/g,' ').trim()
         if (text.length > 24) {
-          extractEvents(text, { doc_id: meta.docId, page, title: meta.title }, { timeoutMs: 800 })
+          extractEvents(text, { doc_id: meta.docId, page, title: meta.title }, { timeoutMs: 800, signal: options?.signal })
             .then(res => {
               if (!res.ok || !res.events?.length) return;
               addEventsToIndex(meta.docId, res.events, meta.praticaId)
@@ -72,6 +77,33 @@ export async function extractPersonsFromDocs(
             .catch(() => {})
         }
       } catch {}
+
+      // Rule-based parsers (contacts, ids, ...) — unified pathway with fallback
+      try {
+        if (options?.signal?.aborted) break;
+        const input: PageInput = { docId: meta.docId, title: meta.title, page, tokens, praticaId: meta.praticaId }
+        const USE_UNIFIED = true
+        let items: any[] = []
+        if (USE_UNIFIED) {
+          for (const p of PARSERS_UNIFIED) {
+            if (options?.signal?.aborted) break;
+            try {
+              const res = await p.parsePage(input, options?.signal as any)
+              if (Array.isArray(res) && res.length) items.push(...res)
+            } catch {}
+          }
+        } else {
+          items = PARSERS.flatMap(fn => { try { return fn(input) } catch { return [] } })
+        }
+        if (items.length) {
+          window.dispatchEvent(new CustomEvent('app:things', { detail: { docId: meta.docId, items } }))
+        }
+      } catch {}
+
+      // Cooperative yield every few pages to keep UI responsive
+      if ((page % 5) === 0) {
+        await new Promise<void>(r => setTimeout(r, 0))
+      }
     }
     worker.postMessage({ type: 'endDoc', docId: meta.docId });
 
