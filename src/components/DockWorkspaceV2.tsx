@@ -1,6 +1,10 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react'
+import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
+import { DrawerViewer } from '../features/drawers/DrawerViewer'
+import { baselineGraph } from '../features/case-overview/stories/_mocks'
 import 'flexlayout-react/style/light.css'
+import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash } from 'lucide-react'
 import './DockWorkspaceV2.css'
 
 type DocTab = { id: string; title: string }
@@ -36,6 +40,41 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     const json = model.toJson()
     try { localStorage.setItem(storageKey, JSON.stringify(json)) } catch {}
   }, [model, storageKey])
+
+  // Listener per aprire un cassetto in una nuova tab
+  useEffect(() => {
+    function onOpenDrawer(e: any) {
+      const { drawerId, title } = (e?.detail || {}) as { drawerId: string; title?: string }
+      if (!drawerId) return
+      const json = modelRef.current.toJson() as any
+      let center = findById(json.layout, 'centerTabset')
+      if (!center) {
+        if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
+          json.layout = getDefaultModelJson().layout
+        } else {
+          json.layout.children.push({ type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] })
+        }
+        center = findById(json.layout, 'centerTabset')
+      }
+      // evita duplicati sullo stesso id
+      let exists = false
+      modelRef.current.visitNodes((n) => {
+        if (n.getType() === 'tab') {
+          const cfg = (n as any).getConfig?.() || {}
+          if ((n as any).getComponent?.() === 'drawer' && cfg.drawerId === drawerId) exists = true
+        }
+      })
+      if (!exists) {
+        center.children = center.children || []
+        center.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title } })
+        center.selected = center.children.length - 1
+      }
+      const next = Model.fromJson(json)
+      setModel(next)
+    }
+    window.addEventListener('app:open-drawer' as any, onOpenDrawer as any)
+    return () => window.removeEventListener('app:open-drawer' as any, onOpenDrawer as any)
+  }, [])
 
   // Apri doc nel tabset centrale
   const openDoc = (doc: DocTab) => {
@@ -82,9 +121,16 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     if (comp === 'contacts') return <div className="w-full h-full overflow-auto bg-white">{renderContacts ? renderContacts() : null}</div>
     if (comp === 'ids') return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
     if (comp === 'events') return <div className="w-full h-full overflow-auto bg-white">{renderEvents ? renderEvents() : null}</div>
+    if (comp === 'overview') {
+      return <div className="w-full h-full overflow-hidden bg-white"><CaseOverviewDiagram graph={baselineGraph as any} peopleIndex={{}} /></div>
+    }
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }
       return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
+    }
+    if (comp === 'drawer') {
+      const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string }
+      return <div className="w-full h-full overflow-hidden bg-white"><DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} /></div>
     }
     return null
   }
@@ -108,7 +154,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       },
       layout: {
         type: 'row',
-        children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] } ]
+        children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [ { type: 'tab', name: 'Overview', component: 'overview', id: 'overviewTab' } ] } ]
       },
       borders: [
         { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] }
@@ -180,11 +226,32 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     }
   }, [docs])
 
+  const iconFactory = (node: TabNode) => {
+    const comp = node.getComponent()
+    if (comp === 'drawer') {
+      const cfg = (node.getConfig() || {}) as { drawerTitle?: string }
+      const t = (cfg.drawerTitle || '').toLowerCase()
+      if (t.includes('verbale')) return <FileText size={24} className="text-amber-600" />
+      if (t.includes('difens')) return <Gavel size={24} className="text-emerald-600" />
+      if (t.includes('incontri') || t.includes('eventi')) return <Zap size={24} className="text-pink-600" />
+      if (t.includes('intercett')) return <Hash size={24} className="text-pink-600" />
+      if (t.includes('procura')) return <Landmark size={24} className="text-violet-600" />
+      if (t.includes('ufficio pg')) return <Shield size={24} className="text-slate-700" />
+      if (t.includes('contatti') || t.includes('telefon')) return <Phone size={24} className="text-blue-600" />
+      if (t.includes('timeline') || t.includes('termini')) return <Clock size={24} className="text-slate-600" />
+      if (t.includes('anagrafe') || t.includes('avvocati') || t.includes('elenco nomi')) return <Users size={24} className="text-blue-700" />
+      if (t.includes('reati')) return <Boxes size={24} className="text-slate-700" />
+      return <Boxes size={24} className="text-slate-600" />
+    }
+    return undefined
+  }
+
   return (
     <div className="dockv2-root" style={{ height: '100%', width: '100%', boxSizing: 'border-box' }}>
       <LayoutAny
         model={model}
         factory={factory}
+        iconFactory={iconFactory}
         realtimeResize
         onModelChange={(m: Model) => setModel(m)}
         style={{ height: '100%', width: '100%' }}

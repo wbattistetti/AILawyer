@@ -1,0 +1,19 @@
+.label {
+  padding: 0 !important;
+  gap: 5px !important;
+}
+.iconBox {
+  width: 48px !important;
+  height: 48px !important;
+  flex: 0 0 48px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+}
+.iconInner {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
