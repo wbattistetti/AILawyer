@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Drawer, DrawerProps } from "./Drawer";
+import type { DrawerType } from './types'
 import { useMeasure } from "./useMeasure";
 
 export type DrawerItem = {
@@ -8,6 +9,7 @@ export type DrawerItem = {
   label: string;
   icon?: React.ReactNode;
   isOpen?: boolean;
+  type?: DrawerType;
 };
 
 type Props = {
@@ -48,7 +50,7 @@ export function DrawerWall({ items, onToggle, gap = 5, padding = 0, className }:
     <div ref={ref} className={className ?? "w-full h-full relative"}>
       {/* Cornice dell'armadio (solo bordo sottile) */}
       <div className="absolute inset-0 border border-black/10" />
-      <div className="absolute" style={{ left: padding + offsetX, top: padding + offsetY, width: gridW, height: gridH }}>
+      <div className="absolute" style={{ left: padding + offsetX, top: padding + 20, width: gridW, height: gridH }}>
         {items.map((it, i) => {
           const r = Math.floor(i / cols);
           const c = i % cols;
@@ -62,7 +64,7 @@ export function DrawerWall({ items, onToggle, gap = 5, padding = 0, className }:
             isOpen: it.isOpen,
             onToggle: () => {
               // Apri tab Drawer via evento globale
-              const ev = new CustomEvent('app:open-drawer', { detail: { drawerId: it.id, title: it.label } })
+              const ev = new CustomEvent('app:open-drawer', { detail: { drawerId: it.id, title: it.label, type: it.type } })
               window.dispatchEvent(ev)
               onToggle?.(it.id)
             },

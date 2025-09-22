@@ -16,6 +16,7 @@ import { ArrowLeft, Upload, RefreshCw, FileText, Play, Pause, Square, ChevronDow
 import { useDropzone } from 'react-dropzone'
 import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
 import { ThumbCard } from '../viewers/ThumbCard'
+import { DocumentCollection } from '../../features/documents/DocumentCollection'
 import { SearchProvider } from '../search/SearchProvider'
 import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
 import { buildPdfJsAdaptersFromDocs } from '../../features/entities/adapters/PdfJsDocAdapter'
@@ -77,10 +78,11 @@ export function PraticaCanvasPage() {
   const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null)
   const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null)
   const [showAnalysis, setShowAnalysis] = useState<boolean>(false)
+  const [archiveUploadingCount, setArchiveUploadingCount] = useState<number>(0)
 
   // Dropzone: applicata alla colonna sinistra
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop: (files) => handleFileDrop(files, null),
+    onDrop: (files) => handleFileDrop(files, null, { type: 'archive' }),
     noClick: true,
     multiple: true,
     accept: {
@@ -341,7 +343,7 @@ export function PraticaCanvasPage() {
     }
   }
 
-  const handleFileDrop = async (files: File[], _compartoId?: string | null) => {
+  const handleFileDrop = async (files: File[], _compartoId?: string | null, target?: { type?: string; id?: string; title?: string } | null) => {
     if (!id) return
 
     // Validation
@@ -374,6 +376,7 @@ export function PraticaCanvasPage() {
     }))
 
     setUploads(prev => [...prev, ...newUploads])
+    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch {}
 
     // Helper: generate client-side PDF first-page thumb (non blocking)
     const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
@@ -406,6 +409,7 @@ export function PraticaCanvasPage() {
         setUploads(prev => prev.map((upload, idx) => 
           idx === uploadIndex ? { ...upload, status: 'uploading', progress: 10 } : upload
         ))
+        try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch {}
 
         // Get upload URL
         const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
@@ -430,6 +434,15 @@ export function PraticaCanvasPage() {
         ))
 
         // Create document record
+        const tags: string[] = []
+        if (target?.type === 'drawer') {
+          const key = (target.title || '').toLowerCase()
+          if (key.includes('verbale di sequestro')) tags.push('verbale_sequestro','verbale')
+          else if (key.includes('verbale di arresto')) tags.push('verbale_arresto','verbale')
+          else if (key.includes('elenco verbali redatti') || key.includes('verbali')) tags.push('verbale')
+          else if (key.includes('intercettazioni')) tags.push('intercettazioni')
+          else if (key.includes('reati contestati')) tags.push('reati')
+        }
         const documento = await api.createDocumento({
           praticaId: id,
           compartoId: comparti.find(c => c.key === 'da_classificare')?.id || (comparti[0]?.id ?? ''),
@@ -439,7 +452,7 @@ export function PraticaCanvasPage() {
           s3Key,
           hash: '', // Will be calculated by backend
           ocrStatus: 'pending',
-          tags: [],
+          tags,
         })
 
         setUploads(prev => prev.map((upload, idx) => 
@@ -471,6 +484,7 @@ export function PraticaCanvasPage() {
       title: 'Upload completato',
       description: `${files.length} file caricati con successo.`,
     })
+    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch {}
   }
 
   // Removed unused handlers
@@ -1185,6 +1199,40 @@ export function PraticaCanvasPage() {
   }
 
   useEffect(() => {
+    // Listen to uploads triggered from Drawer viewers
+    const onUpload = (e: any) => {
+      try {
+        const files: File[] = e?.detail?.files || []
+        const target = e?.detail?.target || null
+        if (!files || files.length === 0) return
+        handleFileDrop(files, null, target)
+      } catch {}
+    }
+    const broadcastDocs = () => {
+      try {
+                const items = documenti.map(d => {
+          const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf')
+          const serverThumb = isPdf && d.hash ? api.getThumbUrl(d.hash) : ''
+          const clientThumb = clientThumbByS3[d.s3Key]
+          const thumb = clientThumb || serverThumb || (isPdf ? api.getLocalFileUrl(d.s3Key) : '')
+                  return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: (d as any).tags || [] }
+        })
+        window.dispatchEvent(new CustomEvent('app:documents', { detail: { items } }))
+      } catch {}
+    }
+    const onRequestDocs = () => broadcastDocs()
+    window.addEventListener('app:upload-files' as any, onUpload as any)
+    window.addEventListener('app:request-documents' as any, onRequestDocs as any)
+    const onUploading = (e: any) => {
+      try {
+        const t = e?.detail?.target
+        const c = e?.detail?.count || 0
+        if (t?.type === 'archive') setArchiveUploadingCount(c)
+      } catch {}
+    }
+    window.addEventListener('app:uploading' as any, onUploading as any)
+    // initial broadcast so drawers get the list immediately
+    broadcastDocs()
     const onOpen = (e: any) => {
       try {
         const d = e?.detail || {}
@@ -1199,8 +1247,13 @@ export function PraticaCanvasPage() {
       } catch {}
     }
     window.addEventListener('app:open-doc', onOpen as any)
-    return () => window.removeEventListener('app:open-doc', onOpen as any)
-  }, [documenti])
+    return () => {
+      window.removeEventListener('app:open-doc', onOpen as any)
+      window.removeEventListener('app:upload-files' as any, onUpload as any)
+      window.removeEventListener('app:request-documents' as any, onRequestDocs as any)
+      window.removeEventListener('app:uploading' as any, onUploading as any)
+    }
+  }, [documenti, clientThumbByS3])
 
   const renderEvents = useCallback(() => <EventsTab currentDocId={selectedDocId || undefined} />, [selectedDocId])
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
@@ -1275,11 +1328,37 @@ export function PraticaCanvasPage() {
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v2_${id}`}
           docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
-          renderArchive={() => (
-            <div className="w-full h-full">
-              {renderArchivePane()}
-            </div>
-          )}
+          renderArchive={() => {
+            const showOverlay = archiveUploadingCount > 0
+            return (
+              <div className="relative w-full h-full">
+                <DocumentCollection
+                  title="Archivio"
+                  items={documenti.map(d => {
+                    const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf')
+                    const serverThumb = isPdf && d.hash ? api.getThumbUrl(d.hash) : ''
+                    const clientThumb = clientThumbByS3[d.s3Key]
+                    const thumb = clientThumb || serverThumb || (isPdf ? api.getLocalFileUrl(d.s3Key) : '')
+                    return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb }
+                  })}
+                  onOpen={(doc) => {
+                    const trovato = documenti.find(x => x.id === doc.id)
+                    if (trovato) openInTable(trovato)
+                  }}
+                  onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
+                  uploadingCount={archiveUploadingCount}
+                />
+                {showOverlay && (
+                  <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
+                    <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
+                    <div className="text-sm text-neutral-800">
+                      {archiveUploadingCount === 1 ? 'Sto caricando il file…' : `Sto caricando i ${archiveUploadingCount} file…`}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          }}
           renderSearch={() => (
             <SearchProvider defaultScope={'archive'} registry={{
               getAllDocs: () => documenti.map(d => ({ id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: (d.mime?.includes('word') ? 'word' : 'pdf') })),

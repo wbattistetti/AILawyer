@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import type { CaseGraph } from '../types/graph'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash } from 'lucide-react'
 import { DrawerWall, DrawerItem } from '../../drawers/DrawerWall'
+import type { DrawerType } from '../../drawers/types'
 
 export function CabinetView({ graph, onOpen }: { graph: CaseGraph; onOpen: (nodeId: string) => void }) {
   const colorFor = (label?: string) => {
@@ -30,12 +31,19 @@ export function CabinetView({ graph, onOpen }: { graph: CaseGraph; onOpen: (node
   }
 
   const [openMap, setOpenMap] = React.useState<Record<string, boolean>>({})
+  function typeFor(label?: string): DrawerType | undefined {
+    const s = (label || '').toLowerCase()
+    // Document collections
+    if (s.includes('elenco verbali') || s.includes('verbale di sequestro') || s.includes('verbale di arresto') || s.includes('reati contestati') || s.includes('intercett')) return 'DocumentCollection'
+    return undefined
+  }
   const items: DrawerItem[] = useMemo(() => graph.nodes.map(n => ({
     id: n.id,
     color: colorFor(n.label),
     label: n.label,
     icon: iconFor(n.label),
     isOpen: !!openMap[n.id],
+    type: typeFor(n.label),
   })), [graph, openMap])
 
   const handleToggle = (id: string) => {

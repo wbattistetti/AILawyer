@@ -44,7 +44,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
   // Listener per aprire un cassetto in una nuova tab
   useEffect(() => {
     function onOpenDrawer(e: any) {
-      const { drawerId, title } = (e?.detail || {}) as { drawerId: string; title?: string }
+      const { drawerId, title, type } = (e?.detail || {}) as { drawerId: string; title?: string; type?: string }
       if (!drawerId) return
       const json = modelRef.current.toJson() as any
       let center = findById(json.layout, 'centerTabset')
@@ -66,7 +66,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       })
       if (!exists) {
         center.children = center.children || []
-        center.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title } })
+        center.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title, drawerType: type } })
         center.selected = center.children.length - 1
       }
       const next = Model.fromJson(json)
@@ -129,8 +129,8 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
     }
     if (comp === 'drawer') {
-      const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string }
-      return <div className="w-full h-full overflow-hidden bg-white"><DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} /></div>
+      const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string; drawerType?: string }
+      return <div className="w-full h-full overflow-hidden bg-white"><DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} type={cfg.drawerType as any} /></div>
     }
     return null
   }
