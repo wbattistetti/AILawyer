@@ -55,6 +55,10 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       items={items}
       uploadingCount={uploadingCount}
       onOpen={() => {}}
+      onRemove={(doc)=>{
+        // Rimuovere solo dal cassetto: filtra localmente senza toccare l'Archivio
+        setItems(prev => prev.filter(d => d.id !== doc.id))
+      }}
       onDrop={(files) => {
         try {
           const ev = new CustomEvent('app:upload-files', { detail: { files, target: { type: 'drawer', id, title } } })

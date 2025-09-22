@@ -56,11 +56,11 @@ export function Drawer({
   };
 
   const style: React.CSSProperties = {
-    transform: isOpen ? 'translate(4px,6px) scale(1.06)' : 'translate(0,0) scale(1)',
+    transform: isOpen ? 'scale(1.03)' : 'scale(1)',
     transition: 'transform 180ms cubic-bezier(.22,.82,.18,1), filter 120ms ease',
     zIndex: isOpen ? 3 : 1,
-    // Ombra proiettata (solo esterna): non modifica il colore del cassetto
-    filter: isOpen ? 'drop-shadow(10px 12px 20px rgba(0,0,0,.38))' : 'none',
+    // Ombra gestita via filtro SVG sul pannello; qui nessun filtro CSS per evitare alone su top/left
+    filter: 'none',
     willChange: 'transform, filter',
   }
 
@@ -80,8 +80,21 @@ export function Drawer({
     >
       {/* Pure SVG: colore uniforme come il flowchart (nessun overlay scurente) */}
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden>
-        {/* Pannello con colore uniforme (come i blocchi del grafo) */}
-        <rect x="2" y="2" width="96" height="64" rx="6" fill={color as any} fillOpacity={0.12} stroke={color as any} strokeWidth={2.5} />
+        <defs>
+          {/* Ombra solo in basso (dy>0) e a destra (dx>0) */}
+          <filter id="drawerBR" x="-10%" y="-10%" width="140%" height="160%" colorInterpolationFilters="sRGB">
+            <feDropShadow dx="6" dy="8" stdDeviation="5" floodColor="rgba(0,0,0,0.42)" />
+          </filter>
+        </defs>
+        {/* Quando aperto, sposta leggermente il bordo sinistro verso destra per simulare l'estrazione del cassetto */}
+        {(() => {
+          const dx = isOpen ? 3 : 0; // unità su viewBox (≈3%)
+          const x = 2 + dx;
+          const w = 96 - dx;
+          return (
+            <rect x={x} y={2} width={w} height={64} rx={6} fill={color as any} fillOpacity={0.12} stroke={color as any} strokeWidth={2.5} filter={isOpen ? 'url(#drawerBR)' : undefined} />
+          )
+        })()}
         {/* Maniglia */}
         <g opacity="0.6">
           <rect x="28" y="42" width="44" height="8" rx="4" fill="#ffffff" stroke="#5b636b" strokeWidth="2" />

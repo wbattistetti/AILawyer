@@ -17,12 +17,14 @@ export function DocumentCollection({
   onOpen,
   onDrop,
   uploadingCount,
+  onRemove,
 }: {
   title?: string
   items: DocItem[]
   onOpen: (doc: DocItem) => void
   onDrop?: (files: File[]) => void
   uploadingCount?: number
+  onRemove?: (doc: DocItem) => void
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const onDropCb = useCallback((accepted: File[]) => {
@@ -53,6 +55,7 @@ export function DocumentCollection({
               onSelect={() => setSelectedId(doc.id)}
               onPreview={() => onOpen(doc)}
               onTable={() => onOpen(doc)}
+              onRemove={() => onRemove?.(doc)}
             />
           ))}
         </div>

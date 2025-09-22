@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
-// import { UploadPanel } from '../../components/upload/UploadPanel'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
 // import { PdfReader } from '../../components/viewers/PdfReader'
@@ -1346,6 +1345,7 @@ export function PraticaCanvasPage() {
                     if (trovato) openInTable(trovato)
                   }}
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
+                  onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (
