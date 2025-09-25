@@ -4,7 +4,7 @@ import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOv
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { baselineGraph } from '../features/case-overview/stories/_mocks'
 import 'flexlayout-react/style/light.css'
-import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash } from 'lucide-react'
+import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText } from 'lucide-react'
 import './DockWorkspaceV2.css'
 
 type DocTab = { id: string; title: string }
@@ -23,6 +23,7 @@ type Props = {
 
 export type DockWorkspaceV2Handle = {
   openDoc: (doc: DocTab) => void
+  openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
 }
 
 export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents }, ref) {
@@ -111,7 +112,27 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     setModel(nextModel)
   }
 
-  useImperativeHandle(ref, () => ({ openDoc }))
+  const openTmpDoc = (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
+    ensureBaseStructure()
+    const json = modelRef.current.toJson() as any
+    let center = findById(json.layout, 'centerTabset')
+    if (!center) {
+      if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
+        json.layout = getDefaultModelJson().layout
+      } else {
+        json.layout.children.push({ type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] })
+      }
+      center = findById(json.layout, 'centerTabset')
+    }
+    center.children = center.children || []
+    center.children.push({ type: 'tab', name: meta.title || 'Estratto', component: 'tmpdoc', config: { meta } })
+    center.selected = center.children.length - 1
+    const nextModel = Model.fromJson(json)
+    modelRef.current = nextModel
+    setModel(nextModel)
+  }
+
+  useImperativeHandle(ref, () => ({ openDoc, openTmpDoc }))
 
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
@@ -127,6 +148,39 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }
       return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
+    }
+    if (comp === 'tmpdoc') {
+      const cfg = (node.getConfig() || {}) as { meta?: { id: string; title: string; content?: string; text?: string; source?: { docId?: string; page?: number; title?: string; x0Pct?:number;x1Pct?:number;y0Pct?:number;y1Pct?:number } } }
+      const content = cfg.meta?.text || cfg.meta?.content || 'Estratto in memoria (non ancora salvato)'
+      const src: any = cfg.meta?.source || {}
+      const docLabel = (typeof src.title === 'string' && src.title.trim()) ? src.title : (src.docId || 'Documento')
+      const pageNumRaw = (src.page !== undefined && src.page !== null) ? Number(src.page) : NaN
+      const pageStart = Number.isFinite(src?.range?.startPage) ? Math.max(1, Math.floor(Number(src.range.startPage))) : undefined
+      const pageEnd = Number.isFinite(src?.range?.endPage) ? Math.max(1, Math.floor(Number(src.range.endPage))) : undefined
+      const pageNum = Number.isFinite(pageNumRaw) ? Math.max(1, Math.floor(pageNumRaw)) : (pageStart || undefined)
+      const pageLabel = pageStart && pageEnd ? (pageStart === pageEnd ? String(pageStart) : `${pageStart}-${pageEnd}`) : (pageNum ?? '-')
+      try { console.log('[TMPDOC][header]', { meta: cfg.meta, src, pageNumRaw, pageNum }) } catch {}
+      return (
+        <div className="w-full h-full overflow-auto bg-white p-4">
+          <div className="text-sm mb-3 flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 bg-slate-100 border rounded px-2 py-0.5"><FileText size={14} className="text-slate-700" /> Documento: {docLabel}</span>
+            <span className="inline-flex items-center gap-1 bg-slate-100 border rounded px-2 py-0.5">Pag: {pageLabel}</span>
+            <button
+              className="ml-auto md:ml-0 inline-flex items-center gap-1 rounded px-2 py-0.5 bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200/60"
+              onClick={() => {
+                try {
+                  const detail: any = { docId: src.docId, title: src.title, page: pageNum }
+                  const box = (src.box && typeof src.box.x0Pct==='number') ? src.box : (typeof src.x0Pct === 'number' && typeof src.y0Pct === 'number' ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined)
+                  if (box) detail.box = box
+                  try { console.log('[TMPDOC][goto-source][dispatch]', detail) } catch {}
+                  window.dispatchEvent(new CustomEvent('app:goto-source', { detail }))
+                } catch {}
+              }}
+            >Mostra nel documento</button>
+          </div>
+          <pre className="text-sm bg-slate-50 border rounded p-3 overflow-auto whitespace-pre-wrap break-words">{content}</pre>
+        </div>
+      )
     }
     if (comp === 'drawer') {
       const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string; drawerType?: string }
@@ -228,6 +282,9 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
 
   const iconFactory = (node: TabNode) => {
     const comp = node.getComponent()
+    if (comp === 'tmpdoc') {
+      return <ScanText size={20} className="text-emerald-600" />
+    }
     if (comp === 'drawer') {
       const cfg = (node.getConfig() || {}) as { drawerTitle?: string }
       const t = (cfg.drawerTitle || '').toLowerCase()
@@ -247,7 +304,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
   }
 
   return (
-    <div className="dockv2-root" style={{ height: '100%', width: '100%', boxSizing: 'border-box' }}>
+    <div className="dockv2-root" style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}>
       <LayoutAny
         model={model}
         factory={factory}

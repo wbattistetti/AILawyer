@@ -90,6 +90,22 @@ export async function documentiRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: 'Errore nel recupero del documento' })
     }
   })
+  // Delete documento
+  fastify.delete<{ Params: { id: string } }>(
+    '/documenti/:id',
+    async (request, reply) => {
+      try {
+        const documento = await prisma.documento.findUnique({ where: { id: request.params.id } })
+        if (!documento) return reply.status(404).send({ error: 'Documento non trovato' })
+        try { await storageService.deleteObject(documento.s3Key) } catch {}
+        await prisma.documento.delete({ where: { id: request.params.id } })
+        return { ok: true }
+      } catch (error) {
+        fastify.log.error(error)
+        return reply.status(500).send({ error: 'Errore nella cancellazione del documento' })
+      }
+    }
+  )
 
   // Update documento
   fastify.patch<{ 

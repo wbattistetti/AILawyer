@@ -76,6 +76,15 @@ export const api = {
     })
   },
 
+  async deleteDocumento(id: string): Promise<{ ok: boolean }> {
+    try {
+      return await fetchApi(`/documenti/${id}`, { method: 'DELETE' })
+    } catch (e) {
+      // backend potrebbe non avere ancora la route; segnala best-effort
+      return { ok: false } as any
+    }
+  },
+
   async getDocumentiByPratica(praticaId: string): Promise<Documento[]> {
     return fetchApi(`/pratiche/${praticaId}/documenti`)
   },

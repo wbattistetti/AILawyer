@@ -95,7 +95,7 @@ export function GraphCanvas({ graph }: { graph: CaseGraph }) {
   const defaultEdgeOptions = useMemo(() => ({ animated: false as const, type: 'straight' as const }), [])
 
   return (
-    <div ref={hostRef} className="w-full h-full">
+    <div ref={hostRef} className="w-full h-full min-h-[320px]">
       <ReactFlow
         nodes={nodes}
         edges={edges}

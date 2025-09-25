@@ -9,6 +9,8 @@ type DocItem = {
   mime?: string
   thumb?: string
   tags?: string[]
+  localUrl?: string
+  meta?: any
 }
 
 export function DocumentCollection({
@@ -46,15 +48,15 @@ export function DocumentCollection({
       <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
         <input {...getInputProps()} />
         <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
-          {items.map(doc => (
+      {items.map(doc => (
             <ThumbCard
               key={doc.id}
               title={doc.filename}
               imgSrc={doc.thumb || ''}
               selected={selectedId === doc.id}
               onSelect={() => setSelectedId(doc.id)}
-              onPreview={() => onOpen(doc)}
-              onTable={() => onOpen(doc)}
+          onPreview={() => onOpen(doc)}
+          onTable={() => onOpen(doc)}
               onRemove={() => onRemove?.(doc)}
             />
           ))}
@@ -72,5 +74,11 @@ export function DocumentCollection({
 }
 
 export default DocumentCollection
+
+
+
+
+
+
 
 

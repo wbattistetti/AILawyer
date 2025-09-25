@@ -28,9 +28,11 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
         // Se il cassetto ha un titolo che identifica una collezione, filtra per tag corrispondente
         const key = (title || '').toLowerCase()
         let filtered = arr
-        if (key.includes('verbale di sequestro')) filtered = arr.filter(x => (x.tags || []).includes('verbale_sequestro'))
-        else if (key.includes('verbale di arresto')) filtered = arr.filter(x => (x.tags || []).includes('verbale_arresto'))
-        else if (key.includes('elenco verbali redatti') || key.includes('verbali')) filtered = arr.filter(x => (x.tags || []).includes('verbale'))
+        if (key.includes('sequestro')) filtered = arr.filter(x => (x.tags || []).includes('verbale_sequestro'))
+        else if (key.includes('arresto')) filtered = arr.filter(x => (x.tags || []).includes('verbale_arresto'))
+        else if (key.includes('verbali') || key.includes('verbale')) filtered = arr.filter(x => (x.tags || []).includes('verbale'))
+        else if (key.includes('intercett')) filtered = arr.filter(x => (x.tags || []).includes('intercettazioni'))
+        else if (key.includes('reati')) filtered = arr.filter(x => (x.tags || []).includes('reati'))
         // default: nessun filtro
         setItems(filtered)
       } catch {}
@@ -54,9 +56,32 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       title={title}
       items={items}
       uploadingCount={uploadingCount}
-      onOpen={() => {}}
-      onRemove={(doc)=>{
-        // Rimuovere solo dal cassetto: filtra localmente senza toccare l'Archivio
+      onOpen={(doc) => {
+        try {
+          // Se è un pending (tmp:) apriamo una vista JSON semplice; se è persistito, apriamo il documento
+          if (doc.id && String(doc.id).startsWith('tmp:')) {
+            const data = { id: doc.id, title: ((doc as any)?.meta?.title || doc.filename), text: (doc as any)?.meta?.text || '', content: (doc as any)?.meta?.content || '', source: (doc as any)?.meta?.source }
+            window.dispatchEvent(new CustomEvent('app:open-doc', { detail: { docId: doc.id, meta: data } }))
+          } else {
+            window.dispatchEvent(new CustomEvent('app:open-doc', { detail: { docId: doc.id } }))
+          }
+        } catch {}
+      }}
+      onRemove={async (doc)=>{
+        try {
+          // Se è un estratto pending in memoria (id tmp:), rimuovilo dalla lista globale in-memory
+          if (doc.id && String(doc.id).startsWith('tmp:')) {
+            const pendingRaw = (window as any).__pendingExtracts as Array<any> | undefined
+            const pending = Array.isArray(pendingRaw) ? pendingRaw : []
+            const next = pending.filter(d => d.id !== doc.id)
+            ;(window as any).__pendingExtracts = next
+            try { window.dispatchEvent(new CustomEvent('app:documents', { detail: { items: next } })) } catch {}
+          } else {
+            // Persistito: prova a chiamare API delete (se disponibile)
+            try { await (await import('../../lib/api')).api.deleteDocumento?.(doc.id as any) } catch {}
+          }
+        } catch {}
+        // Aggiorna subito la vista del cassetto
         setItems(prev => prev.filter(d => d.id !== doc.id))
       }}
       onDrop={(files) => {
