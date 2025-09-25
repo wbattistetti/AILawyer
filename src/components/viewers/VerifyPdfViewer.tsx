@@ -123,9 +123,23 @@ function ensureNativeSelectStyles() {
     const style = document.createElement('style')
     style.id = id
     style.textContent = `
-    .ai-native-select .rpv-core__page-layer { user-select: none; -webkit-user-select: none; pointer-events: none; }
-    .ai-native-select .rpv-core__text-layer { user-select: none; -webkit-user-select: none; pointer-events: none; }
-    .ai-native-select .rpv-core__text-layer span { user-select: text; -webkit-user-select: text; pointer-events: auto; display:inline-block; padding:0 2px; margin-right:2px; }
+    /* Attivo solo quando ON */
+    .ai-native-select .rpv-core__page-layer,
+    .ai-native-select .rpv-core__canvas-layer,
+    .ai-native-select .rpv-core__annotation-layer,
+    .ai-native-select canvas {
+      pointer-events: none !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+    }
+    .ai-native-select .rpv-core__text-layer,
+    .ai-native-select .rpv-core__text-layer * {
+      pointer-events: auto !important;
+      user-select: text !important;
+      -webkit-user-select: text !important;
+    }
+    /* Evita flicker blu fuori dalla text-layer */
+    .ai-native-select ::selection { background: rgba(147,197,253,.35); }
     `
     document.head.appendChild(style)
     try { console.log('[NATIVE][css][inject]', { id, appended: true }) } catch {}
@@ -271,7 +285,8 @@ const suppressClearRef = useRef<boolean>(false)
     const host = hostRef.current
 		if (!host) return
     ensureNativeSelectStyles()
-    host.classList.toggle('ai-native-select', !!(selectMode && selectKind==='NATIVE'))
+    if (selectMode && selectKind==='NATIVE') host.classList.add('ai-native-select')
+    else host.classList.remove('ai-native-select')
     try { console.log('[NATIVE][enable][toggle-class]', { applied: host.classList.contains('ai-native-select'), selectMode, selectKind }) } catch {}
 		const textLayers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
 		const pageLayers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
@@ -300,47 +315,7 @@ const suppressClearRef = useRef<boolean>(false)
             ;(pl.style as any).webkitUserSelect = ''
         }
     }
-    let rafId: number | null = null
-    const reapply = () => {
-        if (rafId != null) cancelAnimationFrame(rafId)
-        rafId = requestAnimationFrame(() => {
-            const textLayers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
-            const pageLayers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
-            const annotationLayers = Array.from(host.querySelectorAll('.rpv-core__annotation-layer')) as HTMLElement[]
-            const canvasLayers = Array.from(host.querySelectorAll('.rpv-core__canvas-layer')) as HTMLElement[]
-            try { console.log('[NATIVE][reapply]', { textLayers: textLayers.length, pageLayers: pageLayers.length, annotationLayers: annotationLayers.length, canvasLayers: canvasLayers.length, isNative }) } catch {}
-            const isNative = !!(selectMode && selectKind === 'NATIVE')
-            // text layers
-            for (const tl of textLayers) {
-                if (isNative) {
-                    tl.style.pointerEvents = 'auto'; tl.style.userSelect = 'text'; (tl.style as any).webkitUserSelect = 'text'; tl.style.position = 'relative'; tl.style.zIndex = '2'
-                } else {
-                    tl.style.removeProperty('pointer-events'); tl.style.removeProperty('user-select'); (tl.style as any).webkitUserSelect = ''; tl.style.removeProperty('position'); tl.style.removeProperty('z-index')
-                }
-            }
-            // page layers
-            for (const pl of pageLayers) {
-                if (isNative) {
-                    pl.style.pointerEvents = 'none'; pl.style.userSelect = 'none'; (pl.style as any).webkitUserSelect = 'none'; pl.style.position = 'relative'; pl.style.zIndex = '1'
-                } else {
-                    pl.style.removeProperty('pointer-events'); pl.style.removeProperty('user-select'); (pl.style as any).webkitUserSelect = ''; pl.style.removeProperty('position'); pl.style.removeProperty('z-index')
-                }
-            }
-            // other layers
-            for (const l of [...annotationLayers, ...canvasLayers]) {
-                if (isNative) { l.style.pointerEvents = 'none'; l.style.zIndex = '0' } else { l.style.removeProperty('pointer-events'); l.style.removeProperty('z-index') }
-            }
-        })
-    }
-    const mo = new MutationObserver((muts) => {
-        let relevant = false
-        for (const m of muts) {
-            if (m.type === 'childList') { relevant = true; break }
-        }
-        if (relevant) reapply()
-    })
-    mo.observe(host, { subtree: true, childList: true, attributes: false })
-    return () => { mo.disconnect(); if (rafId != null) cancelAnimationFrame(rafId) }
+    return () => { host.classList.remove('ai-native-select') }
 	}, [selectMode, selectKind])
 
 	// Track page layers and ensure overlay/select roots

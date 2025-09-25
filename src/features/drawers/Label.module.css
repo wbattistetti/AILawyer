@@ -5,7 +5,7 @@
 .iconBox {
   width: 48px !important;
   height: 48px !important;
-  flex: 0 0 48px !important;
+  flex: 0 0 auto !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -13,7 +13,23 @@
 }
 .iconInner {
   display: block !important;
+  width: 48px !important;
+  height: 48px !important;
   margin: 0 !important;
   padding: 0 !important;
+}
+
+.labelText {
+  display: block !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  /* Font fisso richiesto */
+  font-size: 14px !important;
+  flex: 1 1 auto !important;
+  text-align: left !important;
 }
 

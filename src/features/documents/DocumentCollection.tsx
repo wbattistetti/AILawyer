@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
+import { FileText, ScanText } from 'lucide-react'
 
 type DocItem = {
   id: string
@@ -32,9 +33,9 @@ export function DocumentCollection({
   const onDropCb = useCallback((accepted: File[]) => {
     onDrop?.(accepted)
   }, [onDrop])
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop: onDropCb,
-    noClick: false,
+    noClick: true,
     multiple: true,
     accept: {
       'application/pdf': ['.pdf'],
@@ -44,22 +45,45 @@ export function DocumentCollection({
 
   return (
     <div className="w-full h-full flex flex-col relative">
-      {title && <div className="px-3 py-2 text-sm font-medium border-b bg-white">{title}</div>}
+      {title && (
+        <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center">
+          <div className="flex-1" />
+          <button
+            type="button"
+            className="ml-2 px-3 py-1 text-xs rounded border bg-blue-600 text-white hover:bg-blue-700"
+            onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); open() }}
+          >Carica documento</button>
+        </div>
+      )}
       <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
         <input {...getInputProps()} />
         <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
-      {items.map(doc => (
+      {items.map(doc => {
+          const meta = (doc as any).meta || {}
+          const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
+          const headerIcon = isExtract ? <ScanText className="w-4 h-4" /> : <FileText className="w-4 h-4" />
+          const titleText = meta.title || (doc.filename||'').replace(/\.json$/,'')
+          const excerpt = (meta.text || meta.content || '').toString().slice(0, 220)
+          const src = meta.source || {}
+          return (
             <ThumbCard
               key={doc.id}
-              title={doc.filename}
-              imgSrc={doc.thumb || ''}
+              title={isExtract ? titleText : doc.filename}
+              imgSrc={isExtract ? '' : (doc.thumb || '')}
+              headerIcon={isExtract ? headerIcon : undefined}
+              headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
+              excerpt={isExtract ? excerpt : undefined}
+              metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
+              metaPage={isExtract ? (src.page || undefined) : undefined}
+              onShow={isExtract ? (()=>{ try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct!=null? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct }: undefined) } })) } catch {} }) : undefined}
               selected={selectedId === doc.id}
               onSelect={() => setSelectedId(doc.id)}
-          onPreview={() => onOpen(doc)}
-          onTable={() => onOpen(doc)}
+              onPreview={() => onOpen(doc)}
+              onTable={() => onOpen(doc)}
               onRemove={() => onRemove?.(doc)}
             />
-          ))}
+          )
+        })}
         </div>
       </div>
       {typeof uploadingCount === 'number' && uploadingCount > 0 && (

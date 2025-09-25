@@ -20,7 +20,7 @@ type Props = {
   className?: string;
 };
 
-export function DrawerWall({ items, onToggle, gap = 5, padding = 0, className }: Props) {
+export function DrawerWall({ items, onToggle, gap = 5, padding = 16, className }: Props) {
   const { ref, rect } = useMeasure<HTMLDivElement>();
 
   const n = Math.max(items.length, 1);
@@ -48,9 +48,9 @@ export function DrawerWall({ items, onToggle, gap = 5, padding = 0, className }:
 
   return (
     <div ref={ref} className={className ?? "w-full h-full relative"}>
-      {/* Cornice dell'armadio (solo bordo sottile) */}
-      <div className="absolute inset-0 border border-black/10" />
-      <div className="absolute" style={{ left: padding + offsetX, top: padding + 20, width: gridW, height: gridH }}>
+      {/* Bordi esterni dell'armadio con margini: sopra, sotto, sinistra, destra */}
+      <div className="absolute" style={{ left: padding, right: padding, top: padding, bottom: padding, border: '2px solid rgba(0,0,0,0.12)', borderRadius: 8 }} />
+      <div className="absolute" style={{ left: padding + offsetX, top: padding + offsetY, width: gridW, height: gridH }}>
         {items.map((it, i) => {
           const r = Math.floor(i / cols);
           const c = i % cols;

@@ -23,18 +23,13 @@ function LabelPlate({ icon, text }: { icon?: React.ReactNode; text: string }) {
   }
   return (
     <div
-      className={clsx(
-        "absolute",
-        "py-1",
-        "flex items-center",
-        styles.label
-      )}
+      className={clsx("absolute","py-1","flex items-center", styles.label)}
       style={{ left: 10, right: 10, top: '33%', transform: 'translateY(-50%)', background: 'transparent', gap: '5px', paddingLeft: 0, paddingRight: 0 }}
     >
       <div className={styles.iconBox}>
         {iconNode}
       </div>
-      <span className="text-[12px] font-medium leading-snug break-words">{text}</span>
+      <span className={styles.labelText}>{text}</span>
     </div>
   )
 }
@@ -81,9 +76,18 @@ export function Drawer({
       {/* Pure SVG: colore uniforme come il flowchart (nessun overlay scurente) */}
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden>
         <defs>
-          {/* Ombra solo in basso (dy>0) e a destra (dx>0) */}
-          <filter id="drawerBR" x="-10%" y="-10%" width="140%" height="160%" colorInterpolationFilters="sRGB">
-            <feDropShadow dx="6" dy="8" stdDeviation="5" floodColor="rgba(0,0,0,0.42)" />
+          {/* Ombra stratificata: ambient + offset, solo BR, con bounds ampi per evitare tagli netti */}
+          <filter id="drawerBR" x="-25%" y="-20%" width="180%" height="220%" filterUnits="objectBoundingBox" colorInterpolationFilters="sRGB">
+            {/* offset and blur the alpha */}
+            <feOffset in="SourceAlpha" dx="7" dy="9" result="off"/>
+            <feGaussianBlur in="off" stdDeviation="6" result="blur"/>
+            {/* keep only outside of the shape to avoid inner dark rectangle */}
+            <feComposite in="blur" in2="SourceAlpha" operator="out" result="shadowOutside"/>
+            <feColorMatrix in="shadowOutside" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.28 0" result="shadowColored"/>
+            <feMerge>
+              <feMergeNode in="shadowColored"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
           </filter>
         </defs>
         {/* Quando aperto, sposta leggermente il bordo sinistro verso destra per simulare l'estrazione del cassetto */}

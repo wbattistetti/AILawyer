@@ -4,6 +4,12 @@ import { Eye, Table, Trash, ScanText, FileText } from 'lucide-react'
 interface ThumbCardProps {
   title: string
   imgSrc: string
+  headerIcon?: React.ReactNode
+  headerColorClass?: string
+  excerpt?: string
+  metaDocLabel?: string
+  metaPage?: number | string
+  onShow?: () => void
   selected?: boolean
   onSelect?: () => void
   onPreview?: () => void
@@ -16,7 +22,7 @@ interface ThumbCardProps {
   hasOcr?: boolean
 }
 
-export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, onOcrQuick, ocrProgressPct, hasOcr }: ThumbCardProps) {
+export function ThumbCard({ title, imgSrc, headerIcon, headerColorClass, excerpt, metaDocLabel, metaPage, onShow, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, onOcrQuick, ocrProgressPct, hasOcr }: ThumbCardProps) {
   const [imgError, setImgError] = useState(false)
   return (
     <div
@@ -25,20 +31,41 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPrev
       onClick={(e) => { e.stopPropagation(); onSelect?.() }}
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
-      <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden flex items-center justify-center ${selected ? 'ring-2 ring-blue-500' : ''}`}>
-        {!imgError && imgSrc ? (
-          <img
-            src={imgSrc}
-            alt={title}
-            className="max-w-full max-h-full object-contain"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="flex flex-col items-center justify-center text-muted-foreground/70">
-            <FileText className="w-10 h-10 mb-1" />
-            <span className="text-[10px]">Anteprima non disponibile</span>
-          </div>
-        )}
+      <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+        {/* Header bar */}
+        <div className={`absolute left-2 right-2 top-2 h-7 rounded text-white flex items-center gap-2 px-2 ${headerColorClass || 'bg-amber-500'}`}>
+          {headerIcon ?? <FileText className="w-4 h-4" />}
+          <div className="text-xs font-semibold truncate" title={title}>{title}</div>
+        </div>
+        {/* Body: image or excerpt */}
+        <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden">
+          {metaDocLabel && (
+            <div className="text-[10px] leading-snug mb-1 flex items-center gap-2">
+              <div className="flex-1 flex justify-center">
+                <span className="inline-flex items-center gap-1 max-w-[80%] truncate px-2 py-0.5 rounded border border-amber-400 bg-amber-50 text-amber-800">
+                  <FileText className="w-3 h-3" />
+                  <span className="truncate" title={metaDocLabel}>{metaDocLabel}</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {typeof metaPage !== 'undefined' && (<span className="whitespace-nowrap text-neutral-700">Pag: {metaPage}</span>)}
+                {onShow && (
+                  <button
+                    className="inline-flex items-center px-2 py-0.5 border rounded bg-blue-100 text-blue-800 hover:bg-blue-200 text-[10px]"
+                    onClick={(e)=>{ e.stopPropagation(); onShow() }}
+                  >Mostra</button>
+                )}
+              </div>
+            </div>
+          )}
+          {!imgError && imgSrc ? (
+            <div className="flex-1 flex items-center justify-center">
+              <img src={imgSrc} alt={title} className="max-w-full max-h-full object-contain" onError={() => setImgError(true)} />
+            </div>
+          ) : (
+            <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>
+          )}
+        </div>
         {typeof ocrProgressPct === 'number' && (
           <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
             <div className="w-32 h-2 bg-black/10 rounded overflow-hidden">
@@ -101,7 +128,7 @@ export function ThumbCard({ title, imgSrc, selected, onSelect, onPreview, onPrev
           </button>
         </div>
       </div>
-      <div className="mt-1 text-xs break-words leading-snug max-w-[10rem]">{title}</div>
+      {/* no filename footer for extracts */}
     </div>
   )
 }

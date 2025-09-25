@@ -49,6 +49,13 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       if (!drawerId) return
       const json = modelRef.current.toJson() as any
       let center = findById(json.layout, 'centerTabset')
+      // Ensure a right side drawer panel
+      let right = (json.layout.children || []).find((c: any) => c.id === 'rightTabset')
+      if (!right) {
+        json.layout.children = json.layout.children || []
+        json.layout.children.push({ type: 'tabset', id: 'rightTabset', enableTabStrip: true, weight: 26, children: [] })
+      }
+      right = (json.layout.children || []).find((c: any) => c.id === 'rightTabset')
       if (!center) {
         if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
           json.layout = getDefaultModelJson().layout
@@ -66,9 +73,9 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         }
       })
       if (!exists) {
-        center.children = center.children || []
-        center.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title, drawerType: type } })
-        center.selected = center.children.length - 1
+        right.children = right.children || []
+        right.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title, drawerType: type } })
+        right.selected = (right.children || []).length - 1
       }
       const next = Model.fromJson(json)
       setModel(next)
