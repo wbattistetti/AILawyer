@@ -24,6 +24,7 @@ import { getTextInPdfBox } from '../../features/pdf/getTextInPdfBox'
 import { cryptoRandom, formatDocTitle } from '../../utils/misc'
 import { SearchProvider } from '../search/SearchProvider'
 import { SearchPanelTree } from '../search/SearchPanelTree'
+import { getDrawerOptionsSorted } from '../../features/drawers/drawerRegistry'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -195,7 +196,8 @@ const [selectKind, setSelectKind] = useState<'NATIVE'|'OCR'>('NATIVE')
 const [selectTick, setSelectTick] = useState<number>(0)
 const [_selBox, setSelBox] = useState<{ x:number; y:number; w:number; h:number }|null>(null)
 const [extractOpen, setExtractOpen] = useState<boolean>(false)
-const [extractType, setExtractType] = useState<'CONTESTAZIONE'|'NOTIZIA_REATO'|'VERBALE_SEQUESTRO'|'VERBALE_ARRESTO'>('CONTESTAZIONE')
+	const drawerOptions = getDrawerOptionsSorted()
+	const [extractType, setExtractType] = useState<string>(drawerOptions[0]?.id || 'verbale')
 const [extractNotes, setExtractNotes] = useState<string>('')
 const [extractPage, setExtractPage] = useState<number>(1)
 const [extractPos, setExtractPos] = useState<{ x:number; y:number }>({ x: 100, y: 100 })
@@ -282,9 +284,9 @@ const suppressClearRef = useRef<boolean>(false)
 
     // Ensure native selection works: enable selection on text-layer only (avoid wrapper selection flicker)
 	useEffect(() => {
-    const host = hostRef.current
+		const host = hostRef.current
 		if (!host) return
-    ensureNativeSelectStyles()
+        ensureNativeSelectStyles()
     if (selectMode && selectKind==='NATIVE') host.classList.add('ai-native-select')
     else host.classList.remove('ai-native-select')
     try { console.log('[NATIVE][enable][toggle-class]', { applied: host.classList.contains('ai-native-select'), selectMode, selectKind }) } catch {}
@@ -303,18 +305,18 @@ const suppressClearRef = useRef<boolean>(false)
 				;(tl.style as any).webkitUserSelect = ''
 			}
 		}
-    for (const pl of pageLayers) {
-        if (selectMode && selectKind === 'NATIVE') {
+		for (const pl of pageLayers) {
+			if (selectMode && selectKind === 'NATIVE') {
             // IMPORTANT: non catturare gli eventi sul page-layer, altrimenti la selezione cade nel vuoto
             pl.style.pointerEvents = 'none'
-            pl.style.userSelect = 'none'
-            ;(pl.style as any).webkitUserSelect = 'none'
-        } else {
-            pl.style.removeProperty('pointer-events')
-            pl.style.removeProperty('user-select')
-            ;(pl.style as any).webkitUserSelect = ''
-        }
-    }
+				pl.style.userSelect = 'none'
+				;(pl.style as any).webkitUserSelect = 'none'
+			} else {
+				pl.style.removeProperty('pointer-events')
+				pl.style.removeProperty('user-select')
+				;(pl.style as any).webkitUserSelect = ''
+			}
+		}
     return () => { host.classList.remove('ai-native-select') }
 	}, [selectMode, selectKind])
 
@@ -323,7 +325,7 @@ const suppressClearRef = useRef<boolean>(false)
 		const host = hostRef.current
 		if (!host) return
 		const ensureRoots = () => {
-				let added = 0
+            let added = 0
 				// Primary: holders with data-page-number
 				let holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
 				// Fallback: if none, infer pages from page-layer order
@@ -352,43 +354,43 @@ const suppressClearRef = useRef<boolean>(false)
 						return fake as any
 					})
 				}
-				for (const holder of holders) {
-					const parsed = parseInt(holder.getAttribute('data-page-number') || '', 10)
-					if (!Number.isFinite(parsed) || parsed <= 0) continue
-					const pageNum = parsed
+            for (const holder of holders) {
+                const parsed = parseInt(holder.getAttribute('data-page-number') || '', 10)
+                if (!Number.isFinite(parsed) || parsed <= 0) continue
+                const pageNum = parsed
 					const pageLayer = (holder as any).querySelector('.rpv-core__page-layer') as HTMLElement | null
-					if (!pageLayer) continue
-					pageElsRef.current.set(pageNum, pageLayer)
-					elToPageRef.current.set(pageLayer, pageNum)
-					const textLayer = (pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement) || pageLayer
-					if (!textLayer.style.position) textLayer.style.position = 'relative'
-					let over = overlayRootsRef.current.get(pageNum)
-					if (!over) {
-						over = document.createElement('div')
-						over.className = 'ai-overlay-root'
-						Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
-						textLayer.appendChild(over)
-						overlayRootsRef.current.set(pageNum, over)
-						added++
-					}
-					let sel = selectRootsRef.current.get(pageNum)
-					if (!sel) {
-						sel = document.createElement('div')
-						sel.className = 'ai-select-root'
-						if (!pageLayer.style.position) pageLayer.style.position = 'relative'
-						pageLayer.appendChild(sel)
-						selectRootsRef.current.set(pageNum, sel)
-						added++
-					}
+                if (!pageLayer) continue
+                pageElsRef.current.set(pageNum, pageLayer)
+                elToPageRef.current.set(pageLayer, pageNum)
+                const textLayer = (pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement) || pageLayer
+                if (!textLayer.style.position) textLayer.style.position = 'relative'
+                let over = overlayRootsRef.current.get(pageNum)
+                if (!over) {
+                    over = document.createElement('div')
+                    over.className = 'ai-overlay-root'
+                    Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
+                    textLayer.appendChild(over)
+                    overlayRootsRef.current.set(pageNum, over)
+                    added++
+                }
+                let sel = selectRootsRef.current.get(pageNum)
+                if (!sel) {
+                    sel = document.createElement('div')
+                    sel.className = 'ai-select-root'
+                    if (!pageLayer.style.position) pageLayer.style.position = 'relative'
+                    pageLayer.appendChild(sel)
+                    selectRootsRef.current.set(pageNum, sel)
+                    added++
+                }
 					Object.assign(sel.style, {
 						position:'absolute', inset:'0', zIndex:'2000', userSelect:'none',
-						cursor: (selectMode && selectKind==='OCR') ? 'crosshair' : '',
-						pointerEvents: (selectMode && selectKind==='OCR') ? 'auto' : 'none',
-						touchAction: (selectMode && selectKind==='OCR') ? ('none' as any) : ''
-					} as any)
-				}
-				if (added > 0) setSelectTick(t => t + 1)
-			}
+					cursor: (selectMode && selectKind==='OCR') ? 'crosshair' : '',
+					pointerEvents: (selectMode && selectKind==='OCR') ? 'auto' : 'none',
+					touchAction: (selectMode && selectKind==='OCR') ? ('none' as any) : ''
+                } as any)
+            }
+            if (added > 0) setSelectTick(t => t + 1)
+        }
             ensureRoots()
 				const mo = new MutationObserver(() => ensureRoots())
                 mo.observe(host, { subtree:true, childList:true, attributes:true, attributeFilter:['style','class'] })
@@ -697,7 +699,7 @@ const suppressClearRef = useRef<boolean>(false)
 				// bbox normalizzato al layer pagina
 				let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity
 				for (const rc of pageRects) { l = Math.min(l, rc.left); t = Math.min(t, rc.top); r = Math.max(r, rc.right); b = Math.max(b, rc.bottom) }
-                const viewportBox = { x: l - pr.left, y: t - pr.top, w: Math.max(1, r - l), h: Math.max(1, b - t) }
+				const viewportBox = { x: l - pr.left, y: t - pr.top, w: Math.max(1, r - l), h: Math.max(1, b - t) }
 				try { console.log('[NATIVE][bbox] viewportBox', viewportBox, 'pageNum', pageNum) } catch {}
 				// posizione pannello
 				const panelW = 460, panelH = 260
@@ -750,7 +752,7 @@ const suppressClearRef = useRef<boolean>(false)
                   const endPos = { xPct: (viewportBox.x + viewportBox.w) / pr.width, yPct: (viewportBox.y + viewportBox.h) / pr.height }
                   ;(lastSelection as any).range = { startPage: start, endPage: end, startPos, endPos }
                   console.log('[EXTRACT][RANGE]', (lastSelection as any).range)
-                } catch {}
+                                                } catch {}
                 finally { mouseDownPageRef.current = null; mouseDownPosRef.current = null }
 			} catch {}
 		}
@@ -800,13 +802,13 @@ const suppressClearRef = useRef<boolean>(false)
                         const ax = (x - r.left) / r.width
                         const ay = (y - r.top) / r.height
                         mouseDownPosRef.current = { xPct: ax, yPct: ay }
-                    }
-                } catch {}
+                                                    }
                                                 } catch {}
+                                        } catch {}
 			try { console.log('[NATIVE][event] mousedown start selecting', { mouseDownPage: mouseDownPageRef.current }) } catch {}
             // Non sopprimere più il ::selection: lasciamo la selezione nativa visibile e non tocchiamo gli span
 		}
-        const onMouseUp = (ev: MouseEvent) => {
+		const onMouseUp = (ev: MouseEvent) => {
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
 			if (ev.clientX < hostR.left || ev.clientX > hostR.right || ev.clientY < hostR.top || ev.clientY > hostR.bottom) return
@@ -887,13 +889,13 @@ const suppressClearRef = useRef<boolean>(false)
                               const left = m.x0Pct, top = m.y0Pct, width = Math.max(0, m.x1Pct - m.x0Pct), height = Math.max(0, m.y1Pct - m.y0Pct)
                               setAreas(prev => { const next = prev.filter(a => a.id !== 'goto-match'); next.push({ id:'goto-match', pageIndex, left, top, width, height }); return next })
                               console.log('[HIGHLIGHT][native]', { pageIndex, left, top, width, height })
-                            } catch {}
+                                                } catch {}
 		}
 					}
                                                     }
 				// If we received a range (startPage-endPage), log it for debugging
 				try { if (detail?.match?.range) console.log('[GOTO-MATCH][range]', detail.match.range) } catch {}
-                                                } catch {}
+                                        } catch {}
 			try {
 				(searchPluginInstance as any).clearHighlights?.()
 				;(searchPluginInstance as any).highlight?.({ keyword: detail.q })
@@ -1005,11 +1007,11 @@ const suppressClearRef = useRef<boolean>(false)
 					  onClick={()=>{
 					    const title = (extractTitle || '').trim() || 'Estratto'
 					    if (!lastSelection || !(lastSelection.text||'').trim()) { console.warn('[EXTRACT][SAVE][toolbar] no selection'); return }
-                        const payload = {
+					    const payload = {
 					      kind: 'EXTRACT',
 					      type: extractType,
 					      title,
-                          notes: extractNotes || '',
+					      notes: extractNotes || '',
                           source: { docId: docId || 'current', fileUrl, page: extractPage, range: (lastSelection as any)?.range || null },
 					      viewportBox: lastSelection?.viewportBox || null,
 					      bboxPdf: lastSelection?.bboxPdf || null,
@@ -1023,11 +1025,8 @@ const suppressClearRef = useRef<boolean>(false)
 					    try {
 					      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
 					      const file = new File([blob], fileName, { type: 'application/json' })
-					      let drawerTitle = ''
-					      if (extractType === 'VERBALE_SEQUESTRO') drawerTitle = 'Verbale di sequestro'
-					      else if (extractType === 'VERBALE_ARRESTO') drawerTitle = 'Verbale di arresto'
-					      else if (extractType === 'CONTESTAZIONE') drawerTitle = 'Elenco verbali redatti'
-					      else if (extractType === 'NOTIZIA_REATO') drawerTitle = 'Elenco verbali redatti'
+					      const chosen = drawerOptions.find(o => o.id === extractType)
+					      const drawerTitle = chosen?.label || ''
 					      const target = drawerTitle ? { type: 'drawer', title: drawerTitle } : { type: 'archive' }
 					      const ev = new CustomEvent('app:upload-files', { detail: { files: [file], target } })
 					      window.dispatchEvent(ev)
@@ -1227,11 +1226,10 @@ const suppressClearRef = useRef<boolean>(false)
                                 </div>
                                 <div className="col-span-2">
                                     <label className="text-sm block mb-1">Aggiungi estratto al cassetto:</label>
-                                    <select className="w-full border rounded px-2 py-1" value={extractType} onChange={(e)=>setExtractType(e.target.value as any)}>
-                                        <option value="CONTESTAZIONE">Contestazione</option>
-                                        <option value="NOTIZIA_REATO">Notizia di reato</option>
-                                        <option value="VERBALE_SEQUESTRO">Verbale di sequestro</option>
-                                        <option value="VERBALE_ARRESTO">Verbale di arresto</option>
+                                    <select className="w-full border rounded px-2 py-1" value={extractType} onChange={(e)=>setExtractType(e.target.value)}>
+                                        {drawerOptions.map((opt)=> (
+                                          <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="col-span-2">
@@ -1260,10 +1258,8 @@ const suppressClearRef = useRef<boolean>(false)
                                         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
                                         const file = new File([blob], fileName, { type: 'application/json' })
                                         // Map combo choice to explicit tags so drawers will match regardless of title wording
-                                        let tags: string[] = []
-                                        if (extractType === 'VERBALE_SEQUESTRO') tags = ['verbale_sequestro','verbale']
-                                        else if (extractType === 'VERBALE_ARRESTO') tags = ['verbale_arresto','verbale']
-                                        else if (extractType === 'CONTESTAZIONE' || extractType === 'NOTIZIA_REATO') tags = ['verbale']
+                                        const chosen = drawerOptions.find(o => o.id === extractType)
+                                        const tags: string[] = chosen ? [chosen.id] : []
                                         // Add as in-memory pending extract first (visualize immediately), persistence will happen on Save pratica
                                         try {
                                           const pending = ((window as any).__pendingExtracts || []) as Array<any>

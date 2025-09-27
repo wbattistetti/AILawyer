@@ -8,6 +8,7 @@ import type { CaseGraph } from '../types/graph'
 import type { OverviewViewState } from '../types/view'
 import { useOverviewState } from '../hooks/useOverviewState'
 import { GraphCanvas } from './GraphCanvas'
+import GraphBuilder from '../graph-builder/GraphBuilder'
 import { OverviewToolbar } from './OverviewToolbar'
 import CabinetView from './CabinetView'
 
@@ -47,7 +48,7 @@ export function CaseOverviewDiagram(props: CaseOverviewDiagramProps) {
         {state.viewMode === 'CABINET' ? (
           <CabinetView graph={props.graph} onOpen={(id)=>{ /* open editor via custom event - consumed by GraphCanvas editor */ }} />
         ) : (
-          <GraphCanvas graph={props.graph} />
+          <GraphBuilder />
         )}
       </div>
     </div>
