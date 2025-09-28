@@ -1,6 +1,6 @@
 import React from 'react'
 import { Handle, Position, useViewport } from 'reactflow'
-import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike, Trash2, Pencil, Palette, Menu, Droplet, X, Paintbrush, CaseSensitive, Bold, Italic } from 'lucide-react'
+import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike, Trash2, Pencil, Palette, Menu, Droplet, X, Paintbrush, CaseSensitive, Bold, Italic, Check, Gavel } from 'lucide-react'
 import type { NodeStyle } from './types'
 import type { BuilderNodeData, NodeKind } from './types'
 
@@ -13,6 +13,7 @@ const iconMap: Record<NodeKind, any> = {
   restaurant: UtensilsCrossed,
   vehicle: Car,
   motorcycle: Bike,
+  other_investigation: Gavel,
 }
 
 function colorFor(kind: NodeKind): string {
@@ -25,6 +26,7 @@ function colorFor(kind: NodeKind): string {
     case 'restaurant': return '#ef4444' // red
     case 'vehicle': return '#475569' // slate-600
     case 'motorcycle': return '#0ea5e9' // sky
+    case 'other_investigation': return '#111827' // near-black judiciary feel
     default: return '#64748b'
   }
 }
@@ -58,10 +60,13 @@ export default function NodeView(props: any) {
   const [multiDraft, setMultiDraft] = React.useState<string>('')
   const [editRect, setEditRect] = React.useState<{ w:number; h:number } | null>(null)
   const textRef = React.useRef<HTMLTextAreaElement | null>(null)
-  const baseFontSize = data.style?.textFontSizePx ?? 6
-  const baseFontWeight: React.CSSProperties['fontWeight'] = data.style?.textBold ? 700 : 300
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
+  const [editorWidthPx, setEditorWidthPx] = React.useState<number | null>(null)
+  const editSnapshotRef = React.useRef<string>('')
+  const baseFontSize = data.style?.textFontSizePx ?? 10
+  const baseFontWeight: React.CSSProperties['fontWeight'] = data.style?.textBold ? 700 : 400
   const baseFontStyle: React.CSSProperties['fontStyle'] = data.style?.textItalic ? 'italic' : 'normal'
-  const baseTextColor = data.style?.textColor
+  const baseTextColor = data.style?.textColor ?? '#000000'
   const labelWidth = Math.max(72, data.style?.labelWidthPx ?? 72)
   const labelRef = React.useRef<HTMLDivElement | null>(null)
   const [showResize, setShowResize] = React.useState(false)
@@ -73,7 +78,9 @@ export default function NodeView(props: any) {
     const onMove = (ev: MouseEvent) => {
       const s = startRef.current; if (!s) return
       const dx = ev.clientX - s.startX
-      let w = s.startW + (s.side === 'right' ? dx : -dx)
+      const delta = (s.side === 'right' ? dx : -dx)
+      // Symmetric expand/shrink around center: width changes by 2*delta
+      let w = s.startW + 2 * delta
       w = Math.max(60, Math.min(260, w))
       const ns = { ...(data.style||{}), labelWidthPx: Math.round(w) } as NodeStyle
       window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: nodeId, style: ns } }))
@@ -95,8 +102,10 @@ export default function NodeView(props: any) {
         setShowResize(false)
       }
     }
+    const onHide = () => setShowResize(false)
     window.addEventListener('mousedown', onDocMouseDown)
-    return () => window.removeEventListener('mousedown', onDocMouseDown)
+    window.addEventListener('gb:hide-resize', onHide as any)
+    return () => { window.removeEventListener('mousedown', onDocMouseDown); window.removeEventListener('gb:hide-resize', onHide as any) }
   }, [])
   React.useEffect(() => {
     if (editing && labelRef.current) {
@@ -108,8 +117,26 @@ export default function NodeView(props: any) {
   const autoResize = React.useCallback(() => {
     const el = textRef.current
     if (!el) return
+    // height = content + one extra line
+    const cs = window.getComputedStyle(el)
+    const lh = parseFloat(cs.lineHeight || '14') || 14
     el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    el.style.height = `${el.scrollHeight + lh}px`
+    try {
+      if (!canvasRef.current) canvasRef.current = document.createElement('canvas')
+      const ctx = canvasRef.current.getContext('2d')
+      if (ctx) {
+        const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+        ctx.font = font
+        const lines = (el.value || '').split('\n')
+        let max = 0
+        for (const line of lines) { max = Math.max(max, ctx.measureText(line || ' ').width) }
+        const extra = ctx.measureText('  ').width
+        const pad = 8
+        const nextW = Math.ceil(max + extra + pad)
+        setEditorWidthPx(nextW)
+      }
+    } catch {}
   }, [])
 
   React.useEffect(() => { if (editing) autoResize() }, [editing, autoResize])
@@ -118,13 +145,22 @@ export default function NodeView(props: any) {
     setShowResize(false)
     const full = [data.label, (dob ? `${dob}${ageStr}` : ''), ((data.kind==='male'||data.kind==='female') ? `Precedenti PS: ${ps}` : '')].filter(Boolean).join('\n')
     setMultiDraft(full)
+    editSnapshotRef.current = full
+    requestAnimationFrame(() => autoResize())
   }
   const [hoverNode, setHoverNode] = React.useState(false)
+  const [hoverCircle, setHoverCircle] = React.useState(false)
+  const [isConnecting, setIsConnecting] = React.useState(false)
+  React.useEffect(() => {
+    const onConn = (e:any) => setIsConnecting(!!e?.detail?.on)
+    window.addEventListener('gb:connecting', onConn as any)
+    return () => window.removeEventListener('gb:connecting', onConn as any)
+  }, [])
   return (
-    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor }} className="select-none group drag-handle" >
-      {/* Target al centro (connectionMode='loose' consente drop ovunque sul nodo) */}
-      <Handle id="target-center" type="target" position={Position.Bottom} className="opacity-0" style={{ left:'50%', top:'50%', transform:'translate(-50%, -50%)' }} />
-      <div className="mx-auto relative" style={{ width: size, height: size, borderRadius: '9999px', display:'grid', placeItems:'center', position:'relative', boxShadow:`0 0 0 ${Math.max(1, data.style?.ringWidth ?? 1)}px ${data.style?.ringColor ?? col}`, background: data.style?.ringFill ?? '#fff' }}>
+    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor, fontFamily: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif", WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale', textRendering: 'optimizeLegibility' }} className="select-none group drag-region" >
+      <div className="mx-auto relative" style={{ width: size, height: size, borderRadius: '9999px', display:'grid', placeItems:'center', position:'relative', boxShadow:`0 0 0 ${Math.max(1, data.style?.ringWidth ?? 1)}px ${data.style?.ringColor ?? col}`, background: data.style?.ringFill ?? '#fff', cursor: (!isConnecting ? 'grab' : 'default') }} onMouseEnter={()=>setHoverCircle(true)} onMouseLeave={()=>setHoverCircle(false)}>
+        {/* Target: full circle hit-area inside circle container */}
+        <Handle id="target-circle" type="target" position={Position.Bottom} className="opacity-0" style={{ left:'50%', top: size/2, transform:'translate(-50%, -50%)', width: size, height: size, borderRadius: 9999, zIndex: 30, pointerEvents: (isConnecting ? 'all' : 'none') as any }} />
         <Icon size={16} color={col} />
         {((data.style?.bigXSizePx ?? 0) > 0 || data.style?.showBigX) && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents:'none' }}>
@@ -145,6 +181,8 @@ export default function NodeView(props: any) {
             </button>
           </div>
         </div>
+        {/* Source handle centered in the circle */}
+        <Handle id="center" type="source" position={Position.Bottom} className="transition-opacity" style={{ left:'50%', top: size/2, transform:'translate(-50%,-50%)', width:10, height:10, background:'#334155', borderRadius: 9999, opacity: (hoverCircle && !isConnecting) ? 1 : 0 }} />
       </div>
       <div ref={labelRef} className="mt-1 text-center leading-tight px-1 whitespace-pre-line relative" style={{ fontSize: baseFontSize }} title={data.label} onMouseEnter={()=>setHoverLabel(true)} onMouseLeave={()=>setHoverLabel(false)} onClick={(e)=>{ e.stopPropagation(); setShowResize(v=>!v) }}>
         {editing && (
@@ -152,13 +190,22 @@ export default function NodeView(props: any) {
             autoFocus
             ref={textRef}
             className="absolute left-0 top-0 w-full border border-slate-300 rounded-md px-1 py-0.5 text-[inherit] leading-tight resize-none overflow-hidden bg-white/95 shadow-sm"
-            style={{ width: Math.max((editRect?.w || 0), 140), height: editRect?.h ? editRect.h * 1.1 : 'auto', minHeight: editRect?.h ? editRect.h * 1.1 : 24 }}
+            style={{ width: editorWidthPx ? `${editorWidthPx}px` : `${Math.max((editRect?.w || 0), 140)}px`, height: 'auto' }}
             value={multiDraft}
             onChange={(e)=>{ setMultiDraft(e.target.value); autoResize() }}
             onClick={(e)=>e.stopPropagation()}
-            onKeyDown={(e)=>{ if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } })); setEditing(false); } if (e.key==='Escape'){ setEditing(false); setMultiDraft('') } }}
-            onBlur={()=>{ window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } })); setEditing(false) }}
+            onKeyDown={(e)=>{ if (e.key==='Escape'){ e.preventDefault(); setEditing(false); setMultiDraft(editSnapshotRef.current) } }}
           />
+        )}
+        {editing && (
+          <div className="absolute flex items-center gap-1" style={{ left: (editorWidthPx ?? Math.max((editRect?.w || 0), 140)) + 4, bottom: 0, transform:`scale(${inv})`, transformOrigin:'bottom left' }} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>e.stopPropagation()}>
+            <button title="Applica" className="text-green-600 hover:text-green-700" onClick={()=>{ window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } })); setEditing(false) }}>
+              <Check size={14} />
+            </button>
+            <button title="Annulla" className="text-red-600 hover:text-red-700" onClick={()=>{ setEditing(false); setMultiDraft(editSnapshotRef.current) }}>
+              <X size={14} />
+            </button>
+          </div>
         )}
         <div className={`relative ${editing ? 'opacity-0 pointer-events-none' : ''}`}>
           <div className="inline-block align-middle w-full">{data.label}</div>
@@ -168,21 +215,20 @@ export default function NodeView(props: any) {
             <>
               {dob && <div>{dob}{ageStr}</div>}
               {(data.kind==='male' || data.kind==='female') && (
-                <div className="text-slate-600" style={{ color: baseTextColor || undefined }}>Precedenti PS: {ps}</div>
+                <div className="" style={{ color: baseTextColor }}>Precedenti PS: {ps}</div>
               )}
             </>
           )}
         </div>
         {showResize && (
-          <div className="pointer-events-auto" style={{ position:'absolute', inset: 0, transform:`scale(${inv})`, transformOrigin:'top left' }}>
-            <div className="absolute w-2 h-2 -top-1 -left-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize" onMouseDown={(e)=>onResizeStart(e,'left')} title="Ridimensiona" />
-            <div className="absolute w-2 h-2 -bottom-1 -left-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize" onMouseDown={(e)=>onResizeStart(e,'left')} title="Ridimensiona" />
-            <div className="absolute w-2 h-2 -top-1 -right-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize" onMouseDown={(e)=>onResizeStart(e,'right')} title="Ridimensiona" />
-            <div className="absolute w-2 h-2 -bottom-1 -right-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize" onMouseDown={(e)=>onResizeStart(e,'right')} title="Ridimensiona" />
+          <div className="pointer-events-auto nodrag nopan" style={{ position:'absolute', inset: 0, transform:`scale(${inv})`, transformOrigin:'top left' }} onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()}>
+            <div draggable={false} className="absolute w-2 h-2 -top-1 -left-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize nodrag nopan" onMouseDown={(e)=>onResizeStart(e,'left')} onPointerDown={(e)=>e.stopPropagation()} title="Ridimensiona" />
+            <div draggable={false} className="absolute w-2 h-2 -bottom-1 -left-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize nodrag nopan" onMouseDown={(e)=>onResizeStart(e,'left')} onPointerDown={(e)=>e.stopPropagation()} title="Ridimensiona" />
+            <div draggable={false} className="absolute w-2 h-2 -top-1 -right-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize nodrag nopan" onMouseDown={(e)=>onResizeStart(e,'right')} onPointerDown={(e)=>e.stopPropagation()} title="Ridimensiona" />
+            <div draggable={false} className="absolute w-2 h-2 -bottom-1 -right-1 bg-sky-500 border border-white rounded-sm cursor-ew-resize nodrag nopan" onMouseDown={(e)=>onResizeStart(e,'right')} onPointerDown={(e)=>e.stopPropagation()} title="Ridimensiona" />
           </div>
         )}
       </div>
-      <Handle id="center" type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:16, height:16, background:'#334155', borderRadius: 9999 }} />
 
       {openPal && (
         <div className="absolute z-50 bg-white border shadow-xl rounded p-3 text-[12px] nodrag w-48" style={{ left: 76, top: -4, transform: `scale(${inv})`, transformOrigin: 'top left' }} onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()}>
@@ -190,20 +236,20 @@ export default function NodeView(props: any) {
           <div className="grid gap-1.5 items-center">
             {/* Spessore + Colore bordo */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
-              <Menu className="w-4 h-4 text-slate-600" title="Spessore bordo" />
+              <Menu className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={0} max={12} defaultValue={String(data.style?.ringWidth ?? 1)} onChange={(e)=>{ const ns = { ...(data.style||{}), ringWidth: Number(e.target.value) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.ringColor ?? '#64748b'} title="Colore bordo" onChange={(e)=>{ const ns = { ...(data.style||{}), ringColor: e.target.value } as NodeStyle; if (ns.ringFill) { const base = ns.ringFillColor ?? e.target.value; ns.ringFill = toSoftGradient(base, ns.ringFillAlpha ?? 0.12) } window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
             </div>
             {/* Trasparenza + Colore riempimento */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
-              <Droplet className="w-4 h-4 text-slate-600" title="Riempimento (trasparente ⟵⟶ colore)" />
+              <Droplet className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={0} max={100} defaultValue={String(data.style?.ringFill ? Math.round((data.style?.ringFillAlpha ?? 1)*100) : 0)}
                 onChange={(e)=>{ const v = Number(e.target.value); const a = v/100; const base = data.style?.ringFillColor ?? data.style?.ringColor ?? '#64748b'; const ns = { ...(data.style||{}), ringFillAlpha: a, ringFill: v===0 ? null : toSoftGradient(base, a) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.ringFillColor ?? (data.style?.ringColor ?? '#64748b')} title="Colore riempimento" onChange={(e)=>{ const base = e.target.value; const ns = { ...(data.style||{}), ringFillColor: base } as NodeStyle; const alpha = ns.ringFillAlpha ?? 0.12; ns.ringFill = (ns.ringFill || (data.style?.ringFillAlpha ?? 0) > 0) ? toSoftGradient(base, alpha) : null; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
             </div>
             {/* Font size + colore */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
-              <CaseSensitive className="w-4 h-4 text-slate-600" title="Dimensione font" />
+              <CaseSensitive className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={6} max={14} defaultValue={String(data.style?.textFontSizePx ?? 6)}
                 onChange={(e)=>{ const ns = { ...(data.style||{}), textFontSizePx: Number(e.target.value) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.textColor ?? '#0f172a'} title="Colore testo" onChange={(e)=>{ const ns = { ...(data.style||{}), textColor: e.target.value } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
@@ -219,7 +265,7 @@ export default function NodeView(props: any) {
             </div>
             {/* X size + color */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
-              <X className="w-4 h-4 text-slate-600" title="Dimensione 'X'" />
+              <X className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={0} max={36} defaultValue={String(data.style?.bigXSizePx ?? (data.style?.showBigX ? 24 : 0))}
                 onChange={(e)=>{ const v = Number(e.target.value); const ns = { ...(data.style||{}), bigXSizePx: v, showBigX: v > 0 } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.bigXColor ?? (data.style?.ringColor ?? '#ef4444')} title="Colore 'X'" onChange={(e)=>{ const ns = { ...(data.style||{}), bigXColor: e.target.value } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />

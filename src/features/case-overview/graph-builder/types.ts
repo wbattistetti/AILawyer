@@ -9,6 +9,7 @@ export type NodeKind =
   | 'restaurant'
   | 'vehicle'
   | 'motorcycle'
+  | 'other_investigation'
 
 export type RelationKind =
   // person ↔ person
@@ -73,6 +74,12 @@ export type BuilderEdgeData = {
   percent?: number
   dashed?: boolean
   tooltip?: string
+  strokeColor?: string
+  strokeWidth?: number
+  captionFontSizePx?: number
+  captionBold?: boolean
+  captionItalic?: boolean
+  captionColor?: string
 }
 
 export type BuilderNode = RFNode<BuilderNodeData>

@@ -35,7 +35,7 @@ export default function GraphBuilder() {
     const label = defaultLabelFor(kind)
     const data: BuilderNodeData = { kind, label, nodeId: id }
     // Con nodeOrigin={[0.5,0.5]} la position è il centro del nodo
-    const node: BuilderNode = { id, type: 'builder', position: { x: pos.x, y: pos.y }, dragHandle: '.drag-handle', data: { ...data, onDelete: () => setNodes(nds => nds.filter(n => n.id !== id)) } }
+    const node: BuilderNode = { id, type: 'builder', position: { x: pos.x, y: pos.y }, dragHandle: '.drag-region', data: { ...data, onDelete: () => setNodes(nds => nds.filter(n => n.id !== id)) } }
     setNodes(nds => nds.concat(node))
     // Mock prompt to assign entity
     assignMockRefFor(node)
@@ -51,7 +51,7 @@ export default function GraphBuilder() {
     if (exists) return
     // 1) create edge immediately
     const newId = `e${source.id}-${target.id}-${Date.now()}`
-    setEdges(eds => addEdge({ ...params, id: newId, type: 'tooltip', markerEnd: { type: MarkerType.ArrowClosed } }, eds as any) as any)
+    setEdges(eds => addEdge({ ...params, id: newId, type: 'tooltip', markerEnd: { type: MarkerType.ArrowClosed, color: '#0f172a' } }, eds as any) as any)
     // 2) open picker near release point (fallback to midpoint)
     const pane = hostRef.current?.querySelector('.react-flow__pane') as HTMLElement | null
     const pr = pane?.getBoundingClientRect()
@@ -67,15 +67,23 @@ export default function GraphBuilder() {
     const target = relPicker.target as BuilderNode
     const tooltip = buildTooltip(source, rel, target)
     const dashed = rel === 'socio_occulto' || rel === 'interessi'
-    const edge: BuilderEdge = {
-      id: `e${source.id}-${target.id}-${Date.now()}`,
-      source: source.id,
-      target: target.id,
-      type: 'tooltip',
-      markerEnd: { type: MarkerType.ArrowClosed },
-      data: { relation: rel, tooltip, dashed },
+    if (relPicker.edgeId) {
+      // update existing temporary edge only
+      setEdges(eds => eds.map(e => e.id === relPicker.edgeId ? ({
+        ...e,
+        data: { ...(e.data as any), relation: rel, tooltip, dashed },
+      }) as any : e))
+    } else {
+      const edge: BuilderEdge = {
+        id: `e${source.id}-${target.id}-${Date.now()}`,
+        source: source.id,
+        target: target.id,
+        type: 'tooltip',
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#0f172a' },
+        data: { relation: rel, tooltip, dashed },
+      }
+      setEdges(eds => eds.concat(edge))
     }
-    setEdges(eds => eds.concat(edge))
     setRelPicker(null)
   }
 
@@ -128,9 +136,21 @@ export default function GraphBuilder() {
       const { id } = e?.detail || {}
       if (!id) return
       setEdges(eds => eds.filter(e => e.id !== id) as any)
+      // chiudi relation picker se riferito a edge rimosso
+      setRelPicker(r => (r && r.edgeId && r.edgeId === id) ? null : r)
     }
     window.addEventListener('gb:delete-edge', onDel as any)
-    return () => window.removeEventListener('gb:delete-edge', onDel as any)
+    const onEdgeStyle = (ev: any) => {
+      const { id, data } = ev?.detail || {}
+      if (!id || !data) return
+      setEdges(eds => eds.map(e => {
+        if (e.id !== id) return e as any
+        const nextMarker = { ...(e.markerEnd as any), type: MarkerType.ArrowClosed, color: (data.strokeColor ?? (e as any).data?.strokeColor ?? '#0f172a') }
+        return ({ ...e, markerEnd: nextMarker, data: { ...(e.data as any), ...data } }) as any
+      }))
+    }
+    window.addEventListener('gb:edge-style', onEdgeStyle as any)
+    return () => { window.removeEventListener('gb:delete-edge', onDel as any); window.removeEventListener('gb:edge-style', onEdgeStyle as any) }
   }, [])
 
   // Style preview/apply for nodes
@@ -166,7 +186,11 @@ export default function GraphBuilder() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: true } })) } catch {} }}
+          onConnectStop={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {} }}
+          onPaneClick={() => { try { window.dispatchEvent(new CustomEvent('gb:hide-resize')) } catch {}; setRelPicker(null) }}
           onConnectEnd={(e) => {
+            try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {}
             const anyE: any = e
             const cx = anyE?.clientX ?? anyE?.changedTouches?.[0]?.clientX
             const cy = anyE?.clientY ?? anyE?.changedTouches?.[0]?.clientY
@@ -178,7 +202,13 @@ export default function GraphBuilder() {
           proOptions={{ hideAttribution: true }}
           onInit={(inst:any) => { (window as any).__rfInstance = inst }}
           nodeOrigin={[0.5, 0.5]}
-          onNodesDelete={(nds)=>{ /* future: persist */ }}
+          onNodesDelete={(nds)=>{ 
+            // chiudi eventuale relation picker se i nodi associati non esistono più
+            if (relPicker) {
+              const still = nodes.some(n => n.id === relPicker.source.id) && nodes.some(n => n.id === relPicker.target.id)
+              if (!still) setRelPicker(null)
+            }
+          }}
           defaultEdgeOptions={{ type: 'straight', markerEnd: { type: MarkerType.ArrowClosed }, style: { strokeWidth: 1, stroke: '#0f172a' } }}
           connectionLineType="straight"
           connectionLineStyle={{ strokeWidth: 1, stroke: '#0f172a' }}
@@ -228,6 +258,7 @@ function defaultLabelFor(kind: BuilderNodeData['kind']): string {
     case 'restaurant': return 'Ristorante'
     case 'vehicle': return 'Veicolo'
     case 'motorcycle': return 'Moto'
+    case 'other_investigation': return 'Altra indagine\nDel:'
     default: return 'Nodo'
   }
 }

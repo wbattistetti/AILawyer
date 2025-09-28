@@ -1,5 +1,5 @@
 import React from 'react'
-import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike } from 'lucide-react'
+import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike, Gavel } from 'lucide-react'
 import type { NodeKind } from './types'
 
 const items: { id: NodeKind; label: string; Icon: any }[] = [
@@ -11,6 +11,7 @@ const items: { id: NodeKind; label: string; Icon: any }[] = [
   { id: 'restaurant', label: 'Ristorante', Icon: UtensilsCrossed },
   { id: 'vehicle', label: 'Veicolo', Icon: Car },
   { id: 'motorcycle', label: 'Moto', Icon: Bike },
+  { id: 'other_investigation', label: 'Altra indagine', Icon: Gavel },
 ]
 
 export function ToolPalette() {
