@@ -26,12 +26,14 @@ import { detectContacts } from '../../features/parsers/contacts'
 import { detectVehicles } from '../../features/parsers/vehicles'
 import { extractEvents as nlpExtractEvents } from '../../services/nlp/client'
 import { ThingCardsPanel } from '../../features/cards/ThingCardsPanel'
+import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { ExplorerProps } = useExplorer()
 
   const [pratica, setPratica] = useState<Pratica | null>(null)
   const [comparti, setComparti] = useState<Comparto[]>([])
@@ -46,6 +48,7 @@ export function PraticaCanvasPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
   const [previewWidth, setPreviewWidth] = useState<number>(576) // px, ~36rem
+  const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
   const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
   const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
   // Header height management for fixed toolbar
@@ -1361,6 +1364,16 @@ export function PraticaCanvasPage() {
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
   const renderIds = useCallback(() => <ThingCardsPanel kind="id" />, [])
 
+  // Explorer fullscreen handlers
+  const toggleExplorerFullscreen = useCallback(() => {
+    console.log('🔄 Toggle Explorer fullscreen called, current state:', isExplorerFullscreen)
+    setIsExplorerFullscreen(prev => {
+      const newState = !prev
+      console.log('🔄 Setting Explorer fullscreen to:', newState)
+      return newState
+    })
+  }, [isExplorerFullscreen])
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -1433,6 +1446,9 @@ export function PraticaCanvasPage() {
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v2_${id}`}
           docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
+          renderExplorer={() => <Explorer {...ExplorerProps} />}
+          isExplorerFullscreen={isExplorerFullscreen}
+          onExplorerTabSelect={toggleExplorerFullscreen}
           renderArchive={() => {
             const showOverlay = archiveUploadingCount > 0
             return (

@@ -19,6 +19,9 @@ type Props = {
   renderDoc: (docId: string) => React.ReactNode
   storageKey?: string
   renderEvents?: () => React.ReactNode
+  renderExplorer?: () => React.ReactNode
+  isExplorerFullscreen?: boolean
+  onExplorerTabSelect?: () => void
 }
 
 export type DockWorkspaceV2Handle = {
@@ -26,8 +29,10 @@ export type DockWorkspaceV2Handle = {
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
 }
 
-export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents }, ref) {
+export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onExplorerTabSelect }, ref) {
   const LayoutAny = Layout as any
+  const lastSelectedTabRef = useRef<string | null>(null)
+  
   const initial: IJsonModel = useMemo(() => {
     // Start from a known good layout to avoid corrupted persisted models
     return getDefaultModelJson()
@@ -141,8 +146,53 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
 
   useImperativeHandle(ref, () => ({ openDoc, openTmpDoc }))
 
+  // Gestione dinamica del layout per Explorer fullscreen
+  useEffect(() => {
+    console.log('🔍 Explorer fullscreen effect triggered:', { isExplorerFullscreen })
+    console.log('🎨 Using CSS approach to hide/show center panel')
+  }, [isExplorerFullscreen])
+
+  // Handler per intercettare i cambi di tab
+  const handleModelChange = (m: Model) => {
+    console.log('🔄 Model change detected')
+    setModel(m)
+    
+    // Traccia i cambi di tab senza creare loop
+    const leftBorder = m.getBorderSet().getBorders()[0]
+    if (leftBorder) {
+      const selectedTab = leftBorder.getSelectedNode()
+      const currentComponent = selectedTab?.getComponent()
+      
+      console.log('🔍 Tab change detected:', { 
+        currentComponent, 
+        lastSelected: lastSelectedTabRef.current,
+        isExplorerFullscreen
+      })
+      
+      // Solo se è un vero cambio di tab (non causato dalle nostre azioni)
+      if (currentComponent && currentComponent !== lastSelectedTabRef.current) {
+        lastSelectedTabRef.current = currentComponent
+        
+        if (currentComponent === 'explorer' && !isExplorerFullscreen) {
+          console.log('🚀 Activating Explorer fullscreen from tab selection')
+          if (onExplorerTabSelect) {
+            onExplorerTabSelect()
+          }
+        } else if (currentComponent !== 'explorer' && isExplorerFullscreen) {
+          console.log('🔄 Deactivating Explorer fullscreen from tab selection')
+          if (onExplorerTabSelect) {
+            onExplorerTabSelect()
+          }
+        }
+      }
+    }
+  }
+
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
+    if (comp === 'explorer') {
+      return <div className="w-full h-full overflow-hidden bg-white">{renderExplorer ? renderExplorer() : null}</div>
+    }
     if (comp === 'archive') return <div className="w-full h-full overflow-auto bg-slate-50">{renderArchive()}</div>
     if (comp === 'search') return <div className="w-full h-full overflow-auto bg-white">{renderSearch ? renderSearch() : null}</div>
     if (comp === 'persons') return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
@@ -218,7 +268,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [ { type: 'tab', name: 'Overview', component: 'overview', id: 'overviewTab' } ] } ]
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] }
+        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] }
       ]
     } as IJsonModel
   }
@@ -317,9 +367,31 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         factory={factory}
         iconFactory={iconFactory}
         realtimeResize
-        onModelChange={(m: Model) => setModel(m)}
-        style={{ height: '100%', width: '100%' }}
+        onModelChange={handleModelChange}
+        style={{ 
+          height: '100%', 
+          width: '100%',
+          // CSS per nascondere il pannello centrale quando Explorer è fullscreen
+          ...(isExplorerFullscreen && {
+            '--flexlayout-center-tabset-display': 'none'
+          } as any)
+        }}
       />
+      {/* CSS dinamico per nascondere il pannello centrale */}
+      {isExplorerFullscreen && (
+        <style>
+          {`
+            .dockv2-root .flexlayout__tabset_centerTabset {
+              display: none !important;
+            }
+            .dockv2-root .flexlayout__border_border_left {
+              width: 100% !important;
+              min-width: 100% !important;
+              max-width: 100% !important;
+            }
+          `}
+        </style>
+      )}
     </div>
   )
 })
