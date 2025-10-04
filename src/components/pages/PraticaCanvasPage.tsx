@@ -1364,15 +1364,10 @@ export function PraticaCanvasPage() {
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
   const renderIds = useCallback(() => <ThingCardsPanel kind="id" />, [])
 
-  // Explorer fullscreen handlers
-  const toggleExplorerFullscreen = useCallback(() => {
-    console.log('🔄 Toggle Explorer fullscreen called, current state:', isExplorerFullscreen)
-    setIsExplorerFullscreen(prev => {
-      const newState = !prev
-      console.log('🔄 Setting Explorer fullscreen to:', newState)
-      return newState
-    })
-  }, [isExplorerFullscreen])
+  // Explorer fullscreen handlers - stato esplicito basato sulla tab selezionata
+  const handleLeftBorderTabChange = useCallback((component: string) => {
+    setIsExplorerFullscreen(component === 'explorer')
+  }, [])
 
   if (isLoading) {
     return (
@@ -1448,7 +1443,7 @@ export function PraticaCanvasPage() {
           docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
           renderExplorer={() => <Explorer {...ExplorerProps} />}
           isExplorerFullscreen={isExplorerFullscreen}
-          onExplorerTabSelect={toggleExplorerFullscreen}
+          onLeftBorderTabChange={handleLeftBorderTabChange}
           renderArchive={() => {
             const showOverlay = archiveUploadingCount > 0
             return (

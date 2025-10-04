@@ -16,13 +16,16 @@ export function DriveIcon({ type, mounted, className = '' }: DriveIconProps) {
 
     switch (type) {
       case 'fixed':
-        return <HardDrive className="w-4 h-4 text-blue-600" />;
+        // Icona hard disk blu come in Windows Explorer
+        return <HardDrive className="w-4 h-4 text-blue-500" />;
       case 'removable':
-        return <Usb className="w-4 h-4 text-green-600" />;
+        // Icona USB verde come in Windows Explorer
+        return <Usb className="w-4 h-4 text-green-500" />;
       case 'optical':
-        return <Disc3 className="w-4 h-4 text-purple-600" />;
+        // Icona CD/DVD viola come in Windows Explorer
+        return <Disc3 className="w-4 h-4 text-purple-500" />;
       default:
-        return <HardDrive className="w-4 h-4 text-gray-600" />;
+        return <HardDrive className="w-4 h-4 text-gray-500" />;
     }
   };
 

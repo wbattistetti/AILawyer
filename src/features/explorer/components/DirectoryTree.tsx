@@ -50,12 +50,17 @@ export function DirectoryTree({
   }, [highlightPath]);
 
   const loadChildren = useCallback(async (node: TreeNode) => {
+    console.log('🌳 Loading children for node:', node);
     if (node.children && node.children.length > 0) {
+      console.log('🌳 Children already loaded');
       return; // Already loaded
     }
 
     try {
+      console.log('🌳 Calling adapter.listDir for:', node.path);
       const { files } = await adapter.listDir(node.path);
+      console.log('🌳 Got files from adapter:', files);
+      
       const dirs = files
         .filter(file => file.isDir)
         .map(file => ({
@@ -67,6 +72,7 @@ export function DirectoryTree({
           children: []
         }));
 
+      console.log('🌳 Created directory nodes:', dirs);
       setTree(prev => updateNodeChildren(prev, node.id, dirs));
     } catch (error) {
       console.error(`Failed to load directory ${node.path}:`, error);
@@ -74,6 +80,7 @@ export function DirectoryTree({
   }, [adapter]);
 
   const toggleExpanded = useCallback(async (node: TreeNode) => {
+    console.log('🌳 Toggle expanded for node:', node, 'currently expanded:', node.expanded);
     if (!node.expanded) {
       await loadChildren(node);
     }
@@ -82,7 +89,9 @@ export function DirectoryTree({
   }, [loadChildren]);
 
   const handleNodeClick = useCallback((node: TreeNode) => {
-    if (node.type === 'dir') {
+    console.log('🌳 Node clicked:', node);
+    if (node.type === 'dir' || node.type === 'drive') {
+      console.log('🌳 Node is directory/drive, toggling expansion');
       toggleExpanded(node);
     }
     onSelect(node);
@@ -97,15 +106,15 @@ export function DirectoryTree({
       <div key={node.id}>
         <div
           className={`
-            flex items-center py-1 px-2 cursor-pointer hover:bg-gray-100
-            ${isSelected ? 'bg-blue-100 text-blue-900' : ''}
+            flex items-center py-2 px-3 cursor-pointer hover:bg-gray-100 rounded-md
+            ${isSelected ? 'bg-blue-100 text-blue-900 border-l-2 border-blue-500' : ''}
             ${isHighlighted ? 'bg-yellow-100 border-l-2 border-yellow-400' : ''}
           `}
-          style={{ paddingLeft: `${level * 16 + 8}px` }}
+          style={{ paddingLeft: `${level * 20 + 12}px` }}
           onClick={() => handleNodeClick(node)}
         >
           {/* Expand/Collapse Icon */}
-          {node.type === 'dir' && (
+          {(node.type === 'dir' || node.type === 'drive') && (
             <div className="w-4 h-4 flex items-center justify-center mr-1">
               {node.expanded ? (
                 <ChevronDown className="w-3 h-3" />
@@ -123,9 +132,9 @@ export function DirectoryTree({
                 mounted={drives.find(d => d.id === node.id)?.mounted || false}
               />
             ) : node.expanded ? (
-              <FolderOpen className="w-4 h-4 text-blue-600" />
+              <FolderOpen className="w-4 h-4 text-yellow-500" />
             ) : (
-              <Folder className="w-4 h-4 text-blue-600" />
+              <Folder className="w-4 h-4 text-yellow-500" />
             )}
           </div>
 
@@ -147,10 +156,20 @@ export function DirectoryTree({
 
   return (
     <div className={`h-full overflow-y-auto ${className}`}>
-      <div className="p-2">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">Explorer</h3>
+      <div className="p-3">
+        <h3 className="text-sm font-medium text-gray-700 mb-3 border-b pb-2">Directory Tree</h3>
         <div className="space-y-1">
-          {tree.map(node => renderNode(node))}
+          {tree.length === 0 ? (
+            <div className="text-sm text-gray-500 p-2">
+              <div className="mb-2">🔧 Backend non disponibile</div>
+              <div className="text-xs text-gray-400">
+                Assicurati che il backend sia in esecuzione:<br/>
+                <code className="bg-gray-100 px-1 rounded">npm run dev:backend</code>
+              </div>
+            </div>
+          ) : (
+            tree.map(node => renderNode(node))
+          )}
         </div>
       </div>
     </div>

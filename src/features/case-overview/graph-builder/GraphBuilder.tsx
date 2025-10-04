@@ -187,7 +187,6 @@ export default function GraphBuilder() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onConnectStart={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: true } })) } catch {} }}
-          onConnectStop={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {} }}
           onPaneClick={() => { try { window.dispatchEvent(new CustomEvent('gb:hide-resize')) } catch {}; setRelPicker(null) }}
           onConnectEnd={(e) => {
             try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {}

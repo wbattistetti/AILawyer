@@ -10,22 +10,56 @@ interface SplitLayoutProps {
   minLeftWidth?: number;
   minRightWidth?: number;
   className?: string;
+  // Nuove props per la larghezza dinamica
+  centerAutoWidth?: boolean;
+  centerMinWidth?: number;
+  centerMaxWidth?: number;
+  centerWidth?: number; // Larghezza esterna per il pannello centrale
 }
 
 export function SplitLayout({
   left,
   center,
   right,
-  leftWidth = 300,
+  leftWidth = 400,
   rightWidth = 400,
   minLeftWidth = 200,
   minRightWidth = 300,
-  className = ''
+  className = '',
+  centerAutoWidth = false,
+  centerMinWidth = 300,
+  centerMaxWidth = 800,
+  centerWidth
 }: SplitLayoutProps) {
   const [leftW, setLeftW] = useState(leftWidth);
   const [rightW, setRightW] = useState(rightWidth);
   const [isRightVisible, setIsRightVisible] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [centerW, setCenterW] = useState<number | null>(null);
+
+  // Funzione per calcolare la larghezza ottimale del pannello centrale
+  const calculateOptimalCenterWidth = () => {
+    if (!centerAutoWidth) return null;
+    
+    // Per ora, usiamo una larghezza fissa ottimale
+    // In futuro, potremmo calcolare dinamicamente basandoci sul contenuto
+    return Math.max(centerMinWidth, Math.min(centerMaxWidth, 500));
+  };
+
+  // Aggiorna la larghezza del centro quando cambia il contenuto o la prop esterna
+  React.useEffect(() => {
+    if (centerWidth !== undefined) {
+      // Usa la larghezza esterna se fornita
+      const constrainedWidth = Math.max(centerMinWidth, Math.min(centerMaxWidth, centerWidth));
+      setCenterW(constrainedWidth);
+    } else if (centerAutoWidth) {
+      // Altrimenti calcola la larghezza ottimale
+      const optimalWidth = calculateOptimalCenterWidth();
+      if (optimalWidth) {
+        setCenterW(optimalWidth);
+      }
+    }
+  }, [centerAutoWidth, centerMinWidth, centerMaxWidth, centerWidth]);
 
   const handleLeftDrag = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
@@ -92,7 +126,10 @@ export function SplitLayout({
       />
 
       {/* Center Panel */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div 
+        className={`flex flex-col min-w-0 ${centerAutoWidth ? 'flex-shrink-0' : 'flex-1'}`}
+        style={centerAutoWidth && centerW ? { width: centerW } : undefined}
+      >
         {center}
       </div>
 

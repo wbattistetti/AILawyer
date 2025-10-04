@@ -1,16 +1,15 @@
 import { useMemo } from 'react';
 import { FileSystemAdapter } from '../services/FileSystemAdapter';
-import { MockFileSystemAdapter } from '../services/adapters/MockFileSystemAdapter';
+import { BackendFileSystemAdapter } from '../services/adapters/BackendFileSystemAdapter';
 
 /**
  * Hook di convenienza per creare l'adapter filesystem
- * Utilizza MockFileSystemAdapter per compatibilità browser
+ * Usa BackendFileSystemAdapter per accesso al vero filesystem tramite API del backend
  */
 export function useExplorerAdapter(): FileSystemAdapter {
   return useMemo(() => {
-    // Always use MockFileSystemAdapter in browser environment
-    // NodeFileSystemAdapter requires Node.js fs module which is not available in browser
-    return new MockFileSystemAdapter();
+    console.log('🔧 Using BackendFileSystemAdapter for real filesystem access');
+    return new BackendFileSystemAdapter();
   }, []);
 }
 

@@ -7,6 +7,8 @@ import { documentiRoutes } from './routes/documenti.js'
 import { uploadRoutes } from './routes/upload.js'
 import { jobsRoutes } from './routes/jobs.js'
 import { thumbsRoutes } from './routes/thumbs.js'
+import { filesystemRoutes } from './routes/filesystem.js'
+import { cleanupTempFiles } from './utils/tempCleanup.js'
 
 const fastify = Fastify({
   logger: {
@@ -17,7 +19,7 @@ const fastify = Fastify({
 
 // Register CORS
 await fastify.register(cors, {
-  origin: config.NODE_ENV === 'development' ? 'http://localhost:5173' : true,
+  origin: config.NODE_ENV === 'development' ? ['http://localhost:5173', 'http://localhost:6500'] : true,
   credentials: true,
 })
 
@@ -38,6 +40,7 @@ await fastify.register(documentiRoutes)
 await fastify.register(uploadRoutes)
 await fastify.register(jobsRoutes)
 await fastify.register(thumbsRoutes)
+await fastify.register(filesystemRoutes)
 
 // Start server
 try {

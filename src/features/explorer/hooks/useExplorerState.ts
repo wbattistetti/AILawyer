@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { ExplorerState, FileEntry, GridFilters, FileKind } from '../types';
 
 const initialFilters: GridFilters = {
-  kinds: new Set(),
+  kinds: new Set(['pdf', 'word', 'image', 'video', 'audio']), // Tutti i tipi attivi di default
   search: ''
 };
 
@@ -39,9 +39,12 @@ export function useExplorerState() {
   const filteredFiles = useMemo(() => {
     let filtered = state.files;
 
-    // Apply kind filters
+    // Apply kind filters - se nessun tipo è selezionato, non mostrare nessun file
     if (state.filters.kinds.size > 0) {
       filtered = filtered.filter(file => state.filters.kinds.has(file.kind));
+    } else {
+      // Se nessun filtro di tipo è attivo, non mostrare nessun file
+      filtered = [];
     }
 
     // Apply search filter

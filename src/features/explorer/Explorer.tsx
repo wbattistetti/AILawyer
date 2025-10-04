@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { SplitLayout } from './components/SplitLayout';
 import { DirectoryTree } from './components/DirectoryTree';
 import { FileGrid } from './components/FileGrid';
+import { FileGridWithAutoWidth } from './components/FileGridWithAutoWidth';
 import { GridToolbar } from './components/GridToolbar';
 import { PreviewPane } from './components/PreviewPane';
 import { RowActionsMenu } from './components/RowActionsMenu';
@@ -20,6 +21,7 @@ interface ExplorerProps {
 export function Explorer({ adapter, className = '' }: ExplorerProps) {
   const [previewFile, setPreviewFile] = useState<FileEntry | undefined>();
   const [highlightPath, setHighlightPath] = useState<string | undefined>();
+  const [centerWidth, setCenterWidth] = useState<number>(500);
 
   // Hooks
   const { drives, loading: drivesLoading, error: drivesError, refresh: refreshDrives } = useDriveList(adapter);
@@ -186,6 +188,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     );
   }
 
+
   return (
     <div className={`h-full ${className}`}>
       <SplitLayout
@@ -198,6 +201,12 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
             highlightPath={highlightPath}
           />
         }
+        centerAutoWidth={true}
+        centerMinWidth={500}
+        centerMaxWidth={1200}
+        centerWidth={centerWidth}
+        rightWidth={600}
+        minRightWidth={400}
         center={
           <div className="flex flex-col h-full">
             <GridToolbar
@@ -216,12 +225,13 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
             />
             
             <div className="flex-1 overflow-hidden">
-              <FileGrid
+              <FileGridWithAutoWidth
                 files={filteredFiles}
                 selectedIds={state.selectedIds}
                 onToggleSelection={toggleFileSelection}
                 onOpenPreview={handleFilePreview}
                 onRowMenu={handleRowMenu}
+                onWidthChange={setCenterWidth}
               />
             </div>
           </div>

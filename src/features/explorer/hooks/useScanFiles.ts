@@ -24,27 +24,68 @@ export function useScanFiles(adapter: FileSystemAdapter) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scanIdRef = useRef(0);
 
-  const scanRecursively = useCallback(async (
+  // Fase 1: Conta tutte le directory ricorsivamente
+  const countDirectories = useCallback(async (
     dirPath: string,
-    options: ScanOptions,
     currentScanId: number
-  ): Promise<void> => {
+  ): Promise<number> => {
     if (currentScanId !== scanIdRef.current) {
-      return; // Scan was cancelled
+      return 0;
     }
+
+    let count = 1; // Conta questa directory
 
     try {
       const { files: dirFiles } = await adapter.listDir(dirPath);
       
       for (const file of dirFiles) {
         if (currentScanId !== scanIdRef.current) {
-          return; // Scan was cancelled
+          return count;
         }
 
         if (file.isDir) {
-          // Recursively scan subdirectories
-          await scanRecursively(file.path, options, currentScanId);
-        } else {
+          // Conta ricorsivamente le sottodirectory
+          count += await countDirectories(file.path, currentScanId);
+        }
+      }
+    } catch (err) {
+      if (currentScanId === scanIdRef.current) {
+        console.warn(`Failed to count directory ${dirPath}:`, err);
+      }
+    }
+
+    return count;
+  }, [adapter]);
+
+  // Fase 2: Scansiona i file directory per directory
+  const scanRecursively = useCallback(async (
+    dirPath: string,
+    options: ScanOptions,
+    currentScanId: number
+  ): Promise<void> => {
+    if (currentScanId !== scanIdRef.current) {
+      return;
+    }
+
+    try {
+      console.log('🔍 Scanning directory:', dirPath);
+      
+      // Aggiorna la directory corrente
+      setProgress(prev => ({
+        ...prev,
+        currentDir: dirPath
+      }));
+
+      const { files: dirFiles } = await adapter.listDir(dirPath);
+      console.log('🔍 Found files in', dirPath, ':', dirFiles);
+      
+      // Prima processa tutti i file della directory corrente
+      for (const file of dirFiles) {
+        if (currentScanId !== scanIdRef.current) {
+          return;
+        }
+
+        if (!file.isDir) {
           // Process file
           setProgress(prev => ({
             ...prev,
@@ -53,9 +94,11 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
           // Check if file matches filters
           const shouldInclude = await shouldIncludeFile(file, options);
+          console.log('🔍 File', file.name, 'should include:', shouldInclude);
           
           if (shouldInclude) {
             const fileEntry = await createFileEntry(file, adapter);
+            console.log('🔍 Adding file to list:', fileEntry);
             
             setFiles(prev => [...prev, fileEntry]);
             setProgress(prev => ({
@@ -65,6 +108,24 @@ export function useScanFiles(adapter: FileSystemAdapter) {
           }
         }
       }
+
+      // Poi scansiona ricorsivamente le sottodirectory
+      for (const file of dirFiles) {
+        if (currentScanId !== scanIdRef.current) {
+          return;
+        }
+
+        if (file.isDir) {
+          await scanRecursively(file.path, options, currentScanId);
+        }
+      }
+
+      // Directory completata
+      setProgress(prev => ({
+        ...prev,
+        completedDirs: (prev.completedDirs || 0) + 1
+      }));
+      
     } catch (err) {
       if (currentScanId === scanIdRef.current) {
         console.warn(`Failed to scan directory ${dirPath}:`, err);
@@ -108,7 +169,18 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     });
 
     const ext = file.name.split('.').pop()?.toLowerCase();
-    const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+    
+    // Rimuovi l'estensione
+    let nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+    
+    // Se il nome contiene timestamp-uuid-nomeReale, estrai solo il nome reale
+    // Pattern: 1758383831848-4af3a8fa-12bd-44b6-9bba-a18fc9f4f9d6-Catania
+    const timestampUuidPattern = /^\d+-[a-f0-9-]{36}-(.+)$/i;
+    const match = nameWithoutExt.match(timestampUuidPattern);
+    if (match) {
+      nameWithoutExt = match[1]; // Prendi solo la parte dopo l'ultimo trattino
+    }
+    
     const parentDirName = file.path.split(/[/\\]/).slice(-2, -1)[0] || '';
 
     return {
@@ -124,6 +196,8 @@ export function useScanFiles(adapter: FileSystemAdapter) {
   };
 
   const startScan = useCallback(async (options: ScanOptions) => {
+    console.log('🔍 Starting scan with options:', options);
+    
     // Cancel any existing scan
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -140,25 +214,52 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       scanned: 0,
       matched: 0,
       queued: 0,
-      done: false
+      done: false,
+      totalDirs: 0,
+      completedDirs: 0,
+      currentDir: undefined,
+      phase: 'counting'
     });
 
     try {
+      // FASE 1: Conta le directory
+      console.log('📊 Phase 1: Counting directories...');
+      setProgress(prev => ({ ...prev, phase: 'counting', currentDir: 'Counting directories...' }));
+      
+      const totalDirs = await countDirectories(options.rootPath, newScanId);
+      
+      if (newScanId !== scanIdRef.current) {
+        return; // Scan was cancelled
+      }
+
+      console.log(`📊 Found ${totalDirs} directories`);
+      
+      setProgress(prev => ({
+        ...prev,
+        totalDirs,
+        phase: 'scanning',
+        currentDir: options.rootPath
+      }));
+
+      // FASE 2: Scansiona i file
+      console.log('🔍 Phase 2: Scanning files...');
       await scanRecursively(options.rootPath, options, newScanId);
       
       if (newScanId === scanIdRef.current) {
-        setProgress(prev => ({ ...prev, done: true }));
+        setProgress(prev => ({ ...prev, done: true, currentDir: 'Scan completed!' }));
+        console.log('🔍 Scan completed successfully');
       }
     } catch (err) {
       if (newScanId === scanIdRef.current) {
         setError(err instanceof Error ? err.message : 'Scan failed');
+        console.error('🔍 Scan failed:', err);
       }
     } finally {
       if (newScanId === scanIdRef.current) {
         setScanning(false);
       }
     }
-  }, [scanRecursively]);
+  }, [countDirectories, scanRecursively]);
 
   const pause = useCallback(() => {
     if (abortControllerRef.current) {

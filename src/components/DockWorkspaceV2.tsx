@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
@@ -21,7 +21,7 @@ type Props = {
   renderEvents?: () => React.ReactNode
   renderExplorer?: () => React.ReactNode
   isExplorerFullscreen?: boolean
-  onExplorerTabSelect?: () => void
+  onLeftBorderTabChange?: (component: string) => void
 }
 
 export type DockWorkspaceV2Handle = {
@@ -29,9 +29,9 @@ export type DockWorkspaceV2Handle = {
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
 }
 
-export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onExplorerTabSelect }, ref) {
+export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onLeftBorderTabChange }, ref) {
   const LayoutAny = Layout as any
-  const lastSelectedTabRef = useRef<string | null>(null)
+  const layoutRootRef = useRef<HTMLDivElement>(null)
   
   const initial: IJsonModel = useMemo(() => {
     // Start from a known good layout to avoid corrupted persisted models
@@ -146,46 +146,62 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
 
   useImperativeHandle(ref, () => ({ openDoc, openTmpDoc }))
 
-  // Gestione dinamica del layout per Explorer fullscreen
-  useEffect(() => {
-    console.log('🔍 Explorer fullscreen effect triggered:', { isExplorerFullscreen })
-    console.log('🎨 Using CSS approach to hide/show center panel')
-  }, [isExplorerFullscreen])
+  // Helper robusto per applicare/ritirare il fullscreen
+  const applyExplorerFullscreen = useCallback((on: boolean) => {
+    const m = modelRef.current
+    if (!m) return
 
-  // Handler per intercettare i cambi di tab
+    // Trova border sinistro (usa id se lo hai messo nel JSON, altrimenti fallback su location)
+    const leftBorder = m.getBorderSet().getBorders()
+      .find(b => (b as any).getId?.() === 'leftBorder' || (b as any).getLocation?.() === 'left')
+    const borderId = (leftBorder as any)?.getId?.()
+    if (!borderId) return
+
+    // Calcolo size target del border (pixel)
+    const containerWidth = layoutRootRef.current?.clientWidth ?? 1600
+    const targetSize = on ? Math.max(800, containerWidth) : 320
+
+    // 1) Allarga/restringe il border sinistro
+    m.doAction({
+      type: 'FlexLayout_SetBorderSize',
+      borderId,
+      size: targetSize
+    } as any)
+
+    // 2) Schiaccia/ristabilisce il center tabset
+    m.doAction({
+      type: 'FlexLayout_UpdateNodeAttributes',
+      node: 'centerTabset',
+      attributes: { weight: on ? 0.0001 : 80 }
+    } as any)
+  }, [])
+
+  // Al mount: sincronizza lo stato in base alla tab selezionata nel left border
+  useEffect(() => {
+    if (!onLeftBorderTabChange) return
+    const left = modelRef.current.getBorderSet().getBorders()
+      .find(b => (b as any).getLocation?.() === 'left' || (b as any).getId?.() === 'leftBorder')
+    const sel = left?.getSelectedNode()
+    const comp = sel ? (sel as any).getComponent?.() : undefined
+    if (comp) onLeftBorderTabChange(comp)
+    // solo una volta
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Quando il parent cambia il flag, applichiamo le azioni in ordine
+  useEffect(() => {
+    applyExplorerFullscreen(isExplorerFullscreen)
+  }, [isExplorerFullscreen, applyExplorerFullscreen])
+
+  // Cambio modello (selezione tab compresa) -> notifica quale tab è attiva
   const handleModelChange = (m: Model) => {
-    console.log('🔄 Model change detected')
     setModel(m)
-    
-    // Traccia i cambi di tab senza creare loop
-    const leftBorder = m.getBorderSet().getBorders()[0]
-    if (leftBorder) {
-      const selectedTab = leftBorder.getSelectedNode()
-      const currentComponent = selectedTab?.getComponent()
-      
-      console.log('🔍 Tab change detected:', { 
-        currentComponent, 
-        lastSelected: lastSelectedTabRef.current,
-        isExplorerFullscreen
-      })
-      
-      // Solo se è un vero cambio di tab (non causato dalle nostre azioni)
-      if (currentComponent && currentComponent !== lastSelectedTabRef.current) {
-        lastSelectedTabRef.current = currentComponent
-        
-        if (currentComponent === 'explorer' && !isExplorerFullscreen) {
-          console.log('🚀 Activating Explorer fullscreen from tab selection')
-          if (onExplorerTabSelect) {
-            onExplorerTabSelect()
-          }
-        } else if (currentComponent !== 'explorer' && isExplorerFullscreen) {
-          console.log('🔄 Deactivating Explorer fullscreen from tab selection')
-          if (onExplorerTabSelect) {
-            onExplorerTabSelect()
-          }
-        }
-      }
-    }
+    if (!onLeftBorderTabChange) return
+    const left = m.getBorderSet().getBorders()
+      .find(b => (b as any).getLocation?.() === 'left' || (b as any).getId?.() === 'leftBorder')
+    const sel = left?.getSelectedNode()
+    const comp = sel ? (sel as any).getComponent?.() : undefined
+    if (comp) onLeftBorderTabChange(comp)
   }
 
   const factory = (node: TabNode) => {
@@ -268,7 +284,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [ { type: 'tab', name: 'Overview', component: 'overview', id: 'overviewTab' } ] } ]
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] }
+        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] } as any
       ]
     } as IJsonModel
   }
@@ -300,6 +316,8 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         (json as any).borders.push({ type: 'border', location: 'left', size: 320, selected: 0, children: [] })
         left = (json as any).borders.find((b: any) => b.location === 'left')
       }
+      // Assicura che l'ID sia presente (per compatibilità con il nostro codice)
+      if (!left.id) left.id = 'leftBorder'
       if (!Array.isArray(left.children)) left.children = []
       const hasArchive = left.children.some((t: any) => t.component === 'archive')
       const hasSearch = left.children.some((t: any) => t.component === 'search')
@@ -361,37 +379,52 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
   }
 
   return (
-    <div className="dockv2-root" style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}>
+    <div 
+      ref={layoutRootRef}
+      className={`dockv2-root ${isExplorerFullscreen ? 'is-explorer-fs' : ''}`}
+      style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}
+    >
       <LayoutAny
         model={model}
         factory={factory}
         iconFactory={iconFactory}
         realtimeResize
         onModelChange={handleModelChange}
-        style={{ 
-          height: '100%', 
-          width: '100%',
-          // CSS per nascondere il pannello centrale quando Explorer è fullscreen
-          ...(isExplorerFullscreen && {
-            '--flexlayout-center-tabset-display': 'none'
-          } as any)
+        
+        // Nascondi il centerTabset quando Explorer è fullscreen
+        onRenderTabSet={(tabset: any, renderValues: any) => {
+          if (tabset.getId?.() === 'centerTabset' && isExplorerFullscreen) {
+            renderValues.style = { ...(renderValues.style ?? {}), display: 'none', width: 0, minWidth: 0 }
+          }
         }}
+
+        // Allarga visivamente il border sinistro quando in fullscreen
+        onRenderBorder={(border: any, renderValues: any) => {
+          if ((border.getId?.() === 'leftBorder' || border.getLocation?.() === 'left') && isExplorerFullscreen) {
+            renderValues.style = { ...(renderValues.style ?? {}), width: '100%' }
+          }
+        }}
+
+        // Classe per debug
+        className={isExplorerFullscreen ? 'flexlayout--explorer-fs' : undefined}
       />
-      {/* CSS dinamico per nascondere il pannello centrale */}
-      {isExplorerFullscreen && (
-        <style>
-          {`
-            .dockv2-root .flexlayout__tabset_centerTabset {
-              display: none !important;
-            }
-            .dockv2-root .flexlayout__border_border_left {
-              width: 100% !important;
-              min-width: 100% !important;
-              max-width: 100% !important;
-            }
-          `}
-        </style>
-      )}
+
+      {/* CSS minimo, stabile (niente selettori fragili) */}
+      <style>
+        {`
+          .dockv2-root.is-explorer-fs .flexlayout__row {
+            width: 100% !important;
+          }
+          /* Il border sinistro ha classe nota in FlexLayout */
+          .dockv2-root.is-explorer-fs .flexlayout__border_left {
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            left: 0 !important;
+            flex: 1 1 auto !important;
+          }
+        `}
+      </style>
     </div>
   )
 })

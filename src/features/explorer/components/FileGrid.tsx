@@ -8,7 +8,9 @@ import {
   File,
   MoreHorizontal,
   CheckSquare,
-  Square
+  Square,
+  FileType,
+  FileImage
 } from 'lucide-react';
 import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
@@ -55,21 +57,20 @@ function FileRow({ index, style, data }: FileRowProps) {
 
   const getFileIcon = (kind: FileKind) => {
     const iconClass = "w-5 h-5";
-    const colorClass = MimeService.getKindColor(kind);
     
     switch (kind) {
       case 'pdf':
-        return <FileText className={`${iconClass} ${colorClass}`} />;
+        return <FileType className={`${iconClass} text-red-600`} />; // Icona più specifica per PDF
       case 'word':
-        return <FileText className={`${iconClass} ${colorClass}`} />;
+        return <FileText className={`${iconClass} text-blue-600`} />; // Manteniamo FileText per Word
       case 'image':
-        return <Image className={`${iconClass} ${colorClass}`} />;
+        return <FileImage className={`${iconClass} text-green-600`} />; // Icona più specifica per immagini
       case 'video':
-        return <Video className={`${iconClass} ${colorClass}`} />;
+        return <Video className={`${iconClass} text-purple-600`} />;
       case 'audio':
-        return <Music className={`${iconClass} ${colorClass}`} />;
+        return <Music className={`${iconClass} text-orange-600`} />;
       default:
-        return <File className={`${iconClass} ${colorClass}`} />;
+        return <File className={`${iconClass} text-gray-600`} />;
     }
   };
 
@@ -117,10 +118,10 @@ function FileRow({ index, style, data }: FileRowProps) {
 
       {/* File Name */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-900 truncate">
+        <div className="text-sm font-medium text-gray-900 whitespace-nowrap overflow-hidden">
           {file.name}
         </div>
-        <div className="text-xs text-gray-500 truncate">
+        <div className="text-xs text-gray-500 whitespace-nowrap overflow-hidden">
           {file.parentDirName}
         </div>
       </div>

@@ -26,12 +26,47 @@ export class MockFileSystemAdapter implements FileSystemAdapter {
     ['C:\\', [
       { name: 'Users', path: 'C:\\Users', isDir: true },
       { name: 'Program Files', path: 'C:\\Program Files', isDir: true },
+      { name: 'Program Files (x86)', path: 'C:\\Program Files (x86)', isDir: true },
       { name: 'Windows', path: 'C:\\Windows', isDir: true },
-      { name: 'document.pdf', path: 'C:\\document.pdf', isDir: false, size: 1024000, mtime: Date.now() - 86400000 }
+      { name: 'Documents', path: 'C:\\Documents', isDir: true },
+      { name: 'Downloads', path: 'C:\\Downloads', isDir: true },
+      { name: 'Dav Canz', path: 'C:\\Dav Canz', isDir: true },
+      { name: 'Cursor Projects', path: 'C:\\Cursor Projects', isDir: true },
+      { name: 'inetpub', path: 'C:\\inetpub', isDir: true },
+      { name: 'nvm4w', path: 'C:\\nvm4w', isDir: true },
+      { name: 'PerfLogs', path: 'C:\\PerfLogs', isDir: true },
+      { name: 'Programmi', path: 'C:\\Programmi', isDir: true },
+      { name: 'Utenti', path: 'C:\\Utenti', isDir: true },
+      { name: 'document.pdf', path: 'C:\\document.pdf', isDir: false, size: 1024000, mtime: Date.now() - 86400000 },
+      { name: 'readme.txt', path: 'C:\\readme.txt', isDir: false, size: 2048, mtime: Date.now() - 172800000 }
     ]],
     ['C:\\Users', [
       { name: 'Public', path: 'C:\\Users\\Public', isDir: true },
-      { name: 'Default', path: 'C:\\Users\\Default', isDir: true }
+      { name: 'Default', path: 'C:\\Users\\Default', isDir: true },
+      { name: 'Admin', path: 'C:\\Users\\Admin', isDir: true }
+    ]],
+    ['C:\\Documents', [
+      { name: 'Work', path: 'C:\\Documents\\Work', isDir: true },
+      { name: 'Personal', path: 'C:\\Documents\\Personal', isDir: true },
+      { name: 'contract.pdf', path: 'C:\\Documents\\contract.pdf', isDir: false, size: 2048000, mtime: Date.now() - 43200000 },
+      { name: 'report.docx', path: 'C:\\Documents\\report.docx', isDir: false, size: 1536000, mtime: Date.now() - 21600000 }
+    ]],
+    ['C:\\Downloads', [
+      { name: 'image.jpg', path: 'C:\\Downloads\\image.jpg', isDir: false, size: 3072000, mtime: Date.now() - 3600000 },
+      { name: 'video.mp4', path: 'C:\\Downloads\\video.mp4', isDir: false, size: 50000000, mtime: Date.now() - 7200000 },
+      { name: 'archive.zip', path: 'C:\\Downloads\\archive.zip', isDir: false, size: 10240000, mtime: Date.now() - 10800000 }
+    ]],
+    ['C:\\Dav Canz', [
+      { name: 'Documenti', path: 'C:\\Dav Canz\\Documenti', isDir: true },
+      { name: 'Immagini', path: 'C:\\Dav Canz\\Immagini', isDir: true },
+      { name: 'Desktop', path: 'C:\\Dav Canz\\Desktop', isDir: true },
+      { name: 'file1.txt', path: 'C:\\Dav Canz\\file1.txt', isDir: false, size: 1024, mtime: Date.now() - 1800000 },
+      { name: 'file2.pdf', path: 'C:\\Dav Canz\\file2.pdf', isDir: false, size: 2048000, mtime: Date.now() - 3600000 }
+    ]],
+    ['C:\\Cursor Projects', [
+      { name: 'AILawyer', path: 'C:\\Cursor Projects\\AILawyer', isDir: true },
+      { name: 'Other Project', path: 'C:\\Cursor Projects\\Other Project', isDir: true },
+      { name: 'readme.md', path: 'C:\\Cursor Projects\\readme.md', isDir: false, size: 1024, mtime: Date.now() - 900000 }
     ]],
     ['D:\\', [
       { name: 'Photos', path: 'D:\\Photos', isDir: true },
@@ -102,7 +137,9 @@ export class MockFileSystemAdapter implements FileSystemAdapter {
       'docx': [0x50, 0x4B, 0x03, 0x04] // ZIP signature
     };
 
-    const ext = filePath.split('.').pop()?.toLowerCase();
+    // Ensure filePath is a string
+    const pathStr = typeof filePath === 'string' ? filePath : String(filePath);
+    const ext = pathStr.split('.').pop()?.toLowerCase();
     const signature = signatures[ext || ''] || [0x00, 0x00, 0x00, 0x00];
     
     const buffer = new ArrayBuffer(len);

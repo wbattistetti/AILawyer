@@ -28,6 +28,11 @@ export interface ScanProgress {
   matched: number;
   queued: number;
   done: boolean;
+  // Informazioni sulle directory per progresso più preciso
+  totalDirs?: number;
+  completedDirs?: number;
+  currentDir?: string;
+  phase?: 'counting' | 'scanning'; // Fase: prima conta le dir, poi scansiona
 }
 
 export interface GridFilters {
