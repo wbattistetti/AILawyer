@@ -25,6 +25,9 @@ import { cryptoRandom, formatDocTitle } from '../../utils/misc'
 import { SearchProvider } from '../search/SearchProvider'
 import { SearchPanelTree } from '../search/SearchPanelTree'
 import { getDrawerOptionsSorted } from '../../features/drawers/drawerRegistry'
+import { api } from '../../lib/api'
+import { logger } from '../../utils/logger'
+import { buildReadingText, matchInBuilt } from '../../features/ocr/readingOrder'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -51,6 +54,70 @@ type MatchItem = {
 	spanIdx?: number
 	charIdx?: number
 	qLen?: number
+}
+
+// Search using backend OCR text/layout when PDF has no native text
+async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchItem[]> {
+  try {
+    const doc: any = await api.getDocumento(docId)
+    const layout = Array.isArray(doc?.ocrLayout)
+      ? doc.ocrLayout
+      : (() => {
+          try { return JSON.parse(doc?.ocrLayout || '[]') } catch { return [] }
+        })()
+    const sep = '\f'
+    const pagesText: string[] = String(doc?.ocrText || '').split(sep)
+    logger.debug('OCR[data][pages]', { pagesWithText: pagesText.length, pagesWithLayout: Array.isArray(layout) ? layout.length : 0 })
+    const out: MatchItem[] = []
+    const needle = (qRaw || '').toLowerCase()
+
+    for (let p = 0; p < Math.max(pagesText.length, layout.length); p++) {
+      const pageIdx = p
+      const pageTextRaw = String(pagesText[p] || '')
+      // Normalize accents/case to match common inputs with/without maiuscole e apostrofi
+      const normalize = (s: string) => s
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/[’'`´]/g, "'")
+        .toLowerCase()
+      const pageText = normalize(pageTextRaw)
+      const pageLayout = layout[p] || {}
+      let words: Array<{ text: string; x0: number; y0: number; x1: number; y1: number }> = pageLayout.words || []
+      const width = pageLayout.width || pageLayout.imgW || 0
+      const height = pageLayout.height || pageLayout.imgH || 0
+      logger.debug('OCR[page][stats]', { page: pageIdx + 1, textLen: pageTextRaw.length, words: words?.length || 0, width, height })
+      if (!pageText) continue
+
+      // If no positional words or missing page size, fallback to page-level match using text only
+      if (!words.length || !width || !height) {
+        let pos = 0
+        const target = normalize(needle)
+        while (true) {
+          const idx = normalize(pageText).indexOf(target, pos)
+          if (idx < 0) break
+          const start = idx
+          const end = idx + target.length
+          const snippet = pageTextRaw.slice(Math.max(0, start - 40), Math.min(pageTextRaw.length, end + 40)).trim()
+          // Approximate box: narrow band near top proportional to position
+          const rel = Math.max(0, Math.min(1, start / Math.max(1, pageText.length)))
+          const y0Pct = Math.max(0, Math.min(1, rel))
+          const y1Pct = Math.max(y0Pct + 0.03, Math.min(1, y0Pct + 0.08))
+          logger.debug('OCR[match][approx]', { page: pageIdx + 1, start, snippet })
+          out.push({ id: `${p}:${start}`, page: pageIdx + 1, snippet, x0Pct: 0.04, x1Pct: 0.96, y0Pct, y1Pct, qLen: target.length, charIdx: start })
+          pos = end
+        }
+        continue
+      }
+
+      // Costruisci testo ricostruito (stesso ordine dell'Inspector) e mappa char->token
+      const built = buildReadingText(words as any, width, height)
+      const hits = matchInBuilt(built, qRaw)
+      for (const h of hits) {
+        out.push({ id: `${p}:${out.length}` , page: pageIdx + 1, snippet: h.snippet, x0Pct: h.x0Pct, x1Pct: h.x1Pct, y0Pct: h.y0Pct, y1Pct: h.y1Pct, qLen: needle.length })
+      }
+    }
+    return out
+  } catch { return [] }
 }
 
 export interface VerifyPdfViewerProps {
@@ -150,6 +217,7 @@ function ensureNativeSelectStyles() {
 
 export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page, lines: _lines, onPageChange, hideToolbar: _hideToolbar, docId }) => {
 	const hostRef = useRef<HTMLDivElement | null>(null)
+    const lastOcrMatchesRef = useRef<Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>>([])
 	const scrollMode = scrollModePlugin()
 	const zoomPluginInstance = zoomPlugin()
 	const pageNav = pageNavigationPlugin()
@@ -185,6 +253,252 @@ const [annots, setAnnots] = useState<Annotation[]>([])
 const [draft, setDraft] = useState<Annotation | null>(null)
 type Area = { id: string; pageIndex: number; left: number; top: number; width: number; height: number }
 const [areas, setAreas] = useState<Area[]>([])
+	// ==== OCR INSPECTOR (TEMP) ====
+	const [ocrInspectOpen, setOcrInspectOpen] = useState<boolean>(false)
+	const [ocrInspect, setOcrInspect] = useState<{ page: number; text: string } | null>(null)
+	const [ocrDrag, setOcrDrag] = useState<{ x: number; y: number; dx: number; dy: number; dragging: boolean }>({ x: 24, y: 24, dx: 0, dy: 0, dragging: false })
+
+	async function loadOcrPageText(pageNum: number) {
+		try {
+			if (!docId) return
+			const doc: any = await api.getDocumento(docId)
+			const raw = String(doc?.ocrText || '')
+			// Prova a ricostruire a capo dalle words dell'ocrLayout
+			let textFromLayout = ''
+			try {
+				const layoutRaw: any = (doc as any).ocrLayout
+				const arr = Array.isArray(layoutRaw) ? layoutRaw : (()=>{ try{ return JSON.parse(layoutRaw || '[]') } catch { return [] } })()
+				const lay = (arr.find((p: any) => p?.page === pageNum) || arr[pageNum - 1])
+				if (lay && Array.isArray(lay.words) && lay.words.length > 0) {
+					type Word = { x0:number; x1:number; y0:number; y1:number; text:string }
+					const words = (lay.words as Word[]).filter(w => (
+						w && typeof w.x0 === 'number' && typeof w.y0 === 'number' && String(w.text || '').trim()
+					))
+					if (words.length) {
+						// 1) ordina preliminarmente per riga (y) e poi per x
+						const sorted = words.slice().sort((a, b) => {
+							if (a.y0 === b.y0) return a.x0 - b.x0
+							return a.y0 - b.y0
+						})
+						// 2) calcola soglia verticale più stretta per separare linee vicine
+                        const heights = sorted.map(w => (w.y1 - w.y0))
+                        const avgH = heights.length ? (heights.reduce((a,b)=>a+b,0)/heights.length) : 0.02
+                        // Coordinates are normalized (0..1): use a small threshold to split lines
+                        const thr = Math.max(0.006, avgH * 0.6)
+						type Line = { yMid:number; parts: Word[] }
+						const linesAgg: Line[] = []
+						for (const w of sorted) {
+							const yMid = (w.y0 + w.y1) / 2
+							const last = linesAgg[linesAgg.length - 1]
+							if (!last || Math.abs(last.yMid - yMid) > thr) {
+								linesAgg.push({ yMid, parts: [w] })
+							} else {
+								last.parts.push(w)
+								last.yMid = (last.yMid + yMid) / 2
+							}
+						}
+						// 3) ordina linee top->bottom e parole left->right, poi join con newlines
+						const lineTexts = linesAgg
+							.sort((a,b)=> a.yMid - b.yMid)
+							.map(ln => ln.parts
+								.sort((p,q)=> p.x0 - q.x0)
+								.map(p => String(p.text || '').trim())
+								.join(' ')
+								.replace(/\s+/g,' ') 
+								.trim()
+							)
+						textFromLayout = lineTexts.join('\n')
+					}
+				}
+			} catch {}
+
+			let text = ''
+			if (textFromLayout && textFromLayout.trim()) {
+				text = textFromLayout
+        } else if (raw) {
+          const parts = raw.split(/\f/)
+				text = parts[pageNum - 1] || ''
+			} else {
+				text = '<nessun testo OCR disponibile>'
+			}
+			setOcrInspect({ page: pageNum, text })
+			setOcrInspectOpen(true)
+		} catch (e) {
+			try { console.warn('[OCR][inspector] load error', e) } catch {}
+		}
+	}
+	// ==== OCR INSPECTOR (TEMP) ====
+    function ensureOverlayForPage(pageNum: number): HTMLDivElement | null {
+      const container = hostRef.current as HTMLElement | null
+      if (!container) return null
+      let pageEl = container.querySelector(`.page[data-page-number="${pageNum}"]`) as HTMLElement | null
+        || container.querySelector(`#pageContainer${pageNum}`) as HTMLElement | null
+      if (!pageEl) {
+        const pages = Array.from(container.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
+        if (pages.length >= pageNum) pageEl = pages[pageNum - 1] || null
+      }
+      if (!pageEl) return null
+
+      let overlay = pageEl.querySelector('.ocr-overlay') as HTMLDivElement | null
+      if (!overlay) {
+        overlay = document.createElement('div')
+        overlay.className = 'ocr-overlay'
+        overlay.style.position = 'absolute'
+        overlay.style.left = '0'
+        overlay.style.top = '0'
+        overlay.style.pointerEvents = 'none'
+        overlay.style.zIndex = '30'
+        pageEl.style.position = 'relative'
+        pageEl.appendChild(overlay)
+      }
+      const rect = pageEl.getBoundingClientRect()
+      overlay.style.width = `${rect.width}px`
+      overlay.style.height = `${rect.height}px`
+      return overlay
+    }
+
+    function drawOcrRects(matches: Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>, color?: string) {
+      lastOcrMatchesRef.current = matches
+      const byPage = new Map<number, Array<typeof matches[0]>>()
+      for (const m of matches) {
+        if (!byPage.has(m.page)) byPage.set(m.page, [])
+        byPage.get(m.page)!.push(m)
+      }
+      for (const [pageNum, hits] of byPage) {
+        const overlay = ensureOverlayForPage(pageNum)
+        if (!overlay) continue
+        overlay.innerHTML = ''
+        const w = overlay.clientWidth
+        const h = overlay.clientHeight
+        for (const m of hits) {
+          const x = Math.max(0, Math.min(w, m.x0Pct * w))
+          const y = Math.max(0, Math.min(h, m.y0Pct * h))
+          const rw = Math.max(1, Math.min(w, (m.x1Pct - m.x0Pct) * w))
+          const rh = Math.max(1, Math.min(h, (m.y1Pct - m.y0Pct) * h))
+          const el = document.createElement('div')
+          el.style.position = 'absolute'
+          el.style.left = `${x}px`
+          el.style.top = `${y}px`
+          el.style.width = `${rw}px`
+          el.style.height = `${rh}px`
+          const c = color || 'rgba(59,130,246,1)'
+          el.style.background = c.replace('1)', '.20)')
+          el.style.outline = `2px solid ${c}`
+          el.style.borderRadius = '2px'
+          el.style.pointerEvents = 'none'
+          overlay.appendChild(el)
+        }
+      }
+    }
+
+    function drawFixedDebugRect(pageNum: number) {
+      const overlay = ensureOverlayForPage(pageNum)
+      if (!overlay) return
+      const el = document.createElement('div')
+      el.style.position = 'absolute'
+      el.style.left = `10px`
+      el.style.top = `10px`
+      el.style.width = `40px`
+      el.style.height = `20px`
+      el.style.background = 'rgba(220,38,38,.20)'
+      el.style.outline = '2px solid rgba(220,38,38,1)'
+      el.style.borderRadius = '2px'
+      el.style.pointerEvents = 'none'
+      overlay.appendChild(el)
+    }
+
+    useEffect(() => {
+    const onResize = () => {
+        if (!lastOcrMatchesRef.current?.length) return
+        drawOcrRects(lastOcrMatchesRef.current)
+      }
+      window.addEventListener('resize', onResize)
+      return () => window.removeEventListener('resize', onResize)
+    }, [])
+
+	// ==== OCR INSPECTOR (TEMP) ====
+	useEffect(() => {
+		const host = hostRef.current as HTMLElement | null
+		if (!host) return
+		const onClick = (ev: MouseEvent) => {
+			try { console.log('[OCR][inspector][click]') } catch {}
+			let el = ev.target as HTMLElement | null
+			while (
+				el &&
+				!(el as any).dataset?.pageNumber &&
+				!el.getAttribute?.('data-page-number') &&
+				!(el.id || '').startsWith('pageContainer')
+			) {
+				el = el.parentElement
+			}
+			let pageNum = 0
+			if (el) {
+				const ds = (el as any).dataset || {}
+				const pageStr = ds.pageNumber || el.getAttribute?.('data-page-number') || (el.id || '').replace('pageContainer', '')
+				pageNum = Math.max(0, parseInt(String(pageStr || ''), 10))
+			}
+			if (!pageNum) {
+				// Fallback: trova il layer pagina più vicino e mappa via elToPageRef
+				const pageLayer = (ev.target as HTMLElement)?.closest('.rpv-core__page-layer') as HTMLElement | null
+				if (pageLayer) {
+					pageNum = elToPageRef.current.get(pageLayer) || 0
+					if (!pageNum) {
+						const list = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
+						const idx = list.indexOf(pageLayer)
+						pageNum = idx >= 0 ? (idx + 1) : 0
+					}
+				}
+			}
+			if (!pageNum) { try { console.warn('[OCR][inspector] no page resolved') } catch {}; return }
+			try { console.log('[OCR][inspector] page', pageNum) } catch {}
+			loadOcrPageText(pageNum)
+		}
+		host.addEventListener('click', onClick)
+		return () => host.removeEventListener('click', onClick)
+	}, [docId])
+
+	useEffect(() => {
+		const onMove = (e: MouseEvent) => {
+			setOcrDrag(prev => prev.dragging ? { ...prev, x: e.clientX - prev.dx, y: e.clientY - prev.dy } : prev)
+		}
+		const onUp = () => setOcrDrag(prev => prev.dragging ? { ...prev, dragging: false } : prev)
+		window.addEventListener('mousemove', onMove)
+		window.addEventListener('mouseup', onUp)
+		return () => {
+			window.removeEventListener('mousemove', onMove)
+			window.removeEventListener('mouseup', onUp)
+		}
+	}, [])
+	// ==== OCR INSPECTOR (TEMP) ====
+
+	// Quick toggle and load current page via hotkey (Ctrl+O)
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.ctrlKey && String(e.key).toLowerCase() === 'o') {
+				e.preventDefault()
+				const p = Math.max(1, parseInt(pageInput || '1', 10))
+				loadOcrPageText(p)
+			}
+		}
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	}, [pageInput, docId])
+
+    // Debug: disegna un rettangolo fisso in alto a sinistra (pagina 1) e un rettangolo sulla prima occorrenza di "oggetto"
+    useEffect(() => {
+      if (!(window as any).__OCR_DEBUG) return
+      const t = window.setTimeout(async () => {
+        try { drawFixedDebugRect(1) } catch {}
+        try {
+          const hits = await runSearch('oggetto')
+          if (Array.isArray(hits) && hits.length > 0) {
+            const h = hits[0]
+            drawOcrRects([{ page: h.page, x0Pct: h.x0Pct!, y0Pct: h.y0Pct!, x1Pct: h.x1Pct!, y1Pct: h.y1Pct! }], 'rgba(16,185,129,1)')
+          }
+        } catch {}
+      }, 500)
+      return () => window.clearTimeout(t)
+    }, [totalPages])
 const pageElsRef = useRef<Map<number, HTMLElement>>(new Map())
 const overlayRootsRef = useRef<Map<number, HTMLElement>>(new Map())
 const selectRootsRef = useRef<Map<number, HTMLElement>>(new Map())
@@ -230,8 +544,10 @@ const suppressClearRef = useRef<boolean>(false)
 		let cancelled = false
 		;(async () => {
 			try {
+				logger.debug('PDF[getDocument][start]', { fileUrl })
 				const loadingTask = (pdfjsLib as any).getDocument({ url: fileUrl, disableWorker: true })
 				const doc = await loadingTask.promise
+				logger.debug('PDF[getDocument][done]', { pages: doc?.numPages || 0 })
 				if (!cancelled) pdfDocRef.current = doc
 			} catch {}
 		})()
@@ -409,12 +725,13 @@ const suppressClearRef = useRef<boolean>(false)
 
 
 
-	const searchMainThread = async (qRaw: string) => {
+// Core native search given a loaded pdf.js document
+const searchNativeCore = async (doc: any, qRaw: string): Promise<MatchItem[]> => {
 		try {
-			const doc = pdfDocRef.current
-			if (!doc) return
+  			if (!doc) return []
 			const total = doc.numPages || 0
 			const out: MatchItem[] = []
+			logger.debug('SEARCH[native][start]', { q: qRaw, pages: total })
 			for (let p = 1; p <= total; p++) {
 				const page = await doc.getPage(p)
 				const content = await page.getTextContent()
@@ -459,26 +776,78 @@ const suppressClearRef = useRef<boolean>(false)
 					pos = end
 				}
 			}
-			setMatches(out)
-		} catch {}
+			logger.debug('SEARCH[native][done]', { q: qRaw, totalMatches: out.length })
+			return out
+		} catch {
+			return []
+		}
 	}
 
-	const runSearch = async () => {
-		const qRaw = (searchQ || '').trim()
-		if (!qRaw) { setMatches([]); try{ (searchPluginInstance as any).clearHighlights?.() } catch{}; return }
-		const cacheKey = `${fileUrl}::${qRaw.toLowerCase()}`
-		if (searchCacheRef.current.has(cacheKey)) {
-			setMatches(searchCacheRef.current.get(cacheKey) || [])
+// Native search on the currently displayed document
+const searchMainThread = async (qRaw: string): Promise<MatchItem[]> => {
+  const doc = pdfDocRef.current
+  return searchNativeCore(doc, qRaw)
+}
+
+const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
+        const qRaw = ((qOverride != null ? qOverride : searchQ) || '').trim()
+		if (!qRaw) { setMatches([]); try{ (searchPluginInstance as any).clearHighlights?.() } catch{}; return [] }
+		const cacheKey = `${fileUrl}::${qRaw.toLowerCase()}::${docId || 'no-doc'}`
+    if (searchCacheRef.current.has(cacheKey)) {
+			const cached = searchCacheRef.current.get(cacheKey) || []
+			logger.debug('SEARCH[cache][hit]', { q: qRaw, cached: cached.length, key: cacheKey })
+      setMatches(cached)
 			try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
-			return
+			return cached
 		}
-		try {
+        try {
+			logger.debug('SEARCH[fetch][start]', { fileUrl })
 			const res = await fetch(fileUrl)
-			await res.arrayBuffer()
-			await searchMainThread(qRaw)
-			searchCacheRef.current.set(cacheKey, matches)
+      await res.arrayBuffer()
+      // 1) native text via pdf.js
+            let found: MatchItem[] = await searchMainThread(qRaw)
+			logger.debug('SEARCH[native][count]', { count: found.length })
+            // 1b) if document has OCR PDF, search inside that for native text
+            if ((found.length === 0) && docId) {
+              try {
+                const docMeta: any = await api.getDocumento(docId)
+                const ocrKey = docMeta?.ocrPdfKey
+                if (ocrKey) {
+                  const ocrUrl = api.getLocalFileUrl(ocrKey)
+                  logger.debug('SEARCH[native-ocrPdfKey][start]', { ocrUrl })
+                  const task = (pdfjsLib as any).getDocument({ url: ocrUrl, disableWorker: true })
+                  const ocrDoc = await task.promise
+                  const fromOcrPdf = await searchNativeCore(ocrDoc, qRaw)
+                  logger.debug('SEARCH[native-ocrPdfKey][done]', { count: fromOcrPdf.length })
+                  if (fromOcrPdf.length > 0) {
+                    found = fromOcrPdf
+                    setMatches(fromOcrPdf)
+                  }
+                }
+              } catch (e) { logger.warn('SEARCH[native-ocrPdfKey][error]', String(e)) }
+            }
+			// 2) fallback to OCR layout if no native hits and docId available
+      if ((!found || found.length === 0) && docId) {
+				logger.debug('SEARCH[ocr-fallback][start]', { docId })
+				const ocr = await searchViaOcrBackend(docId, qRaw)
+        found = ocr
+        setMatches(ocr)
+				logger.debug('SEARCH[ocr-fallback][done]', { count: ocr.length })
+      }
+			searchCacheRef.current.set(cacheKey, found)
+			logger.debug('SEARCH[cache][set]', { key: cacheKey, count: found.length })
 			try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
-		} catch {}
+			// Disegna subito i rettangoli per tutti i match
+			try {
+				const paintAll = (found || [])
+					.filter((m: any) => m && m.page && m.x0Pct != null && m.y0Pct != null && m.x1Pct != null && m.y1Pct != null)
+					.map((m: any) => ({ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }))
+				if (paintAll.length) drawOcrRects(paintAll)
+			} catch {}
+			return found
+		} catch {
+			return []
+		}
 	}
 
 // removed unused snippet renderer
@@ -1147,6 +1516,35 @@ const suppressClearRef = useRef<boolean>(false)
 					</Worker>
 				</div>
 
+				{/* ==== OCR INSPECTOR (TEMP) ==== */}
+				{ocrInspectOpen && (
+					<div
+						className="fixed z-[99999] bg-white shadow-xl border rounded"
+						style={{ left: ocrDrag.x, top: ocrDrag.y, width: 520, maxHeight: 420, overflow: 'auto' }}
+					>
+						<div
+							className="cursor-move px-3 py-2 border-b bg-gray-50 select-none flex items-center justify-between"
+							onMouseDown={(e) => {
+								setOcrDrag(prev => ({ ...prev, dragging: true, dx: e.clientX - prev.x, dy: e.clientY - prev.y }))
+							}}
+						>
+							<div className="text-sm font-semibold">OCR pagina {ocrInspect?.page || ''}</div>
+							<div className="flex items-center gap-2">
+								<button
+									className="text-xs px-2 py-1 border rounded"
+									onClick={() => setOcrInspectOpen(false)}
+								>
+									Chiudi
+								</button>
+							</div>
+						</div>
+						<div className="p-3 text-xs whitespace-pre-wrap">
+							{(ocrInspect?.text && ocrInspect.text.slice(0, 20000)) || '<vuoto>'}
+						</div>
+					</div>
+				)}
+				{/* ==== OCR INSPECTOR (TEMP) ==== */}
+
                 {/* Overlays */}
 				{[...(selectedAnnot ? [selectedAnnot] : []), ...annots, ...(draft ? [draft] : [])].map(a => {
 					const root = overlayRootsRef.current.get(a.page)
@@ -1318,11 +1716,11 @@ const suppressClearRef = useRef<boolean>(false)
 						<GripVertical size={12} className="mx-auto text-gray-400" />
 					</div>
 					<div className="h-full border-l bg-white flex flex-col" style={{ width: panelW }}>
-						<SearchProvider defaultScope={'current'} onSearch={async(q, _scope)=>{
-							(setSearchQ as any)(q)
-							await runSearch()
+                        <SearchProvider defaultScope={'current'} onSearch={async(q, _scope)=>{
+                            (setSearchQ as any)(q)
+                            const found = await runSearch(q)
 							const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
-							const groups = [{ doc: { id: 'current', title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: (matches || []).map((m)=>({
+                            const groups = [{ doc: { id: 'current', title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: (found || []).map((m)=>({
 								id: m.id,
 								docId: 'current',
 								docTitle,
@@ -1334,12 +1732,22 @@ const suppressClearRef = useRef<boolean>(false)
 								snippet: m.snippet,
 								score: 0,
 							})) }]
-							return { id: cryptoRandom(), query: q, scope: 'current' as any, total: (matches || []).length, groups } as any
-						}} adapterFactory={() => ({
+                            return { id: cryptoRandom(), query: q, scope: 'current' as any, total: (found || []).length, groups } as any
+                        }} adapterFactory={() => ({
 							goToMatch: async (m: any) => {
 								try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: m.q }) } catch {}
 								const mi = { id: m.id, page: m.page, snippet: m.snippet, x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct, charIdx: m.charIdx, qLen: m.qLength } as any
 								await (goToMatch as any)(mi)
+                                // disegna rettangoli sugli hit correnti (dalla cache dell'ultima ricerca)
+                                try {
+                                  const cacheKey = `${fileUrl}::${(m.q||'').toLowerCase()}::${docId || 'no-doc'}`
+                                  const cached = searchCacheRef.current.get(cacheKey) || []
+                                  const matches = cached.map((mm:any)=>({ page:mm.page, x0Pct:mm.x0Pct, y0Pct:mm.y0Pct, x1Pct:mm.x1Pct, y1Pct:mm.y1Pct }))
+                                  drawOcrRects(matches.filter(Boolean))
+                                  const box = [{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }]
+                                  const paint = () => { try { drawOcrRects(box) } catch {} }
+                                  paint(); setTimeout(paint, 100); setTimeout(paint, 300)
+                                } catch {}
 							}
 						})}>
 							<SearchPanelTree showInput={true} />
