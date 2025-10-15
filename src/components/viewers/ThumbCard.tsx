@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Eye, Table, Trash, ScanText, FileText, Rocket } from 'lucide-react'
+import { Eye, Table, Trash, ScanText, FileText } from 'lucide-react'
 import { useAutoThumbnail } from '../../hooks/useAutoThumbnail'
 import { OcrProgressOverlay } from './OcrProgressOverlay'
 
@@ -19,7 +19,6 @@ interface ThumbCardProps {
   onTable?: () => void
   onRemove?: () => void
   onOcr?: () => void
-  onOcrQuick?: () => void
   ocrProgressPct?: number | null
   hasOcr?: boolean
   ocrEtaText?: string | null
@@ -50,7 +49,6 @@ export function ThumbCard({
   onTable, 
   onRemove, 
   onOcr, 
-  onOcrQuick, 
   ocrProgressPct, 
   hasOcr, 
   ocrEtaText, 
@@ -102,18 +100,6 @@ export function ThumbCard({
           {headerIcon ?? <FileText className="w-4 h-4" />}
           <div className="text-xs font-semibold truncate" title={title}>{title}</div>
           <div className="flex-1" />
-          {/* Pulsante Accelera OCR (quick) */}
-          {onOcrQuick && (
-            <button
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
-              onClick={(e)=>{ e.stopPropagation(); onOcrQuick() }}
-              title="Accelera OCR"
-              aria-label="Accelera OCR"
-            >
-              <Rocket className="w-3 h-3" />
-              Accelera
-            </button>
-          )}
         </div>
         {/* Body: image or excerpt */}
         <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden">

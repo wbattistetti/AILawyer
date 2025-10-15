@@ -1200,42 +1200,35 @@ export function PraticaCanvasPage() {
         try {
           const j = await api.getJob(job.id)
           console.log('[OCR] job', j.status, j.progress)
-          setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: j.progress }))
-          // ETA + stato
-          try {
-            const meta = JSON.parse(j.result || '{}')?.meta || {}
-            const elapsedMs = JSON.parse(j.result || '{}')?.elapsedMs || 0
-            const phase = meta.phase || 'OCR'
-            const done = Number(meta.currentPage || 0)
-            const total = Number(meta.totalPages || 0)
-            const idKey = documento.id
-            if (!ocrStatsRef.current[idKey]) ocrStatsRef.current[idKey] = { lastMs: 0, lastR: 0, lastO: 0, switched: false, samplesR: [], samplesO: [] }
-            const st = ocrStatsRef.current[idKey]
-            const dMs = Math.max(0, elapsedMs - st.lastMs)
-            if (phase === 'RASTER') {
-              const dPg = Math.max(0, done - st.lastR); if (dPg > 0) st.samplesR.push(dMs / dPg); st.lastR = done
-              setOcrStatusByDoc(prev => ({ ...prev, [idKey]: `Raster pagina ${done} di ${total}…` }))
-            } else if (phase === 'OCR') {
-              if (!st.switched) { st.switched = true; st.lastO = done }
-              const dPg = Math.max(0, done - st.lastO); if (dPg > 0) st.samplesO.push(dMs / dPg); st.lastO = done
-              setOcrStatusByDoc(prev => ({ ...prev, [idKey]: done > 0 ? `OCR pagina ${done} di ${total}…` : 'Preparazione…' }))
-            }
-            st.lastMs = elapsedMs
-            const avg = (arr: number[]) => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0
-            const msR = avg(st.samplesR) || 0
-            const msO = avg(st.samplesO) || 0
-            const rasterDone = st.lastR
-            const ocrDone = st.switched ? st.lastO : 0
-            const estMsO = msO || msR || 2000
-            const estMsR = msR || estMsO
-            const remainingMs = Math.max(0, (total - rasterDone)) * estMsR + Math.max(0, (total - ocrDone)) * estMsO
-            const mins = Math.max(0, Math.round(remainingMs / 60000))
+          // Preferisci percentuale calcolata dalle pagine fatte se disponibile
+          const meta = (() => { try { return JSON.parse(j.result || '{}')?.meta || {} } catch { return {} } })()
+          const elapsedMs = (() => { try { return JSON.parse(j.result || '{}')?.elapsedMs || 0 } catch { return 0 } })()
+          const done = Number(meta.currentPage || 0)
+          const total = Number(meta.totalPages || 0)
+          const pctByMeta = total > 0 ? Math.floor((done / total) * 100) : Math.round((j.progress || 0))
+          const percent = Math.max(0, Math.min(100, pctByMeta))
+          setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: percent }))
+
+          // Stato + ETA semplice e stabile
+          const phase = meta.phase || 'OCR'
+          setOcrStatusByDoc(prev => ({
+            ...prev,
+            [documento.id]: (percent < 100)
+              ? (done > 0 && total > 0 ? `${phase} pagina ${done} di ${total}…` : 'Preparazione…')
+              : null
+          }))
+
+          let etaText: string | null = null
+          if (done > 0 && total > done && percent < 100) {
+            const avgPerPage = elapsedMs / done
+            const remainingMs = Math.max(0, (total - done) * avgPerPage)
             const etaDate = new Date(Date.now() + remainingMs)
             const hh = String(etaDate.getHours()).padStart(2, '0')
             const mm = String(etaDate.getMinutes()).padStart(2, '0')
-            const etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
-            setOcrEtaByDoc(prev => ({ ...prev, [idKey]: etaText }))
-          } catch {}
+            const mins = Math.round(remainingMs / 60000)
+            etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
+          }
+          setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: etaText }))
           if (j.status === 'completed' || j.status === 'failed') {
             active = false
             if (j.status === 'failed') {
@@ -1250,6 +1243,10 @@ export function PraticaCanvasPage() {
                 console.warn('[OCR] soft refresh failed', e)
               }
             }
+            // Forza 100% e azzera ETA/Stato
+            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 100 }))
+            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
+            setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
             // Clear progress overlay after a short delay
             setTimeout(() => {
               setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
@@ -1511,7 +1508,7 @@ export function PraticaCanvasPage() {
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
                   onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
                   onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
-                  onOcrQuick={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'quick', 1) }}
+                  
                   progressById={ocrProgressByDoc as any}
                   etaById={ocrEtaByDoc as any}
                   statusById={ocrStatusByDoc as any}

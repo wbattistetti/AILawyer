@@ -95,7 +95,7 @@ export function DocumentCollection({
               onTable={() => onOpen(doc)}
               onRemove={() => onRemove?.(doc)}
               onOcr={() => onOcr?.(doc)}
-              onOcrQuick={() => onOcrQuick?.(doc)}
+              
               ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
               ocrEtaText={etaById?.[doc.id] ?? null}
               ocrStatusText={statusById?.[doc.id] ?? null}
