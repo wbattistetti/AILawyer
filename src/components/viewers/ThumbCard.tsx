@@ -76,6 +76,10 @@ export function ThumbCard({
   // Determina quale immagine mostrare
   const displayImage = generatedThumbnail || imgSrc
 
+  // Stato di caricamento immagine (mostra spinner finché il browser non emette onLoad)
+  const [imgLoading, setImgLoading] = useState<boolean>(false)
+  useEffect(() => { setImgLoading(!!displayImage) }, [displayImage])
+
   // Se cambia la sorgente effettiva dell'immagine (server → client-side o viceversa),
   // rimuovi lo stato di errore per permettere un nuovo tentativo di render
   useEffect(() => { setImgError(false) }, [displayImage])
@@ -124,7 +128,7 @@ export function ThumbCard({
           )}
           {!imgError && displayImage ? (
             <div className="flex-1 flex items-center justify-center">
-              {thumbnailLoading && (
+              {(thumbnailLoading || (displayImage && imgLoading)) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/80">
                   <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
@@ -133,8 +137,8 @@ export function ThumbCard({
                 src={displayImage} 
                 alt={title} 
                 className="max-w-full max-h-full object-contain" 
-                onError={() => setImgError(true)} 
-                onLoad={() => setImgError(false)}
+                onError={() => { setImgError(true); setImgLoading(false) }} 
+                onLoad={() => { setImgError(false); setImgLoading(false) }}
               />
             </div>
           ) : (

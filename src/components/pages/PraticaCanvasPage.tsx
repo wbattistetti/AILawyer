@@ -389,8 +389,39 @@ export function PraticaCanvasPage() {
 
     // Temporaneo: usa un comparto placeholder lato backend
 
-    // Initialize upload progress
-    const newUploads: UploadProgress[] = files.map(file => ({
+    // Pre-dedupe: evita duplicati PRIMA di creare voci di upload
+    const existingHashes = new Set((documenti.map(d => (d as any).hash).filter(Boolean) as string[]))
+    const toProcess: File[] = []
+    let skipped = 0
+    // Helper: sha256 del file (client-side)
+    const digestHex = async (file: File) => {
+      try {
+        const buf = await file.arrayBuffer()
+        const hash = await crypto.subtle.digest('SHA-256', buf)
+        const b = new Uint8Array(hash)
+        return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('')
+      } catch {
+        return ''
+      }
+    }
+    for (const f of files) {
+      let dup = false
+      const h = await digestHex(f)
+      if (h && existingHashes.has(h)) dup = true
+      // Fallback: match su filename+size se hash mancante
+      if (!dup && (!h || h.length === 0)) {
+        const existsByNameSize = documenti.some(d => d.filename === f.name && (d as any).size === f.size)
+        if (existsByNameSize) dup = true
+      }
+      if (dup) { skipped++; continue }
+      toProcess.push(f)
+    }
+    if (skipped > 0) {
+      toast({ title: 'Duplicati ignorati', description: `${skipped} file già presenti non sono stati aggiunti.` })
+    }
+
+    // Initialize upload progress SOLO per i file da processare
+    const newUploads: UploadProgress[] = toProcess.map(file => ({
       file,
       progress: 0,
       status: 'pending',
@@ -420,9 +451,12 @@ export function PraticaCanvasPage() {
       }
     }
 
+    // Evita duplicati: salta file già presenti per s3Key equivalente (stesso nome+size durante la sessione)
+    const existingKeys = new Set(documenti.map(d => d.s3Key))
+
     // Process each file
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
+    for (let i = 0; i < toProcess.length; i++) {
+      const file = toProcess[i]
       const uploadIndex = uploads.length + i
 
       try {
@@ -434,6 +468,14 @@ export function PraticaCanvasPage() {
 
         // Get upload URL
         const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
+
+        // Skip se già presente in archivio (stesso s3Key)
+        if (existingKeys.has(s3Key)) {
+          setUploads(prev => prev.map((upload, idx) => 
+            idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
+          ))
+          continue
+        }
 
         // Fire client-side PDF thumb generation (non-blocking)
         const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
@@ -479,6 +521,8 @@ export function PraticaCanvasPage() {
           tags,
         })
 
+        existingKeys.add(s3Key)
+
         setUploads(prev => prev.map((upload, idx) => 
           idx === uploadIndex ? { ...upload, progress: 80, status: 'processing' } : upload
         ))
@@ -490,7 +534,17 @@ export function PraticaCanvasPage() {
           idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
         ))
 
-        setDocumenti(prev => [documento, ...prev])
+        // Dedupe: se il backend ha restituito un documento già esistente (stesso hash/id),
+        // aggiorna in-place invece di aggiungere un duplicato
+        setDocumenti(prev => {
+          const i = prev.findIndex(d => d.id === documento.id)
+          if (i >= 0) {
+            const next = [...prev]
+            next[i] = { ...prev[i], ...documento }
+            return next
+          }
+          return [documento, ...prev]
+        })
         try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch {}
 
       } catch (error) {

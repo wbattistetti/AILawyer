@@ -77,7 +77,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         }
       } catch {}
       
-      // If identical file already exists (by s3Key or by hash), return existing document
+      // If identical file already exists (by s3Key or by hash), return existing document (normalized)
       const existing = await prisma.documento.findFirst({
         where: { OR: [ { s3Key: canonicalKey }, { hash } ] },
       })
@@ -87,6 +87,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
           tags: typeof (existing as any).tags === 'string' ? (() => { try { return JSON.parse((existing as any).tags) } catch { return [] } })() : (existing as any).tags,
           ocrLayout: typeof (existing as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((existing as any).ocrLayout) } catch { return undefined } })() : (existing as any).ocrLayout,
         }
+        // ensure 200 OK and short-circuit
         return normalizedExisting
       }
       

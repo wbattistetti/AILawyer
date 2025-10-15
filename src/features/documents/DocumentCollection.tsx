@@ -75,14 +75,18 @@ export function DocumentCollection({
           const titleText = meta.title || (doc.filename||'').replace(/\.json$/,'')
           const excerpt = (meta.text || meta.content || '').toString().slice(0, 220)
           const src = meta.source || {}
+          const isPdf = !isExtract && ((doc.mime||'').startsWith('application/pdf') || (doc.filename||'').toLowerCase().endsWith('.pdf'))
+          const computedFileUrl = !isExtract && (
+            doc.localUrl || (doc.s3Key ? `${(import.meta as any).env?.VITE_API_URL || '/api'}/files/${encodeURIComponent(doc.s3Key)}` : '')
+          ) || undefined
           return (
             <ThumbCard
               key={doc.id}
               title={isExtract ? titleText : doc.filename}
               imgSrc={isExtract ? '' : (doc.thumb || '')}
-              // abilita la generazione client-side se non c'è thumb e abbiamo un URL
-              fileUrl={!isExtract && (doc.localUrl || (doc.s3Key ? (window?.location ? `${(import.meta as any).env?.VITE_API_URL || '/api'}/files/${encodeURIComponent(doc.s3Key)}` : '') : '')) || undefined}
-              autoGenerateThumbnail={!isExtract && !doc.thumb}
+              // genera sempre lato client per i PDF
+              fileUrl={computedFileUrl}
+              autoGenerateThumbnail={isPdf}
               headerIcon={isExtract ? headerIcon : undefined}
               headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
               excerpt={isExtract ? excerpt : undefined}
