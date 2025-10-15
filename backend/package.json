@@ -10,6 +10,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "worker": "tsx watch src/workers/index.ts",
+    "ocr:smoke": "tsx src/scripts/ocr2-smoke.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx src/scripts/seed.ts",

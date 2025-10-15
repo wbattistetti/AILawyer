@@ -21,6 +21,9 @@ export function DocumentCollection({
   onDrop,
   uploadingCount,
   onRemove,
+  onOcr,
+  onOcrQuick,
+  progressById,
 }: {
   title?: string
   items: DocItem[]
@@ -28,6 +31,9 @@ export function DocumentCollection({
   onDrop?: (files: File[]) => void
   uploadingCount?: number
   onRemove?: (doc: DocItem) => void
+  onOcr?: (doc: DocItem) => void
+  onOcrQuick?: (doc: DocItem) => void
+  progressById?: Record<string, number>
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const onDropCb = useCallback((accepted: File[]) => {
@@ -81,6 +87,9 @@ export function DocumentCollection({
               onPreview={() => onOpen(doc)}
               onTable={() => onOpen(doc)}
               onRemove={() => onRemove?.(doc)}
+              onOcr={() => onOcr?.(doc)}
+              onOcrQuick={() => onOcrQuick?.(doc)}
+              ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
             />
           )
         })}

@@ -1,14 +1,27 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
-import { config } from './config/index.js'
-import { praticheRoutes } from './routes/pratiche.js'
-import { documentiRoutes } from './routes/documenti.js'
-import { uploadRoutes } from './routes/upload.js'
-import { jobsRoutes } from './routes/jobs.js'
-import { thumbsRoutes } from './routes/thumbs.js'
-import { filesystemRoutes } from './routes/filesystem.js'
-import { cleanupTempFiles } from './utils/tempCleanup.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Carica sempre backend/.env prima di tutto e fai valere .env su variabili preesistenti
+dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true })
+
+// Forza default sicuri per avvio locale senza coda, Poppler attivo
+process.env.ENABLE_QUEUE = 'false'
+process.env.OCR_ENGINE = 'poppler'
+process.env.STORAGE_MODE = process.env.STORAGE_MODE || 'local'
+process.env.OCR_LANG = 'ita'
+
+// Importa config e routes SOLO dopo aver fissato le env
+const { config } = await import('./config/index.js')
+const { praticheRoutes } = await import('./routes/pratiche.js')
+const { documentiRoutes } = await import('./routes/documenti.js')
+const { uploadRoutes } = await import('./routes/upload.js')
+const { jobsRoutes } = await import('./routes/jobs.js')
+const { thumbsRoutes } = await import('./routes/thumbs.js')
+const { filesystemRoutes } = await import('./routes/filesystem.js')
 
 const fastify = Fastify({
   logger: {

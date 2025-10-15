@@ -263,63 +263,96 @@ const [areas, setAreas] = useState<Area[]>([])
 			if (!docId) return
 			const doc: any = await api.getDocumento(docId)
 			const raw = String(doc?.ocrText || '')
+			try { console.log('[OCR][inspector] fetch doc', { pageNum, hasText: !!raw, textLen: raw.length, hasLayout: !!doc?.ocrLayout }) } catch {}
 			// Prova a ricostruire a capo dalle words dell'ocrLayout
 			let textFromLayout = ''
 			try {
 				const layoutRaw: any = (doc as any).ocrLayout
 				const arr = Array.isArray(layoutRaw) ? layoutRaw : (()=>{ try{ return JSON.parse(layoutRaw || '[]') } catch { return [] } })()
 				const lay = (arr.find((p: any) => p?.page === pageNum) || arr[pageNum - 1])
-				if (lay && Array.isArray(lay.words) && lay.words.length > 0) {
-					type Word = { x0:number; x1:number; y0:number; y1:number; text:string }
-					const words = (lay.words as Word[]).filter(w => (
-						w && typeof w.x0 === 'number' && typeof w.y0 === 'number' && String(w.text || '').trim()
-					))
-					if (words.length) {
-						// 1) ordina preliminarmente per riga (y) e poi per x
-						const sorted = words.slice().sort((a, b) => {
-							if (a.y0 === b.y0) return a.x0 - b.x0
-							return a.y0 - b.y0
-						})
-						// 2) calcola soglia verticale più stretta per separare linee vicine
-                        const heights = sorted.map(w => (w.y1 - w.y0))
-                        const avgH = heights.length ? (heights.reduce((a,b)=>a+b,0)/heights.length) : 0.02
-                        // Coordinates are normalized (0..1): use a small threshold to split lines
-                        const thr = Math.max(0.006, avgH * 0.6)
-						type Line = { yMid:number; parts: Word[] }
-						const linesAgg: Line[] = []
-						for (const w of sorted) {
-							const yMid = (w.y0 + w.y1) / 2
-							const last = linesAgg[linesAgg.length - 1]
-							if (!last || Math.abs(last.yMid - yMid) > thr) {
-								linesAgg.push({ yMid, parts: [w] })
-							} else {
-								last.parts.push(w)
-								last.yMid = (last.yMid + yMid) / 2
-							}
-						}
-						// 3) ordina linee top->bottom e parole left->right, poi join con newlines
-						const lineTexts = linesAgg
-							.sort((a,b)=> a.yMid - b.yMid)
-							.map(ln => ln.parts
-								.sort((p,q)=> p.x0 - q.x0)
-								.map(p => String(p.text || '').trim())
-								.join(' ')
-								.replace(/\s+/g,' ') 
-								.trim()
-							)
-						textFromLayout = lineTexts.join('\n')
-					}
-				}
+				try { console.log('[OCR][inspector] layout page', { pageNum, pages: Array.isArray(arr)?arr.length:0, hasLay: !!lay, words: lay?.words?.length || 0 }) } catch {}
+                if (lay && Array.isArray(lay.words) && lay.words.length > 0) {
+                    const ws = lay.words.filter((w: any) => w && String(w.text||'').trim())
+                    const hasIdx = ws.every((w: any) => Number.isFinite(w.b) && Number.isFinite(w.p) && Number.isFinite(w.l) && Number.isFinite(w.wi))
+                    if (hasIdx) {
+                        const sorted = ws.slice().sort((a: any, b: any) =>
+                            (a.b||0)-(b.b||0) || (a.p||0)-(b.p||0) || (a.l||0)-(b.l||0) || (a.wi||0)-(b.wi||0)
+                        )
+                        let parts: string[] = []
+                        let last = { b: -1, p: -1, l: -1 }
+                        for (const w of sorted) {
+                            const nb = w.b||0, np = w.p||0, nl = w.l||0
+                            if (last.b !== -1) {
+                                if (nb !== last.b) parts.push('\n\n')
+                                else if (np !== last.p) parts.push('\n\n')
+                                else if (nl !== last.l) parts.push('\n')
+                                else parts.push(' ')
+                            }
+                            parts.push(String(w.text||'').trim())
+                            last = { b: nb, p: np, l: nl }
+                        }
+                        textFromLayout = parts.join('').replace(/[ \t]+/g,' ').replace(/\s+\n/g,'\n').trim()
+                    } else {
+                        // fallback semplice per quando non abbiamo indici
+                        type Word = { x0:number; x1:number; y0:number; y1:number; text:string }
+                        const words = (ws as Word[])
+                        const withMid = words.map(w => ({ ...w, xMid: (w.x0 + w.x1)/2, yMid: (w.y0 + w.y1)/2, h: (w.y1 - w.y0) }))
+                        withMid.sort((a,b)=> a.yMid===b.yMid ? a.x0-b.x0 : a.yMid-b.yMid)
+                        const hs = withMid.map(w=>w.h).filter(n=>n>0)
+                        const medH = hs.length ? [...hs].sort((a,b)=>a-b)[Math.floor(hs.length/2)] : 0.02
+                        const thrY = Math.max(0.003, medH*0.35)
+                        type Line = { y:number; parts: typeof withMid }
+                        const lines: any[] = []
+                        for (const w of withMid) {
+                            const last = lines[lines.length-1]
+                            if (!last || Math.abs(last.y - w.yMid) > thrY) lines.push({ y: w.yMid, parts:[w] })
+                            else { last.parts.push(w); last.y = (last.y*(last.parts.length-1) + w.yMid)/last.parts.length }
+                        }
+                        for (const ln of lines) ln.parts.sort((p:any,q:any)=>p.x0-q.x0)
+                        const texts = lines.sort((a,b)=>a.y-b.y).map(ln => ln.parts.map((p:any)=>String(p.text||'').trim()).join(' '))
+                        textFromLayout = texts.map(t=>t.replace(/\s+/g,' ').trim()).filter(Boolean).join('\n')
+                    }
+                }
 			} catch {}
 
 			let text = ''
 			if (textFromLayout && textFromLayout.trim()) {
 				text = textFromLayout
-        } else if (raw) {
-          const parts = raw.split(/\f/)
-				text = parts[pageNum - 1] || ''
+			} else if (raw) {
+				// Usa separatore esatto del backend ("\n\f\n"), fallback a solo form-feed
+                const primary = raw.split(/\n\f\n/g)
+                const fallback = raw.split(/\f/g)
+                const parts = primary.length >= fallback.length ? primary : fallback
+                const idx = pageNum - 1
+                if (idx >= 0 && idx < parts.length) {
+                    text = String(parts[idx] || '')
+                } else {
+                    text = ''
+                }
+                try { console.log('[OCR][inspector] split fallback', { parts: parts.length, pickIdx: idx, inRange: (idx>=0 && idx<parts.length), len: text.length }) } catch {}
+				// Non forzare più uno spazio: lasciamo la pagina vuota per evidenziare il fallimento OCR
 			} else {
-				text = '<nessun testo OCR disponibile>'
+				// Fallback: se non abbiamo OCR per questa pagina, prova a leggere il testo nativo della pagina via pdf.js
+				try {
+					const anyPdf: any = (await import('pdfjs-dist/legacy/build/pdf.js')) as any
+					if (anyPdf && anyPdf.getDocument) {
+						const docMeta: any = await api.getDocumento(docId)
+						const fileKey = docMeta?.ocrPdfKey || docMeta?.s3Key
+						if (fileKey) {
+							const url = api.getLocalFileUrl(fileKey)
+							const res = await fetch(url)
+							const buf = await res.arrayBuffer()
+							const pdf = await anyPdf.getDocument({ data: new Uint8Array(buf), disableWorker: true }).promise
+							const p = Math.max(1, Math.min(pageNum, pdf.numPages || 1))
+							const page = await pdf.getPage(p)
+							const content = await page.getTextContent()
+							const items = content.items as any[]
+							text = items.map(it => String(it.str || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ')
+							try { console.log('[OCR][inspector] pdfjs fallback', { pageNum: p, len: text.length }) } catch {}
+						}
+					}
+				} catch {}
+				if (!text) text = '<nessun testo OCR disponibile>'
 			}
 			setOcrInspect({ page: pageNum, text })
 			setOcrInspectOpen(true)

@@ -1,5 +1,12 @@
 import { z } from 'zod'
 import path from 'path'
+import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+
+// Carica SEMPRE backend/.env; NON sovrascrivere variabili già impostate dal processo
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Questo file si trova in backend/src/config → la .env sta in backend/.env
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: false })
 
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -20,7 +27,7 @@ const configSchema = z.object({
   THUMBS_DIR: z.string().default(path.resolve(process.cwd(), '..', 'uploads', '_thumbs')),
 
   // OCR engine selection and settings
-  OCR_ENGINE: z.enum(['tesseractjs', 'ocrmypdf']).default('tesseractjs'),
+  OCR_ENGINE: z.enum(['tesseractjs', 'ocrmypdf', 'poppler']).default('poppler'),
   OCR_LANG: z.string().default('ita+eng'),
   OCRMYPDF_PATH: z.string().optional(),
   OCR_TIMEOUT_SEC: z.coerce.number().default(900),

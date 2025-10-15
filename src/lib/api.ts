@@ -112,8 +112,10 @@ export const api = {
   },
 
   // Jobs
-  async queueOcr(documentId: string, mode: 'quick' | 'full' = 'full'): Promise<Job> {
-    return fetchApi(`/documenti/${documentId}/queue-ocr?mode=${mode}`, {
+  async queueOcr(documentId: string, mode: 'quick' | 'full' = 'full', limitPages?: number): Promise<Job> {
+    const qp = new URLSearchParams({ mode })
+    if (limitPages && limitPages > 0) qp.set('limitPages', String(limitPages))
+    return fetchApi(`/documenti/${documentId}/queue-ocr?${qp.toString()}`, {
       method: 'POST',
     })
   },

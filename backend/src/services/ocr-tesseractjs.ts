@@ -1,8 +1,12 @@
+import { createWorker } from 'tesseract.js'
 import * as Canvas from 'canvas'
 import fs from 'fs'
 import { gzipSync } from 'zlib'
 import path from 'path'
 import { createRequire } from 'module'
+import { storageService } from '../lib/storage.js'
+import { OcrResult } from '../types/index.js'
+import { config } from '../config/index.js'
 
 // Polyfill process.getBuiltinModule for tesseract.js under ESM/Node 20
 const require = createRequire(import.meta.url)
@@ -61,89 +65,48 @@ class NodeCanvasFactory {
     canvasAndContext.context = null
   }
 }
-import { storageService } from '../lib/storage.js'
-import { OcrResult } from '../types/index.js'
-import { config } from '../config/index.js'
 
 export interface OcrLayoutPageWord { text: string; x0: number; y0: number; x1: number; y1: number }
 export interface OcrLayoutPage { page: number; width: number; height: number; words: OcrLayoutPageWord[] }
 
-export interface IOcrService {
-  extract(
-    s3Key: string,
-    onProgress?: (progress01: number, meta?: { currentPage?: number; totalPages?: number }) => void | Promise<void>
-  ): Promise<OcrResult & { layout: OcrLayoutPage[] }>
-}
-
-export class TesseractOcrService implements IOcrService {
+export class TesseractOcrService {
   async extract(
     s3Key: string,
     onProgress?: (progress01: number, meta?: { currentPage?: number; totalPages?: number }) => void | Promise<void>
   ): Promise<OcrResult & { layout: OcrLayoutPage[] }> {
     try {
-      // Get file from storage
       const buffer = await storageService.getObject(s3Key)
-      
-      // If it's a PDF, render page-by-page via pdf.js
       const isPdf = s3Key.toLowerCase().endsWith('.pdf') || buffer.slice(0, 5).toString('utf-8').includes('%PDF-')
 
-      // Resolve Tesseract language data path (ensure local tessdata)
       const tessdataLocalDir = path.resolve(process.cwd(), 'tessdata')
       if (!fs.existsSync(tessdataLocalDir)) fs.mkdirSync(tessdataLocalDir, { recursive: true })
 
-      // Ensure ita.traineddata exists locally to avoid remote fetch/404
       const langCode = 'ita'
       const trainedFile = path.join(tessdataLocalDir, `${langCode}.traineddata`)
       const gzFile = path.join(tessdataLocalDir, `${langCode}.traineddata.gz`)
       if (!fs.existsSync(gzFile)) {
         if (!fs.existsSync(trainedFile)) {
-          // Try fast tessdata (raw)
           const url = `https://github.com/tesseract-ocr/tessdata_fast/raw/main/${langCode}.traineddata`
-          console.log('OCR: downloading traineddata', { url })
           const res = await fetch(url)
           if (!res.ok) throw new Error(`Failed to download traineddata: ${res.status} ${res.statusText}`)
           const arrBuf = await res.arrayBuffer()
           await fs.promises.writeFile(trainedFile, Buffer.from(arrBuf))
         }
-        // Create gzip version expected by tesseract.js v4
         const raw = await fs.promises.readFile(trainedFile)
         const gz = gzipSync(raw)
         await fs.promises.writeFile(gzFile, gz)
       }
-      const langPath = tessdataLocalDir
 
-      console.log('OCR: starting', { s3Key, isPdf })
-      // Tesseract v4 worker (lazy import to avoid loading when Poppler is used)
-      const { createWorker } = await import('tesseract.js')
-      const worker = await createWorker({
-        langPath,
-        cacheMethod: 'none',
-      })
+      const worker = await createWorker({ langPath: tessdataLocalDir, cacheMethod: 'none' })
       const langs = (config.OCR_LANG || 'ita')
       await worker.loadLanguage(langs)
       await worker.initialize(langs)
-      // Improve segmentation and spacing stability for PDFs
-      await worker.setParameters({
-        tessedit_pageseg_mode: '6',
-        preserve_interword_spaces: '1',
-        user_defined_dpi: '300',
-      } as any)
+      await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' } as any)
 
       if (isPdf) {
-        // In Node use legacy build and disable worker thread
         const pdfBytes = new Uint8Array(buffer)
-        const pdf = await getDocument({
-          data: pdfBytes,
-          // v4 options for Node stability
-          disableWorker: true as any,
-          isEvalSupported: false,
-          useWorkerFetch: false,
-          disableFontFace: true,
-          disableRange: true,
-          canvasFactory: new NodeCanvasFactory(),
-        } as any).promise
+        const pdf = await getDocument({ data: pdfBytes, disableWorker: true as any, isEvalSupported: false, useWorkerFetch: false, disableFontFace: true, disableRange: true, canvasFactory: new NodeCanvasFactory() } as any).promise
         const total = pdf.numPages
-        console.log('OCR: PDF detected, total pages', total)
         const pages: { text: string; confidence: number }[] = []
         const layout: OcrLayoutPage[] = []
         for (let p = 1; p <= total; p++) {
@@ -151,7 +114,6 @@ export class TesseractOcrService implements IOcrService {
           const viewport = page.getViewport({ scale: 3 })
           const factory = new NodeCanvasFactory()
           const { canvas, context } = factory.create(viewport.width, viewport.height)
-          // Patch drawImage on this context to accept ImageData inputs
           const ctxAny: any = context as any
           if (!ctxAny.__drawImagePatched) {
             const originalDrawImage = ctxAny.drawImage?.bind(ctxAny)
@@ -172,9 +134,7 @@ export class TesseractOcrService implements IOcrService {
             }
           }
           const renderContext: any = { canvasContext: context, viewport }
-          console.log('OCR: rendering page', { page: p, width: canvas.width, height: canvas.height })
           await (page as any).render(renderContext).promise
-          // Pass a PNG buffer to tesseract to avoid cross-thread canvas issues
           const pngBuffer = (canvas as any).toBuffer('image/png') as Buffer
           const { data } = await worker.recognize(pngBuffer, { tessedit_create_tsv: '1' } as any)
           pages.push({ text: data.text, confidence: data.confidence })
@@ -187,58 +147,29 @@ export class TesseractOcrService implements IOcrService {
           })
           layout.push({ page: p, width: canvas.width, height: canvas.height, words })
           if (onProgress) await onProgress(p / total, { currentPage: p, totalPages: total })
-          console.log('OCR: page processed', { page: p, total })
           factory.destroy({ canvas, context })
         }
         await worker.terminate()
         const avg = pages.length ? pages.reduce((a, b) => a + b.confidence, 0) / pages.length : 0
-        console.log('OCR: finished PDF', { pages: total, avgConfidence: avg.toFixed(2) })
         return { pages, avgConfidence: avg, layout }
       } else {
         const { data } = await worker.recognize(buffer, { tessedit_create_tsv: '1' } as any)
-      await worker.terminate()
+        await worker.terminate()
         const pages = [{ text: data.text, confidence: data.confidence }]
-        const layout: OcrLayoutPage[] = [{
-          page: 1,
-          width: 0,
-          height: 0,
-          words: (data.words ?? []).map((w: any) => {
-            const x0 = w.bbox?.x0 ?? w.bbox?.x ?? 0
-            const y0 = w.bbox?.y0 ?? w.bbox?.y ?? 0
-            const x1 = (w.bbox?.x1 != null) ? w.bbox.x1 : ((w.bbox?.w != null) ? x0 + (w.bbox.w ?? 0) : x0)
-            const y1 = (w.bbox?.y1 != null) ? w.bbox.y1 : ((w.bbox?.h != null) ? y0 + (w.bbox.h ?? 0) : y0)
-            return { text: w.text, x0, y0, x1, y1 }
-          })
-        }]
-        console.log('OCR: finished image', { avgConfidence: data.confidence })
+        const layout: OcrLayoutPage[] = [{ page: 1, width: 0, height: 0, words: (data.words ?? []).map((w: any) => {
+          const x0 = w.bbox?.x0 ?? w.bbox?.x ?? 0
+          const y0 = w.bbox?.y0 ?? w.bbox?.y ?? 0
+          const x1 = (w.bbox?.x1 != null) ? w.bbox.x1 : ((w.bbox?.w != null) ? x0 + (w.bbox.w ?? 0) : x0)
+          const y1 = (w.bbox?.y1 != null) ? w.bbox.y1 : ((w.bbox?.h != null) ? y0 + (w.bbox.h ?? 0) : y0)
+          return { text: w.text, x0, y0, x1, y1 }
+        }) }]
         return { pages, avgConfidence: data.confidence, layout }
       }
     } catch (error) {
-      console.error('OCR Error:', error)
       throw new Error(`OCR processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 }
 
-// Provider selector (ocrmypdf | tesseractjs | poppler)
-let _ocrService: IOcrService | undefined
-export const ocrService: IOcrService = await (async () => {
-  if (_ocrService) return _ocrService as IOcrService
-  try {
-    const mod = await import('./ocr-poppler.ts').catch(async (eJs) => {
-      // Fallback: some tsx setups require .js mapping
-      try { return await import('./ocr-poppler.js') } catch (eJs2) {
-        console.warn('[OCR][engine] poppler import failed (.ts then .js)', { eTs: String(eJs), eJs: String(eJs2) })
-        throw eJs2
-      }
-    })
-    const PopplerOcrService = (mod as any).PopplerOcrService
-    if (!PopplerOcrService) throw new Error('PopplerOcrService not exported')
-    _ocrService = new PopplerOcrService((key: string) => storageService.getObject(key))
-    console.log('[OCR][engine] Using PopplerOcrService (forced default)')
-  } catch (e) {
-    console.warn('[OCR][engine] Poppler load failed, falling back to tesseract.js', e)
-    _ocrService = new TesseractOcrService()
-  }
-  return _ocrService as IOcrService
-})()
+export type IOcrService = TesseractOcrService
+

@@ -938,7 +938,7 @@ export function PraticaCanvasPage() {
     const JOB_SYSTEM_ENABLED = true
     const enqueueAll = (doc: Documento) => {
       // Concurrency per doc = 1: verranno eseguiti in ordine
-      jobSystem.enqueue(doc.id, 'ocr', async ({ signal }) => { if (signal.aborted) return; await startOcr(doc) })
+      // NON enqueuare OCR automaticamente: l'OCR parte solo dal pulsante sulla miniatura
       jobSystem.enqueue(doc.id, 'entities', async ({ signal }) => { if (signal.aborted) return; await startEntities(doc) })
       jobSystem.enqueue(doc.id, 'contacts', async ({ signal }) => { if (signal.aborted) return; await startParsers(doc, ['contacts']) })
       jobSystem.enqueue(doc.id, 'vehicles', async ({ signal }) => { if (signal.aborted) return; await startParsers(doc, ['vehicles']) })
@@ -947,7 +947,7 @@ export function PraticaCanvasPage() {
     const startAll = (doc: Documento) => {
       dbg('all:start', { docId: doc.id })
       if (JOB_SYSTEM_ENABLED) { enqueueAll(doc); return }
-      try { startOcr(doc) } catch {}
+      // NON avviare OCR in modalità fallback: parte solo su click esplicito
       try { startEntities(doc) } catch {}
       try { startParsers(doc, ['contacts','vehicles']) } catch {}
       try { startEvents(doc) } catch {}
@@ -1178,13 +1178,13 @@ export function PraticaCanvasPage() {
   // Seed Tavolo: not needed in V2 (tabs managed by DockWorkspaceV2)
 
   // Queue OCR for a document and start polling job progress
-  const handleOcr = async (documento: Documento, mode: 'quick' | 'full' = 'full') => {
+  const handleOcr = async (documento: Documento, mode: 'quick' | 'full' = 'full', limitPages?: number) => {
     try {
       setSelectedDocId(documento.id)
       console.log('[OCR] queue request', documento.id, documento.filename)
       toast({ title: 'OCR avviato', description: documento.filename })
       // Queue job
-      const job = await api.queueOcr(documento.id, mode)
+      const job = await api.queueOcr(documento.id, mode, limitPages)
       setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
 
       // Polling loop
@@ -1463,6 +1463,9 @@ export function PraticaCanvasPage() {
                   }}
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
                   onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
+                  onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
+                  onOcrQuick={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'quick', 1) }}
+                  progressById={ocrProgressByDoc as any}
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (
