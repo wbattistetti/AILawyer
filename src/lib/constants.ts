@@ -31,5 +31,22 @@ export const TAG_PENALI = [
 
 export const OCR_CONFIDENCE_THRESHOLD = 65
 export const CLASSIFY_CONFIDENCE_THRESHOLD = 60
-export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024 // 50MB
+export const MAX_UPLOAD_SIZE = 400 * 1024 * 1024 // 50MB
 export const MAX_FILES_PER_BATCH = 50
+
+// Configurazioni per ottimizzazioni performance
+export const THUMBNAIL_CONFIG = {
+  AUTO_GENERATE: true,
+  DEFAULT_WIDTH: 192,
+  DEFAULT_HEIGHT: 256,
+  DEFAULT_QUALITY: 0.8,
+  CACHE_SIZE: 100,
+  BATCH_SIZE: 3,
+} as const
+
+export const OCR_CONFIG = {
+  MAX_CONCURRENCY: 16,
+  AUTO_OPTIMIZE: true,
+  RETRY_ATTEMPTS: 3,
+  TIMEOUT_MS: 900000, // 15 minuti
+} as const

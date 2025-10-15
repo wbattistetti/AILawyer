@@ -70,11 +70,11 @@ async function runStdout(cmd: string, args: string[], opts?: { cwd?: string }) {
   return stdout
 }
 
-function median(xs: number[]) {
+function median(xs: number[]): number {
   if (!xs.length) return 0
   const s = [...xs].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2
 }
 
 async function pdfPageCount(pdfPath: string) {
@@ -116,12 +116,51 @@ async function rasterizeAll(pdfPath: string, outBase: string, dpi: number) {
   await execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
 }
 
+const RASTER_RETRIES = Math.max(1, Number(process.env.OCR_RASTER_RETRIES || 2))
 async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi: number) {
-  const args: string[] = []
-  if (!process.env.OCR_RASTER_COLOR) args.push('-gray')
-  args.push('-f', String(page), '-l', String(page), '-r', String(dpi), '-png', '-cropbox', '-aa', 'no', '-aaVector', 'no', pdfPath, outBase)
-  await execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
-  return `${outBase}-${String(page).padStart(3, '0')}.png`
+  const tryOnce = async (color: boolean) => {
+    const args: string[] = []
+    if (!color) args.push('-gray')
+    args.push('-f', String(page), '-l', String(page), '-r', String(dpi), '-png', '-cropbox', '-aa', 'no', '-aaVector', 'no', pdfPath, outBase)
+    try { console.log('[OCR][raster][cmd]', bin('pdftoppm'), args.join(' ')) } catch {}
+    await execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
+    const name3 = `${outBase}-${String(page).padStart(3, '0')}.png`
+    const namePlain = `${outBase}-${page}.png`
+    const found3 = await waitFor(name3, 80, 25)
+    const foundPlain = !found3 && await waitFor(namePlain, 40, 25)
+    let picked = found3 ? name3 : (foundPlain ? namePlain : '')
+    if (!picked) {
+      try {
+        const dir = path.dirname(outBase)
+        const base = path.basename(outBase)
+        const rx = new RegExp(`^${base}-0*${page}\\.png$`, 'i')
+        const files = fss.readdirSync(dir)
+        const hit = files.find(f => rx.test(f))
+        if (hit) picked = path.join(dir, hit)
+      } catch {}
+    }
+    try { const sz = picked && fss.existsSync(picked) ? (fss.statSync(picked).size || 0) : 0; console.log('[OCR][raster][out]', { page, picked, size: sz, color }) } catch {}
+    if (!picked || !fss.existsSync(picked)) {
+      throw new Error('[OCR][raster] PNG non trovato dopo pdftoppm')
+    }
+    return picked
+  }
+
+  const preferColor = !!process.env.OCR_RASTER_COLOR
+  let attempt = 0
+  let lastErr: any
+  for (attempt = 0; attempt < RASTER_RETRIES; attempt++) {
+    const useColor = attempt === 0 ? preferColor : !preferColor // toggle color on retry
+    try {
+      return await tryOnce(useColor)
+    } catch (e: any) {
+      lastErr = e
+      try { console.warn('[OCR][raster][retry]', { page, dpi, attempt: attempt + 1, useColor, err: String(e?.message || e) }) } catch {}
+      await new Promise(r => setTimeout(r, 120 + attempt * 80))
+    }
+  }
+  try { console.error('[OCR][raster][failed]', { page, dpi, attempts: RASTER_RETRIES, err: String(lastErr?.message || lastErr) }) } catch {}
+  throw lastErr || new Error('[OCR][raster] fallita dopo retry')
 }
 
 type Word = { text: string; conf: number; x: number; y: number; w: number; h: number; b?: number; p?: number; l?: number; wi?: number }
@@ -144,8 +183,8 @@ function parseTsv(tsv: string): Word[] {
   }
   const words: Word[] = []
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split('\t')
-    if (!cols.length) continue
+    const cols = lines[i]?.split('\t')
+    if (!cols?.length) continue
     const level = Number(cols[ix.level] || 0)
     if (level !== 5) continue
     const text = cols[ix.text] || ''
@@ -215,7 +254,8 @@ async function ocrHocr(pngPath: string, psm: number, dpi: number) {
 }
 
 async function ocrTxt(pngPath: string, psm: number, dpi: number) {
-  const args = [pngPath, ...baseArgsCommon, 'txt', '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`]
+  // Use stdout renderer to avoid file race on Windows: outputbase=stdout + renderer 'txt'
+  const args = [pngPath, 'stdout', ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, 'txt']
   try { console.log('[OCR][cmd][txt]', TESSERACT, args.join(' ')) } catch {}
   const { stdout } = await execa(TESSERACT, args, {
     shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
@@ -231,6 +271,7 @@ function parseHocrWords(hocr: string): Word[] {
   let m: RegExpExecArray | null
   while ((m = rx1.exec(hocr))) {
     const [, x0, y0, x1, y1, conf, raw] = m
+    if (!x0 || !y0 || !x1 || !y1 || !conf || !raw) continue
     const text = String(raw).replace(/<[^>]+>/g, '').trim()
     if (!text) continue
     words.push({ text, conf: Number(conf), x: +x0, y: +y0, w: (+x1 - +x0), h: (+y1 - +y0) })
@@ -238,6 +279,7 @@ function parseHocrWords(hocr: string): Word[] {
   if (words.length === 0) {
     while ((m = rx2.exec(hocr))) {
       const [, x0, y0, x1, y1, raw] = m
+      if (!x0 || !y0 || !x1 || !y1 || !raw) continue
       const text = String(raw).replace(/<[^>]+>/g, '').trim()
       if (!text) continue
       words.push({ text, conf: 60, x: +x0, y: +y0, w: (+x1 - +x0), h: (+y1 - +y0) })
@@ -317,28 +359,40 @@ export class PopplerOcrService implements IOcrPoppler {
       const runtimeForceFirst = String(process.env.OCR_FORCE_FIRST_PAGE || '').toLowerCase() === 'true'
       const limitFromEnv = runtimeLimit > 0 ? runtimeLimit : (runtimeForceFirst ? 1 : 0)
       const pagesToProcess = limitFromEnv > 0 ? Math.min(limitFromEnv, totalPages) : totalPages
-      const tRasterStart = Date.now()
-      // Parallelizza SEMPRE il raster per pagina per sfruttare tutti i core
-      const cpuCount = Math.max(1, (os.cpus()?.length || 1))
-      const maxSuggested = Math.max(2, Math.min(8, cpuCount - 1))
-      const concRaster = Math.max(1, Number(process.env.OCR_RASTER_CONCURRENCY || process.env.OCR_CONCURRENCY || maxSuggested))
-      const pagesIdx = Array.from({ length: pagesToProcess }, (_, i) => i + 1)
-      let rDone = 0
-      const runRaster = async (p: number) => { await rasterizePage(pdfPath, p, outBase, DPI_BASE); rDone++ }
-      const runnersR: Promise<void>[] = []
-      let nextR = 0
-      for (let k = 0; k < Math.min(concRaster, pagesIdx.length); k++) {
-        runnersR.push((async function rr(){ while (nextR < pagesIdx.length) { const i = nextR++; await runRaster(pagesIdx[i]) } })())
-      }
-      await Promise.all(runnersR)
-      try { console.log('[OCR][raster][done]', { pages: pagesToProcess, ms: Date.now() - tRasterStart, dpi: DPI_BASE, concurrency: concRaster }) } catch {}
-      if (onProgress) await onProgress(0.5, { phase: 'RASTER', totalPages: pagesToProcess })
 
-      const pngsAll = fss.readdirSync(tmpDir).filter(f => f.startsWith('page-') && f.endsWith('.png')).sort()
-      const maxPages = Math.min(pagesToProcess, pngsAll.length)
-      const pngs = pngsAll.slice(0, maxPages)
-      try { console.log('[OCR][raster]', { totalPages, pagesToProcess, files: pngs.length, first: pngs[0] }) } catch {}
-      const resultPages: { text: string; confidence: number }[] = []
+      // Auto‑tuning concorrenza per pagina basato su CPU/RAM, con override via env
+      const computePageConcurrency = () => {
+        const cpus = os.cpus() || []
+        const threads = Math.max(1, cpus.length || 1)
+        const model = (cpus[0]?.model || '').trim()
+        const speedMhz = Number(cpus[0]?.speed || 0) // MHz
+        const totalMemGb = Math.round((os.totalmem() || 0) / (1024 ** 3))
+
+        // Base: 2× thread logici (ottimo per pipeline raster+OCR)
+        let base = threads * 2
+        // Se CPU molto lenta o poca RAM, riduci leggermente
+        if (speedMhz > 0 && speedMhz < 2200) base = Math.ceil(threads * 1.5)
+        if (totalMemGb > 0 && totalMemGb < 12) base = Math.ceil(base * 0.75)
+
+        const maxCap = Math.max(4, Number(process.env.OCR_MAX_CONCURRENCY || 16))
+        return Math.max(4, Math.min(maxCap, base))
+      }
+      const cpuCount = Math.max(1, (os.cpus()?.length || 1))
+      const autoConc = computePageConcurrency()
+      const conc = Number(process.env.OCR_CONCURRENCY) > 0 ? Number(process.env.OCR_CONCURRENCY) : autoConc
+      try {
+        const cpu0 = (os.cpus() || [])[0]
+        console.log('[OCR][concurrency]', {
+          cpuCount,
+          model: cpu0?.model,
+          speedMhz: cpu0?.speed,
+          totalMemGb: Math.round((os.totalmem() || 0) / (1024 ** 3)),
+          auto: autoConc,
+          using: conc,
+        })
+      } catch {}
+
+      const resultPages: { text: string; confidence: number }[] = new Array(pagesToProcess)
       const layout: any[] = []
 
       // helper: translate a single page top-down
@@ -374,8 +428,8 @@ export class PopplerOcrService implements IOcrPoppler {
           let W = 0, H = 0
           try {
             const sz = imageSize(pngForSize)
-            W = (sz.width || 0)
-            H = (sz.height || 0)
+            W = (sz?.width || 0)
+            H = (sz?.height || 0)
           } catch (e) {
             try { console.warn('[OCR][imageSize][error]', String(e)) } catch {}
           }
@@ -404,7 +458,7 @@ export class PopplerOcrService implements IOcrPoppler {
         }
 
         let pageText = ''
-        let pageConf = 0
+        let pageConf: number = 0
         let usedPsm = 6
         let usedDpi = DPI_BASE
 
@@ -427,16 +481,16 @@ export class PopplerOcrService implements IOcrPoppler {
           const hiOut = await tryBoxes(hiPng, DPI_MAX)
           const wordsH = hiOut.words
           const medH = median(wordsH.map(w => w.conf))
-          if (wordsH.length > words.length || medH > med) { words = wordsH; med = medH; usedPsm = hiOut.psmUsed }
+          if (wordsH.length > words.length || (medH && med && medH > med)) { words = wordsH; med = medH; usedPsm = hiOut.psmUsed }
           logHead('hiDPI', { dpi: DPI_MAX, psm: usedPsm, words: words.length, medConf: med.toFixed(1) })
           const out = processWords(words, usedDpi, usedPsm, hiPng)
-          pageText = out.text; pageConf = out.med
+          pageText = out.text; pageConf = out.med || 0
           if (!pageText || !pageText.trim()) {
             try { pageText = (await ocrTxt(hiPng, usedPsm, usedDpi)).replace(/\s+/g, ' ').trim() } catch {}
           }
         } else {
           const out = processWords(words, usedDpi, usedPsm, basePng)
-          pageText = out.text; pageConf = out.med
+          pageText = out.text; pageConf = out.med || 0
           if (!pageText || !pageText.trim()) {
             try { pageText = (await ocrTxt(basePng, usedPsm, usedDpi)).replace(/\s+/g, ' ').trim() } catch {}
           }
@@ -454,25 +508,21 @@ export class PopplerOcrService implements IOcrPoppler {
       }
 
       // Auto-concorrenza basata su CPU, con override via OCR_CONCURRENCY
-      const conc = Math.max(1, Number(process.env.OCR_CONCURRENCY || maxSuggested))
-      try { console.log('[OCR][concurrency]', { cpuCount, suggested: maxSuggested, using: conc }) } catch {}
-
-      const outPages: { text: string; confidence: number }[] = new Array(pngs.length)
+      // Per-page pipeline: raster → OCR per pagina, in concorrenza
       let completed = 0
-      const worker = async (idx: number) => {
-        const pageIdx = idx + 1
-        const basePng = path.join(tmpDir, pngs[idx])
-        try { outPages[idx] = await translateOne(pageIdx, basePng) } catch { outPages[idx] = { text: '', confidence: 0 } }
+      const processOne = async (p: number) => {
+        const png = await rasterizePage(pdfPath, p, outBase, DPI_BASE)
+        const out = await translateOne(p, png)
+        resultPages[p - 1] = out
         completed++
-        if (onProgress) await onProgress(0.5 + (completed / Math.max(1, pngs.length)) * 0.5, { phase: 'OCR', currentPage: completed, totalPages: pngs.length })
+        if (onProgress) await onProgress(completed / Math.max(1, pagesToProcess), { phase: 'OCR', currentPage: completed, totalPages: pagesToProcess })
       }
+      let next = 1
       const runners: Promise<void>[] = []
-      let next = 0
-      for (let k = 0; k < Math.min(conc, pngs.length); k++) {
-        runners.push((async function run() { while (next < pngs.length) { const i = next++; await worker(i) } })())
+      for (let k = 0; k < Math.min(conc, pagesToProcess); k++) {
+        runners.push((async function run() { while (next <= pagesToProcess) { const i = next++; await processOne(i) } })())
       }
       await Promise.all(runners)
-      resultPages.push(...outPages)
 
       const avgConfidence = resultPages.length ? resultPages.reduce((a, b) => a + b.confidence, 0) / resultPages.length : 0
       try { console.log('[OCR][return]', { pages: resultPages.length, lens: resultPages.map(p => (p.text||'').length).slice(0, 3).join(','), layoutPages: layout.length, words0: (layout[0]?.words?.length || 0), totalMs: Date.now() - tStartAll }) } catch {}

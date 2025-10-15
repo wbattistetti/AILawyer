@@ -121,7 +121,17 @@ const ocrWorker = new Worker('ocr-processing', async (job) => {
   }
 }, {
   connection: getRedis(),
-  concurrency: 2, // Process 2 OCR jobs concurrently
+  // Auto‑tuning concorrenza per documenti: 1–4 in base ai thread e alla RAM
+  concurrency: (() => {
+    const threads = Math.max(1, (require('os').cpus()?.length || 1))
+    const totalMemGb = Math.round((require('os').totalmem() || 0) / (1024 ** 3))
+    const env = Number(process.env.OCR_WORKER_CONCURRENCY || 0)
+    if (env > 0) return env
+    // Laptop: tieni basso (1–2) per lasciare spazio al per‑pagina
+    let c = threads >= 16 ? 3 : 2
+    if (totalMemGb <= 8) c = 1
+    return Math.max(1, Math.min(4, c))
+  })(),
 })
 
 ocrWorker.on('completed', (job) => {

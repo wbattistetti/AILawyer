@@ -29,6 +29,15 @@ export function getOcrQueue(): Queue {
           type: 'exponential',
           delay: 2000,
         },
+        // Ottimizzazioni per concorrenza massima
+        priority: 1,
+        delay: 0,
+        jobId: undefined, // Permette job duplicati se necessario
+      },
+      // Configurazioni per performance ottimali
+      settings: {
+        stalledInterval: 30 * 1000, // 30 secondi
+        maxStalledCount: 1,
       },
     })
   }

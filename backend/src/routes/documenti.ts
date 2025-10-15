@@ -36,6 +36,20 @@ export async function documentiRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: DocumentoCreateInput }>('/documenti', async (request, reply) => {
     try {
       const data = documentoCreateSchema.parse(request.body)
+      // Ensure compartoId is valid for the pratica; fallback to first comparto or create a default one
+      let effectiveCompartoId = data.compartoId
+      try {
+        const comp = await prisma.comparto.findUnique({ where: { id: effectiveCompartoId } })
+        if (!comp || comp.praticaId !== data.praticaId) {
+          const fallback = await prisma.comparto.findFirst({ where: { praticaId: data.praticaId }, orderBy: { ordine: 'asc' } })
+          if (fallback) {
+            effectiveCompartoId = fallback.id
+          } else {
+            const created = await prisma.comparto.create({ data: { praticaId: data.praticaId, key: 'da_classificare', nome: 'Da classificare', ordine: 0 } })
+            effectiveCompartoId = created.id
+          }
+        }
+      } catch {}
       
       // Generate hash from file content
       const buf = await storageService.getObject(data.s3Key)
@@ -62,33 +76,70 @@ export async function documentiRoutes(fastify: FastifyInstance) {
           }
         }
       } catch {}
-
-      const documento = await prisma.documento.create({
+      
+      // If identical file already exists (by s3Key or by hash), return existing document
+      const existing = await prisma.documento.findFirst({
+        where: { OR: [ { s3Key: canonicalKey }, { hash } ] },
+      })
+      if (existing) {
+        const normalizedExisting: any = {
+          ...existing,
+          tags: typeof (existing as any).tags === 'string' ? (() => { try { return JSON.parse((existing as any).tags) } catch { return [] } })() : (existing as any).tags,
+          ocrLayout: typeof (existing as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((existing as any).ocrLayout) } catch { return undefined } })() : (existing as any).ocrLayout,
+        }
+        return normalizedExisting
+      }
+      
+      let documento
+      try {
+        documento = await prisma.documento.create({
         data: {
           ...data,
-          s3Key: canonicalKey,
+            compartoId: effectiveCompartoId,
+            s3Key: canonicalKey,
           hash,
           ocrStatus: data.ocrStatus || 'pending',
           tags: JSON.stringify(data.tags || []),
         },
       })
+      } catch (e: any) {
+        // Handle race: another request created the same s3Key just now
+        const code = e?.code || ''
+        if (code === 'P2002') {
+          const fallback = await prisma.documento.findFirst({ where: { OR: [ { s3Key: canonicalKey }, { hash } ] } })
+          if (fallback) {
+            const normalizedExisting: any = {
+              ...fallback,
+              tags: typeof (fallback as any).tags === 'string' ? (() => { try { return JSON.parse((fallback as any).tags) } catch { return [] } })() : (fallback as any).tags,
+              ocrLayout: typeof (fallback as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((fallback as any).ocrLayout) } catch { return undefined } })() : (fallback as any).ocrLayout,
+            }
+            return normalizedExisting
+          }
+        }
+        throw e
+      }
 
-      // Fire-and-forget: build PDF thumbnail if applicable
+      // Fire-and-forget: build PDF thumbnail if applicable (use canonical s3Key)
       try {
         if (data.mime.startsWith('application/pdf') || data.filename.toLowerCase().endsWith('.pdf')) {
           const base = process.env.VITE_API_URL ? process.env.VITE_API_URL.replace(/\/$/, '') : `http://localhost:${config.PORT}`
           fetch(`${base}/thumb/build`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ hash, s3Key: data.s3Key, mime: data.mime }),
+            body: JSON.stringify({ hash, s3Key: canonicalKey, mime: data.mime }),
           }).catch(() => {})
         }
       } catch {}
 
-      return documento
-    } catch (error) {
+      const normalizedNew: any = {
+        ...documento,
+        tags: typeof (documento as any).tags === 'string' ? (() => { try { return JSON.parse((documento as any).tags) } catch { return [] } })() : (documento as any).tags,
+      }
+      return normalizedNew
+    } catch (error: any) {
       fastify.log.error(error)
-      return reply.status(500).send({ error: 'Errore nella creazione del documento' })
+      const message = error?.message || 'Errore nella creazione del documento'
+      return reply.status(500).send({ error: 'Errore nella creazione del documento', details: message })
     }
   })
 
@@ -185,7 +236,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
           const message = e?.message || String(e)
           fastify.log.error({ msg: 'queue add failed, falling back to inline', err: message })
           // fallback to inline if Redis not reachable
-          const { ocrService } = await import('../services/ocr.ts')
+          const { ocrService } = await import('../services/ocr.js')
           ;(async () => {
             let last = 0
             const start = Date.now()
@@ -200,7 +251,11 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                 if (percent - last >= 5) {
                   last = percent
                   const elapsedMs = Date.now() - start
-                  await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
+                  try {
+                    await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
+                  } catch (e: any) {
+                    fastify.log.warn({ msg: 'OCR progress update failed (soft)', jobId: job.id, progress: percent, err: e?.message || String(e) })
+                  }
                   fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
                 }
               })
@@ -284,7 +339,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         }
       } else {
         // Run OCR asynchronously in dev and return immediately the job id
-        const { ocrService } = await import('../services/ocr.ts')
+        const { ocrService } = await import('../services/ocr.js')
         ;(async () => {
           let last = 0
           const start = Date.now()
@@ -300,7 +355,11 @@ export async function documentiRoutes(fastify: FastifyInstance) {
               if (percent - last >= 5) {
                 last = percent
                 const elapsedMs = Date.now() - start
-                await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
+                try {
+                  await prisma.job.update({ where: { id: job.id }, data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) } })
+                } catch (e: any) {
+                  fastify.log.warn({ msg: 'OCR progress update failed (soft)', jobId: job.id, progress: percent, err: e?.message || String(e) })
+                }
                 fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
               }
             })

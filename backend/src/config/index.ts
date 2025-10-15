@@ -36,6 +36,14 @@ const configSchema = z.object({
   OCR_QUICK_DPI: z.coerce.number().default(180),
   OCR_QUICK_LANG: z.string().default('ita'),
   OCR_JOBS: z.coerce.number().default(0),
+  // Ottimizzazioni concorrenza
+  OCR_CONCURRENCY: z.coerce.number().default(0), // 0 = auto-ottimizzato
+  OCR_MAX_CONCURRENCY: z.coerce.number().default(16),
+  // Thumbnail settings
+  THUMB_AUTO_GENERATE: z.coerce.boolean().default(true),
+  THUMB_QUALITY: z.coerce.number().default(0.8),
+  // Worker settings
+  OCR_WORKER_CONCURRENCY: z.coerce.number().default(8),
 })
 
 export const config = configSchema.parse(process.env)

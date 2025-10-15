@@ -51,6 +51,9 @@ export function PraticaCanvasPage() {
   const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
   const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
   const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
+  const [ocrEtaByDoc, setOcrEtaByDoc] = useState<Record<string, string>>({})
+  const [ocrStatusByDoc, setOcrStatusByDoc] = useState<Record<string, string>>({})
+  const ocrStatsRef = useRef<Record<string, { lastMs: number; lastR: number; lastO: number; switched: boolean; samplesR: number[]; samplesO: number[] }>>({})
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
   const [headerH, setHeaderH] = useState<number>(56)
@@ -1143,9 +1146,10 @@ export function PraticaCanvasPage() {
         <div className="grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
         {documenti.map(doc => {
           const isPdf = doc.mime?.startsWith('application/pdf') || doc.filename.toLowerCase().endsWith('.pdf')
-          const serverThumb = isPdf && doc.hash ? api.getThumbUrl(doc.hash) : ''
+          const ver = (doc as any)?.updatedAt ? `?v=${encodeURIComponent((doc as any).updatedAt as any)}` : ''
+          const serverThumb = isPdf && doc.hash ? `${api.getThumbUrl(doc.hash)}${ver}` : ''
           const clientThumb = clientThumbByS3[doc.s3Key]
-          const thumb = clientThumb || serverThumb || api.getLocalFileUrl(doc.s3Key)
+          const thumb = clientThumb || serverThumb || ''
           return (
             <ThumbCard
               key={doc.id}
@@ -1160,6 +1164,8 @@ export function PraticaCanvasPage() {
               onOcr={() => handleOcr(doc)}
               onOcrQuick={() => handleOcr(doc, 'quick')}
               ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
+              ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
+              ocrStatusText={ocrStatusByDoc[doc.id] ?? null}
               hasOcr={!!doc.ocrPdfKey}
             />
           )
@@ -1195,14 +1201,54 @@ export function PraticaCanvasPage() {
           const j = await api.getJob(job.id)
           console.log('[OCR] job', j.status, j.progress)
           setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: j.progress }))
+          // ETA + stato
+          try {
+            const meta = JSON.parse(j.result || '{}')?.meta || {}
+            const elapsedMs = JSON.parse(j.result || '{}')?.elapsedMs || 0
+            const phase = meta.phase || 'OCR'
+            const done = Number(meta.currentPage || 0)
+            const total = Number(meta.totalPages || 0)
+            const idKey = documento.id
+            if (!ocrStatsRef.current[idKey]) ocrStatsRef.current[idKey] = { lastMs: 0, lastR: 0, lastO: 0, switched: false, samplesR: [], samplesO: [] }
+            const st = ocrStatsRef.current[idKey]
+            const dMs = Math.max(0, elapsedMs - st.lastMs)
+            if (phase === 'RASTER') {
+              const dPg = Math.max(0, done - st.lastR); if (dPg > 0) st.samplesR.push(dMs / dPg); st.lastR = done
+              setOcrStatusByDoc(prev => ({ ...prev, [idKey]: `Raster pagina ${done} di ${total}…` }))
+            } else if (phase === 'OCR') {
+              if (!st.switched) { st.switched = true; st.lastO = done }
+              const dPg = Math.max(0, done - st.lastO); if (dPg > 0) st.samplesO.push(dMs / dPg); st.lastO = done
+              setOcrStatusByDoc(prev => ({ ...prev, [idKey]: done > 0 ? `OCR pagina ${done} di ${total}…` : 'Preparazione…' }))
+            }
+            st.lastMs = elapsedMs
+            const avg = (arr: number[]) => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0
+            const msR = avg(st.samplesR) || 0
+            const msO = avg(st.samplesO) || 0
+            const rasterDone = st.lastR
+            const ocrDone = st.switched ? st.lastO : 0
+            const estMsO = msO || msR || 2000
+            const estMsR = msR || estMsO
+            const remainingMs = Math.max(0, (total - rasterDone)) * estMsR + Math.max(0, (total - ocrDone)) * estMsO
+            const mins = Math.max(0, Math.round(remainingMs / 60000))
+            const etaDate = new Date(Date.now() + remainingMs)
+            const hh = String(etaDate.getHours()).padStart(2, '0')
+            const mm = String(etaDate.getMinutes()).padStart(2, '0')
+            const etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
+            setOcrEtaByDoc(prev => ({ ...prev, [idKey]: etaText }))
+          } catch {}
           if (j.status === 'completed' || j.status === 'failed') {
             active = false
             if (j.status === 'failed') {
               toast({ title: 'OCR fallito', description: j.error || 'Errore sconosciuto', variant: 'destructive' })
             } else {
               toast({ title: 'OCR completato', description: documento.filename })
-              // Refresh documents to get updated OCR fields and status
-              if (id) await loadPraticaData(id)
+              // Soft refresh: aggiorna SOLO il documento corrente, senza rimettere la pagina in loading
+              try {
+                const refreshed = await api.getDocumento(documento.id)
+                setDocumenti(prev => prev.map(d => d.id === documento.id ? { ...d, ...refreshed } : d))
+              } catch (e) {
+                console.warn('[OCR] soft refresh failed', e)
+              }
             }
             // Clear progress overlay after a short delay
             setTimeout(() => {
@@ -1452,9 +1498,10 @@ export function PraticaCanvasPage() {
                   title="Archivio"
                   items={documenti.map(d => {
                     const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf')
-                    const serverThumb = isPdf && d.hash ? api.getThumbUrl(d.hash) : ''
+                    const ver = (d as any)?.updatedAt ? `?v=${encodeURIComponent((d as any).updatedAt as any)}` : ''
+                    const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : ''
                     const clientThumb = clientThumbByS3[d.s3Key]
-                    const thumb = clientThumb || serverThumb || (isPdf ? api.getLocalFileUrl(d.s3Key) : '')
+                    const thumb = clientThumb || serverThumb || ''
                     return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb }
                   })}
                   onOpen={(doc) => {
@@ -1466,6 +1513,8 @@ export function PraticaCanvasPage() {
                   onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
                   onOcrQuick={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'quick', 1) }}
                   progressById={ocrProgressByDoc as any}
+                  etaById={ocrEtaByDoc as any}
+                  statusById={ocrStatusByDoc as any}
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (

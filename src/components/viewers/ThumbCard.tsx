@@ -1,5 +1,7 @@
-import React, { useState } from 'react'
-import { Eye, Table, Trash, ScanText, FileText } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Eye, Table, Trash, ScanText, FileText, Rocket } from 'lucide-react'
+import { useAutoThumbnail } from '../../hooks/useAutoThumbnail'
+import { OcrProgressOverlay } from './OcrProgressOverlay'
 
 interface ThumbCardProps {
   title: string
@@ -20,10 +22,73 @@ interface ThumbCardProps {
   onOcrQuick?: () => void
   ocrProgressPct?: number | null
   hasOcr?: boolean
+  ocrEtaText?: string | null
+  ocrStatusText?: string | null
+  // Nuove props per generazione automatica miniature
+  fileUrl?: string
+  autoGenerateThumbnail?: boolean
+  thumbnailOptions?: {
+    width?: number
+    height?: number
+    quality?: number
+  }
 }
 
-export function ThumbCard({ title, imgSrc, headerIcon, headerColorClass, excerpt, metaDocLabel, metaPage, onShow, selected, onSelect, onPreview, onPreviewOcr, onTable, onRemove, onOcr, onOcrQuick, ocrProgressPct, hasOcr }: ThumbCardProps) {
+export function ThumbCard({ 
+  title, 
+  imgSrc, 
+  headerIcon, 
+  headerColorClass, 
+  excerpt, 
+  metaDocLabel, 
+  metaPage, 
+  onShow, 
+  selected, 
+  onSelect, 
+  onPreview, 
+  onPreviewOcr, 
+  onTable, 
+  onRemove, 
+  onOcr, 
+  onOcrQuick, 
+  ocrProgressPct, 
+  hasOcr, 
+  ocrEtaText, 
+  ocrStatusText,
+  fileUrl,
+  autoGenerateThumbnail = false,
+  thumbnailOptions = {}
+}: ThumbCardProps) {
   const [imgError, setImgError] = useState(false)
+  // resetta errori immagine quando cambia la sorgente
+  useEffect(() => { setImgError(false) }, [imgSrc])
+
+  // Hook per generazione automatica miniature
+  const { thumbnail: generatedThumbnail, loading: thumbnailLoading, generate } = useAutoThumbnail(
+    autoGenerateThumbnail ? fileUrl : null,
+    {
+      enabled: autoGenerateThumbnail,
+      width: 192, // 48 * 4 (w-48 = 192px)
+      height: 256, // 64 * 4 (h-64 = 256px)
+      quality: 0.8,
+      ...thumbnailOptions
+    }
+  )
+
+  // Determina quale immagine mostrare
+  const displayImage = generatedThumbnail || imgSrc
+
+  // Se cambia la sorgente effettiva dell'immagine (server → client-side o viceversa),
+  // rimuovi lo stato di errore per permettere un nuovo tentativo di render
+  useEffect(() => { setImgError(false) }, [displayImage])
+
+  // Fallback: se l'immagine fallisce (es. 404 sul server-thumb), genera la miniatura client-side
+  useEffect(() => {
+    if (!fileUrl) return
+    if (!imgError) return
+    if (generatedThumbnail || thumbnailLoading) return
+    try { generate() } catch {}
+  }, [imgError, fileUrl, generatedThumbnail, thumbnailLoading, generate])
   return (
     <div
       className="relative group select-none rounded-md"
@@ -36,6 +101,19 @@ export function ThumbCard({ title, imgSrc, headerIcon, headerColorClass, excerpt
         <div className={`absolute left-2 right-2 top-2 h-7 rounded text-white flex items-center gap-2 px-2 ${headerColorClass || 'bg-amber-500'}`}>
           {headerIcon ?? <FileText className="w-4 h-4" />}
           <div className="text-xs font-semibold truncate" title={title}>{title}</div>
+          <div className="flex-1" />
+          {/* Pulsante Accelera OCR (quick) */}
+          {onOcrQuick && (
+            <button
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
+              onClick={(e)=>{ e.stopPropagation(); onOcrQuick() }}
+              title="Accelera OCR"
+              aria-label="Accelera OCR"
+            >
+              <Rocket className="w-3 h-3" />
+              Accelera
+            </button>
+          )}
         </div>
         {/* Body: image or excerpt */}
         <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden">
@@ -58,22 +136,26 @@ export function ThumbCard({ title, imgSrc, headerIcon, headerColorClass, excerpt
               </div>
             </div>
           )}
-          {!imgError && imgSrc ? (
+          {!imgError && displayImage ? (
             <div className="flex-1 flex items-center justify-center">
-              <img src={imgSrc} alt={title} className="max-w-full max-h-full object-contain" onError={() => setImgError(true)} />
+              {thumbnailLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+              <img 
+                src={displayImage} 
+                alt={title} 
+                className="max-w-full max-h-full object-contain" 
+                onError={() => setImgError(true)} 
+                onLoad={() => setImgError(false)}
+              />
             </div>
           ) : (
             <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>
           )}
         </div>
-        {typeof ocrProgressPct === 'number' && (
-          <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
-            <div className="w-32 h-2 bg-black/10 rounded overflow-hidden">
-              <div className="h-full bg-blue-500" style={{ width: `${Math.max(0, Math.min(100, ocrProgressPct))}%` }} />
-            </div>
-            <div className="mt-1 text-[10px] text-black/70 font-medium">{Math.round(ocrProgressPct)}%</div>
-          </div>
-        )}
+        <OcrProgressOverlay progressPct={ocrProgressPct ?? null} etaText={ocrEtaText ?? null} statusText={ocrStatusText ?? null} />
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition flex items-center justify-center">

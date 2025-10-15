@@ -24,6 +24,8 @@ export function DocumentCollection({
   onOcr,
   onOcrQuick,
   progressById,
+  etaById,
+  statusById,
 }: {
   title?: string
   items: DocItem[]
@@ -34,6 +36,8 @@ export function DocumentCollection({
   onOcr?: (doc: DocItem) => void
   onOcrQuick?: (doc: DocItem) => void
   progressById?: Record<string, number>
+  etaById?: Record<string, string>
+  statusById?: Record<string, string>
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const onDropCb = useCallback((accepted: File[]) => {
@@ -76,6 +80,9 @@ export function DocumentCollection({
               key={doc.id}
               title={isExtract ? titleText : doc.filename}
               imgSrc={isExtract ? '' : (doc.thumb || '')}
+              // abilita la generazione client-side se non c'è thumb e abbiamo un URL
+              fileUrl={!isExtract && (doc.localUrl || (doc.s3Key ? (window?.location ? `${(import.meta as any).env?.VITE_API_URL || '/api'}/files/${encodeURIComponent(doc.s3Key)}` : '') : '')) || undefined}
+              autoGenerateThumbnail={!isExtract && !doc.thumb}
               headerIcon={isExtract ? headerIcon : undefined}
               headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
               excerpt={isExtract ? excerpt : undefined}
@@ -90,6 +97,8 @@ export function DocumentCollection({
               onOcr={() => onOcr?.(doc)}
               onOcrQuick={() => onOcrQuick?.(doc)}
               ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
+              ocrEtaText={etaById?.[doc.id] ?? null}
+              ocrStatusText={statusById?.[doc.id] ?? null}
             />
           )
         })}
