@@ -271,6 +271,7 @@ export class PopplerOcrService implements IOcrPoppler {
   constructor(private getFile: (s3Key: string) => Promise<Buffer>) {}
 
   async extract(s3Key: string, onProgress?: (p: number, meta?: ProgressMeta)=>void): Promise<OcrResult & { layout: any[] }> {
+    const tStartAll = Date.now()
     try { console.log('[OCR][bin]', { TESSERACT, TESSDATA_DIR, POPPLER, OCR_LANG }) } catch {}
     // Preflight: versione e lang data
     try {
@@ -316,14 +317,21 @@ export class PopplerOcrService implements IOcrPoppler {
       const runtimeForceFirst = String(process.env.OCR_FORCE_FIRST_PAGE || '').toLowerCase() === 'true'
       const limitFromEnv = runtimeLimit > 0 ? runtimeLimit : (runtimeForceFirst ? 1 : 0)
       const pagesToProcess = limitFromEnv > 0 ? Math.min(limitFromEnv, totalPages) : totalPages
-      if (pagesToProcess < totalPages) {
-        // Rasterize only the first N pages
-        for (let p = 1; p <= pagesToProcess; p++) {
-          await rasterizePage(pdfPath, p, outBase, DPI_BASE)
-        }
-      } else {
-        await rasterizeAll(pdfPath, outBase, DPI_BASE)
+      const tRasterStart = Date.now()
+      // Parallelizza SEMPRE il raster per pagina per sfruttare tutti i core
+      const cpuCount = Math.max(1, (os.cpus()?.length || 1))
+      const maxSuggested = Math.max(2, Math.min(8, cpuCount - 1))
+      const concRaster = Math.max(1, Number(process.env.OCR_RASTER_CONCURRENCY || process.env.OCR_CONCURRENCY || maxSuggested))
+      const pagesIdx = Array.from({ length: pagesToProcess }, (_, i) => i + 1)
+      let rDone = 0
+      const runRaster = async (p: number) => { await rasterizePage(pdfPath, p, outBase, DPI_BASE); rDone++ }
+      const runnersR: Promise<void>[] = []
+      let nextR = 0
+      for (let k = 0; k < Math.min(concRaster, pagesIdx.length); k++) {
+        runnersR.push((async function rr(){ while (nextR < pagesIdx.length) { const i = nextR++; await runRaster(pagesIdx[i]) } })())
       }
+      await Promise.all(runnersR)
+      try { console.log('[OCR][raster][done]', { pages: pagesToProcess, ms: Date.now() - tRasterStart, dpi: DPI_BASE, concurrency: concRaster }) } catch {}
       if (onProgress) await onProgress(0.5, { phase: 'RASTER', totalPages: pagesToProcess })
 
       const pngsAll = fss.readdirSync(tmpDir).filter(f => f.startsWith('page-') && f.endsWith('.png')).sort()
@@ -335,6 +343,7 @@ export class PopplerOcrService implements IOcrPoppler {
 
       // helper: translate a single page top-down
       const translateOne = async (pageIdx: number, basePng: string) => {
+        const t0 = Date.now()
         const processWords = (words: Word[], dpiUsed: number, psmUsed: number, pngForSize: string) => {
           // Ordine deterministico basato sugli indici TSV: block/par/line/word
           const byIdx = [...words].sort((a, b) =>
@@ -440,26 +449,33 @@ export class PopplerOcrService implements IOcrPoppler {
             head: (pageText || '').slice(0, 200).replace(/\s+/g, ' '),
           })
         } catch {}
-        logHead('result', { words: pageConf ? undefined : words.length, conf: pageConf.toFixed(1), textLen: (pageText||'').length, snippet: (pageText||'').slice(0, 120) })
+        logHead('result', { words: pageConf ? undefined : words.length, conf: pageConf.toFixed(1), textLen: (pageText||'').length, ms: (Date.now()-t0), snippet: (pageText||'').slice(0, 120) })
         return { text: pageText, confidence: pageConf }
       }
 
-      for (let i = 0; i < pngs.length; i++) {
-        const pageIdx = i + 1
-        const basePng = path.join(tmpDir, pngs[i])
-        try {
-          const out = await translateOne(pageIdx, basePng)
-          resultPages.push(out)
-        } catch {
-          resultPages.push({ text: '', confidence: 0 })
-        }
-        if (onProgress) await onProgress(0.5 + ((i + 1) / Math.max(1, pngs.length)) * 0.5, { phase: 'OCR', currentPage: pageIdx, totalPages: pngs.length })
+      // Auto-concorrenza basata su CPU, con override via OCR_CONCURRENCY
+      const conc = Math.max(1, Number(process.env.OCR_CONCURRENCY || maxSuggested))
+      try { console.log('[OCR][concurrency]', { cpuCount, suggested: maxSuggested, using: conc }) } catch {}
+
+      const outPages: { text: string; confidence: number }[] = new Array(pngs.length)
+      let completed = 0
+      const worker = async (idx: number) => {
+        const pageIdx = idx + 1
+        const basePng = path.join(tmpDir, pngs[idx])
+        try { outPages[idx] = await translateOne(pageIdx, basePng) } catch { outPages[idx] = { text: '', confidence: 0 } }
+        completed++
+        if (onProgress) await onProgress(0.5 + (completed / Math.max(1, pngs.length)) * 0.5, { phase: 'OCR', currentPage: completed, totalPages: pngs.length })
       }
+      const runners: Promise<void>[] = []
+      let next = 0
+      for (let k = 0; k < Math.min(conc, pngs.length); k++) {
+        runners.push((async function run() { while (next < pngs.length) { const i = next++; await worker(i) } })())
+      }
+      await Promise.all(runners)
+      resultPages.push(...outPages)
 
       const avgConfidence = resultPages.length ? resultPages.reduce((a, b) => a + b.confidence, 0) / resultPages.length : 0
-      try {
-        console.log('[OCR][return]', { pages: resultPages.length, lens: resultPages.map(p => (p.text||'').length).slice(0, 3).join(','), layoutPages: layout.length, words0: (layout[0]?.words?.length || 0) })
-      } catch {}
+      try { console.log('[OCR][return]', { pages: resultPages.length, lens: resultPages.map(p => (p.text||'').length).slice(0, 3).join(','), layoutPages: layout.length, words0: (layout[0]?.words?.length || 0), totalMs: Date.now() - tStartAll }) } catch {}
       return { pages: resultPages, avgConfidence, layout }
     } finally {
       try { await fs.rm(tmpDir, { recursive: true, force: true }) } catch {}
