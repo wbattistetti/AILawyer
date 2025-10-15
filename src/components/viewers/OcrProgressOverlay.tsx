@@ -4,28 +4,44 @@ export interface OcrProgressProps {
   progressPct?: number | null
   etaText?: string | null
   statusText?: string | null
+  onCancel?: (() => void) | null
 }
 
-export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progressPct, etaText, statusText }: OcrProgressProps) {
+export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progressPct, etaText, statusText, onCancel }: OcrProgressProps) {
   if (typeof progressPct !== 'number') return null
   const pct = Math.max(0, Math.min(100, Math.round(progressPct)))
+  const canCancel = typeof onCancel === 'function' && pct < 100
 
   return (
     <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
-      {etaText && (
-        <div className="mb-1 text-[11px] text-black/80">
-          {(() => {
-            const parts = String(etaText).split('(')
-            if (parts.length > 1) {
-              return (
-                <span>
-                  {parts[0]}
-                  <span className="font-semibold">({parts.slice(1).join('(')}</span>
-                </span>
-              )
-            }
-            return <span className="font-semibold">{etaText}</span>
-          })()}
+      {(etaText || canCancel) && (
+        <div className="mb-1 text-[11px] text-black/80 flex items-center gap-2">
+          {etaText && (
+            <span>
+              {(() => {
+                const parts = String(etaText).split('(')
+                if (parts.length > 1) {
+                  return (
+                    <span>
+                      {parts[0]}
+                      <span className="font-semibold">({parts.slice(1).join('(')}</span>
+                    </span>
+                  )
+                }
+                return <span className="font-semibold">{etaText}</span>
+              })()}
+            </span>
+          )}
+          {canCancel && (
+            <button
+              className="px-2 py-0.5 text-[10px] rounded border border-red-400 bg-red-50 text-red-700 hover:bg-red-100"
+              onClick={(e)=>{ e.stopPropagation(); onCancel?.() }}
+              title="Interrompi OCR"
+              aria-label="Interrompi OCR"
+            >
+              Stop
+            </button>
+          )}
         </div>
       )}
       {statusText && (

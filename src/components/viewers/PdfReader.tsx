@@ -20,13 +20,16 @@ interface PdfReaderProps {
   onPagesMetrics?: (metrics: { page: number; width: number; height: number }[]) => void
   onPagesLayout?: (layouts: { page: number; widthPx: number; heightPx: number }[]) => void
   fitToWidth?: boolean
+  // deskew support (optional)
+  autoDeskewExternal?: boolean
+  skewAngles?: Record<number, number> // pageNumber -> degrees
 }
 
 interface PageRenderState {
   renderedScale: number
 }
 
-export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, onScrollTopChange, externalScrollTop, hideScrollbar, hideToolbar, externalScrollContainer, idPrefix = 'pdf', useExternalScroll = false, onPagesMetrics, onPagesLayout, fitToWidth = true }: PdfReaderProps) {
+export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, onScrollTopChange, externalScrollTop, hideScrollbar, hideToolbar, externalScrollContainer, idPrefix = 'pdf', useExternalScroll = false, onPagesMetrics, onPagesLayout, fitToWidth = true, autoDeskewExternal, skewAngles = {} }: PdfReaderProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any | null>(null)
@@ -42,8 +45,39 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
   const programmaticScrollRef = useRef(false)
   const renderTasksRef = useRef<Map<number, any>>(new Map())
   const pageBaseWidthsRef = useRef<Map<number, number>>(new Map())
+  const [autoDeskew, setAutoDeskew] = useState<boolean>(false)
 
   const dpr = useMemo(() => (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1), [])
+
+  useEffect(() => {
+    if (typeof autoDeskewExternal === 'boolean') setAutoDeskew(autoDeskewExternal)
+  }, [autoDeskewExternal])
+
+  const drawWithDeskew = useCallback(async (canvas: HTMLCanvasElement, page: any, viewport: any, dprVal: number, angleDeg: number) => {
+    const off = document.createElement('canvas')
+    off.width = Math.ceil(viewport.width * dprVal)
+    off.height = Math.ceil(viewport.height * dprVal)
+    const offCtx = off.getContext('2d')!
+    const transform = dprVal !== 1 ? [dprVal, 0, 0, dprVal, 0, 0] : undefined
+    await page.render({ canvasContext: offCtx as any, viewport, transform } as any).promise
+    const ctx = canvas.getContext('2d')!
+    const angle = (angleDeg || 0) * Math.PI / 180
+    if (!angleDeg || Math.abs(angleDeg) < 0.5) {
+      canvas.width = off.width; canvas.height = off.height
+      ctx.drawImage(off, 0, 0)
+    } else {
+      const w = off.width, h = off.height
+      const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle))
+      const bw = Math.ceil(w * cos + h * sin)
+      const bh = Math.ceil(w * sin + h * cos)
+      canvas.width = bw; canvas.height = bh
+      ctx.save()
+      ctx.translate(bw/2, bh/2)
+      ctx.rotate(angle)
+      ctx.drawImage(off, -w/2, -h/2)
+      ctx.restore()
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -98,7 +132,7 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
     setScale(next)
   }, [basePageWidth, fitToWidth])
 
-  const renderPage = useCallback(async (pageNumber: number, targetScale?: number) => {
+	const renderPage = useCallback(async (pageNumber: number, targetScale?: number) => {
     if (!pdfDoc) return
     const page = await pdfDoc.getPage(pageNumber)
     const useScale = typeof targetScale === 'number' ? targetScale : scale
@@ -109,16 +143,21 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
     if (!context) return
 
     const outputScale = dpr
-    canvas.width = Math.floor(viewport.width * outputScale)
-    canvas.height = Math.floor(viewport.height * outputScale)
-    canvas.style.width = Math.floor(viewport.width) + 'px'
-    canvas.style.height = Math.floor(viewport.height) + 'px'
 
-    const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined
-    // Cancel previous render of this page if still running
+		const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined
+		// Cancel previous render of this page if still running
     const prev = renderTasksRef.current.get(pageNumber)
     try { prev?.cancel?.() } catch {}
-    const renderTask = page.render({ canvasContext: context, viewport, transform } as any)
+		const angleDeg = autoDeskew ? (skewAngles?.[pageNumber] || 0) : 0
+		let renderTask: any
+		if (!angleDeg || Math.abs(angleDeg) < 0.5) {
+			canvas.width = Math.floor(viewport.width * outputScale)
+			canvas.height = Math.floor(viewport.height * outputScale)
+			renderTask = page.render({ canvasContext: context, viewport, transform } as any)
+		} else {
+			// offscreen render + rotate
+			renderTask = { promise: drawWithDeskew(canvas, page, viewport, outputScale, angleDeg), cancel: () => {} }
+		}
     renderTasksRef.current.set(pageNumber, renderTask)
     try {
       await renderTask.promise
@@ -126,6 +165,9 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
       // eslint-disable-next-line no-console
       console.warn('pdf render cancelled or failed', e)
     }
+		// style size after render (handles both branches)
+		canvas.style.width = Math.floor(canvas.width / outputScale) + 'px'
+		canvas.style.height = Math.floor(canvas.height / outputScale) + 'px'
     pageStates.current.set(pageNumber, { renderedScale: useScale })
     // Emit current page canvas sizes for alignment consumers
     if (onPagesLayout) {
@@ -135,7 +177,7 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
       })
       onPagesLayout(layouts)
     }
-  }, [pdfDoc, scale, dpr])
+	}, [pdfDoc, scale, dpr, autoDeskew, skewAngles, drawWithDeskew, onPagesLayout])
 
   const ensureObserver = useCallback((pageNumber: number, el: Element) => {
     if (observers.current.has(pageNumber)) return
@@ -314,12 +356,15 @@ export function PdfReader({ fileUrl, onVisiblePageChange, visiblePageExternal, o
   return (
     <div className="flex flex-col h-full w-full">
       {!hideToolbar && (
-        <div className="flex items-center justify-between border-b px-2 py-1 text-sm">
-          <div className="flex items-center gap-2">
+		<div className="flex items-center justify-between border-b px-2 py-1 text-sm">
+			<div className="flex items-center gap-2">
             <button className="px-2 py-1 border rounded" onClick={handleZoomOut}>-</button>
             <span className="w-12 text-center">{Math.round(scale * 100)}%</span>
             <button className="px-2 py-1 border rounded" onClick={handleZoomIn}>+</button>
             <button className="px-2 py-1 border rounded" onClick={handleFit} title="Adatta alla larghezza">Fit</button>
+        <button className={`px-2 py-1 border rounded ${autoDeskew ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : ''}`} onClick={()=>setAutoDeskew(v=>!v)} title={autoDeskew ? 'Mostra originale' : 'Raddrizza quando serve'}>
+          {autoDeskew ? 'Deskew ON' : 'Deskew OFF'}
+        </button>
           </div>
           <form className="flex items-center gap-2" onSubmit={handlePageJump}>
             <input

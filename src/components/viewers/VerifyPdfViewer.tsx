@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Worker, Viewer, SpecialZoomLevel, ScrollMode } from '@react-pdf-viewer/core'
 import { highlightPlugin } from '@react-pdf-viewer/highlight'
@@ -559,6 +559,151 @@ const suppressClearRef = useRef<boolean>(false)
 // Note: no custom anchoring; let the browser handle selection during drag
 // Global selection overlay (fallback, robust across pages)
 // legacy globals removed (use per-page overlay)
+
+    // Deskew toggle + angles (per-page) loaded da localStorage
+    const [autoDeskew, setAutoDeskew] = useState<boolean>(false)
+    const [skewAngles, setSkewAngles] = useState<Record<number, number>>({})
+    const appliedSkewRef = useRef<Record<number, number>>({})
+    useEffect(() => {
+        try {
+            const keyA = `ocr_skew_${docId || 'current'}`
+            const keyB = `skew_angles_${docId || 'current'}`
+            const raw = localStorage.getItem(keyA) || localStorage.getItem(keyB) || '{}'
+            const parsed = JSON.parse(raw || '{}')
+            if (parsed && typeof parsed === 'object') setSkewAngles(parsed)
+        } catch { setSkewAngles({}) }
+    }, [docId])
+    const persistSkew = (next: Record<number, number>) => {
+        try {
+            const key = `ocr_skew_${docId || 'current'}`
+            localStorage.setItem(key, JSON.stringify(next))
+        } catch {}
+    }
+    const estimateSkewForPage = async (pageNum: number): Promise<number> => {
+        try {
+            const doc = pdfDocRef.current
+            if (!doc) return 0
+            const page = await doc.getPage(pageNum)
+            const base = page.getViewport({ scale: 1 })
+            const targetW = 800
+            const scale = Math.max(0.2, Math.min(2.5, targetW / Math.max(1, base.width)))
+            const vp = page.getViewport({ scale })
+            const off = document.createElement('canvas')
+            off.width = Math.ceil(vp.width)
+            off.height = Math.ceil(vp.height)
+            const offCtx = off.getContext('2d')!
+            await page.render({ canvasContext: offCtx as any, viewport: vp } as any).promise
+            const testAngles: number[] = []
+            for (let a = -5; a <= 5; a += 0.5) testAngles.push(Number(a.toFixed(2)))
+            let best = 0
+            let bestScore = -Infinity
+            const tmp = document.createElement('canvas')
+            const tmpCtx = tmp.getContext('2d')!
+            for (const ang of testAngles) {
+                const rad = ang * Math.PI / 180
+                const w = off.width, h = off.height
+                const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad))
+                const bw = Math.ceil(w * cos + h * sin)
+                const bh = Math.ceil(w * sin + h * cos)
+                tmp.width = bw; tmp.height = bh
+                tmpCtx.save()
+                tmpCtx.clearRect(0,0,bw,bh)
+                tmpCtx.translate(bw/2, bh/2)
+                tmpCtx.rotate(rad)
+                tmpCtx.drawImage(off, -w/2, -h/2)
+                tmpCtx.restore()
+                const data = tmpCtx.getImageData(0,0,bw,bh).data
+                // metric: row contrast derivative
+                let prev = 0
+                let score = 0
+                for (let y = 0; y < bh; y += 2) {
+                    let row = 0
+                    for (let x = 0; x < bw; x += 2) {
+                        const idx = (y * bw + x) * 4
+                        // simple luma
+                        const r = data[idx], g = data[idx+1], b = data[idx+2]
+                        row += (r*0.2126 + g*0.7152 + b*0.0722)
+                    }
+                    if (y > 0) score += Math.abs(row - prev)
+                    prev = row
+                }
+                if (score > bestScore) { bestScore = score; best = ang }
+            }
+            return best
+        } catch { return 0 }
+    }
+    useEffect(() => {
+        const host = hostRef.current
+        if (!host) return
+        const apply = () => {
+            const holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
+            for (const h of holders) {
+                const pn = parseInt(h.getAttribute('data-page-number') || '0', 10) || 0
+                const pageLayer = h.querySelector('.rpv-core__page-layer') as HTMLElement | null
+                if (!pageLayer) continue
+                const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
+                const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
+                const target = canvasLayer || canvasEl || pageLayer
+                const angle = autoDeskew ? (skewAngles?.[pn] || 0) : 0
+                if (angle && Math.abs(angle) >= 0.5) {
+                    target.style.transform = `rotate(${angle}deg)`
+                    target.style.transformOrigin = 'center center'
+                    ;(target.style as any).willChange = 'transform'
+                    const parent = (target.parentElement || pageLayer) as HTMLElement
+                    try { parent.style.overflow = 'visible' } catch {}
+                    if (appliedSkewRef.current[pn] !== angle) {
+                        try { console.log('[DESKEW][apply]', { page: pn, angle }) } catch {}
+                        appliedSkewRef.current[pn] = angle
+                    }
+                } else {
+                    target.style.removeProperty('transform')
+                    target.style.removeProperty('transform-origin')
+                    ;(target.style as any).willChange = ''
+                    try { (pageLayer as HTMLElement).style.removeProperty('overflow') } catch {}
+                    if (appliedSkewRef.current[pn]) {
+                        try { console.log('[DESKEW][clear]', { page: pn }) } catch {}
+                        delete appliedSkewRef.current[pn]
+                    }
+                }
+            }
+        }
+        // expose for external triggers (e.g., onZoom)
+        ;(window as any).__deskewApply = apply
+        // run once
+        apply()
+        // throttle re-applies to next frame to avoid layout thrash during zoom
+        let queued = false
+        const schedule = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; apply() }) }
+        const mo = new MutationObserver(() => schedule())
+        mo.observe(host, { subtree: true, childList: true, attributes: true })
+        return () => mo.disconnect()
+    }, [autoDeskew, skewAngles, docId])
+
+    // Helper per applicare subito alla pagina corrente, chiamato al click
+    const applyImmediateToPage = useCallback((pageNum: number, angle: number) => {
+        const host = hostRef.current
+        if (!host) return
+        const holder = (host.querySelector(`[data-page-number="${pageNum}"]`) as HTMLElement) || null
+        const pageLayer = holder?.querySelector('.rpv-core__page-layer') as HTMLElement | null
+            || (host.querySelectorAll('.rpv-core__page-layer')?.[Math.max(0, pageNum-1)] as HTMLElement | null)
+        if (!pageLayer) { try { console.warn('[DESKEW][immediate] pageLayer not found', { pageNum }) } catch {}; return }
+        const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
+        const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
+        const target = canvasLayer || canvasEl || pageLayer
+        if (angle && Math.abs(angle) >= 0.5) {
+            target.style.transform = `rotate(${angle}deg)`
+            target.style.transformOrigin = 'center center'
+            ;(target.style as any).willChange = 'transform'
+            ;(pageLayer.style as any).overflow = 'visible'
+            try { console.log('[DESKEW][immediate][apply]', { page: pageNum, angle, target: target.className || target.tagName }) } catch {}
+        } else {
+            target.style.removeProperty('transform')
+            target.style.removeProperty('transform-origin')
+            ;(target.style as any).willChange = ''
+            try { pageLayer.style.removeProperty('overflow') } catch {}
+            try { console.log('[DESKEW][immediate][clear]', { page: pageNum }) } catch {}
+        }
+    }, [])
 
 	// Audit mode (digital text only)
 	const [audit, setAudit] = useState<boolean>(false)
@@ -1402,6 +1547,29 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 						<button className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
 							<MessageSquare size={16} />
 						</button>
+                        <button
+                          className={`px-2 py-1 rounded border ${autoDeskew ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
+                          title={autoDeskew ? 'Raddrizza: ON' : 'Raddrizza quando serve'}
+                          onClick={async()=>{
+                            const next = !autoDeskew
+                            try { console.log('[DESKEW][toggle]', { next }) } catch {}
+                            setAutoDeskew(next)
+                            if (next) {
+                              const p = Math.max(1, parseInt(pageInput || '1', 10))
+                              try { console.log('[DESKEW][estimate][start]', { page: p }) } catch {}
+                              if (!skewAngles[p]) {
+                                const ang = await estimateSkewForPage(p)
+                                try { console.log('[DESKEW][estimate][done]', { page: p, angle: ang }) } catch {}
+                                setSkewAngles(prev => { const n = { ...prev, [p]: ang }; persistSkew(n); return n })
+                                applyImmediateToPage(p, ang)
+                              } else {
+                                const ang = skewAngles[p]
+                                try { console.log('[DESKEW][cached]', { page: p, angle: ang }) } catch {}
+                                applyImmediateToPage(p, ang)
+                              }
+                            }
+                          }}
+                        >Raddrizza</button>
 					{/* Toolbar Save (selection native or OCR) */}
 					<button
 					  className="px-2 py-1 rounded border"
@@ -1482,7 +1650,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 							initialPage={Math.max(0, (page || 1) - 1)}
 							onPageChange={(e) => { const cp = e.currentPage + 1; setPageInput(String(cp)); onPageChange?.(cp) }}
                             onDocumentLoad={(e) => { const total = (e as any).doc?.numPages || (e as any).document?.numPages || 0; if (total) { setTotalPages(total); setPageInput('1') } const container = hostRef.current as HTMLElement | null; if (container) container.style.setProperty('--scale-factor', String(scaleRef.current || 1)); const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1)); try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch {}; try { console.log('[VIEWER][ready]', { docId: docId || 'current', total }) } catch {} }}
-							onZoom={(e: any) => { const s = (e?.scale || e?.zoom) as number; if (typeof s === 'number') { scaleRef.current = s; setZoomPct(Math.round(s*100)); (window as any).__rpvLastZoomScale = s; const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(s)) } }}
+                            onZoom={(e: any) => { const s = (e?.scale || e?.zoom) as number; if (typeof s === 'number') { scaleRef.current = s; setZoomPct(Math.round(s*100)); (window as any).__rpvLastZoomScale = s; const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(s)); try { requestAnimationFrame(()=>{ try { (window as any).__deskewApply?.() } catch {} }) } catch {} } }}
                             renderPage={(p: any) => (
                                 <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                                     {p.canvasLayer.children}

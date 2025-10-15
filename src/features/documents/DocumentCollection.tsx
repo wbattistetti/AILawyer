@@ -34,6 +34,7 @@ export function DocumentCollection({
   uploadingCount?: number
   onRemove?: (doc: DocItem) => void
   onOcr?: (doc: DocItem) => void
+  onOcrCancel?: (doc: DocItem) => void
   onOcrQuick?: (doc: DocItem) => void
   progressById?: Record<string, number>
   etaById?: Record<string, string>
@@ -99,6 +100,7 @@ export function DocumentCollection({
               onTable={() => onOpen(doc)}
               onRemove={() => onRemove?.(doc)}
               onOcr={() => onOcr?.(doc)}
+              onOcrCancel={() => onOcrCancel?.(doc)}
               
               ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
               ocrEtaText={etaById?.[doc.id] ?? null}

@@ -26,6 +26,7 @@ import { detectContacts } from '../../features/parsers/contacts'
 import { detectVehicles } from '../../features/parsers/vehicles'
 import { extractEvents as nlpExtractEvents } from '../../services/nlp/client'
 import { ThingCardsPanel } from '../../features/cards/ThingCardsPanel'
+import { loadOcrState, saveOcrState, clearDoc, type OcrState } from '../../utils/ocrState'
 import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
 
@@ -53,6 +54,7 @@ export function PraticaCanvasPage() {
   const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
   const [ocrEtaByDoc, setOcrEtaByDoc] = useState<Record<string, string>>({})
   const [ocrStatusByDoc, setOcrStatusByDoc] = useState<Record<string, string>>({})
+  const [ocrCancelledByDoc, setOcrCancelledByDoc] = useState<Record<string, boolean>>({})
   const ocrStatsRef = useRef<Record<string, { lastMs: number; lastR: number; lastO: number; switched: boolean; samplesR: number[]; samplesO: number[] }>>({})
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
@@ -336,6 +338,22 @@ export function PraticaCanvasPage() {
       } catch {}
     }
   }, [id])
+
+  // Hydrate OCR UI state from localStorage
+  useEffect(() => {
+    if (!id) return
+    const st = loadOcrState(id)
+    setOcrProgressByDoc(st.progress || {})
+    setOcrEtaByDoc(st.eta || {})
+    setOcrStatusByDoc(st.status || {})
+    setOcrCancelledByDoc(st.cancelled || {})
+  }, [id])
+
+  const persistOcrState = useCallback(() => {
+    if (!id) return
+    const st: OcrState = { progress: ocrProgressByDoc, eta: ocrEtaByDoc, status: ocrStatusByDoc, cancelled: ocrCancelledByDoc }
+    saveOcrState(id, st)
+  }, [id, ocrProgressByDoc, ocrEtaByDoc, ocrStatusByDoc, ocrCancelledByDoc])
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 
@@ -1283,6 +1301,7 @@ export function PraticaCanvasPage() {
             etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
           }
           setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: etaText }))
+          persistOcrState()
           if (j.status === 'completed' || j.status === 'failed') {
             active = false
             if (j.status === 'failed') {
@@ -1301,6 +1320,8 @@ export function PraticaCanvasPage() {
             setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 100 }))
             setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
             setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
+            persistOcrState()
+            if (id) clearDoc(id, documento.id)
             // Clear progress overlay after a short delay
             setTimeout(() => {
               setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
@@ -1562,6 +1583,14 @@ export function PraticaCanvasPage() {
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
                   onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
                   onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
+                  onOcrCancel={(doc)=>{
+                    const d = documenti.find(x=>x.id===doc.id); if (!d) return
+                    setOcrCancelledByDoc(prev => ({ ...prev, [d.id]: true }))
+                    setOcrStatusByDoc(prev => ({ ...prev, [d.id]: 'Interrotto' }))
+                    setOcrEtaByDoc(prev => ({ ...prev, [d.id]: null }))
+                    setOcrProgressByDoc(prev => ({ ...prev, [d.id]: Math.max(0, Math.min(99, prev[d.id]||0)) }))
+                    persistOcrState()
+                  }}
                   
                   progressById={ocrProgressByDoc as any}
                   etaById={ocrEtaByDoc as any}

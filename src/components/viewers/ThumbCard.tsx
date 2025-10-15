@@ -19,6 +19,8 @@ interface ThumbCardProps {
   onTable?: () => void
   onRemove?: () => void
   onOcr?: () => void
+  onOcrCancel?: () => void
+  onOcrResume?: () => void
   ocrProgressPct?: number | null
   hasOcr?: boolean
   ocrEtaText?: string | null
@@ -49,6 +51,8 @@ export function ThumbCard({
   onTable, 
   onRemove, 
   onOcr, 
+  onOcrCancel,
+  onOcrResume,
   ocrProgressPct, 
   hasOcr, 
   ocrEtaText, 
@@ -145,7 +149,7 @@ export function ThumbCard({
             <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>
           )}
         </div>
-        <OcrProgressOverlay progressPct={ocrProgressPct ?? null} etaText={ocrEtaText ?? null} statusText={ocrStatusText ?? null} />
+        <OcrProgressOverlay progressPct={ocrProgressPct ?? null} etaText={ocrEtaText ?? null} statusText={ocrStatusText ?? null} onCancel={onOcrCancel ?? null} />
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
