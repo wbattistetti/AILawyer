@@ -8,8 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Carica sempre backend/.env prima di tutto e fai valere .env su variabili preesistenti
 dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true })
 
-// Forza default sicuri per avvio locale senza coda, Poppler attivo
-process.env.ENABLE_QUEUE = 'false'
+// Per modalità standalone: disabilita coda salvo override da .env, Poppler attivo
+if (typeof process.env.ENABLE_QUEUE === 'undefined') process.env.ENABLE_QUEUE = 'false'
 process.env.OCR_ENGINE = 'poppler'
 process.env.STORAGE_MODE = process.env.STORAGE_MODE || 'local'
 process.env.OCR_LANG = 'ita'

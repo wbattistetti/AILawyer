@@ -55,6 +55,9 @@ export function PraticaCanvasPage() {
   const [ocrEtaByDoc, setOcrEtaByDoc] = useState<Record<string, string>>({})
   const [ocrStatusByDoc, setOcrStatusByDoc] = useState<Record<string, string>>({})
   const [ocrCancelledByDoc, setOcrCancelledByDoc] = useState<Record<string, boolean>>({})
+  const [ocrJobByDoc, setOcrJobByDoc] = useState<Record<string, string>>({})
+  const [ocrCancellingByDoc, setOcrCancellingByDoc] = useState<Record<string, boolean>>({})
+  const [transcribedPctByDoc, setTranscribedPctByDoc] = useState<Record<string, number>>({})
   const ocrStatsRef = useRef<Record<string, { lastMs: number; lastR: number; lastO: number; switched: boolean; samplesR: number[]; samplesO: number[] }>>({})
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
@@ -1234,11 +1237,24 @@ export function PraticaCanvasPage() {
               onTable={() => { setSelectedDocId(doc.id); openInTable(doc) }}
               onRemove={() => handleRemoveThumb(doc.id)}
               onOcr={() => handleOcr(doc)}
+              onOcrCancel={async () => {
+                const d = documenti.find(x=>x.id===doc.id); if (!d) return
+                const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
+                setTranscribedPctByDoc(prev => ({ ...prev, [d.id]: pct }))
+                setOcrEtaByDoc(prev => ({ ...prev, [d.id]: null }))
+                setOcrStatusByDoc(prev => ({ ...prev, [d.id]: null }))
+                setOcrProgressByDoc(prev => { const { [d.id]: _, ...rest } = prev; return rest })
+                setOcrCancellingByDoc(prev => ({ ...prev, [d.id]: true }))
+                const jid = ocrJobByDoc[d.id]
+                if (jid) { try { await api.cancelJob(jid) } catch {} }
+              }}
               onOcrQuick={() => handleOcr(doc, 'quick')}
               ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
               ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
               ocrStatusText={ocrStatusByDoc[doc.id] ?? null}
               hasOcr={!!doc.ocrPdfKey}
+              ocrCancelling={!!ocrCancellingByDoc[doc.id]}
+              transcribedPct={typeof transcribedPctByDoc[doc.id] === 'number' ? transcribedPctByDoc[doc.id] : null}
             />
           )
         })}
@@ -1263,7 +1279,10 @@ export function PraticaCanvasPage() {
       toast({ title: 'OCR avviato', description: documento.filename })
       // Queue job
       const job = await api.queueOcr(documento.id, mode, limitPages)
+      try { console.log('[OCR][queue-ok]', { docId: documento.id, jobId: job.id }) } catch {}
       setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
+      setOcrJobByDoc(prev => ({ ...prev, [documento.id]: job.id }))
+      setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
 
       // Polling loop
       let active = true
@@ -1279,29 +1298,49 @@ export function PraticaCanvasPage() {
           const total = Number(meta.totalPages || 0)
           const pctByMeta = total > 0 ? Math.floor((done / total) * 100) : Math.round((j.progress || 0))
           const percent = Math.max(0, Math.min(100, pctByMeta))
-          setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: percent }))
-
-          // Stato + ETA semplice e stabile
-          const phase = meta.phase || 'OCR'
-          setOcrStatusByDoc(prev => ({
-            ...prev,
-            [documento.id]: (percent < 100)
-              ? (done > 0 && total > 0 ? `${phase} pagina ${done} di ${total}…` : 'Preparazione…')
-              : null
-          }))
-
-          let etaText: string | null = null
-          if (done > 0 && total > done && percent < 100) {
-            const avgPerPage = elapsedMs / done
-            const remainingMs = Math.max(0, (total - done) * avgPerPage)
-            const etaDate = new Date(Date.now() + remainingMs)
-            const hh = String(etaDate.getHours()).padStart(2, '0')
-            const mm = String(etaDate.getMinutes()).padStart(2, '0')
-            const mins = Math.round(remainingMs / 60000)
-            etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
+          const isCancelling = !!ocrCancellingByDoc[documento.id]
+          const hasFrozen = typeof transcribedPctByDoc[documento.id] === 'number'
+          if (!isCancelling && !hasFrozen) {
+            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: percent }))
+            const phase = meta.phase || 'OCR'
+            setOcrStatusByDoc(prev => ({
+              ...prev,
+              [documento.id]: (percent < 100)
+                ? (done > 0 && total > 0 ? `${phase} pagina ${done} di ${total}…` : 'Preparazione…')
+                : null
+            }))
+            let etaText: string | null = null
+            if (done > 0 && total > done && percent < 100) {
+              const avgPerPage = elapsedMs / done
+              const remainingMs = Math.max(0, (total - done) * avgPerPage)
+              const etaDate = new Date(Date.now() + remainingMs)
+              const hh = String(etaDate.getHours()).padStart(2, '0')
+              const mm = String(etaDate.getMinutes()).padStart(2, '0')
+              const mins = Math.round(remainingMs / 60000)
+              etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
+            }
+            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: etaText }))
+            persistOcrState()
           }
-          setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: etaText }))
-          persistOcrState()
+          if (j.status === 'cancelling') {
+            // reflect cancelling in overlay
+            setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: true }))
+            console.log('[OCR][ui][cancelling]', { docId: documento.id })
+          }
+          // Considera 'failed' da SIGTERM come cancellazione cooperativa
+          const isSigtermFail = (j.status === 'failed') && /sigterm|killed|termination/i.test(String(j.error || ''))
+          if (j.status === 'cancelled' || isSigtermFail) {
+            active = false
+            // freeze percent and hide overlay
+            setTranscribedPctByDoc(prev => ({ ...prev, [documento.id]: percent }))
+            setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
+            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
+            setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
+            setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
+            console.log('[OCR][cancelled][ui]', { docId: documento.id, percent })
+            return
+          }
+
           if (j.status === 'completed' || j.status === 'failed') {
             active = false
             if (j.status === 'failed') {
@@ -1583,18 +1622,25 @@ export function PraticaCanvasPage() {
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
                   onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
                   onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
-                  onOcrCancel={(doc)=>{
+                  onOcrCancel={async (doc)=>{
                     const d = documenti.find(x=>x.id===doc.id); if (!d) return
-                    setOcrCancelledByDoc(prev => ({ ...prev, [d.id]: true }))
-                    setOcrStatusByDoc(prev => ({ ...prev, [d.id]: 'Interrotto' }))
+                    // UX: nascondi subito overlay e mostra label con la % corrente
+                    const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
+                    setTranscribedPctByDoc(prev => ({ ...prev, [d.id]: pct }))
                     setOcrEtaByDoc(prev => ({ ...prev, [d.id]: null }))
-                    setOcrProgressByDoc(prev => ({ ...prev, [d.id]: Math.max(0, Math.min(99, prev[d.id]||0)) }))
-                    persistOcrState()
+                    setOcrStatusByDoc(prev => ({ ...prev, [d.id]: null }))
+                    setOcrProgressByDoc(prev => { const { [d.id]: _, ...rest } = prev; return rest })
+                    setOcrCancellingByDoc(prev => ({ ...prev, [d.id]: true }))
+                    // Backend: segnala cancellazione (inline mode usa registro in memoria)
+                    const jid = ocrJobByDoc[d.id]
+                    if (jid) { try { await api.cancelJob(jid) } catch {} }
                   }}
                   
                   progressById={ocrProgressByDoc as any}
                   etaById={ocrEtaByDoc as any}
                   statusById={ocrStatusByDoc as any}
+                  cancellingById={ocrCancellingByDoc as any}
+                  transcribedPctById={transcribedPctByDoc as any}
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (

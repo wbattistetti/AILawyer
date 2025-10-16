@@ -113,7 +113,12 @@ async function rasterizeAll(pdfPath: string, outBase: string, dpi: number) {
   const args: string[] = []
   if (!process.env.OCR_RASTER_COLOR) args.push('-gray')
   args.push('-r', String(dpi), '-png', '-cropbox', '-aa', 'no', '-aaVector', 'no', pdfPath, outBase)
-  await execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
+  const proc = execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
+  const jobId = process.env.BULLMQ_JOB_ID || ''
+  const tick = setInterval(() => {
+    try { const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined; if (jobId && mem && mem.has(String(jobId))) { try { proc.kill('SIGTERM') } catch {} } } catch {}
+  }, 200)
+  await proc.finally(() => { try { clearInterval(tick) } catch {} })
 }
 
 const RASTER_RETRIES = Math.max(1, Number(process.env.OCR_RASTER_RETRIES || 2))
@@ -123,7 +128,12 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
     if (!color) args.push('-gray')
     args.push('-f', String(page), '-l', String(page), '-r', String(dpi), '-png', '-cropbox', '-aa', 'no', '-aaVector', 'no', pdfPath, outBase)
     try { console.log('[OCR][raster][cmd]', bin('pdftoppm'), args.join(' ')) } catch {}
-    await execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
+    const proc = execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
+    const jobId = process.env.BULLMQ_JOB_ID || ''
+    const tick = setInterval(() => {
+      try { const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined; if (jobId && mem && mem.has(String(jobId))) { try { proc.kill('SIGTERM') } catch {} } } catch {}
+    }, 200)
+    await proc.finally(() => { try { clearInterval(tick) } catch {} })
     const name3 = `${outBase}-${String(page).padStart(3, '0')}.png`
     const namePlain = `${outBase}-${page}.png`
     const found3 = await waitFor(name3, 80, 25)
@@ -167,7 +177,7 @@ type Word = { text: string; conf: number; x: number; y: number; w: number; h: nu
 function parseTsv(tsv: string): Word[] {
   const lines = tsv.split('\n')
   if (!lines.length) return []
-  const header = lines[0].split('\t')
+  const header = (lines[0] || '').split('\t')
   const ix = {
     level: header.indexOf('level'),
     left: header.indexOf('left'),
@@ -220,9 +230,20 @@ async function ocrTsv(pngPath: string, psm: number, dpi: number) {
   try {
     const args = [pngPath, outBase, ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, '-c', 'tessedit_create_tsv=1']
     try { console.log('[OCR][cmd][tsv]', TESSERACT, args.join(' ')) } catch {}
-    const { stderr } = await execa(TESSERACT, args, {
+    const proc = execa(TESSERACT, args, {
       shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
     })
+    // Kill on cancel signal (inline mode)
+    const jobId = process.env.BULLMQ_JOB_ID || ''
+    const onTick = setInterval(() => {
+      try {
+        const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
+        if (jobId && mem && mem.has(String(jobId))) {
+          try { proc.kill('SIGTERM') } catch {}
+        }
+      } catch {}
+    }, 200)
+    const { stderr } = await proc.finally(() => { try { clearInterval(onTick) } catch {} })
     if (stderr && stderr.trim()) console.warn('[OCR][tesseract][tsv][stderr]', stderr.slice(0, 500))
   } catch (e: any) {
     const msg = e?.stderr || e?.message || String(e)
@@ -239,9 +260,19 @@ async function ocrHocr(pngPath: string, psm: number, dpi: number) {
   try {
     const args = [pngPath, outBase, ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, '-c', 'tessedit_create_hocr=1']
     try { console.log('[OCR][cmd][hocr]', TESSERACT, args.join(' ')) } catch {}
-    const { stderr } = await execa(TESSERACT, args, {
+    const proc = execa(TESSERACT, args, {
       shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
     })
+    const jobId = process.env.BULLMQ_JOB_ID || ''
+    const onTick = setInterval(() => {
+      try {
+        const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
+        if (jobId && mem && mem.has(String(jobId))) {
+          try { proc.kill('SIGTERM') } catch {}
+        }
+      } catch {}
+    }, 200)
+    const { stderr } = await proc.finally(() => { try { clearInterval(onTick) } catch {} })
     if (stderr && stderr.trim()) console.warn('[OCR][tesseract][hocr][stderr]', stderr.slice(0, 500))
   } catch (e: any) {
     const msg = e?.stderr || e?.message || String(e)
@@ -324,14 +355,15 @@ export class PopplerOcrService implements IOcrPoppler {
       throw new Error('Tesseract non trovato: installa Tesseract o imposta TESSERACT_PATH')
     }
     try {
-      const { stdout: langsOut } = await execa(TESSERACT, ['--list-langs', '--tessdata-dir', TESSDATA_DIR], { shell: false, windowsHide: true })
+      const td = TESSDATA_DIR || ''
+      const { stdout: langsOut } = await execa(String(TESSERACT), ['--list-langs', ...(td ? ['--tessdata-dir', td] : [])], { shell: false, windowsHide: true })
       const first = (langsOut || '').split('\n').slice(0, 6).join(' | ')
       console.log('[OCR][tesseract][langs]', first)
     } catch {}
     try {
-      const langs = (OCR_LANG || 'ita').split('+')
+      const langs = String(OCR_LANG || 'ita').split('+')
       const missing = langs.filter(l => {
-        try { return !fss.existsSync(path.join(TESSDATA_DIR, `${l}.traineddata`)) } catch { return true }
+        try { return !fss.existsSync(path.join(TESSDATA_DIR || '', `${l}.traineddata`)) } catch { return true }
       })
       if (missing.length) console.warn('[OCR][tesseract] missing traineddata', { missing, dir: TESSDATA_DIR })
     } catch {}
@@ -339,7 +371,7 @@ export class PopplerOcrService implements IOcrPoppler {
     const tmpDir = path.join(os.tmpdir(), 'ocr', crypto.randomBytes(6).toString('hex'))
     await fs.mkdir(tmpDir, { recursive: true })
     const pdfPath = path.join(tmpDir, 'input.pdf')
-    await fs.writeFile(pdfPath, buf)
+    await fs.writeFile(pdfPath, Buffer.from(buf))
 
     try {
       const totalPages = (await pdfPageCount(pdfPath)) || 1
@@ -427,7 +459,7 @@ export class PopplerOcrService implements IOcrPoppler {
           const med = median(confs)
           let W = 0, H = 0
           try {
-            const sz = imageSize(pngForSize)
+            const sz = imageSize(pngForSize as any)
             W = (sz?.width || 0)
             H = (sz?.height || 0)
           } catch (e) {
@@ -511,6 +543,13 @@ export class PopplerOcrService implements IOcrPoppler {
       // Per-page pipeline: raster → OCR per pagina, in concorrenza
       let completed = 0
       const processOne = async (p: number) => {
+        // Cooperative cancel: check redis flag between pages if running under worker
+        try {
+          const jobId = process.env.BULLMQ_JOB_ID || ''
+          // Check memory registry first (standalone mode)
+          const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
+          if (jobId && mem && mem.has(String(jobId))) { console.log('[CANCEL][ocr-poppler][page-check][mem]', { jobId, page: p }); throw new Error('CANCELLED') }
+        } catch {}
         const png = await rasterizePage(pdfPath, p, outBase, DPI_BASE)
         const out = await translateOne(p, png)
         resultPages[p - 1] = out

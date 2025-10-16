@@ -138,4 +138,7 @@ export const api = {
   async getJob(id: string): Promise<Job> {
     return fetchApi(`/jobs/${id}`)
   },
+  async cancelJob(id: string): Promise<{ ok: boolean }> {
+    return fetchApi(`/jobs/${id}/cancel`, { method: 'POST' })
+  },
 }

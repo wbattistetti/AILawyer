@@ -7,8 +7,13 @@ let ocrQueueSingleton: Queue | null = null
 
 export function getRedis(): IORedis {
   if (!redisSingleton) {
+    // In standalone mode the caller should not use Redis.
+    // Provide a lazy instance only when ENABLE_QUEUE=true.
+    if (String(process.env.ENABLE_QUEUE).toLowerCase() !== 'true') {
+      throw new Error('Redis disabled in standalone mode (ENABLE_QUEUE!=true)')
+    }
     redisSingleton = new IORedis(config.REDIS_URL, {
-      maxRetriesPerRequest: 1,
+      maxRetriesPerRequest: null as any, // silence BullMQ warning
       lazyConnect: true,
       enableReadyCheck: false,
       retryStrategy: () => null,
@@ -32,12 +37,6 @@ export function getOcrQueue(): Queue {
         // Ottimizzazioni per concorrenza massima
         priority: 1,
         delay: 0,
-        jobId: undefined, // Permette job duplicati se necessario
-      },
-      // Configurazioni per performance ottimali
-      settings: {
-        stalledInterval: 30 * 1000, // 30 secondi
-        maxStalledCount: 1,
       },
     })
   }

@@ -1,3 +1,4 @@
+import os from 'node:os'
 import { Worker } from 'bullmq'
 import { getRedis, OcrJobData } from '../lib/queue.js'
 import { prisma } from '../lib/database.js'
@@ -23,7 +24,17 @@ const ocrWorker = new Worker('ocr-processing', async (job) => {
 
     // Perform OCR
     await job.updateProgress(30)
-    const ocrResult = await ocrService.extract(s3Key)
+    // Cooperative cancel: provide onProgress and check redis flag
+    const redis = getRedis()
+    let cancelled = false
+    // Make job id visible to OCR service for per-page cancel checks
+    ;(process as any).env.BULLMQ_JOB_ID = String(job.id || '')
+    const ocrResult = await ocrService.extract(s3Key, async (p, meta) => {
+      const flag = await redis.get(`cancel:${job.id}`)
+      if (flag) { cancelled = true; console.log('[CANCEL][worker][flag-hit]', { jobId: job.id, progress: p }); throw new Error('CANCELLED') }
+      await job.updateProgress(Math.max(1, Math.floor((p || 0) * 100)))
+      try { await prisma.job.update({ where: { id: job.id! }, data: { progress: Math.max(1, Math.floor((p || 0) * 100)), result: JSON.stringify({ meta }) } }) } catch {}
+    })
     
     await job.updateProgress(70)
     
@@ -101,6 +112,13 @@ const ocrWorker = new Worker('ocr-processing', async (job) => {
     
   } catch (error) {
     console.error(`OCR failed for document ${documentId}:`, error)
+    const isCancelled = String((error as any)?.message || '').includes('CANCELLED')
+    if (isCancelled) {
+      console.log('[CANCEL][worker][handled]', { jobId: job.id, documentId })
+      try { await prisma.job.update({ where: { id: job.id! }, data: { status: 'cancelled' } }) } catch {}
+      try { await prisma.documento.update({ where: { id: documentId }, data: { ocrStatus: 'cancelled' } }) } catch {}
+      return { cancelled: true }
+    }
     
     // Update document status
     await prisma.documento.update({
@@ -123,8 +141,8 @@ const ocrWorker = new Worker('ocr-processing', async (job) => {
   connection: getRedis(),
   // Auto‑tuning concorrenza per documenti: 1–4 in base ai thread e alla RAM
   concurrency: (() => {
-    const threads = Math.max(1, (require('os').cpus()?.length || 1))
-    const totalMemGb = Math.round((require('os').totalmem() || 0) / (1024 ** 3))
+    const threads = Math.max(1, (os.cpus()?.length || 1))
+    const totalMemGb = Math.round((os.totalmem() || 0) / (1024 ** 3))
     const env = Number(process.env.OCR_WORKER_CONCURRENCY || 0)
     if (env > 0) return env
     // Laptop: tieni basso (1–2) per lasciare spazio al per‑pagina

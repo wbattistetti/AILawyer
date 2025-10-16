@@ -22,7 +22,10 @@ export function DocumentCollection({
   uploadingCount,
   onRemove,
   onOcr,
+  onOcrCancel,
   onOcrQuick,
+  cancellingById,
+  transcribedPctById,
   progressById,
   etaById,
   statusById,
@@ -35,6 +38,8 @@ export function DocumentCollection({
   onRemove?: (doc: DocItem) => void
   onOcr?: (doc: DocItem) => void
   onOcrCancel?: (doc: DocItem) => void
+  cancellingById?: Record<string, boolean>
+  transcribedPctById?: Record<string, number>
   onOcrQuick?: (doc: DocItem) => void
   progressById?: Record<string, number>
   etaById?: Record<string, string>
@@ -105,6 +110,8 @@ export function DocumentCollection({
               ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
               ocrEtaText={etaById?.[doc.id] ?? null}
               ocrStatusText={statusById?.[doc.id] ?? null}
+              ocrCancelling={cancellingById?.[doc.id] as any}
+              transcribedPct={transcribedPctById?.[doc.id] as any}
             />
           )
         })}

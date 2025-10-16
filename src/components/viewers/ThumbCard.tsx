@@ -22,6 +22,8 @@ interface ThumbCardProps {
   onOcrCancel?: () => void
   onOcrResume?: () => void
   ocrProgressPct?: number | null
+  ocrCancelling?: boolean
+  transcribedPct?: number | null
   hasOcr?: boolean
   ocrEtaText?: string | null
   ocrStatusText?: string | null
@@ -54,6 +56,8 @@ export function ThumbCard({
   onOcrCancel,
   onOcrResume,
   ocrProgressPct, 
+  ocrCancelling,
+  transcribedPct,
   hasOcr, 
   ocrEtaText, 
   ocrStatusText,
@@ -88,6 +92,13 @@ export function ThumbCard({
   // rimuovi lo stato di errore per permettere un nuovo tentativo di render
   useEffect(() => { setImgError(false) }, [displayImage])
 
+  // Debug: log stato card quando cambiano props principali
+  useEffect(() => {
+    try {
+      console.log('[CARD][state]', { title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, hasDisplay: !!displayImage })
+    } catch {}
+  }, [title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, displayImage])
+
   // Fallback: se l'immagine fallisce (es. 404 sul server-thumb), genera la miniatura client-side
   useEffect(() => {
     if (!fileUrl) return
@@ -109,8 +120,16 @@ export function ThumbCard({
           <div className="text-xs font-semibold truncate" title={title}>{title}</div>
           <div className="flex-1" />
         </div>
+        {/* Label Trascritto sotto l'header, allineata a destra */}
+        {typeof transcribedPct === 'number' && (
+          <div className="absolute right-2 top-9 z-10">
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white">
+              {transcribedPct >= 100 ? 'Trascritto' : `Trascritto ${transcribedPct}%`}
+            </span>
+          </div>
+        )}
         {/* Body: image or excerpt */}
-        <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden">
+        <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden z-0">
           {metaDocLabel && (
             <div className="text-[10px] leading-snug mb-1 flex items-center gap-2">
               <div className="flex-1 flex justify-center">
@@ -149,7 +168,15 @@ export function ThumbCard({
             <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>
           )}
         </div>
-        <OcrProgressOverlay progressPct={ocrProgressPct ?? null} etaText={ocrEtaText ?? null} statusText={ocrStatusText ?? null} onCancel={onOcrCancel ?? null} />
+        {(!ocrCancelling && typeof ocrProgressPct === 'number') && (
+          <OcrProgressOverlay
+            progressPct={ocrProgressPct}
+            etaText={ocrEtaText ?? null}
+            statusText={ocrStatusText ?? null}
+            onCancel={onOcrCancel ?? null}
+            cancelling={false}
+          />
+        )}
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition flex items-center justify-center">

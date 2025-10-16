@@ -243,6 +243,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             const start = Date.now()
             try {
               fastify.log.info({ msg: 'OCR inline start (fallback)', jobId: job.id, s3Key: documento.s3Key, filename: documento.filename, mime: documento.mime, limitPages: limit || undefined })
+              ;(process as any).env.BULLMQ_JOB_ID = job.id
               const prevQuick = process.env.OCR_QUICK_MODE
               const prevLimit = process.env.OCR_LIMIT_PAGES
               if (mode === 'quick') process.env.OCR_QUICK_MODE = 'true'; else process.env.OCR_QUICK_MODE = 'false'
@@ -259,6 +260,8 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                   }
                   fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
                 }
+                // Inline cancel check (memory registry)
+                try { const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined; if (mem && mem.has(String(job.id))) { throw new Error('CANCELLED') } } catch {}
               })
               process.env.OCR_QUICK_MODE = prevQuick
               process.env.OCR_LIMIT_PAGES = prevLimit
@@ -333,6 +336,12 @@ export async function documentiRoutes(fastify: FastifyInstance) {
               fastify.log.info({ msg: 'OCR inline finished (fallback)', jobId: job.id })
             } catch (e2: any) {
               const msg2 = e2?.message || 'OCR error'
+              if (msg2.includes('CANCELLED')) {
+                try { await prisma.job.update({ where: { id: job.id }, data: { status: 'cancelled' } }) } catch {}
+                try { await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'cancelled' } }) } catch {}
+                fastify.log.info({ msg: 'OCR inline cancelled (fallback)', jobId: job.id })
+                return
+              }
               await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: msg2 } })
               fastify.log.error({ msg: 'OCR inline failed (fallback)', jobId: job.id, err: msg2 })
             }
@@ -351,6 +360,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             const prevLimit = process.env.OCR_LIMIT_PAGES
             if (mode === 'quick') process.env.OCR_QUICK_MODE = 'true'; else process.env.OCR_QUICK_MODE = 'false'
             if (limit > 0) process.env.OCR_LIMIT_PAGES = String(limit)
+            ;(process as any).env.BULLMQ_JOB_ID = job.id
             const result = await ocrService.extract(documento.s3Key, async (p, meta) => {
               const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
               if (percent - last >= 5) {
@@ -363,6 +373,8 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                 }
                 fastify.log.info({ msg: 'OCR progress', jobId: job.id, progress: percent, meta })
               }
+              // Inline cancel check (memory registry)
+              try { const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined; if (mem && mem.has(String(job.id))) { throw new Error('CANCELLED') } } catch {}
             })
             // restore env
             process.env.OCR_QUICK_MODE = prevQuick
@@ -451,8 +463,14 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             }
             await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })
             fastify.log.info({ msg: 'OCR inline finished', jobId: job.id })
-    } catch (e: any) {
+          } catch (e: any) {
             const message = e?.message || 'OCR error'
+            if (message.includes('CANCELLED')) {
+              try { await prisma.job.update({ where: { id: job.id }, data: { status: 'cancelled' } }) } catch {}
+              try { await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'cancelled' } }) } catch {}
+              fastify.log.info({ msg: 'OCR inline cancelled', jobId: job.id })
+              return
+            }
             await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: message } })
             fastify.log.error({ msg: 'OCR inline failed', jobId: job.id, err: message })
           }

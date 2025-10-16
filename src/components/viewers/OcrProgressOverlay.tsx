@@ -4,19 +4,21 @@ export interface OcrProgressProps {
   progressPct?: number | null
   etaText?: string | null
   statusText?: string | null
-  onCancel?: (() => void) | null
+  onCancel?: (() => void | Promise<void>) | null
+  cancelling?: boolean
 }
 
-export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progressPct, etaText, statusText, onCancel }: OcrProgressProps) {
+export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progressPct, etaText, statusText, onCancel, cancelling }: OcrProgressProps) {
   if (typeof progressPct !== 'number') return null
   const pct = Math.max(0, Math.min(100, Math.round(progressPct)))
-  const canCancel = typeof onCancel === 'function' && pct < 100
+  const canCancel = typeof onCancel === 'function' && pct < 100 && !cancelling
+  try { console.log('[OCR][overlay]', { pct, cancelling, etaText, statusText }) } catch {}
 
   return (
     <div className="absolute inset-0 bg-white/65 backdrop-blur-[1px] flex flex-col items-center justify-end pb-2">
-      {(etaText || canCancel) && (
+      {((etaText && !cancelling) || canCancel || cancelling) && (
         <div className="mb-1 text-[11px] text-black/80 flex items-center gap-2">
-          {etaText && (
+          {(!cancelling && etaText) && (
             <span>
               {(() => {
                 const parts = String(etaText).split('(')
@@ -32,15 +34,19 @@ export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progr
               })()}
             </span>
           )}
+          {cancelling && (<span className="font-semibold">Sto interrompendo l’OCR…</span>)}
           {canCancel && (
             <button
               className="px-2 py-0.5 text-[10px] rounded border border-red-400 bg-red-50 text-red-700 hover:bg-red-100"
-              onClick={(e)=>{ e.stopPropagation(); onCancel?.() }}
+              onClick={(e)=>{ e.stopPropagation(); try { console.log('[OCR][overlay][cancel-click]') } catch {}; onCancel?.() }}
               title="Interrompi OCR"
               aria-label="Interrompi OCR"
             >
-              Stop
+              ×
             </button>
+          )}
+          {(!canCancel && cancelling) && (
+            <button className="px-2 py-0.5 text-[10px] rounded border text-red-300 bg-red-50/60 cursor-not-allowed" disabled>×</button>
           )}
         </div>
       )}
