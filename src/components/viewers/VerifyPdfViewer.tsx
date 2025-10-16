@@ -109,11 +109,87 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
         continue
       }
 
-      // Costruisci testo ricostruito (stesso ordine dell'Inspector) e mappa char->token
-      const built = buildReadingText(words as any, width, height)
-      const hits = matchInBuilt(built, qRaw)
-      for (const h of hits) {
-        out.push({ id: `${p}:${out.length}` , page: pageIdx + 1, snippet: h.snippet, x0Pct: h.x0Pct, x1Pct: h.x1Pct, y0Pct: h.y0Pct, y1Pct: h.y1Pct, qLen: needle.length })
+      // Match "word-level" usando pageTextRaw (ocrText dal DB) - MAPPING PRECISO
+      // Creo mappatura esatta char→word trovando ogni parola nel testo reale
+      const charToWord: number[] = new Array(pageTextRaw.length).fill(-1)
+      let textPos = 0
+      
+      for (let wi = 0; wi < words.length; wi++) {
+        const w = words[wi]
+        const wText = w.text || ''
+        if (!wText) continue
+        
+        // Trova questa parola nel testo a partire da textPos
+        const idx = pageTextRaw.indexOf(wText, textPos)
+        if (idx >= 0) {
+          // Mappa ogni carattere della parola al suo indice
+          for (let i = 0; i < wText.length; i++) {
+            charToWord[idx + i] = wi
+          }
+          textPos = idx + wText.length
+        }
+      }
+      
+      // Cerca nel testo OCR reale (normalizzato)
+      const needle = normalize(qRaw)
+      const normalizedPageText = normalize(pageTextRaw)
+      let pos = 0
+      
+      while (true) {
+        const idx = normalizedPageText.indexOf(needle, pos)
+        if (idx < 0) break
+        const start = idx
+        const end = idx + needle.length
+        
+        // Trova parole dal mapping char→word preciso
+        const wordIndices = new Set<number>()
+        for (let ci = start; ci < end && ci < charToWord.length; ci++) {
+          if (charToWord[ci] >= 0) wordIndices.add(charToWord[ci])
+        }
+        const matchWords = Array.from(wordIndices).map(i => words[i])
+        
+        // Calcola bbox union
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+        for (const w of matchWords) {
+          x0 = Math.min(x0, w.x0)
+          y0 = Math.min(y0, w.y0)
+          x1 = Math.max(x1, w.x1)
+          y1 = Math.max(y1, w.y1)
+        }
+        
+        // Fallback se non trovate parole
+        if (matchWords.length === 0 || x0 === Infinity) {
+          const rel = Math.max(0, Math.min(1, start / Math.max(1, normalizedPageText.length)))
+          x0 = 0.04; x1 = 0.96; y0 = rel; y1 = Math.min(1, rel + 0.08)
+        }
+        
+        // Snippet: dall'inizio della riga corrente + max 2-3 righe
+        let lineStart = start
+        while (lineStart > 0 && pageTextRaw[lineStart - 1] !== '\n') {
+          lineStart--
+        }
+        
+        let lineEnd = end
+        let linesCount = 0
+        for (let i = end; i < pageTextRaw.length && linesCount < 2; i++) {
+          lineEnd = i + 1
+          if (pageTextRaw[i] === '\n') linesCount++
+        }
+        
+        const snippet = pageTextRaw.slice(lineStart, Math.min(pageTextRaw.length, lineEnd)).trim()
+        console.log('[OCR][match][word]', { 
+          page: pageIdx + 1, 
+          query: qRaw,
+          start, 
+          end,
+          lineStart,
+          matchWords: matchWords.length, 
+          bbox: { x0, y0, x1, y1 },
+          snippet: snippet.slice(0, 100),
+          matchPart: pageTextRaw.slice(start, end)
+        })
+        out.push({ id: `${p}:${start}`, page: pageIdx + 1, snippet, x0Pct: x0, x1Pct: x1, y0Pct: y0, y1Pct: y1, qLen: needle.length, charIdx: start })
+        pos = end
       }
     }
     return out
@@ -364,32 +440,29 @@ const [areas, setAreas] = useState<Area[]>([])
     function ensureOverlayForPage(pageNum: number): HTMLDivElement | null {
       const container = hostRef.current as HTMLElement | null
       if (!container) return null
-      let pageEl = container.querySelector(`.page[data-page-number="${pageNum}"]`) as HTMLElement | null
-        || container.querySelector(`#pageContainer${pageNum}`) as HTMLElement | null
-      if (!pageEl) {
-        const pages = Array.from(container.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
-        if (pages.length >= pageNum) pageEl = pages[pageNum - 1] || null
-      }
-      if (!pageEl) return null
+      // Usa SEMPRE il layer di pagina di react-pdf-viewer
+      const pages = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
+      const pageEl = (pages && pages.length >= pageNum) ? pages[pageNum - 1] : null
+      if (!pageEl) { console.warn('[GOTO] page layer not found'); return null }
 
       let overlay = pageEl.querySelector('.ocr-overlay') as HTMLDivElement | null
       if (!overlay) {
         overlay = document.createElement('div')
         overlay.className = 'ocr-overlay'
         overlay.style.position = 'absolute'
-        overlay.style.left = '0'
-        overlay.style.top = '0'
+        overlay.style.inset = '0'
         overlay.style.pointerEvents = 'none'
         overlay.style.zIndex = '30'
         pageEl.style.position = 'relative'
         pageEl.appendChild(overlay)
       }
-      const rect = pageEl.getBoundingClientRect()
-      overlay.style.width = `${rect.width}px`
-      overlay.style.height = `${rect.height}px`
+      // Misure coerenti al layer
+      overlay.style.width = '100%'
+      overlay.style.height = '100%'
       return overlay
     }
 
+    const drawAttemptsRef = React.useRef<number>(0)
     function drawOcrRects(matches: Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>, color?: string) {
       lastOcrMatchesRef.current = matches
       const byPage = new Map<number, Array<typeof matches[0]>>()
@@ -399,10 +472,22 @@ const [areas, setAreas] = useState<Area[]>([])
       }
       for (const [pageNum, hits] of byPage) {
         const overlay = ensureOverlayForPage(pageNum)
-        if (!overlay) continue
-        overlay.innerHTML = ''
-        const w = overlay.clientWidth
-        const h = overlay.clientHeight
+        if (!overlay) {
+          // ritenta qualche volta finché la pagina non è pronta
+          if ((drawAttemptsRef.current || 0) < 20) {
+            drawAttemptsRef.current = (drawAttemptsRef.current || 0) + 1
+            try { console.warn('[GOTO][draw] overlay missing, retry', { pageNum, attempt: drawAttemptsRef.current }) } catch {}
+            requestAnimationFrame(() => drawOcrRects(matches, color))
+          } else {
+            try { console.error('[GOTO][draw] overlay missing (giving up)', { pageNum }) } catch {}
+          }
+          continue
+        }
+        drawAttemptsRef.current = 0
+      overlay.innerHTML = ''
+      const w = overlay.clientWidth
+      const h = overlay.clientHeight
+        try { console.log('[GOTO][draw] overlay size', { pageNum, w, h, hits: hits.length }) } catch {}
         for (const m of hits) {
           const x = Math.max(0, Math.min(w, m.x0Pct * w))
           const y = Math.max(0, Math.min(h, m.y0Pct * h))
@@ -420,6 +505,7 @@ const [areas, setAreas] = useState<Area[]>([])
           el.style.borderRadius = '2px'
           el.style.pointerEvents = 'none'
           overlay.appendChild(el)
+          try { console.log('[GOTO][draw] box', { page: pageNum, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct, x, y, rw, rh }) } catch {}
         }
       }
     }
@@ -1015,13 +1101,8 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			searchCacheRef.current.set(cacheKey, found)
 			logger.debug('SEARCH[cache][set]', { key: cacheKey, count: found.length })
 			try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
-			// Disegna subito i rettangoli per tutti i match
-			try {
-				const paintAll = (found || [])
-					.filter((m: any) => m && m.page && m.x0Pct != null && m.y0Pct != null && m.x1Pct != null && m.y1Pct != null)
-					.map((m: any) => ({ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }))
-				if (paintAll.length) drawOcrRects(paintAll)
-			} catch {}
+			// NON disegnare tutti i match: disegna solo il selezionato (via app:goto-match)
+			try { console.log('[SEARCH][paintAll][skip]', { total: (found||[]).length }) } catch {}
 			return found
 		} catch {
 			return []
@@ -1055,17 +1136,9 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 		if (!textLayer) { console.warn('[GOTO] text layer missing'); return }
 		// one extra RAF to let layout settle
 		await new Promise(r => requestAnimationFrame(() => r(null as any)))
-		const findScroll = () => {
-			const cands = [
-				viewer.querySelector('.rpv-core__inner') as HTMLElement | null,
-				viewer.querySelector('.rpv-core__pages') as HTMLElement | null,
-				viewer.querySelector('.rpv-core__viewer') as HTMLElement | null,
-				viewer as HTMLElement,
-			]
-			return cands.find(el => el && el.scrollHeight > (el.clientHeight + 10)) || null
-		}
-		const sc = findScroll()
-		if (!sc) { console.warn('[GOTO] scroll container missing'); return }
+        // Container scroll deterministico
+        const sc = viewer.querySelector('.rpv-core__viewer') as HTMLElement | null
+        if (!sc) { console.warn('[GOTO] .rpv-core__viewer missing'); return }
 		const pr0 = pageEl.getBoundingClientRect(); const scr0 = sc.getBoundingClientRect()
 		const pageTop = sc.scrollTop + (pr0.top - scr0.top) - 20
 		console.log('[GOTO] preScroll pageTop', { pageTop, pr0Top: pr0.top, scr0Top: scr0.top })
@@ -1088,6 +1161,41 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 		}
 		console.log('[GOTO] scrollTo', { top: newTop, left: newLeft })
 		sc.scrollTo({ top: newTop, left: newLeft, behavior: 'smooth' })
+
+		// Disegna il bbox ricevuto (diagnostica) e prova a raffinarlo alla parola usando le highlight native
+		try {
+			const x0Pct = Math.max(0, Math.min(1, m.x0Pct ?? 0))
+			const y0Pct = Math.max(0, Math.min(1, m.y0Pct ?? 0))
+			const x1Pct = Math.max(0, Math.min(1, m.x1Pct ?? 1))
+			const y1Pct = Math.max(0, Math.min(1, m.y1Pct ?? 1))
+			console.log('[GOTO][bbox-in]', { page: m.page, x0Pct, y0Pct, x1Pct, y1Pct, prW: pr.width, prH: pr.height })
+			drawOcrRects([{ page: m.page, x0Pct, y0Pct, x1Pct, y1Pct }], 'rgba(59,130,246,1)')
+			// Trova highlight native nella pagina corrente
+			const nodes = Array.from(document.querySelectorAll('.rpv-search__highlight')) as HTMLElement[]
+			const onPage = nodes
+				.map((n) => ({ el: n, r: n.getBoundingClientRect() }))
+				.filter(({ r }) => r.bottom > pr.top && r.top < pr.bottom && r.right > pr.left && r.left < pr.right)
+			console.log('[GOTO][hi][count]', { total: nodes.length, onPage: onPage.length })
+			if (onPage.length) {
+				const cx = pr.left + ((x0Pct + x1Pct) / 2) * pr.width
+				const cy = pr.top + ((y0Pct + y1Pct) / 2) * pr.height
+				let best = onPage[0]
+				let bestD = Infinity
+				for (const h of onPage) {
+					const hx = (h.r.left + h.r.right) / 2
+					const hy = (h.r.top + h.r.bottom) / 2
+					const d = Math.hypot(hx - cx, hy - cy)
+					if (d < bestD) { best = h; bestD = d }
+				}
+				const hr = best.r
+				const nx0 = Math.max(0, (hr.left - pr.left) / pr.width)
+				const ny0 = Math.max(0, (hr.top - pr.top) / pr.height)
+				const nx1 = Math.min(1, (hr.right - pr.left) / pr.width)
+				const ny1 = Math.min(1, (hr.bottom - pr.top) / pr.height)
+				console.log('[GOTO][hi][nearest]', { page: m.page, nx0, ny0, nx1, ny1, bestD })
+				drawOcrRects([{ page: m.page, x0Pct: nx0, y0Pct: ny0, x1Pct: nx1, y1Pct: ny1 }], 'rgba(16,185,129,1)')
+			}
+		} catch (e) { console.warn('[GOTO][bbox-refine][err]', e) }
 		let root = overlayRootsRef.current.get(m.page)
 		if (!root) {
 			root = document.createElement('div')
@@ -1443,12 +1551,21 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 				// If we received a range (startPage-endPage), log it for debugging
 				try { if (detail?.match?.range) console.log('[GOTO-MATCH][range]', detail.match.range) } catch {}
                                         } catch {}
-			try {
-				(searchPluginInstance as any).clearHighlights?.()
-				;(searchPluginInstance as any).highlight?.({ keyword: detail.q })
-				// optional keyword highlight
-			} catch (e) { console.warn('[GOTO][event] highlight error', e) }
-			// Wait a tick for native highlights to render
+            try {
+                (searchPluginInstance as any).clearHighlights?.()
+                ;(searchPluginInstance as any).highlight?.({ keyword: detail.q })
+            } catch (e) { console.warn('[GOTO][event] highlight error', e) }
+            // Disegna subito il rettangolo OCR esatto (se ho il bbox)
+            try {
+                const m = detail?.match
+                if (m && m.page && m.x0Pct != null && m.y0Pct != null && m.x1Pct != null && m.y1Pct != null) {
+                    drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)')
+                    requestAnimationFrame(() => {
+                        try { drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)') } catch {}
+                    })
+                }
+            } catch {}
+            // Attendi un attimo per consentire agli highlight nativi (keyword) di comparire
 			await new Promise(r => setTimeout(r, 120))
 			const waitForHighlights = async (ms=1200) => new Promise<HTMLElement[] | null>((resolve) => {
 				const start = Date.now()

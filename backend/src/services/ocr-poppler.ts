@@ -430,7 +430,7 @@ export class PopplerOcrService implements IOcrPoppler {
       // helper: translate a single page top-down
       const translateOne = async (pageIdx: number, basePng: string) => {
         const t0 = Date.now()
-        const processWords = (words: Word[], dpiUsed: number, psmUsed: number, pngForSize: string) => {
+        const processWords = async (words: Word[], dpiUsed: number, psmUsed: number, pngForSize: string) => {
           // Ordine deterministico basato sugli indici TSV: block/par/line/word
           const byIdx = [...words].sort((a, b) =>
             ((a.b ?? 0) - (b.b ?? 0)) ||
@@ -454,33 +454,50 @@ export class PopplerOcrService implements IOcrPoppler {
             last = { b: nb, p: np, l: nl }
           }
           const text = textParts.join('').replace(/[ \t]+/g, ' ').replace(/\s+\n/g, '\n').trim()
+          // Log per verificare allineamento testo/words
+          try {
+            console.log('[OCR][processWords][text]', {
+              page: pageIdx,
+              wordsCount: byIdx.length,
+              textLen: text.length,
+              textHead: text.slice(0, 100).replace(/\s+/g, ' ')
+            })
+          } catch {}
 
           const confs = byIdx.map(w => w.conf)
           const med = median(confs)
           let W = 0, H = 0
           try {
-            const sz = imageSize(pngForSize as any)
+            const buffer = await fs.readFile(pngForSize)
+            const sz = imageSize(buffer)
             W = (sz?.width || 0)
             H = (sz?.height || 0)
           } catch (e) {
             try { console.warn('[OCR][imageSize][error]', String(e)) } catch {}
           }
-          const invScale = dpiUsed / 72
+          // invScale non serve: Tesseract TSV dà coordinate già in pixel dell'immagine rasterizzata
+          // const invScale = dpiUsed / 72
           layout.push({
             page: pageIdx,
             width: W, height: H,
             dpiUsed, psmUsed,
             words: byIdx.map(w => {
-              const x0px = (w.x) * invScale
-              const x1px = (w.x + w.w) * invScale
-              const y0px = (H - (w.y + w.h) * invScale)
-              const y1px = (H - (w.y) * invScale)
+              // Tesseract TSV: coordinate già in px dell'immagine rasterizzata (top-left origin)
+              // Normalizzo rispetto a W×H e converto Y da top→bottom (PDF/DOM)
+              const x0px = w.x
+              const x1px = w.x + w.w
+              const y0px_top = w.y
+              const y1px_top = w.y + w.h
+              // Converti Y: PDF ha origine bottom-left, DOM top-left
+              // Per viewer DOM: y0Pct in alto, y1Pct in basso (top-origin)
+              const y0Pct_dom = H ? (y0px_top / H) : 0
+              const y1Pct_dom = H ? (y1px_top / H) : 0
               return {
                 text: w.text,
                 x0: W ? (x0px / W) : 0,
-                y0: H ? (y0px / H) : 0,
+                y0: y0Pct_dom,
                 x1: W ? (x1px / W) : 0,
-                y1: H ? (y1px / H) : 0,
+                y1: y1Pct_dom,
                 conf: w.conf,
                 b: w.b, p: w.p, l: w.l, wi: w.wi,
               }
@@ -515,16 +532,18 @@ export class PopplerOcrService implements IOcrPoppler {
           const medH = median(wordsH.map(w => w.conf))
           if (wordsH.length > words.length || (medH && med && medH > med)) { words = wordsH; med = medH; usedPsm = hiOut.psmUsed }
           logHead('hiDPI', { dpi: DPI_MAX, psm: usedPsm, words: words.length, medConf: med.toFixed(1) })
-          const out = processWords(words, usedDpi, usedPsm, hiPng)
+          const out = await processWords(words, usedDpi, usedPsm, hiPng)
           pageText = out.text; pageConf = out.med || 0
+          // REMOVED fallback to ocrTxt: garantisce allineamento tra ocrText e ocrLayout.words
           if (!pageText || !pageText.trim()) {
-            try { pageText = (await ocrTxt(hiPng, usedPsm, usedDpi)).replace(/\s+/g, ' ').trim() } catch {}
+            logHead('warn', { msg: 'processWords returned empty text, keeping empty to maintain alignment' })
           }
         } else {
-          const out = processWords(words, usedDpi, usedPsm, basePng)
+          const out = await processWords(words, usedDpi, usedPsm, basePng)
           pageText = out.text; pageConf = out.med || 0
+          // REMOVED fallback to ocrTxt: garantisce allineamento tra ocrText e ocrLayout.words
           if (!pageText || !pageText.trim()) {
-            try { pageText = (await ocrTxt(basePng, usedPsm, usedDpi)).replace(/\s+/g, ' ').trim() } catch {}
+            logHead('warn', { msg: 'processWords returned empty text, keeping empty to maintain alignment' })
           }
         }
         // Log testo riconosciuto per pagina (tronco a 200 char)

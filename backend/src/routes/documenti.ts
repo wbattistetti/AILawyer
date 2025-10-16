@@ -167,6 +167,51 @@ export async function documentiRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: 'Errore nel recupero del documento' })
     }
   })
+
+  // DIAGNOSTICA: verifica bbox parola per parola in ocrLayout
+  fastify.get<{ Params: { id: string }; Querystring: { page?: string } }>(
+    '/documenti/:id/layout-diagnostic',
+    async (request, reply) => {
+      try {
+        const documento = await prisma.documento.findUnique({
+          where: { id: request.params.id },
+          select: { id: true, filename: true, ocrLayout: true, ocrStatus: true }
+        })
+        if (!documento) {
+          return reply.status(404).send({ error: 'Documento non trovato' })
+        }
+        const layout = typeof (documento as any).ocrLayout === 'string'
+          ? (() => { try { return JSON.parse((documento as any).ocrLayout) } catch { return [] } })()
+          : ((documento as any).ocrLayout || [])
+        const pageParam = request.query.page ? parseInt(request.query.page, 10) : undefined
+        const pageIdx = pageParam != null && pageParam >= 1 ? pageParam - 1 : 0
+        const pageMeta = layout[pageIdx] || {}
+        const words = pageMeta.words || []
+        const sample = words.slice(0, 10).map((w: any) => ({
+          text: w.text,
+          x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1,
+          w: w.x1 - w.x0, h: w.y1 - w.y0
+        }))
+        return {
+          docId: documento.id,
+          filename: documento.filename,
+          ocrStatus: documento.ocrStatus,
+          totalPages: layout.length,
+          requestedPage: pageIdx + 1,
+          pageWidth: pageMeta.width || pageMeta.imgW || 0,
+          pageHeight: pageMeta.height || pageMeta.imgH || 0,
+          totalWords: words.length,
+          sampleWords: sample,
+          message: words.length > 0
+            ? `✅ OK: trovate ${words.length} parole con bbox per pagina ${pageIdx + 1}`
+            : `❌ PROBLEMA: nessuna parola con bbox per pagina ${pageIdx + 1}`
+        }
+      } catch (error: any) {
+        fastify.log.error(error)
+        return reply.status(500).send({ error: 'Errore diagnostica layout', details: error?.message })
+      }
+    }
+  )
   // Delete documento
   fastify.delete<{ Params: { id: string } }>(
     '/documenti/:id',
