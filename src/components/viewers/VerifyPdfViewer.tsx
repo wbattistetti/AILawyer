@@ -747,11 +747,11 @@ const suppressClearRef = useRef<boolean>(false)
         const host = hostRef.current
         if (!host) return
         const apply = () => {
-            const holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
-            for (const h of holders) {
-                const pn = parseInt(h.getAttribute('data-page-number') || '0', 10) || 0
-                const pageLayer = h.querySelector('.rpv-core__page-layer') as HTMLElement | null
-                if (!pageLayer) continue
+            // ✅ Usa data-virtual-index invece di data-page-number
+            const pageLayers = Array.from(host.querySelectorAll('[data-virtual-index]')) as HTMLElement[]
+            for (const pageLayer of pageLayers) {
+                const virtualIdx = parseInt(pageLayer.getAttribute('data-virtual-index') || '0', 10)
+                const pn = virtualIdx + 1 // Converti da zero-based a 1-based
                 const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
                 const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
                 const target = canvasLayer || canvasEl || pageLayer
@@ -794,10 +794,10 @@ const suppressClearRef = useRef<boolean>(false)
     const applyImmediateToPage = useCallback((pageNum: number, angle: number) => {
         const host = hostRef.current
         if (!host) return
-        const holder = (host.querySelector(`[data-page-number="${pageNum}"]`) as HTMLElement) || null
-        const pageLayer = holder?.querySelector('.rpv-core__page-layer') as HTMLElement | null
-            || (host.querySelectorAll('.rpv-core__page-layer')?.[Math.max(0, pageNum-1)] as HTMLElement | null)
-        if (!pageLayer) { try { console.warn('[DESKEW][immediate] pageLayer not found', { pageNum }) } catch {}; return }
+        // ✅ Usa data-virtual-index (zero-based: page 1 = index 0)
+        const zeroBasedIdx = pageNum - 1
+        const pageLayer = (host.querySelector(`[data-virtual-index="${zeroBasedIdx}"]`) as HTMLElement) || null
+        if (!pageLayer) { try { console.warn('[DESKEW][immediate] pageLayer not found', { pageNum, zeroBasedIdx }) } catch {}; return }
         const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
         const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
         const target = canvasLayer || canvasEl || pageLayer
