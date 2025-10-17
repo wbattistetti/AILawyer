@@ -85,52 +85,32 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
       let words: Array<{ text: string; x0: number; y0: number; x1: number; y1: number }> = pageLayout.words || []
       const width = pageLayout.width || pageLayout.imgW || 0
       const height = pageLayout.height || pageLayout.imgH || 0
+      console.log('[OCR][page][raw]', { 
+        page: pageIdx + 1, 
+        textLen: pageTextRaw.length, 
+        wordsLen: words?.length || 0, 
+        width, 
+        height,
+        layoutKeys: Object.keys(pageLayout),
+        firstWord: words[0] || null
+      })
       logger.debug('OCR[page][stats]', { page: pageIdx + 1, textLen: pageTextRaw.length, words: words?.length || 0, width, height })
       if (!pageText) continue
 
-      // If no positional words or missing page size, fallback to page-level match using text only
+      // NO FALLBACK: se mancano bbox, skippa la pagina
       if (!words.length || !width || !height) {
-        let pos = 0
-        const target = normalize(needle)
-        while (true) {
-          const idx = normalize(pageText).indexOf(target, pos)
-          if (idx < 0) break
-          const start = idx
-          const end = idx + target.length
-          const snippet = pageTextRaw.slice(Math.max(0, start - 40), Math.min(pageTextRaw.length, end + 40)).trim()
-          // Approximate box: narrow band near top proportional to position
-          const rel = Math.max(0, Math.min(1, start / Math.max(1, pageText.length)))
-          const y0Pct = Math.max(0, Math.min(1, rel))
-          const y1Pct = Math.max(y0Pct + 0.03, Math.min(1, y0Pct + 0.08))
-          logger.debug('OCR[match][approx]', { page: pageIdx + 1, start, snippet })
-          out.push({ id: `${p}:${start}`, page: pageIdx + 1, snippet, x0Pct: 0.04, x1Pct: 0.96, y0Pct, y1Pct, qLen: target.length, charIdx: start })
-          pos = end
-        }
+        console.error('[OCR][page][SKIP]', { 
+          page: pageIdx + 1, 
+          reason: !words.length ? 'no words' : !width ? 'no width' : 'no height',
+          layoutKeys: Object.keys(pageLayout)
+        })
         continue
       }
 
-      // Match "word-level" usando pageTextRaw (ocrText dal DB) - MAPPING PRECISO
-      // Creo mappatura esatta char→word trovando ogni parola nel testo reale
-      const charToWord: number[] = new Array(pageTextRaw.length).fill(-1)
-      let textPos = 0
+      // Match "word-level" usando TESTO ESATTO, non posizione geometrica
+      // words[] sono in ordine geometrico, pageTextRaw in ordine logico
+      // Soluzione: cerca la query nel testo, poi trova le parole esatte che compongono il match
       
-      for (let wi = 0; wi < words.length; wi++) {
-        const w = words[wi]
-        const wText = w.text || ''
-        if (!wText) continue
-        
-        // Trova questa parola nel testo a partire da textPos
-        const idx = pageTextRaw.indexOf(wText, textPos)
-        if (idx >= 0) {
-          // Mappa ogni carattere della parola al suo indice
-          for (let i = 0; i < wText.length; i++) {
-            charToWord[idx + i] = wi
-          }
-          textPos = idx + wText.length
-        }
-      }
-      
-      // Cerca nel testo OCR reale (normalizzato)
       const needle = normalize(qRaw)
       const normalizedPageText = normalize(pageTextRaw)
       let pos = 0
@@ -141,12 +121,18 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
         const start = idx
         const end = idx + needle.length
         
-        // Trova parole dal mapping char→word preciso
-        const wordIndices = new Set<number>()
-        for (let ci = start; ci < end && ci < charToWord.length; ci++) {
-          if (charToWord[ci] >= 0) wordIndices.add(charToWord[ci])
-        }
-        const matchWords = Array.from(wordIndices).map(i => words[i])
+        // Estrai il testo matchato dal testo originale (non normalizzato)
+        const matchedText = pageTextRaw.slice(start, end)
+        const matchedNorm = normalize(matchedText)
+        
+        // Cerca in words[] le parole che compongono ESATTAMENTE questo match
+        // Strategia: matcha parole il cui testo normalizzato è una sottostringa del match
+        const matchWords = words.filter(w => {
+          const wText = normalize(w.text || '')
+          if (!wText) return false
+          // Match solo se la parola è CONTENUTA nel testo matchato (non viceversa!)
+          return matchedNorm.includes(wText)
+        })
         
         // Calcola bbox union
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
@@ -157,10 +143,11 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
           y1 = Math.max(y1, w.y1)
         }
         
-        // Fallback se non trovate parole
+        // NO FALLBACK: se nessuna parola matchata, skippa questo match
         if (matchWords.length === 0 || x0 === Infinity) {
-          const rel = Math.max(0, Math.min(1, start / Math.max(1, normalizedPageText.length)))
-          x0 = 0.04; x1 = 0.96; y0 = rel; y1 = Math.min(1, rel + 0.08)
+          console.warn('[OCR][match][SKIP]', { page: pageIdx + 1, start, reason: 'no matching words', candidates: candidateWords.length })
+          pos = end
+          continue
         }
         
         // Snippet: dall'inizio della riga corrente + max 2-3 righe
@@ -180,13 +167,12 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
         console.log('[OCR][match][word]', { 
           page: pageIdx + 1, 
           query: qRaw,
-          start, 
-          end,
-          lineStart,
-          matchWords: matchWords.length, 
-          bbox: { x0, y0, x1, y1 },
-          snippet: snippet.slice(0, 100),
-          matchPart: pageTextRaw.slice(start, end)
+          start,
+          matchedText,
+          matchWords: matchWords.length,
+          matchWordsTexts: matchWords.map(w => w.text).join('|'),
+          bbox: { x0: x0.toFixed(3), y0: y0.toFixed(3), x1: x1.toFixed(3), y1: y1.toFixed(3), w: (x1-x0).toFixed(3), h: (y1-y0).toFixed(3) },
+          snippet: snippet.slice(0, 100)
         })
         out.push({ id: `${p}:${start}`, page: pageIdx + 1, snippet, x0Pct: x0, x1Pct: x1, y0Pct: y0, y1Pct: y1, qLen: needle.length, charIdx: start })
         pos = end
@@ -462,7 +448,6 @@ const [areas, setAreas] = useState<Area[]>([])
       return overlay
     }
 
-    const drawAttemptsRef = React.useRef<number>(0)
     function drawOcrRects(matches: Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>, color?: string) {
       lastOcrMatchesRef.current = matches
       const byPage = new Map<number, Array<typeof matches[0]>>()
@@ -473,17 +458,10 @@ const [areas, setAreas] = useState<Area[]>([])
       for (const [pageNum, hits] of byPage) {
         const overlay = ensureOverlayForPage(pageNum)
         if (!overlay) {
-          // ritenta qualche volta finché la pagina non è pronta
-          if ((drawAttemptsRef.current || 0) < 20) {
-            drawAttemptsRef.current = (drawAttemptsRef.current || 0) + 1
-            try { console.warn('[GOTO][draw] overlay missing, retry', { pageNum, attempt: drawAttemptsRef.current }) } catch {}
-            requestAnimationFrame(() => drawOcrRects(matches, color))
-          } else {
-            try { console.error('[GOTO][draw] overlay missing (giving up)', { pageNum }) } catch {}
-          }
+          // SKIP: pagina non ancora renderizzata (verrà disegnata dopo lo scroll)
+          try { console.log('[GOTO][draw] page not ready, will draw on scroll', { pageNum }) } catch {}
           continue
         }
-        drawAttemptsRef.current = 0
       overlay.innerHTML = ''
       const w = overlay.clientWidth
       const h = overlay.clientHeight
@@ -527,12 +505,31 @@ const [areas, setAreas] = useState<Area[]>([])
     }
 
     useEffect(() => {
-    const onResize = () => {
+      const onResize = () => {
         if (!lastOcrMatchesRef.current?.length) return
         drawOcrRects(lastOcrMatchesRef.current)
       }
+      
+      // Ridisegna quando l'utente scrolla (pagine diventano visibili)
+      const onScroll = () => {
+        if (!lastOcrMatchesRef.current?.length) return
+        // Debounce per evitare troppi ridisegni
+        clearTimeout((window as any).__ocrScrollTimeout)
+        ;(window as any).__ocrScrollTimeout = setTimeout(() => {
+          drawOcrRects(lastOcrMatchesRef.current!)
+        }, 100)
+      }
+      
+      const scrollContainer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | null
+      
       window.addEventListener('resize', onResize)
-      return () => window.removeEventListener('resize', onResize)
+      scrollContainer?.addEventListener('scroll', onScroll)
+      
+      return () => {
+        window.removeEventListener('resize', onResize)
+        scrollContainer?.removeEventListener('scroll', onScroll)
+        clearTimeout((window as any).__ocrScrollTimeout)
+      }
     }, [])
 
 	// ==== OCR INSPECTOR (TEMP) ====
@@ -1055,58 +1052,45 @@ const searchMainThread = async (qRaw: string): Promise<MatchItem[]> => {
 
 const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
         const qRaw = ((qOverride != null ? qOverride : searchQ) || '').trim()
-		if (!qRaw) { setMatches([]); try{ (searchPluginInstance as any).clearHighlights?.() } catch{}; return [] }
-		const cacheKey = `${fileUrl}::${qRaw.toLowerCase()}::${docId || 'no-doc'}`
-    if (searchCacheRef.current.has(cacheKey)) {
+		if (!qRaw) { 
+			setMatches([])
+			try { (searchPluginInstance as any).clearHighlights?.() } catch {}
+			return [] 
+		}
+		
+		// Verifica docId
+		if (!docId) {
+			console.error('[SEARCH][ERROR] docId is missing! Cannot search without document ID.')
+			setMatches([])
+			return []
+		}
+		
+		const cacheKey = `${fileUrl}::${qRaw.toLowerCase()}::${docId}`
+		
+		// Cache check
+		if (searchCacheRef.current.has(cacheKey)) {
 			const cached = searchCacheRef.current.get(cacheKey) || []
-			logger.debug('SEARCH[cache][hit]', { q: qRaw, cached: cached.length, key: cacheKey })
-      setMatches(cached)
+			console.log('[SEARCH][cache][hit]', { q: qRaw, cached: cached.length })
+			setMatches(cached)
 			try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
 			return cached
 		}
-        try {
-			logger.debug('SEARCH[fetch][start]', { fileUrl })
-			const res = await fetch(fileUrl)
-      await res.arrayBuffer()
-      // 1) native text via pdf.js
-            let found: MatchItem[] = await searchMainThread(qRaw)
-			logger.debug('SEARCH[native][count]', { count: found.length })
-            // 1b) if document has OCR PDF, search inside that for native text
-            if ((found.length === 0) && docId) {
-              try {
-                const docMeta: any = await api.getDocumento(docId)
-                const ocrKey = docMeta?.ocrPdfKey
-                if (ocrKey) {
-                  const ocrUrl = api.getLocalFileUrl(ocrKey)
-                  logger.debug('SEARCH[native-ocrPdfKey][start]', { ocrUrl })
-                  const task = (pdfjsLib as any).getDocument({ url: ocrUrl, disableWorker: true })
-                  const ocrDoc = await task.promise
-                  const fromOcrPdf = await searchNativeCore(ocrDoc, qRaw)
-                  logger.debug('SEARCH[native-ocrPdfKey][done]', { count: fromOcrPdf.length })
-                  if (fromOcrPdf.length > 0) {
-                    found = fromOcrPdf
-                    setMatches(fromOcrPdf)
-                  }
-                }
-              } catch (e) { logger.warn('SEARCH[native-ocrPdfKey][error]', String(e)) }
-            }
-			// 2) fallback to OCR layout if no native hits and docId available
-      if ((!found || found.length === 0) && docId) {
-				logger.debug('SEARCH[ocr-fallback][start]', { docId })
-				const ocr = await searchViaOcrBackend(docId, qRaw)
-        found = ocr
-        setMatches(ocr)
-				logger.debug('SEARCH[ocr-fallback][done]', { count: ocr.length })
-      }
-			searchCacheRef.current.set(cacheKey, found)
-			logger.debug('SEARCH[cache][set]', { key: cacheKey, count: found.length })
-			try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
-			// NON disegnare tutti i match: disegna solo il selezionato (via app:goto-match)
-			try { console.log('[SEARCH][paintAll][skip]', { total: (found||[]).length }) } catch {}
-			return found
-		} catch {
-			return []
+		
+		// NO FALLBACK: usa SOLO OCR backend con bbox word-level precisi
+		console.log('[SEARCH][ocr][start]', { docId, q: qRaw })
+		const found = await searchViaOcrBackend(docId, qRaw)
+		console.log('[SEARCH][ocr][done]', { count: found.length })
+		
+		if (found.length === 0) {
+			console.warn('[SEARCH][ocr][NO_RESULTS]', { docId, q: qRaw })
 		}
+		
+		setMatches(found)
+		searchCacheRef.current.set(cacheKey, found)
+		
+		try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: qRaw }) } catch {}
+		
+		return found
 	}
 
 // removed unused snippet renderer
@@ -2038,9 +2022,11 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                             (setSearchQ as any)(q)
                             const found = await runSearch(q)
 							const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
-                            const groups = [{ doc: { id: 'current', title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: (found || []).map((m)=>({
+							const actualDocId = docId || 'current'
+							console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found?.length || 0 })
+                            const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: (found || []).map((m)=>({
 								id: m.id,
-								docId: 'current',
+								docId: actualDocId,
 								docTitle,
 								kind: 'pdf' as const,
 								page: m.page,
