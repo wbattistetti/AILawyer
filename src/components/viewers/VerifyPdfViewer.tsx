@@ -14,7 +14,7 @@ import '@react-pdf-viewer/search/lib/styles/index.css'
 // @ts-ignore
 import * as pdfjsLib from 'pdfjs-dist'
 
-import { Highlighter, Underline as UnderlineIcon, Strikethrough as StrikethroughIcon, MessageSquare, Search, GripVertical, PanelRightOpen, Save as SaveIcon } from 'lucide-react'
+import { Highlighter, Underline as UnderlineIcon, Strikethrough as StrikethroughIcon, MessageSquare, Search, GripVertical, PanelRightOpen, Save as SaveIcon, X } from 'lucide-react'
 import { PdfSelectionOverlay, getPdfCoords, getSelectedTextInRect } from '../../features/pdf/PdfSelectionOverlay'
 // Replaced per-page overlay with SVG layer via renderPage
 import { SvgSelectLayer } from '../../features/pdf/SvgSelectLayer'
@@ -1641,14 +1641,38 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 						<span className="text-muted-foreground whitespace-nowrap px-1">/ {totalPages || '-'}</span>
 					</div>
 
-					{/* Quick search bar */}
+				{/* Quick search bar - nascosto quando pannello aperto */}
+				{!showAdvanced && (
 					<div className="flex items-center gap-1 ml-2">
 						<Search size={16} className="text-gray-500" />
-						<input value={searchQ} onChange={(e)=>setSearchQ(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter'){ runSearch() } }} placeholder="Cerca nel documento" className="w-72 border rounded px-2 py-1" />
-						<button className="px-2 py-1 border rounded" title="Ricerca avanzata" onClick={()=>setShowAdvanced(s=>!s)}>
+						<input 
+							value={searchQ} 
+							onChange={(e)=>setSearchQ(e.target.value)} 
+							onKeyDown={(e)=>{ 
+								if(e.key==='Enter'){ 
+									runSearch()
+									setShowAdvanced(true)  // ✅ Apri pannello automaticamente
+								} 
+							}} 
+							placeholder="Cerca nel documento" 
+							className="w-72 border rounded px-2 py-1" 
+						/>
+						<button className="px-2 py-1 border rounded" title="Apri pannello ricerca" onClick={()=>setShowAdvanced(true)}>
 							<PanelRightOpen size={16} />
 						</button>
 					</div>
+				)}
+				
+				{/* Pulsante per chiudere il pannello quando è aperto */}
+				{showAdvanced && (
+					<button 
+						className="px-2 py-1 border rounded bg-blue-100 border-blue-400" 
+						title="Chiudi pannello ricerca" 
+						onClick={()=>setShowAdvanced(false)}
+					>
+						<PanelRightOpen size={16} className="rotate-180" />
+					</button>
+				)}
 					<div className="flex items-center gap-2">
 						<button className={`px-2 py-1 rounded border ${tool==='highlight'?'bg-yellow-100 border-yellow-400':''}`} title="Evidenzia" onClick={()=>setTool(tool==='highlight'?'none':'highlight')}>
 							<Highlighter size={16} />
@@ -2082,7 +2106,19 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 						<GripVertical size={12} className="mx-auto text-gray-400" />
 					</div>
 					<div className="h-full border-l bg-white flex flex-col" style={{ width: panelW }}>
-                        <SearchProvider defaultScope={'current'} onSearch={async(q, _scope)=>{
+					{/* Header pannello ricerca con X per chiudere */}
+					<div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+						<h3 className="font-semibold text-sm">Risultati ricerca</h3>
+						<button 
+							className="p-1 hover:bg-gray-200 rounded" 
+							title="Chiudi pannello"
+							onClick={()=>setShowAdvanced(false)}
+						>
+							<X size={18} />
+						</button>
+					</div>
+						
+                        <SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={true} onSearch={async(q, _scope)=>{
                             (setSearchQ as any)(q)
                             const found = await runSearch(q)
 							const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
@@ -2118,7 +2154,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                 } catch {}
 							}
 						})}>
-							<SearchPanelTree showInput={true} />
+							<SearchPanelTree showInput={true} showScopeSelector={false} initialQuery={searchQ} />
 						</SearchProvider>
 					</div>
 			</React.Fragment>

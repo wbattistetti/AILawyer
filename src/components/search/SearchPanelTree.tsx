@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
 
-export const SearchPanelTree: React.FC<{ showInput?: boolean }>=({ showInput=true })=>{
+export const SearchPanelTree: React.FC<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>=({ showInput=true, showScopeSelector=true, initialQuery })=>{
   const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery || '')
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
   const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -39,11 +39,13 @@ export const SearchPanelTree: React.FC<{ showInput?: boolean }>=({ showInput=tru
           <datalist id="search-history">
             {history.map(h => <option key={h} value={h} />)}
           </datalist>
-          <select value={scope} onChange={(e)=>setScope(e.target.value as SearchScope)} className="border rounded px-1 py-1">
-            <option value="current">Questo PDF</option>
-            <option value="open">Documenti aperti</option>
-            <option value="archive">Tutto archivio</option>
-          </select>
+          {showScopeSelector && (
+            <select value={scope} onChange={(e)=>setScope(e.target.value as SearchScope)} className="border rounded px-1 py-1">
+              <option value="current">Questo PDF</option>
+              <option value="open">Documenti aperti</option>
+              <option value="archive">Tutto archivio</option>
+            </select>
+          )}
           <button className="px-2 py-1 border rounded" onClick={onSubmit}>Cerca</button>
         </div>
       )}

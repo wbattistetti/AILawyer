@@ -47,13 +47,14 @@ export const useSearch = () => {
   return ctx
 }
 
-export const SearchProvider: React.FC<{ children: React.ReactNode; defaultScope?: SearchScope; registry?: any; adapterFactory?: any; onSearch?: (q: string, scope: SearchScope) => Promise<SearchResultNode | null>; }>
-  = ({ children, defaultScope = 'current', registry, adapterFactory, onSearch }) => {
+export const SearchProvider: React.FC<{ children: React.ReactNode; defaultScope?: SearchScope; initialQuery?: string; autoSearch?: boolean; registry?: any; adapterFactory?: any; onSearch?: (q: string, scope: SearchScope) => Promise<SearchResultNode | null>; }>
+  = ({ children, defaultScope = 'current', initialQuery, autoSearch = false, registry, adapterFactory, onSearch }) => {
   const [scope, setScope] = useState<SearchScope>(defaultScope)
-  const [history, setHistory] = useState<string[]>([])
+  const [history, setHistory] = useState<string[]>(initialQuery ? [initialQuery] : [])
   const [results, setResults] = useState<SearchResultNode[]>([])
   const [busy, setBusy] = useState(false)
   const idRef = useRef(0)
+  const initialSearchDone = useRef(false)
 
   const indexStore = useMemo(() => ({
     async ensure(doc: DocRef) { /* TODO: hook to worker/IDB */ },
@@ -97,6 +98,15 @@ export const SearchProvider: React.FC<{ children: React.ReactNode; defaultScope?
       try { window.dispatchEvent(new CustomEvent('app:goto-match', { detail: { docId: m.docId, q: m.q, match: m } })) } catch {}
     }
   }
+
+  // ✅ Auto-search quando montato con initialQuery
+  React.useEffect(() => {
+    if (autoSearch && initialQuery && !initialSearchDone.current) {
+      initialSearchDone.current = true
+      console.log('[SEARCH][provider] auto-search on mount', { initialQuery })
+      search(initialQuery)
+    }
+  }, [autoSearch, initialQuery])
 
   return (
     <SearchContext.Provider value={{ scope, setScope, history, results, busy, search, clearNode, navigateTo }}>

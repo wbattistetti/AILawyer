@@ -1,7 +1,9 @@
 import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
-import { FileText, ScanText } from 'lucide-react'
+import { FileText, ScanText, Search, X } from 'lucide-react'
+import { SearchProvider } from '../../components/search/SearchProvider'
+import { SearchPanelTree } from '../../components/search/SearchPanelTree'
 
 type DocItem = {
   id: string
@@ -46,6 +48,10 @@ export function DocumentCollection({
   statusById?: Record<string, string>
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState<boolean>(false)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [searchHeight, setSearchHeight] = useState<number>(300)
+  
   const onDropCb = useCallback((accepted: File[]) => {
     onDrop?.(accepted)
   }, [onDrop])
@@ -62,18 +68,159 @@ export function DocumentCollection({
   return (
     <div className="w-full h-full flex flex-col relative">
       {title && (
-        <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center">
-          <div className="flex-1" />
+        <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center gap-2">
+          <Search size={16} className="text-gray-500" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchQuery.trim()) {
+                setSearchOpen(true)
+              }
+            }}
+            placeholder="Cerca in tutti i documenti..."
+            className="flex-1 border rounded px-2 py-1 text-xs"
+          />
+          {searchOpen ? (
+            <button
+              type="button"
+              className="p-1 hover:bg-gray-200 rounded"
+              title="Chiudi ricerca"
+              onClick={() => setSearchOpen(false)}
+            >
+              <X size={18} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="p-1 hover:bg-blue-100 rounded"
+              title="Cerca"
+              onClick={() => {
+                if (searchQuery.trim()) setSearchOpen(true)
+              }}
+            >
+              <Search size={18} />
+            </button>
+          )}
           <button
             type="button"
-            className="ml-2 px-3 py-1 text-xs rounded border bg-blue-600 text-white hover:bg-blue-700"
+            className="px-3 py-1 text-xs rounded border bg-blue-600 text-white hover:bg-blue-700"
             onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); open() }}
           >Carica documento</button>
         </div>
       )}
-      <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
-        <input {...getInputProps()} />
-        <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Pannello ricerca (quando aperto) */}
+        {searchOpen && (
+          <>
+            <div className="border-b bg-white" style={{ height: searchHeight, minHeight: 150, maxHeight: 600 }}>
+              <SearchProvider 
+                defaultScope={'archive'} 
+                initialQuery={searchQuery} 
+                autoSearch={true}
+                onSearch={async(q, scope) => {
+                  console.log('[SEARCH][archive] Backend search start', { q, scope })
+                  
+                  try {
+                    // ✅ Chiamata API backend per ricerca globale
+                    const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
+                    const response = await fetch(`${apiUrl}/search/archive?q=${encodeURIComponent(q)}&limit=50`)
+                    
+                    if (!response.ok) {
+                      console.error('[SEARCH][archive] API error', response.status)
+                      return null
+                    }
+                    
+                    const data = await response.json()
+                    console.log('[SEARCH][archive] API response', { total: data.total, matches: data.matches?.length })
+                    
+                    // Raggruppa i risultati per documento
+                    const matchesByDoc = new Map<string, any[]>()
+                    const docInfo = new Map<string, { id: string; filename: string }>()
+                    
+                    for (const match of (data.matches || [])) {
+                      if (!matchesByDoc.has(match.docId)) {
+                        matchesByDoc.set(match.docId, [])
+                        docInfo.set(match.docId, { id: match.docId, filename: match.filename })
+                      }
+                      
+                      matchesByDoc.get(match.docId)!.push({
+                        id: `${match.docId}-${match.page}-${match.charIdx || 0}`,
+                        docId: match.docId,
+                        docTitle: match.filename,
+                        kind: 'pdf' as const,
+                        page: match.page,
+                        q: q,
+                        x0Pct: match.x0Pct,
+                        x1Pct: match.x1Pct,
+                        y0Pct: match.y0Pct,
+                        y1Pct: match.y1Pct,
+                        charIdx: match.charIdx,
+                        qLength: match.qLen,
+                        snippet: match.snippet,
+                        score: 1
+                      })
+                    }
+                    
+                    const groups = Array.from(matchesByDoc.entries()).map(([docId, matches]) => {
+                      const info = docInfo.get(docId)!
+                      return {
+                        doc: {
+                          id: info.id,
+                          title: info.filename,
+                          hash: '',
+                          pages: 1,
+                          kind: 'pdf' as const
+                        },
+                        matches
+                      }
+                    })
+                    
+                    return {
+                      id: `archive-${Date.now()}`,
+                      query: q,
+                      scope: 'archive',
+                      total: data.total || 0,
+                      groups
+                    }
+                  } catch (error) {
+                    console.error('[SEARCH][archive] Error', error)
+                    return null
+                  }
+                }}
+              >
+                <SearchPanelTree showInput={false} showScopeSelector={false} initialQuery={searchQuery} />
+              </SearchProvider>
+            </div>
+            {/* Divisore trascinabile orizzontale */}
+            <div
+              className="h-1 cursor-row-resize bg-gray-200 hover:bg-blue-300"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                const startY = e.clientY
+                const startHeight = searchHeight
+                const handleMove = (moveEvent: MouseEvent) => {
+                  const delta = moveEvent.clientY - startY
+                  const newHeight = Math.max(150, Math.min(600, startHeight + delta))
+                  setSearchHeight(newHeight)
+                }
+                const handleUp = () => {
+                  document.removeEventListener('mousemove', handleMove)
+                  document.removeEventListener('mouseup', handleUp)
+                  document.body.style.cursor = ''
+                }
+                document.addEventListener('mousemove', handleMove)
+                document.addEventListener('mouseup', handleUp)
+                document.body.style.cursor = 'row-resize'
+              }}
+            />
+          </>
+        )}
+        
+        {/* Miniature documenti */}
+        <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
+          <input {...getInputProps()} />
+          <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
       {items.map(doc => {
           const meta = (doc as any).meta || {}
           const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
@@ -115,6 +262,7 @@ export function DocumentCollection({
             />
           )
         })}
+        </div>
         </div>
       </div>
       {typeof uploadingCount === 'number' && uploadingCount > 0 && (
