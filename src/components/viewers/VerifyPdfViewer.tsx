@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Worker, Viewer, SpecialZoomLevel, ScrollMode } from '@react-pdf-viewer/core'
+import { Worker, Viewer, ScrollMode } from '@react-pdf-viewer/core'
 import { highlightPlugin } from '@react-pdf-viewer/highlight'
 import '@react-pdf-viewer/highlight/lib/styles/index.css'
 import { scrollModePlugin } from '@react-pdf-viewer/scroll-mode'
-import { zoomPlugin } from '@react-pdf-viewer/zoom'
 import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation'
 import { searchPlugin } from '@react-pdf-viewer/search'
+import { zoomPlugin } from '@react-pdf-viewer/zoom'
 import '@react-pdf-viewer/core/lib/styles/index.css'
 import '@react-pdf-viewer/zoom/lib/styles/index.css'
 import '@react-pdf-viewer/page-navigation/lib/styles/index.css'
@@ -28,6 +28,7 @@ import { getDrawerOptionsSorted } from '../../features/drawers/drawerRegistry'
 import { api } from '../../lib/api'
 import { logger } from '../../utils/logger'
 import { buildReadingText, matchInBuilt } from '../../features/ocr/readingOrder'
+import { useCleanPdfZoom } from '../../hooks/useCleanPdfZoom'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -145,7 +146,7 @@ async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchIt
         
         // NO FALLBACK: se nessuna parola matchata, skippa questo match
         if (matchWords.length === 0 || x0 === Infinity) {
-          console.warn('[OCR][match][SKIP]', { page: pageIdx + 1, start, reason: 'no matching words', candidates: candidateWords.length })
+          console.warn('[OCR][match][SKIP]', { page: pageIdx + 1, start, reason: 'no matching words' })
           pos = end
           continue
         }
@@ -281,110 +282,34 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const hostRef = useRef<HTMLDivElement | null>(null)
     const lastOcrMatchesRef = useRef<Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>>([])
 	const scrollMode = scrollModePlugin()
-	const zoomPluginInstance = zoomPlugin()
-	const { zoomTo } = (zoomPluginInstance as any)
 	const pageNav = pageNavigationPlugin()
 	
-	// Livelli di zoom personalizzati (simmetrici)
-	const zoomLevels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 
-	                    1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.2, 2.4, 2.6, 2.8, 3]
+	// ✅ Zoom plugin e hook semplificato
+	const zoomPluginInstance = zoomPlugin()
+	const { zoomTo: zoomToPlugin } = zoomPluginInstance
+	const scaleRef = useRef<number>(1)
+	const zoomDebounceRef = useRef<number | null>(null)
+	const pdfDocRef = useRef<any>(null)
 	
-	// Stato per zoom visivo CSS (instant) - scala assoluta, non relativa
-	const [visualScale, setVisualScale] = useState<number>(1)
-	const targetScaleRef = useRef<number>(1)
-	const lastZoomTimeRef = useRef<number>(0)
-	const isZoomingRef = useRef<boolean>(false) // Flag per bloccare onZoom durante visual zoom
+	// ✅ Hook zoom SEMPLICE - chiama direttamente il plugin
+	const { containerRef: zoomContainerRef } = useCleanPdfZoom({
+		zoomToPlugin: (scale: number) => {
+			console.log('[ZOOM] Calling plugin with scale', scale.toFixed(3))
+			scaleRef.current = scale
+			if (typeof zoomToPlugin === 'function') {
+				zoomToPlugin(scale)
+			}
+		},
+		getCurrentScale: () => scaleRef.current
+	})
 	
-	// Handler zoom custom per ctrl+wheel - Zoom visivo ISTANTANEO come Adobe/browser
-	useEffect(() => {
-		const container = hostRef.current
-		if (!container) return
-		
-		let realZoomTimer: number | null = null
-		let debounceTimer: number | null = null
-		let accumulatedDelta = 0
-		const debounceDelay = 80 // ms per accumulare eventi multipli
-		
-		const performZoom = () => {
-			if (accumulatedDelta === 0) return
-			
-			const currentScale = scaleRef.current || 1
-			const direction = accumulatedDelta < 0 ? 1 : -1 // deltaY negativo = zoom in
-			console.log('[ZOOM][perform]', { accumulated: accumulatedDelta, direction })
-			accumulatedDelta = 0 // Reset
-			
-			// Trova il livello corrente più vicino
-			let currentIdx = 0
-			let minDist = Infinity
-			for (let i = 0; i < zoomLevels.length; i++) {
-				const dist = Math.abs(zoomLevels[i] - currentScale)
-				if (dist < minDist) {
-					minDist = dist
-					currentIdx = i
-				}
-			}
-			
-			// Vai al livello successivo/precedente
-			const newIdx = Math.max(0, Math.min(zoomLevels.length - 1, currentIdx + direction))
-			const newScale = zoomLevels[newIdx]
-			
-			if (newScale !== currentScale) {
-				const visualScaleValue = newScale / currentScale
-				console.log('[ZOOM][apply]', { 
-					currentScale: currentScale.toFixed(3), 
-					newScale: newScale.toFixed(3), 
-					visualScale: visualScaleValue.toFixed(3),
-					target: newScale 
-				})
-				
-				// 1) BLOCCA onZoom callback durante il visual zoom
-				isZoomingRef.current = true
-				
-				// 2) ZOOM VISIVO ISTANTANEO con CSS transform (scala ASSOLUTA)
-				targetScaleRef.current = newScale
-				setVisualScale(visualScaleValue)
-				
-				// 3) POI zoom reale del canvas (delayed, va a fuoco dopo)
-				if (realZoomTimer) clearTimeout(realZoomTimer)
-				realZoomTimer = window.setTimeout(() => {
-					console.log('[ZOOM][canvas-trigger]', { target: newScale.toFixed(3) })
-					if (zoomTo) {
-						zoomTo(newScale)
-					}
-					// Sblocca onZoom dopo che il canvas è stato triggerato
-					setTimeout(() => {
-						isZoomingRef.current = false
-						console.log('[ZOOM][unlocked]')
-					}, 300) // Aspetta che il canvas completi il rendering
-				}, 200)
-			}
+	// Compatibility: expose zoomTo for existing code
+	const zoomTo = (scale: number) => {
+		scaleRef.current = scale
+		if (typeof zoomToPlugin === 'function') {
+			zoomToPlugin(scale)
 		}
-		
-		const handleWheel = (e: WheelEvent) => {
-			if (!e.ctrlKey && !e.metaKey) return // Solo con Ctrl/Cmd
-			
-			// BLOCCA TUTTO per evitare conflitti con il plugin
-			e.preventDefault()
-			e.stopPropagation()
-			e.stopImmediatePropagation()
-			
-			// Accumula delta e debounce
-			accumulatedDelta += e.deltaY
-			console.log('[ZOOM][wheel]', { delta: e.deltaY, accumulated: accumulatedDelta })
-			
-			// Resetta timer debounce - zoom avviene SOLO quando gli eventi si fermano
-			if (debounceTimer) clearTimeout(debounceTimer)
-			debounceTimer = window.setTimeout(performZoom, debounceDelay)
-		}
-		
-		// CAPTURE PHASE per intercettare PRIMA del plugin
-		container.addEventListener('wheel', handleWheel, { passive: false, capture: true })
-		return () => {
-			container.removeEventListener('wheel', handleWheel, true)
-			if (realZoomTimer) clearTimeout(realZoomTimer)
-			if (debounceTimer) clearTimeout(debounceTimer)
-		}
-	}, [zoomTo])
+	}
 	
 	const searchPluginInstance = searchPlugin()
 const highlight = highlightPlugin({
@@ -404,32 +329,13 @@ const highlight = highlightPlugin({
     return (<React.Fragment>{nodes}</React.Fragment>)
   },
 })
-	const scaleRef = useRef<number>(1)
-	const zoomDebounceRef = useRef<number | null>(null)
 
 	const [totalPages, setTotalPages] = useState<number>(0)
 	const [pageInput, setPageInput] = useState<string>('1')
 	const [zoomPct, setZoomPct] = useState<number>(100)
 	const [tool, setTool] = useState<Tool>('none')
 	
-	// Reset visual scale SOLO quando il canvas è effettivamente aggiornato
-	useEffect(() => {
-		const currentReal = scaleRef.current || 1
-		const target = targetScaleRef.current
-		const diff = Math.abs(currentReal - target)
-		console.log('[ZOOM][check-reset]', { 
-			currentReal: currentReal.toFixed(3), 
-			target: target.toFixed(3), 
-			diff: diff.toFixed(3),
-			zoomPct,
-			willReset: diff < 0.01
-		})
-		// Se il canvas è arrivato al target, rimuovi il transform CSS
-		if (diff < 0.01) {
-			console.log('[ZOOM][visual-reset]', { currentReal: currentReal.toFixed(3) })
-			setVisualScale(1)
-		}
-	}, [zoomPct]) // Triggera quando cambia lo zoom reale
+	// ✅ Visual scale reset ora gestito da useCleanPdfZoom hook
 	const colorH = '#ffeb3b80'
 	const colorU = '#0ea5e9'
 	const colorS = '#ef4444'
@@ -920,7 +826,6 @@ const suppressClearRef = useRef<boolean>(false)
 	const resizingRef = useRef<boolean>(false)
 	const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
 	const [selectedAnnot, setSelectedAnnot] = useState<Annotation | null>(null)
-	const pdfDocRef = useRef<any>(null)
 	const searchCacheRef = useRef<Map<string, MatchItem[]>>(new Map())
 
 	useEffect(() => {
@@ -1854,7 +1759,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 									window.clearTimeout(zoomDebounceRef.current)
 								}
 								zoomDebounceRef.current = window.setTimeout(() => {
-									try { (zoomPluginInstance as any).zoomTo(s) } catch {}
+									try { zoomTo(s) } catch {}
 									const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 									if (viewer) viewer.style.setProperty('--scale-factor', String(s))
 								}, 80)
@@ -1863,36 +1768,51 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 					</div>
 				</div>
 
-                <div ref={hostRef} className="flex-1 overflow-hidden relative" style={{ 
-					['--scale-factor' as any]: String(scaleRef.current || 1),
-					transform: visualScale !== 1 ? `scale(${visualScale})` : undefined,
-					transformOrigin: 'center',
-					transition: visualScale !== 1 ? 'none' : 'transform 0.1s ease-out'
+                <div ref={(el) => {
+					hostRef.current = el
+					if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+				}} className="flex-1 overflow-hidden relative" style={{ 
+					['--scale-factor' as any]: String(scaleRef.current || 1)
 				}}>
 					<Worker workerUrl="https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js">
 						<Viewer
 							fileUrl={fileUrl}
-							defaultScale={SpecialZoomLevel.PageWidth}
-							plugins={[scrollMode, zoomPluginInstance, pageNav, searchPluginInstance, highlight]}
+							defaultScale={0.75}
+							plugins={[scrollMode, pageNav, searchPluginInstance, highlight, zoomPluginInstance]}
 							scrollMode={ScrollMode.Vertical}
 							initialPage={Math.max(0, (page || 1) - 1)}
 							onPageChange={(e) => { const cp = e.currentPage + 1; setPageInput(String(cp)); onPageChange?.(cp) }}
-                            onDocumentLoad={(e) => { const total = (e as any).doc?.numPages || (e as any).document?.numPages || 0; if (total) { setTotalPages(total); setPageInput('1') } const container = hostRef.current as HTMLElement | null; if (container) container.style.setProperty('--scale-factor', String(scaleRef.current || 1)); const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined; if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1)); try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch {}; try { console.log('[VIEWER][ready]', { docId: docId || 'current', total }) } catch {} }}
+                            onDocumentLoad={(e) => { 
+								const doc = (e as any).doc || (e as any).document
+								const total = doc?.numPages || 0
+								if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
+								if (total) { setTotalPages(total); setPageInput('1') }
+								const container = hostRef.current as HTMLElement | null
+								if (container) container.style.setProperty('--scale-factor', String(scaleRef.current || 1))
+								const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+								if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1))
+								try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch {}
+								try { console.log('[VIEWER][ready]', { docId: docId || 'current', total }) } catch {}
+							}}
                             onZoom={(e: any) => { 
-								// IGNORA onZoom se siamo in mezzo a un visual zoom
-								if (isZoomingRef.current) {
-									console.log('[ZOOM][canvas-ready][IGNORED]', { isZooming: true })
-									return
-								}
-								
 								const s = (e?.scale || e?.zoom) as number
 								if (typeof s === 'number') { 
-									console.log('[ZOOM][canvas-ready]', { scale: s.toFixed(3), pct: Math.round(s*100), target: targetScaleRef.current.toFixed(3) })
+									console.log('[ZOOM][viewer-onZoom] FIRED', { 
+										scale: s.toFixed(3), 
+										pct: Math.round(s*100),
+										scaleRefBefore: scaleRef.current.toFixed(3)
+									})
 									scaleRef.current = s
 									setZoomPct(Math.round(s*100))
 									;(window as any).__rpvLastZoomScale = s
 									const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-									if (viewer) viewer.style.setProperty('--scale-factor', String(s))
+									if (viewer) {
+										viewer.style.setProperty('--scale-factor', String(s))
+										console.log('[ZOOM][viewer-onZoom] CSS var set', { 
+											scaleFactor: s.toFixed(3),
+											viewerExists: !!viewer
+										})
+									}
 									try { requestAnimationFrame(()=>{ try { (window as any).__deskewApply?.() } catch {} }) } catch {} 
 								} 
 							}}
