@@ -5,6 +5,7 @@ import { getOcrQueue } from '../lib/queue.js'
 import { config } from '../config/index.js'
 import { storageService } from '../lib/storage.js'
 import { DocumentoCreateInput } from '../types/index.js'
+import { detectNativeText } from '../lib/detectNativeText.js'
 import crypto from 'crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -77,19 +78,99 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         }
       } catch {}
       
-      // If identical file already exists (by s3Key or by hash), return existing document (normalized)
+      // ✅ Rileva se PDF ha testo nativo (VELOCE: ~10-50ms) - PRIMA di check duplicati!
+      let hasNativeText = false
+      try {
+        const isPdf = data.mime.startsWith('application/pdf') || data.filename.toLowerCase().endsWith('.pdf')
+        console.log('[UPLOAD][native-check][START]', { 
+          filename: data.filename, 
+          mime: data.mime,
+          isPdf
+        })
+        
+        if (isPdf) {
+          const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
+          const pdfPath = path.join(uploadsDir, canonicalKey)
+          const fileExists = fs.existsSync(pdfPath)
+          
+          console.log('[UPLOAD][native-check][PATH]', { 
+            uploadsDir, 
+            canonicalKey, 
+            pdfPath,
+            fileExists
+          })
+          
+          if (fileExists) {
+            hasNativeText = await detectNativeText(pdfPath)
+            console.log('[UPLOAD][native-check][RESULT]', { 
+              filename: data.filename, 
+              hasNativeText 
+            })
+          } else {
+            console.warn('[UPLOAD][native-check][FILE_NOT_FOUND]', { pdfPath })
+          }
+        }
+      } catch (error) {
+        console.error('[UPLOAD][native-check][ERROR]', { 
+          filename: data.filename, 
+          error: (error as Error).message,
+          stack: (error as Error).stack
+        })
+      }
+      
+      // Check se documento già esiste (dopo aver rilevato hasNativeText)
       const existing = await prisma.documento.findFirst({
         where: { OR: [ { s3Key: canonicalKey }, { hash } ] },
       })
+      
       if (existing) {
+        console.log('[UPLOAD][duplicate-found]', {
+          existingId: existing.id,
+          existingHasNativeText: (existing as any).hasNativeText,
+          newHasNativeText: hasNativeText
+        })
+        
+        // Se hasNativeText è cambiato, aggiorna il documento esistente
+        if ((existing as any).hasNativeText !== hasNativeText) {
+          console.log('[UPLOAD][updating-hasNativeText]', {
+            id: existing.id,
+            from: (existing as any).hasNativeText,
+            to: hasNativeText
+          })
+          
+          await prisma.documento.update({
+            where: { id: existing.id },
+            data: { hasNativeText }
+          })
+          
+          // Rileggi il documento aggiornato
+          const updated = await prisma.documento.findUnique({
+            where: { id: existing.id }
+          })
+          
+          const normalizedUpdated: any = {
+            ...updated,
+            tags: typeof (updated as any).tags === 'string' ? (() => { try { return JSON.parse((updated as any).tags) } catch { return [] } })() : (updated as any).tags,
+            ocrLayout: typeof (updated as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((updated as any).ocrLayout) } catch { return undefined } })() : (updated as any).ocrLayout,
+          }
+          return normalizedUpdated
+        }
+        
+        // Nessun aggiornamento necessario, restituisci esistente
         const normalizedExisting: any = {
           ...existing,
           tags: typeof (existing as any).tags === 'string' ? (() => { try { return JSON.parse((existing as any).tags) } catch { return [] } })() : (existing as any).tags,
           ocrLayout: typeof (existing as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((existing as any).ocrLayout) } catch { return undefined } })() : (existing as any).ocrLayout,
         }
-        // ensure 200 OK and short-circuit
         return normalizedExisting
       }
+      
+      // Nessun duplicato, crea nuovo documento
+      console.log('[UPLOAD][creating-document]', {
+        filename: data.filename,
+        hasNativeText,
+        ocrStatus: data.ocrStatus || 'pending'
+      })
       
       let documento
       try {
@@ -100,8 +181,15 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             s3Key: canonicalKey,
           hash,
           ocrStatus: data.ocrStatus || 'pending',
+          hasNativeText,
           tags: JSON.stringify(data.tags || []),
         },
+      })
+      
+      console.log('[UPLOAD][document-created]', {
+        id: documento.id,
+        filename: documento.filename,
+        hasNativeText: (documento as any).hasNativeText
       })
       } catch (e: any) {
         // Handle race: another request created the same s3Key just now

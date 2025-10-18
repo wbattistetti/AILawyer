@@ -52,6 +52,40 @@ export const api = {
     return fetchApi(`/pratiche/${id}`)
   },
 
+  async getPratiche(): Promise<Pratica[]> {
+    return fetchApi('/pratiche')
+  },
+
+  async checkDraft(nome: string): Promise<{ exists: boolean; draft?: { id: string; nome: string; cliente: string; createdAt: string; documentCount: number } }> {
+    return fetchApi(`/pratiche/check-draft?nome=${encodeURIComponent(nome)}`)
+  },
+
+  async commitPratica(id: string): Promise<{ ok: boolean; pratica?: Pratica }> {
+    return fetchApi(`/pratiche/${id}/commit`, {
+      method: 'POST'
+    })
+  },
+
+  async deletePratica(id: string): Promise<{ ok: boolean; message: string }> {
+    console.log('🌐 [API][CLIENT] Invio DELETE /pratiche/' + id)
+    try {
+      const result = await fetchApi<{ ok: boolean; message: string }>(`/pratiche/${id}`, {
+        method: 'DELETE'
+      })
+      console.log('✅ [API][CLIENT] DELETE riuscito:', result)
+      return result
+    } catch (error) {
+      console.error('❌ [API][CLIENT] DELETE fallito:', error)
+      throw error
+    }
+  },
+
+  async deleteAllDrafts(): Promise<{ ok: boolean; count: number; message: string }> {
+    return fetchApi('/pratiche/drafts/all', {
+      method: 'DELETE'
+    })
+  },
+
   // Comparti
   async getComparti(praticaId: string): Promise<Comparto[]> {
     return fetchApi(`/pratiche/${praticaId}/comparti`)

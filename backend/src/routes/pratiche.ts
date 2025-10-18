@@ -148,4 +148,137 @@ export async function praticheRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: 'Errore nel recupero dei documenti' })
     }
   })
+
+  // Check draft: verifica se esiste una bozza con lo stesso nome
+  fastify.get<{ Querystring: { nome: string } }>('/pratiche/check-draft', async (request, reply) => {
+    try {
+      const { nome } = request.query
+      if (!nome) {
+        return reply.status(400).send({ error: 'Nome pratica richiesto' })
+      }
+
+      const draft = await prisma.pratica.findFirst({
+        where: {
+          nome,
+          status: 'draft'
+        },
+        select: {
+          id: true,
+          nome: true,
+          cliente: true,
+          createdAt: true,
+          _count: {
+            select: { documenti: true }
+          }
+        }
+      })
+
+      if (!draft) {
+        return { exists: false }
+      }
+
+      return {
+        exists: true,
+        draft: {
+          id: draft.id,
+          nome: draft.nome,
+          cliente: draft.cliente,
+          createdAt: draft.createdAt,
+          documentCount: draft._count.documenti
+        }
+      }
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nella verifica bozze' })
+    }
+  })
+
+  // Commit pratica: salva definitivamente (cambia status da draft a committed)
+  fastify.post<{ Params: { id: string } }>('/pratiche/:id/commit', async (request, reply) => {
+    try {
+      const pratica = await prisma.pratica.findUnique({
+        where: { id: request.params.id }
+      })
+
+      if (!pratica) {
+        return reply.status(404).send({ error: 'Pratica non trovata' })
+      }
+
+      if (pratica.status === 'committed') {
+        return { ok: true, message: 'Pratica già salvata definitivamente' }
+      }
+
+      const updated = await prisma.pratica.update({
+        where: { id: request.params.id },
+        data: { status: 'committed' }
+      })
+
+      return { ok: true, pratica: updated }
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nel salvataggio definitivo' })
+    }
+  })
+
+  // Delete pratica: elimina una pratica con tutti i suoi documenti
+  fastify.delete<{ Params: { id: string } }>('/pratiche/:id', async (request, reply) => {
+    const praticaId = request.params.id
+    console.log('🗑️ [API][DELETE][START] Richiesta eliminazione pratica:', praticaId)
+    
+    try {
+      console.log('🔍 [API][DELETE] Cerco pratica nel DB...')
+      const pratica = await prisma.pratica.findUnique({
+        where: { id: praticaId },
+        include: {
+          _count: {
+            select: { documenti: true }
+          }
+        }
+      })
+
+      if (!pratica) {
+        console.log('❌ [API][DELETE] Pratica non trovata:', praticaId)
+        return reply.status(404).send({ error: 'Pratica non trovata' })
+      }
+
+      console.log('✅ [API][DELETE] Pratica trovata:', {
+        id: pratica.id,
+        nome: pratica.nome,
+        status: pratica.status,
+        documenti: pratica._count.documenti
+      })
+
+      // Elimina tutti i documenti associati (i file verranno eliminati dal cascade)
+      // In realtà con onDelete: Cascade in Prisma, l'eliminazione della pratica elimina automaticamente tutto
+      console.log('🗄️ [API][DELETE] Elimino pratica dal DB (cascade delete documenti)...')
+      await prisma.pratica.delete({
+        where: { id: praticaId }
+      })
+
+      console.log('✅ [API][DELETE][SUCCESS] Pratica eliminata con successo:', pratica.nome)
+      return { ok: true, message: 'Pratica eliminata con successo' }
+    } catch (error) {
+      console.error('❌ [API][DELETE][ERROR] Errore eliminazione pratica:', error)
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nell\'eliminazione della pratica' })
+    }
+  })
+
+  // Delete all drafts: elimina tutte le bozze
+  fastify.delete('/pratiche/drafts/all', async (request, reply) => {
+    try {
+      const result = await prisma.pratica.deleteMany({
+        where: { status: 'draft' }
+      })
+
+      return { 
+        ok: true, 
+        count: result.count,
+        message: `${result.count} bozze eliminate con successo` 
+      }
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nell\'eliminazione delle bozze' })
+    }
+  })
 }

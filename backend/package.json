@@ -14,7 +14,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx src/scripts/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "cleanup:drafts": "tsx src/scripts/cleanup-drafts.ts",
+    "cleanup:drafts:dry": "tsx src/scripts/cleanup-drafts.ts --dry-run",
+    "migrate:pratiche": "tsx src/scripts/migrate-existing-pratiche.ts"
   },
   "dependencies": {
     "@fastify/cors": "^8.4.0",

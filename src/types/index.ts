@@ -6,6 +6,7 @@ export interface Pratica {
   controparte?: string
   pmGiudice?: string
   numeroRuolo?: string
+  status: 'draft' | 'committed'
   createdAt: string
 }
 
@@ -31,6 +32,7 @@ export interface Documento {
   ocrLayout?: OcrLayoutPage[]
   ocrConfidence?: number
   ocrPdfKey?: string
+  hasNativeText?: boolean
   classConfidence?: number
   classWhy?: string
   tags: string[]

@@ -1,5 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/database'
+import { storageService } from '../lib/storage'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js'
+import path from 'path'
+
+// Configura worker per pdf.js
+if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.js'
+}
 
 // Helper per normalizzare il testo (uguale al frontend)
 function normalize(text: string): string {
@@ -26,20 +34,28 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
         fastify.log.info({ msg: '[SEARCH][archive] start', query, normalizedQ, limit })
 
-        // 1. Trova tutti i documenti con OCR completato
-        // SQLite non supporta ILIKE, quindi prendiamo tutti e filtriamo in memoria
+        // 1. Trova documenti con OCR O con testo nativo
         const documenti = await prisma.documento.findMany({
           where: {
-            ocrStatus: 'completed',
-            NOT: {
-              ocrText: null
-            }
+            OR: [
+              // Documenti con OCR completato
+              {
+                ocrStatus: 'completed',
+                NOT: { ocrText: null }
+              },
+              // PDF nativi con text layer
+              {
+                hasNativeText: true
+              }
+            ]
           },
           select: {
             id: true,
             filename: true,
+            s3Key: true,
             ocrText: true,
-            ocrLayout: true
+            ocrLayout: true,
+            hasNativeText: true
           }
         })
         
@@ -67,8 +83,16 @@ export async function searchRoutes(fastify: FastifyInstance) {
         // 2. Per ogni documento filtrato, trova le occorrenze con bbox
         for (const doc of filteredDocs) {
           try {
-            const ocrText = (doc.ocrText || '') as string
-            const normalizedText = normalize(ocrText)
+            // Per i PDF nativi, estrazione testo on-the-fly (TODO: implementare)
+            let searchableText = (doc.ocrText || '') as string
+            
+            // Se è nativo ma non ha ocrText, skippa per ora (da implementare)
+            if (doc.hasNativeText && !searchableText) {
+              fastify.log.info({ msg: '[SEARCH][archive][native] TODO: extract text', docId: doc.id })
+              continue
+            }
+            
+            const normalizedText = normalize(searchableText)
             
             // Cerca tutte le occorrenze
             let startIdx = 0

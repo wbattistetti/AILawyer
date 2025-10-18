@@ -14,6 +14,8 @@ type DocItem = {
   tags?: string[]
   localUrl?: string
   meta?: any
+  ocrStatus?: string
+  hasNativeText?: boolean
 }
 
 export function DocumentCollection({
@@ -25,7 +27,6 @@ export function DocumentCollection({
   onRemove,
   onOcr,
   onOcrCancel,
-  onOcrQuick,
   cancellingById,
   transcribedPctById,
   progressById,
@@ -42,7 +43,6 @@ export function DocumentCollection({
   onOcrCancel?: (doc: DocItem) => void
   cancellingById?: Record<string, boolean>
   transcribedPctById?: Record<string, number>
-  onOcrQuick?: (doc: DocItem) => void
   progressById?: Record<string, number>
   etaById?: Record<string, string>
   statusById?: Record<string, string>
@@ -50,6 +50,7 @@ export function DocumentCollection({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [searchQuerySubmitted, setSearchQuerySubmitted] = useState<string>('')
   const [searchHeight, setSearchHeight] = useState<number>(300)
   
   const onDropCb = useCallback((accepted: File[]) => {
@@ -75,6 +76,7 @@ export function DocumentCollection({
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && searchQuery.trim()) {
+                setSearchQuerySubmitted(searchQuery.trim())
                 setSearchOpen(true)
               }
             }}
@@ -96,7 +98,10 @@ export function DocumentCollection({
               className="p-1 hover:bg-blue-100 rounded"
               title="Cerca"
               onClick={() => {
-                if (searchQuery.trim()) setSearchOpen(true)
+                if (searchQuery.trim()) {
+                  setSearchQuerySubmitted(searchQuery.trim())
+                  setSearchOpen(true)
+                }
               }}
             >
               <Search size={18} />
@@ -115,8 +120,9 @@ export function DocumentCollection({
           <>
             <div className="border-b bg-white" style={{ height: searchHeight, minHeight: 150, maxHeight: 600 }}>
               <SearchProvider 
+                key={searchQuerySubmitted}
                 defaultScope={'archive'} 
-                initialQuery={searchQuery} 
+                initialQuery={searchQuerySubmitted} 
                 autoSearch={true}
                 onSearch={async(q, scope) => {
                   console.log('[SEARCH][archive] Backend search start', { q, scope })
@@ -189,7 +195,7 @@ export function DocumentCollection({
                   }
                 }}
               >
-                <SearchPanelTree showInput={false} showScopeSelector={false} initialQuery={searchQuery} />
+                <SearchPanelTree showInput={false} showScopeSelector={false} initialQuery={searchQuerySubmitted} />
               </SearchProvider>
             </div>
             {/* Divisore trascinabile orizzontale */}
@@ -259,6 +265,8 @@ export function DocumentCollection({
               ocrStatusText={statusById?.[doc.id] ?? null}
               ocrCancelling={cancellingById?.[doc.id] as any}
               transcribedPct={transcribedPctById?.[doc.id] as any}
+              ocrStatus={doc.ocrStatus ?? null}
+              hasNativeText={doc.hasNativeText ?? false}
             />
           )
         })}

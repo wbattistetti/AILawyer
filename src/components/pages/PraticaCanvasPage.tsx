@@ -808,9 +808,29 @@ export function PraticaCanvasPage() {
       </div>
   )
 
-  const handleRemoveThumb = (documentId: string) => {
+  const handleRemoveThumb = async (documentId: string) => {
+    // Rimuovi dall'UI immediatamente (ottimistico)
+    const docToRemove = documenti.find(d => d.id === documentId)
     setDocumenti(prev => prev.filter(d => d.id !== documentId))
-    // TODO: quando sarà disponibile l'endpoint di delete, chiamarlo qui
+    
+    try {
+      // Chiama API per eliminare dal DB e storage
+      await api.deleteDocumento(documentId)
+      toast({
+        title: 'Documento eliminato',
+        description: docToRemove?.filename || 'Documento rimosso con successo'
+      })
+    } catch (error) {
+      // Se fallisce, ripristina nell'UI
+      console.error('Errore eliminazione documento:', error)
+      toast({
+        title: 'Errore',
+        description: 'Impossibile eliminare il documento. Ricarico i dati...',
+        variant: 'destructive'
+      })
+      // Ricarica i dati per ripristinare lo stato corretto
+      if (id) loadPraticaData(id)
+    }
   }
 
   // legacy alias removed
@@ -1248,7 +1268,6 @@ export function PraticaCanvasPage() {
                 const jid = ocrJobByDoc[d.id]
                 if (jid) { try { await api.cancelJob(jid) } catch {} }
               }}
-              onOcrQuick={() => handleOcr(doc, 'quick')}
               ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
               ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
               ocrStatusText={ocrStatusByDoc[doc.id] ?? null}
@@ -1517,6 +1536,50 @@ export function PraticaCanvasPage() {
     }
   }, [documenti, clientThumbByS3])
 
+  // Auto-switch to Archive tab when dragging files from outside
+  useEffect(() => {
+    let dragCounter = 0 // Track dragenter/dragleave to handle nested elements
+    
+    const handleDragEnter = (e: DragEvent) => {
+      // Only detect files dragged from outside the window
+      if (e.dataTransfer?.types?.includes('Files')) {
+        dragCounter++
+        if (dragCounter === 1) {
+          // First enter, switch to Archive tab
+          dockV2Ref.current?.switchToArchive()
+        }
+      }
+    }
+    
+    const handleDragLeave = () => {
+      dragCounter--
+      if (dragCounter < 0) dragCounter = 0
+    }
+    
+    const handleDrop = () => {
+      dragCounter = 0
+    }
+    
+    const handleDragOver = (e: DragEvent) => {
+      // Necessary to allow drop
+      if (e.dataTransfer?.types?.includes('Files')) {
+        e.preventDefault()
+      }
+    }
+    
+    window.addEventListener('dragenter', handleDragEnter as any)
+    window.addEventListener('dragleave', handleDragLeave as any)
+    window.addEventListener('drop', handleDrop as any)
+    window.addEventListener('dragover', handleDragOver as any)
+    
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter as any)
+      window.removeEventListener('dragleave', handleDragLeave as any)
+      window.removeEventListener('drop', handleDrop as any)
+      window.removeEventListener('dragover', handleDragOver as any)
+    }
+  }, [])
+
   const renderEvents = useCallback(() => <EventsTab currentDocId={selectedDocId || undefined} />, [selectedDocId])
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
   const renderIds = useCallback(() => <ThingCardsPanel kind="id" />, [])
@@ -1613,7 +1676,15 @@ export function PraticaCanvasPage() {
                     const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : ''
                     const clientThumb = clientThumbByS3[d.s3Key]
                     const thumb = clientThumb || serverThumb || ''
-                    return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb }
+                    return { 
+                      id: d.id, 
+                      filename: d.filename, 
+                      s3Key: d.s3Key, 
+                      mime: d.mime, 
+                      thumb,
+                      hasNativeText: d.hasNativeText ?? false,
+                      ocrStatus: d.ocrStatus
+                    }
                   })}
                   onOpen={(doc) => {
                     const trovato = documenti.find(x => x.id === doc.id)

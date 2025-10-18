@@ -27,6 +27,7 @@ type Props = {
 export type DockWorkspaceV2Handle = {
   openDoc: (doc: DocTab) => void
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
+  switchToArchive: () => void
 }
 
 export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onLeftBorderTabChange }, ref) {
@@ -144,7 +145,23 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     setModel(nextModel)
   }
 
-  useImperativeHandle(ref, () => ({ openDoc, openTmpDoc }))
+  const switchToArchive = () => {
+    const json = modelRef.current.toJson() as any
+    const leftBorder = (json.borders || []).find((b: any) => b.location === 'left')
+    if (!leftBorder) return
+    
+    // Trova index del tab archive
+    const archiveIndex = leftBorder.children?.findIndex((t: any) => t.component === 'archive')
+    if (archiveIndex !== undefined && archiveIndex >= 0) {
+      leftBorder.selected = archiveIndex
+      const nextModel = Model.fromJson(json)
+      modelRef.current = nextModel
+      setModel(nextModel)
+      onLeftBorderTabChange?.('archive')
+    }
+  }
+
+  useImperativeHandle(ref, () => ({ openDoc, openTmpDoc, switchToArchive }))
 
   // Helper robusto per applicare/ritirare il fullscreen
   const applyExplorerFullscreen = useCallback((on: boolean) => {

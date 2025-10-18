@@ -74,7 +74,6 @@ export function OptimizedDocumentCollection({
                 onSelect={() => onDocumentSelect?.(doc)}
                 onPreview={() => onDocumentPreview?.(doc)}
                 onOcr={() => onDocumentOcr?.(doc)}
-                onOcrQuick={() => onDocumentOcr?.(doc)}
                 excerpt={error ? `Errore: ${error}` : loading ? 'Generazione miniatura...' : undefined}
               />
             )

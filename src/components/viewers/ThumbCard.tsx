@@ -27,6 +27,8 @@ interface ThumbCardProps {
   hasOcr?: boolean
   ocrEtaText?: string | null
   ocrStatusText?: string | null
+  ocrStatus?: string | null
+  hasNativeText?: boolean
   // Nuove props per generazione automatica miniature
   fileUrl?: string
   autoGenerateThumbnail?: boolean
@@ -61,6 +63,8 @@ export function ThumbCard({
   hasOcr, 
   ocrEtaText, 
   ocrStatusText,
+  ocrStatus,
+  hasNativeText,
   fileUrl,
   autoGenerateThumbnail = false,
   thumbnailOptions = {}
@@ -68,6 +72,20 @@ export function ThumbCard({
   const [imgError, setImgError] = useState(false)
   // resetta errori immagine quando cambia la sorgente
   useEffect(() => { setImgError(false) }, [imgSrc])
+  
+  // Log per debug OCR status
+  useEffect(() => {
+    const isPdf = title?.toLowerCase().endsWith('.pdf')
+    console.log('[THUMBCARD][render]', {
+      filename: title,
+      isPdf,
+      hasNativeText,
+      ocrStatus,
+      transcribedPct,
+      ocrProgressPct,
+      shouldShowDaTrascrivere: isPdf && !hasNativeText && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct
+    })
+  }, [title, hasNativeText, ocrStatus, transcribedPct, ocrProgressPct])
 
   // Hook per generazione automatica miniature
   const { thumbnail: generatedThumbnail, loading: thumbnailLoading, generate } = useAutoThumbnail(
@@ -108,7 +126,7 @@ export function ThumbCard({
   }, [imgError, fileUrl, generatedThumbnail, thumbnailLoading, generate])
   return (
     <div
-      className="relative group select-none rounded-md"
+      className="relative group select-none rounded-md w-48"
       title={title}
       onClick={(e) => { e.stopPropagation(); onSelect?.() }}
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
@@ -120,14 +138,56 @@ export function ThumbCard({
           <div className="text-xs font-semibold truncate" title={title}>{title}</div>
           <div className="flex-1" />
         </div>
-        {/* Label Trascritto sotto l'header, allineata a destra */}
-        {typeof transcribedPct === 'number' && (
-          <div className="absolute right-2 top-9 z-10">
-            <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white">
-              {transcribedPct >= 100 ? 'Trascritto' : `Trascritto ${transcribedPct}%`}
-            </span>
-          </div>
-        )}
+        {/* Label stato OCR sotto l'header, allineata a destra */}
+        {(() => {
+          const isPdf = (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
+          
+          // OCR in corso (0-99%)
+          if (typeof ocrProgressPct === 'number' && ocrProgressPct < 100 && !ocrCancelling) {
+            return (
+              <div className="absolute right-2 top-9 z-10">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-600 text-white">
+                  Trascrizione {ocrProgressPct}%
+                </span>
+              </div>
+            )
+          }
+          
+          // OCR completato (100% O ocrStatus === 'completed')
+          if ((typeof transcribedPct === 'number' && transcribedPct >= 100) || ocrStatus === 'completed') {
+            return (
+              <div className="absolute right-2 top-9 z-10">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white">
+                  Trascritto ✓
+                </span>
+              </div>
+            )
+          }
+          
+          // OCR parziale/interrotto (1-99%)
+          if (typeof transcribedPct === 'number' && transcribedPct > 0 && transcribedPct < 100) {
+            return (
+              <div className="absolute right-2 top-9 z-10">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-600 text-white">
+                  Trascritto {transcribedPct}%
+                </span>
+              </div>
+            )
+          }
+          
+          // PDF scansione senza OCR - "Da trascrivere" (SOLO se non ha testo nativo)
+          if (isPdf && !hasNativeText && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct) {
+            return (
+              <div className="absolute right-2 top-9 z-10">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500 text-white">
+                  Da trascrivere
+                </span>
+              </div>
+            )
+          }
+          
+          return null
+        })()}
         {/* Body: image or excerpt */}
         <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden z-0">
           {metaDocLabel && (
@@ -179,8 +239,8 @@ export function ThumbCard({
         )}
       </div>
       {/* Hover actions - centered */}
-      <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-        <div className="pointer-events-auto inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm shadow px-2 py-1 rounded">
+      <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition">
+        <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/90 backdrop-blur-sm shadow px-2 py-1 rounded">
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreview?.() }}
@@ -199,22 +259,16 @@ export function ThumbCard({
               <span className="absolute -right-1 -top-1 text-[8px] bg-blue-500 text-white rounded px-0.5">OCR</span>
             </button>
           )}
-          <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
-            aria-label="OCR"
-            title="Esegui OCR"
-          >
-            <ScanText className="w-4 h-4" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcrQuick?.() }}
-            aria-label="OCR Veloce"
-            title="OCR Veloce"
-          >
-            <ScanText className="w-4 h-4 text-blue-600" />
-          </button>
+          {!hasNativeText && (
+            <button
+              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
+              aria-label="OCR"
+              title="Esegui OCR"
+            >
+              <ScanText className="w-4 h-4" />
+            </button>
+          )}
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onTable?.() }}
