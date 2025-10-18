@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/database'
 import { storageService } from '../lib/storage'
+import { extractNativeText } from '../lib/extractNativeText'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js'
 import path from 'path'
 
@@ -59,13 +60,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
           }
         })
         
-        // Filtra per query (case-insensitive)
-        const filteredDocs = documenti.filter(doc => {
-          const text = normalize((doc.ocrText || '') as string)
-          return text.includes(normalizedQ)
-        }).slice(0, limit)
-
-        fastify.log.info({ msg: '[SEARCH][archive] docs found', count: documenti.length })
+        fastify.log.info({ msg: '[SEARCH][archive] candidate docs', count: documenti.length })
 
         const allMatches: Array<{
           docId: string
@@ -80,21 +75,87 @@ export async function searchRoutes(fastify: FastifyInstance) {
           qLen?: number
         }> = []
 
-        // 2. Per ogni documento filtrato, trova le occorrenze con bbox
-        for (const doc of filteredDocs) {
+        let processedCount = 0
+        const maxDocsToProcess = 100 // Limite per evitare timeout
+
+        // 2. Per ogni documento candidato, estrai testo (se necessario) e cerca
+        for (const doc of documenti) {
+          if (processedCount >= maxDocsToProcess) {
+            fastify.log.warn({ msg: '[SEARCH][archive] Max docs limit reached', limit: maxDocsToProcess })
+            break
+          }
           try {
-            // Per i PDF nativi, estrazione testo on-the-fly (TODO: implementare)
             let searchableText = (doc.ocrText || '') as string
             
-            // Se è nativo ma non ha ocrText, skippa per ora (da implementare)
+            // Se è nativo ma non ha ocrText, ESTRAI ORA e salva nel DB
             if (doc.hasNativeText && !searchableText) {
-              fastify.log.info({ msg: '[SEARCH][archive][native] TODO: extract text', docId: doc.id })
-              continue
+              fastify.log.info({ msg: '[SEARCH][archive][native] Extracting text...', docId: doc.id, filename: doc.filename })
+              
+              try {
+                // Ottieni percorso file dal storage
+                const pdfPath = storageService.getLocalPath(doc.s3Key)
+                
+                // Estrai testo dal PDF nativo
+                searchableText = await extractNativeText(pdfPath)
+                
+                if (searchableText) {
+                  // Salva nel DB per le prossime ricerche (lazy cache)
+                  await prisma.documento.update({
+                    where: { id: doc.id },
+                    data: { ocrText: searchableText }
+                  })
+                  
+                  fastify.log.info({ 
+                    msg: '[SEARCH][archive][native] Text extracted and cached', 
+                    docId: doc.id, 
+                    filename: doc.filename,
+                    length: searchableText.length 
+                  })
+                  
+                  // 🔍 DEBUG: Mostra primo estratto con codici carattere
+                  const sample = searchableText.substring(0, 150)
+                  console.log('[DEBUG][EXTRACTED][SAMPLE]', {
+                    docId: doc.id,
+                    filename: doc.filename,
+                    sample,
+                    sampleWithCodes: sample.split('').map((c, i) => `${c}(${c.charCodeAt(0)})`).slice(0, 30).join(' ')
+                  })
+                } else {
+                  fastify.log.warn({ msg: '[SEARCH][archive][native] No text extracted', docId: doc.id })
+                  continue
+                }
+              } catch (extractError) {
+                fastify.log.error({ 
+                  msg: '[SEARCH][archive][native] Extraction failed', 
+                  docId: doc.id, 
+                  error: (extractError as Error).message 
+                })
+                continue
+              }
             }
             
             const normalizedText = normalize(searchableText)
             
-            // Cerca tutte le occorrenze
+            // 🔍 DEBUG: Confronto query vs testo
+            console.log('[DEBUG][SEARCH][COMPARISON]', {
+              docId: doc.id,
+              filename: doc.filename,
+              query,
+              normalizedQuery: normalizedQ,
+              textSample: searchableText.substring(0, 200),
+              normalizedTextSample: normalizedText.substring(0, 200),
+              queryLength: normalizedQ.length,
+              textLength: normalizedText.length,
+              // Cerca manualmente la query
+              containsQuery: normalizedText.includes(normalizedQ),
+              indexOfQuery: normalizedText.indexOf(normalizedQ),
+              // Mostra dove appare "catania" (case-insensitive)
+              indexOfCatania: normalizedText.indexOf('catania'),
+              // Cerca con spazi
+              indexOfCAtania: normalizedText.indexOf('c atania')
+            })
+            
+            // Cerca tutte le occorrenze (nessun limite)
             let startIdx = 0
             const occurrences: number[] = []
             while (true) {
@@ -102,8 +163,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
               if (idx === -1) break
               occurrences.push(idx)
               startIdx = idx + 1
-              if (occurrences.length >= 10) break // Max 10 match per documento
             }
+
+            console.log('[DEBUG][SEARCH][OCCURRENCES]', {
+              docId: doc.id,
+              filename: doc.filename,
+              query: normalizedQ,
+              foundOccurrences: occurrences.length,
+              positions: occurrences
+            })
 
             if (occurrences.length === 0) continue
 
@@ -112,30 +180,56 @@ export async function searchRoutes(fastify: FastifyInstance) {
               ? (() => { try { return JSON.parse(doc.ocrLayout) } catch { return [] } })()
               : (doc.ocrLayout || [])
 
+            const hasLayout = layout.length > 0
+
             // Per ogni occorrenza, trova la pagina e bbox
             for (const charIdx of occurrences) {
+              console.log('[DEBUG][LOOP][START]', { docId: doc.id, filename: doc.filename, charIdx, hasLayout })
+              
               let accumulated = 0
               let foundPage = -1
               let pageWords: any[] = []
               let pageTextRaw = ''
 
-              // Trova in quale pagina si trova il carattere
-              for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
-                const pageMeta = layout[pageIdx] || {}
-                const words = pageMeta.words || []
-                const pageText = words.map((w: any) => w.text || '').join(' ')
-                const pageLen = pageText.length
+              if (hasLayout) {
+                // Trova in quale pagina si trova il carattere (usando ocrLayout)
+                for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
+                  const pageMeta = layout[pageIdx] || {}
+                  const words = pageMeta.words || []
+                  const pageText = words.map((w: any) => w.text || '').join(' ')
+                  const pageLen = pageText.length
 
-                if (charIdx >= accumulated && charIdx < accumulated + pageLen) {
-                  foundPage = pageIdx + 1
-                  pageWords = words
-                  pageTextRaw = pageText
-                  break
+                  if (charIdx >= accumulated && charIdx < accumulated + pageLen) {
+                    foundPage = pageIdx + 1
+                    pageWords = words
+                    pageTextRaw = pageText
+                    break
+                  }
+                  accumulated += pageLen + 1 // +1 per lo spazio tra pagine
                 }
-                accumulated += pageLen + 1 // +1 per lo spazio tra pagine
+                console.log('[DEBUG][LOOP][LAYOUT]', { docId: doc.id, charIdx, foundPage, accumulated, pageTextRawLength: pageTextRaw.length })
+              } else {
+                // PDF nativo senza layout: pagina stimata + snippet dal testo grezzo
+                // Stima pagina: assumendo ~2000 caratteri per pagina
+                foundPage = Math.floor(charIdx / 2000) + 1
+                const substringStart = Math.max(0, charIdx - 500)
+                pageTextRaw = searchableText.substring(substringStart, charIdx + 500)
+                accumulated = substringStart  // Memorizza l'offset per calcolare localCharIdx corretto
+                console.log('[DEBUG][LOOP][NATIVE]', { 
+                  docId: doc.id, 
+                  charIdx, 
+                  foundPage, 
+                  pageTextRawLength: pageTextRaw.length,
+                  searchableTextLength: searchableText.length,
+                  substringStart,
+                  accumulated
+                })
               }
 
-              if (foundPage === -1) continue
+              if (foundPage === -1) {
+                console.log('[DEBUG][LOOP][SKIP]', { docId: doc.id, charIdx, reason: 'foundPage=-1' })
+                continue
+              }
 
               // Trova le bbox delle parole che matchano
               const localCharIdx = charIdx - accumulated
@@ -175,6 +269,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 }
               }
 
+              console.log('[DEBUG][LOOP][PUSH]', { 
+                docId: doc.id, 
+                charIdx, 
+                page: foundPage, 
+                snippetPreview: snippet.substring(0, 50),
+                localCharIdx,
+                accumulated
+              })
+
               allMatches.push({
                 docId: doc.id,
                 filename: doc.filename,
@@ -189,11 +292,19 @@ export async function searchRoutes(fastify: FastifyInstance) {
               })
             }
           } catch (error) {
+            console.error('[DEBUG][LOOP][ERROR]', { 
+              docId: doc.id, 
+              filename: doc.filename,
+              error: (error as Error).message,
+              stack: (error as Error).stack
+            })
             fastify.log.warn({ msg: '[SEARCH][archive] error processing doc', docId: doc.id, error })
+          } finally {
+            processedCount++
           }
         }
 
-        fastify.log.info({ msg: '[SEARCH][archive] done', totalMatches: allMatches.length })
+        fastify.log.info({ msg: '[SEARCH][archive] done', totalMatches: allMatches.length, processedDocs: processedCount })
 
         return {
           query,

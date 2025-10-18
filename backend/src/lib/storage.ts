@@ -68,6 +68,10 @@ export class StorageService {
     }
     await this.client.removeObject(config.S3_BUCKET, s3Key)
   }
+
+  getLocalPath(s3Key: string): string {
+    return path.join(this.localDir, s3Key)
+  }
 }
 
 export const storageService = new StorageService()

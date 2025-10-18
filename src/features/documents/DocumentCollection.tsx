@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
-import { FileText, ScanText, Search, X } from 'lucide-react'
+import { FileText, ScanText, Search, X, Loader2 } from 'lucide-react'
 import { SearchProvider } from '../../components/search/SearchProvider'
 import { SearchPanelTree } from '../../components/search/SearchPanelTree'
 
@@ -52,6 +52,7 @@ export function DocumentCollection({
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [searchQuerySubmitted, setSearchQuerySubmitted] = useState<string>('')
   const [searchHeight, setSearchHeight] = useState<number>(300)
+  const [isSearching, setIsSearching] = useState<boolean>(false)
   
   const onDropCb = useCallback((accepted: File[]) => {
     onDrop?.(accepted)
@@ -70,7 +71,11 @@ export function DocumentCollection({
     <div className="w-full h-full flex flex-col relative">
       {title && (
         <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center gap-2">
-          <Search size={16} className="text-gray-500" />
+          {isSearching ? (
+            <Loader2 size={16} className="text-blue-500 animate-spin" />
+          ) : (
+            <Search size={16} className="text-gray-500" />
+          )}
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -78,10 +83,12 @@ export function DocumentCollection({
               if (e.key === 'Enter' && searchQuery.trim()) {
                 setSearchQuerySubmitted(searchQuery.trim())
                 setSearchOpen(true)
+                setSearchQuery('')  // Svuota textbox dopo Enter
               }
             }}
             placeholder="Cerca in tutti i documenti..."
             className="flex-1 border rounded px-2 py-1 text-xs"
+            disabled={isSearching}
           />
           {searchOpen ? (
             <button
@@ -95,12 +102,14 @@ export function DocumentCollection({
           ) : (
             <button
               type="button"
-              className="p-1 hover:bg-blue-100 rounded"
+              className="p-1 hover:bg-blue-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
               title="Cerca"
+              disabled={isSearching}
               onClick={() => {
-                if (searchQuery.trim()) {
+                if (searchQuery.trim() && !isSearching) {
                   setSearchQuerySubmitted(searchQuery.trim())
                   setSearchOpen(true)
+                  setSearchQuery('')  // Svuota textbox dopo click
                 }
               }}
             >
@@ -120,11 +129,11 @@ export function DocumentCollection({
           <>
             <div className="border-b bg-white" style={{ height: searchHeight, minHeight: 150, maxHeight: 600 }}>
               <SearchProvider 
-                key={searchQuerySubmitted}
                 defaultScope={'archive'} 
                 initialQuery={searchQuerySubmitted} 
                 autoSearch={true}
                 onSearch={async(q, scope) => {
+                  setIsSearching(true)  // Avvia spinner
                   console.log('[SEARCH][archive] Backend search start', { q, scope })
                   
                   try {
@@ -144,14 +153,14 @@ export function DocumentCollection({
                     const matchesByDoc = new Map<string, any[]>()
                     const docInfo = new Map<string, { id: string; filename: string }>()
                     
-                    for (const match of (data.matches || [])) {
+                    ;(data.matches || []).forEach((match, index) => {
                       if (!matchesByDoc.has(match.docId)) {
                         matchesByDoc.set(match.docId, [])
                         docInfo.set(match.docId, { id: match.docId, filename: match.filename })
                       }
                       
                       matchesByDoc.get(match.docId)!.push({
-                        id: `${match.docId}-${match.page}-${match.charIdx || 0}`,
+                        id: `${match.docId}-${match.page}-${match.charIdx || 0}-${index}`,
                         docId: match.docId,
                         docTitle: match.filename,
                         kind: 'pdf' as const,
@@ -166,7 +175,7 @@ export function DocumentCollection({
                         snippet: match.snippet,
                         score: 1
                       })
-                    }
+                    })
                     
                     const groups = Array.from(matchesByDoc.entries()).map(([docId, matches]) => {
                       const info = docInfo.get(docId)!
@@ -192,6 +201,8 @@ export function DocumentCollection({
                   } catch (error) {
                     console.error('[SEARCH][archive] Error', error)
                     return null
+                  } finally {
+                    setIsSearching(false)  // Ferma spinner
                   }
                 }}
               >

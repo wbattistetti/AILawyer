@@ -1,20 +1,42 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
 
-export const SearchPanelTree: React.FC<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>=({ showInput=true, showScopeSelector=true, initialQuery })=>{
+export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>(({ showInput=true, showScopeSelector=true, initialQuery })=>{
   const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
   const [q, setQ] = useState(initialQuery || '')
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
   const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
+  const lastScrolledQuery = useRef<string | null>(null)
+  
+  // Auto-scroll al nodo appena cercato (solo UNA volta per query)
+  useEffect(() => {
+    if (initialQuery && results.length > 0 && initialQuery !== lastScrolledQuery.current) {
+      // Trova il nodo con la query corrente
+      const targetNode = results.find(r => r.query === initialQuery)
+      if (targetNode && nodeRefs.current[targetNode.query]) {
+        lastScrolledQuery.current = initialQuery
+        setTimeout(() => {
+          nodeRefs.current[targetNode.query]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 100)
+      }
+    }
+  }, [results.length, initialQuery])
 
-  const onSubmit = () => { if (q.trim()) search(q.trim()) }
+  const onSubmit = () => { 
+    if (q.trim()) {
+      search(q.trim())
+      setQ('')  // Svuota textbox dopo Enter
+    }
+  }
   const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
   const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
 
   const renderSnippet = (snippet: string) => {
-    const query = (q || '').trim()
+    // Usa initialQuery perché q viene svuotato dopo la ricerca
+    const query = (initialQuery || '').trim()
     if (!query) return <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>{snippet}</span>
     const idx = snippet.toLowerCase().indexOf(query.toLowerCase())
     if (idx < 0) return <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>{snippet}</span>
@@ -24,7 +46,7 @@ export const SearchPanelTree: React.FC<{ showInput?: boolean; showScopeSelector?
     return (
       <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>
         {before}
-        <strong>{match}</strong>
+        <strong className="font-bold text-amber-700">{match}</strong>
         {after}
       </span>
     )
@@ -58,12 +80,16 @@ export const SearchPanelTree: React.FC<{ showInput?: boolean; showScopeSelector?
             {results.map(node => {
               const open = openNodes[node.id] ?? true
               return (
-                <li key={node.id} className="py-1">
+                <li 
+                  key={node.id} 
+                  className="py-1"
+                  ref={(el) => { nodeRefs.current[node.query] = el }}
+                >
                   <div className="flex items-center gap-2 px-2 hover:bg-gray-50">
                     <span className="text-gray-500 cursor-pointer" onClick={()=>toggle(node.id)}>{open ? '▾' : '▸'}</span>
-                    <SearchIcon size={14} className="text-slate-700" />
-                    <span className="font-semibold truncate">{node.query}</span>
-                    <span className="text-gray-500">({node.total})</span>
+                    <SearchIcon size={14} className={node.total === 0 ? "text-red-600" : "text-slate-700"} />
+                    <span className={`font-semibold truncate ${node.total === 0 ? "text-red-600" : ""}`}>{node.query}</span>
+                    <span className={node.total === 0 ? "text-red-600" : "text-gray-500"}>({node.total})</span>
                     <span className="ml-auto text-xs text-gray-400 cursor-pointer hover:text-red-600" onClick={()=>clearNode(node.id)}>🗑</span>
                   </div>
                   {open && (
@@ -105,6 +131,6 @@ export const SearchPanelTree: React.FC<{ showInput?: boolean; showScopeSelector?
       </div>
     </div>
   )
-}
+})
 
 
