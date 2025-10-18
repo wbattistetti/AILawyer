@@ -263,11 +263,23 @@ function ensureNativeSelectStyles() {
       user-select: none !important;
       -webkit-user-select: none !important;
     }
-    .ai-native-select .rpv-core__text-layer,
-    .ai-native-select .rpv-core__text-layer * {
+    .ai-native-select .rpv-core__text-layer {
       pointer-events: auto !important;
       user-select: text !important;
       -webkit-user-select: text !important;
+      cursor: text;
+      background: transparent;
+      /* REMOVED: will-change: contents; */
+      /* REMOVED: transform: translateZ(0); */
+    }
+    .ai-native-select .rpv-core__text-layer * {
+      user-select: text !important;
+      -webkit-user-select: text !important;
+    }
+    /* Nasconde selezione blu durante drag - mostra solo overlay custom */
+    .ai-native-select.is-dragging ::selection {
+      background: transparent !important;
+      color: inherit !important;
     }
     /* Evita flicker blu fuori dalla text-layer */
     .ai-native-select ::selection { background: rgba(147,197,253,.35); }
@@ -666,6 +678,7 @@ const openedAtRef = useRef<number>(0)
 const selectionHandledRef = useRef<boolean>(false)
 const isSelectingRef = useRef<boolean>(false)
 const lastNativeRangeRef = useRef<Range | null>(null)
+const lastDraftBoxRef = useRef<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number } | null>(null)
 const suppressClearRef = useRef<boolean>(false)
 // Note: no custom anchoring; let the browser handle selection during drag
 // Global selection overlay (fallback, robust across pages)
@@ -975,6 +988,7 @@ const suppressClearRef = useRef<boolean>(false)
                     Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
                     textLayer.appendChild(over)
                     overlayRootsRef.current.set(pageNum, over)
+                    console.log('[OVERLAY-ROOT][CREATE]', { pageNum, hasOver: !!over })
                     added++
                 }
                 let sel = selectRootsRef.current.get(pageNum)
@@ -1296,11 +1310,22 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			try {
 				if (selectionHandledRef.current) { try { console.log('[NATIVE][guard] already handled') } catch {}; return }
 				const sel = window.getSelection()
-				try { console.log('[NATIVE][sel] selectionchanged', { hasSel: !!sel, rangeCount: sel?.rangeCount, text: String(sel||'') }) } catch {}
-				if (!sel || sel.rangeCount === 0) { try { console.warn('[NATIVE][sel] no selection or rangeCount=0') } catch {}; return }
-				const raw = String(sel)
-				try { console.log('[NATIVE][sel_text]', raw) } catch {}
-				if (!raw || !raw.trim()) { try { console.warn('[NATIVE][sel] empty text') } catch {}; return }
+				const raw = String(sel || '')
+				console.log('[NATIVE][sel][CRITICAL]', { 
+					hasSel: !!sel, 
+					rangeCount: sel?.rangeCount,
+					rawText: raw,
+					rawLength: raw.length,
+					isEmpty: !raw.trim()
+				})
+				if (!sel || sel.rangeCount === 0) { 
+					console.warn('[NATIVE][sel] no selection or rangeCount=0')
+					return 
+				}
+				if (!raw || !raw.trim()) { 
+					console.warn('[NATIVE][sel] empty text - selection exists but no text captured')
+					return 
+				}
                 const range = sel.getRangeAt(0)
                 lastNativeRangeRef.current = range.cloneRange()
 				const rects = Array.from(range.getClientRects()) as DOMRect[]
@@ -1376,6 +1401,12 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 				setExtractPos({ x: px, y: py })
 				setExtractPage(pageNum)
 				const text = raw
+				console.log('[NATIVE][TEXT][EXTRACTED]', { 
+					textLength: text.length, 
+					textPreview: text.substring(0, 100),
+					pageNum,
+					viewportBox
+				})
 				// mappa a pdf box se possibile
 				try {
 					if (pdfDocRef.current) {
@@ -1387,9 +1418,13 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 						const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
 						const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
 						try { console.log('[NATIVE][pdfbox]', { x0, y0, x1, y1, scale, domW, baseW: base.width }) } catch {}
-						setLastSelection({ pdfPageNumber: pageNum, bboxPdf: { x0, y0, x1, y1 }, viewportBox, text })
+						const selection = { pdfPageNumber: pageNum, bboxPdf: { x0, y0, x1, y1 }, viewportBox, text }
+						console.log('[NATIVE][LAST-SELECTION][SET]', { hasText: !!selection.text, textLen: selection.text?.length })
+						setLastSelection(selection)
 					} else {
-						setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+						const selection = { pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text }
+						console.log('[NATIVE][LAST-SELECTION][SET]', { hasText: !!selection.text, textLen: selection.text?.length })
+						setLastSelection(selection)
 					}
 				} catch (e) {
 					try { console.warn('[NATIVE][pdfbox][err]', e) } catch {}
@@ -1428,6 +1463,11 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			if (extractOpen) { try { console.log('[NATIVE][mdown] ignored: extractOpen') } catch {}; return }
 			isSelectingRef.current = true
 			selectionHandledRef.current = false
+			host.classList.add('is-dragging') // Add is-dragging class
+			console.log('[DRAG][START]', { 
+				hasDraggingClass: host.classList.contains('is-dragging'),
+				hasNativeClass: host.classList.contains('ai-native-select')
+			})
 			try {
 				const x = ev.clientX
 				const y = ev.clientY
@@ -1474,18 +1514,119 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			try { console.log('[NATIVE][event] mousedown start selecting', { mouseDownPage: mouseDownPageRef.current }) } catch {}
             // Non sopprimere più il ::selection: lasciamo la selezione nativa visibile e non tocchiamo gli span
 		}
-		const onMouseUp = (ev: MouseEvent) => {
+		const onMouseUp = async (ev: MouseEvent) => {
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
 			if (ev.clientX < hostR.left || ev.clientX > hostR.right || ev.clientY < hostR.top || ev.clientY > hostR.bottom) return
 			if (extractOpen) { try { console.log('[NATIVE][mouseup] ignored: extractOpen') } catch {}; return }
 			if (timer) window.clearTimeout(timer)
-			// chiamata solo su mouseup per evitare apertura anticipata
-			try { console.log('[NATIVE][event] mouseup within viewer', { x: ev.clientX, y: ev.clientY, wasSelecting: isSelectingRef.current }) } catch {}
+			
+			console.log('[NATIVE][event] mouseup within viewer', { x: ev.clientX, y: ev.clientY, wasSelecting: isSelectingRef.current })
+			
 			isSelectingRef.current = false
-			void handleSelection()
-            // niente classe dragging: manteniamo la selezione nativa visibile
-            try { setDraft(null) } catch {}
+			host.classList.remove('is-dragging')
+			
+			// ✅ NUOVA LOGICA: Usa le coordinate del draft box invece di window.getSelection()
+			const draftBox = lastDraftBoxRef.current
+			console.log('[DRAG][END]', { 
+				hasDraftBox: !!draftBox,
+				draftBox
+			})
+			
+			if (!draftBox) {
+				console.warn('[DRAG][END] No draft box saved, skipping extraction')
+				try { setDraft(null) } catch {}
+				return
+			}
+			
+			try {
+				const pageNum = draftBox.page
+				const pageLayer = pageElsRef.current.get(pageNum)
+				
+				if (!pageLayer) {
+					console.warn('[DRAG][END] No page layer found for page', pageNum)
+					try { setDraft(null) } catch {}
+					return
+				}
+				
+				const textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
+				if (!textLayer) {
+					console.warn('[DRAG][END] No text layer found for page', pageNum)
+					try { setDraft(null) } catch {}
+					return
+				}
+				
+				const pr = pageLayer.getBoundingClientRect()
+				
+				// Converti percentuali in coordinate pixel
+				const viewportBox = {
+					x: draftBox.x0Pct * pr.width,
+					y: draftBox.y0Pct * pr.height,
+					w: (draftBox.x1Pct - draftBox.x0Pct) * pr.width,
+					h: (draftBox.y1Pct - draftBox.y0Pct) * pr.height
+				}
+				
+				console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox })
+				
+				// Estrai il testo usando le coordinate del rettangolo
+				const { text } = await getSelectedTextInRect(textLayer, viewportBox)
+				
+				console.log('[DRAG][EXTRACT][TEXT]', { 
+					textLength: text.length, 
+					textPreview: text.substring(0, 100)
+				})
+				
+				// Calcola posizione pannello
+				const panelW = 460, panelH = 260
+				let px = pr.left + viewportBox.x + (viewportBox.w - panelW) / 2
+				let py = pr.top + viewportBox.y + (viewportBox.h - panelH) / 2
+				px = Math.max(8, Math.min(px, (window.innerWidth||1200) - panelW - 8))
+				py = Math.max(8, Math.min(py, (window.innerHeight||800) - panelH - 8))
+				
+				setExtractPos({ x: px, y: py })
+				setExtractPage(pageNum)
+				
+				// Calcola PDF coordinates
+				try {
+					if (pdfDocRef.current) {
+						const page = await pdfDocRef.current.getPage(pageNum)
+						const base = page.getViewport({ scale: 1 })
+						const domW = pr.width
+						const scale = Math.max(0.1, domW / base.width)
+						const vp = page.getViewport({ scale })
+						const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
+						const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
+						
+						const selection = { 
+							pdfPageNumber: pageNum, 
+							bboxPdf: { x0, y0, x1, y1 }, 
+							viewportBox, 
+							text 
+						}
+						
+						console.log('[DRAG][EXTRACT][SET-SELECTION]', { hasText: !!text, textLen: text.length })
+						setLastSelection(selection)
+					} else {
+						setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+					}
+				} catch (e) {
+					console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
+					setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+				}
+				
+				// Apri il dialog
+				selectionHandledRef.current = true
+				setExtractOpen(true)
+				
+			} catch (error) {
+				console.error('[DRAG][EXTRACT][ERROR]', error)
+			} finally {
+				// Pulisci draft e refs
+				try { setDraft(null) } catch {}
+				lastDraftBoxRef.current = null
+				mouseDownPageRef.current = null
+				mouseDownPosRef.current = null
+			}
 		}
 		const onSelChange = () => {
 			if (timer) window.clearTimeout(timer)
@@ -1500,8 +1641,55 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 		}
 
 		// During drag across lines, show a stable draft box so the native selection disappearing doesn't cause flicker
-                // remove custom drag overlay in native mode to keep browser selection continuous
-                const onDragMove = (_ev: MouseEvent) => { /* no-op in NATIVE */ }
+		const onDragMove = (ev: MouseEvent) => {
+			if (!isSelectingRef.current || !mouseDownPageRef.current || !mouseDownPosRef.current) {
+				// console.log('[DRAG][MOVE][SKIP]', { isSelecting: isSelectingRef.current, page: mouseDownPageRef.current, hasPos: !!mouseDownPosRef.current })
+				return
+			}
+			
+			try {
+				const layer = pageElsRef.current.get(mouseDownPageRef.current)
+				if (!layer) {
+					console.warn('[DRAG][MOVE][NO-LAYER]', { page: mouseDownPageRef.current })
+					return
+				}
+				
+				const r = layer.getBoundingClientRect()
+				const x = Math.max(0, Math.min((ev.clientX - r.left) / r.width, 1))
+				const y = Math.max(0, Math.min((ev.clientY - r.top) / r.height, 1))
+				
+				const draftBox = {
+					id: 'draft', 
+					page: mouseDownPageRef.current, 
+					type: 'highlight' as const,
+					color: 'rgba(59,130,246,0.3)',
+					x0Pct: Math.min(mouseDownPosRef.current.xPct, x),
+					y0Pct: Math.min(mouseDownPosRef.current.yPct, y),
+					x1Pct: Math.max(mouseDownPosRef.current.xPct, x),
+					y1Pct: Math.max(mouseDownPosRef.current.yPct, y)
+				}
+				
+				console.log('[DRAG][MOVE][SET-DRAFT]', {
+					page: draftBox.page,
+					box: { x0: draftBox.x0Pct.toFixed(3), y0: draftBox.y0Pct.toFixed(3), x1: draftBox.x1Pct.toFixed(3), y1: draftBox.y1Pct.toFixed(3) },
+					hasRoot: !!overlayRootsRef.current.get(draftBox.page)
+				})
+				
+				// Salva le coordinate del draft per l'estrazione testo
+				lastDraftBoxRef.current = {
+					page: draftBox.page,
+					x0Pct: draftBox.x0Pct,
+					y0Pct: draftBox.y0Pct,
+					x1Pct: draftBox.x1Pct,
+					y1Pct: draftBox.y1Pct
+				}
+				
+				// Mostra box stabile durante drag
+				setDraft(draftBox)
+			} catch (err) {
+				console.error('[DRAG][MOVE][ERROR]', err)
+			}
+		}
 		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { try { const s = window.getSelection(); s && s.removeAllRanges() } catch {}; setSelectMode(false) } }
 		document.addEventListener('mousedown', onMouseDown, true)
 		document.addEventListener('mouseup', onMouseUp, true)
@@ -1510,7 +1698,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 		document.addEventListener('keydown', onKey, true)
 		try { console.log('[NATIVE][bind] listeners attached') } catch {}
         return () => { if (timer) window.clearTimeout(timer); document.removeEventListener('mousedown', onMouseDown, true); document.removeEventListener('mouseup', onMouseUp, true); document.removeEventListener('selectionchange', onSelChange, true); document.removeEventListener('mousemove', onDragMove, true); document.removeEventListener('keydown', onKey, true) }
-	}, [selectMode, selectKind])
+	}, [selectMode, selectKind, extractOpen, setDraft])
 
 	useEffect(() => {
 		const handler = async (ev: any) => {
@@ -1629,6 +1817,18 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 		window.addEventListener('app:goto-match', handler as any)
 		return () => window.removeEventListener('app:goto-match', handler as any)
 	}, [docId])
+
+	// Log draft state on every render
+	React.useEffect(() => {
+		if (draft) {
+			console.log('[DRAFT][STATE]', { 
+				hasDraft: !!draft, 
+				page: draft.page, 
+				id: draft.id,
+				rootExists: !!overlayRootsRef.current.get(draft.page)
+			})
+		}
+	}, [draft])
 
 	return (
 		<React.Fragment>
@@ -1938,6 +2138,16 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                 {/* Overlays */}
 				{[...(selectedAnnot ? [selectedAnnot] : []), ...annots, ...(draft ? [draft] : [])].map(a => {
 					const root = overlayRootsRef.current.get(a.page)
+					if (a.id === 'draft') {
+						console.log('[OVERLAY][RENDER][DRAFT]', { 
+							page: a.page, 
+							type: a.type,
+							color: a.color,
+							box: { x0: a.x0Pct, y0: a.y0Pct, x1: a.x1Pct, y1: a.y1Pct },
+							hasRoot: !!root,
+							allRoots: Array.from(overlayRootsRef.current.keys())
+						})
+					}
 					if (!root) return null
 					const left = `${a.x0Pct * 100}%`
 					const top = `${a.y0Pct * 100}%`
@@ -2007,7 +2217,21 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                             <div className="p-4 max-h-full flex flex-col" onMouseDown={(e)=>{ e.stopPropagation(); suppressClearRef.current = true }} onMouseUp={()=>{ suppressClearRef.current = false }}>
                             <div className="text-base font-semibold mb-1">Aggiungi estratto</div>
                             <div className="text-sm text-gray-600 mb-3">Estratto da <span className="font-medium">{formatDocTitle(fileUrl)}</span>, pag. {extractPage}</div>
+                            {/* DEBUG: mostra testo estratto */}
+                            {(() => {
+                                const text = lastSelection?.text || ''
+                                console.log('[DIALOG][RENDER]', { hasLastSelection: !!lastSelection, textLen: text.length, textPreview: text.substring(0, 50) })
+                                return null
+                            })()}
                             <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                    <label className="text-sm block mb-1">Testo estratto</label>
+                                    <textarea 
+                                        className="w-full border rounded px-2 py-1 min-h-[80px] max-h-[160px] resize-y overflow-auto text-[13px] bg-gray-50" 
+                                        value={lastSelection?.text || '(nessun testo selezionato)'}
+                                        readOnly
+                                    />
+                                </div>
                                 <div className="col-span-2">
                                     <label className="text-sm block mb-1">Titolo dell'estratto</label>
                                     <input className="w-full border rounded px-2 py-1 text-[15px]" placeholder="Scrivi un titolo per l'estratto… (obbligatorio)" value={extractTitle} onChange={(e)=>setExtractTitle(e.target.value)} />
