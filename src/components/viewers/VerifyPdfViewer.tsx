@@ -38,6 +38,11 @@ import { usePdfDeskew } from './pdf-viewer/hooks/usePdfDeskew'
 import { usePdfAudit } from './pdf-viewer/hooks/usePdfAudit'
 import { usePdfAnnotations, type Tool, type Annotation } from './pdf-viewer/hooks/usePdfAnnotations'
 import { usePdfJumpTo } from './pdf-viewer/hooks/usePdfJumpTo'
+import { usePdfSearchPanel } from './pdf-viewer/hooks/usePdfSearchPanel'
+import { usePdfDocument } from './pdf-viewer/hooks/usePdfDocument'
+import { usePdfNativeStyles } from './pdf-viewer/hooks/usePdfNativeStyles'
+import { usePdfOverlays } from './pdf-viewer/hooks/usePdfOverlays'
+import { usePdfPanelResizer } from './pdf-viewer/hooks/usePdfPanelResizer'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -183,45 +188,7 @@ export interface VerifyPdfViewerProps {
 
 // ✅ Audit logic ora gestita dal hook usePdfAudit
 
-function ensureNativeSelectStyles() {
-    const id = 'native-select-tweaks'
-    if (document.getElementById(id)) return
-    const style = document.createElement('style')
-    style.id = id
-    style.textContent = `
-    /* Attivo solo quando ON */
-    .ai-native-select .rpv-core__page-layer,
-    .ai-native-select .rpv-core__canvas-layer,
-    .ai-native-select .rpv-core__annotation-layer,
-    .ai-native-select canvas {
-      pointer-events: none !important;
-      user-select: none !important;
-      -webkit-user-select: none !important;
-    }
-    .ai-native-select .rpv-core__text-layer {
-      pointer-events: auto !important;
-      user-select: text !important;
-      -webkit-user-select: text !important;
-      cursor: text;
-      background: transparent;
-      /* REMOVED: will-change: contents; */
-      /* REMOVED: transform: translateZ(0); */
-    }
-    .ai-native-select .rpv-core__text-layer * {
-      user-select: text !important;
-      -webkit-user-select: text !important;
-    }
-    /* Nasconde selezione blu durante drag - mostra solo overlay custom */
-    .ai-native-select.is-dragging ::selection {
-      background: transparent !important;
-      color: inherit !important;
-    }
-    /* Evita flicker blu fuori dalla text-layer */
-    .ai-native-select ::selection { background: rgba(147,197,253,.35); }
-    `
-    document.head.appendChild(style)
-    try { console.log('[NATIVE][css][inject]', { id, appended: true }) } catch {}
-}
+// ✅ ensureNativeSelectStyles ora gestita dal hook usePdfNativeStyles
 
 // legacy style helper no longer used (SvgSelectLayer handles styles per page)
 
@@ -236,7 +203,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const { zoomTo: zoomToPlugin } = zoomPluginInstance
 	const scaleRef = useRef<number>(1)
 	const zoomDebounceRef = useRef<number | null>(null)
-	const pdfDocRef = useRef<any>(null)
+	// ✅ pdfDocRef ora gestito dal hook usePdfDocument
 	
 	// ✅ Hook zoom SEMPLICE - chiama direttamente il plugin
 	const { containerRef: zoomContainerRef } = useCleanPdfZoom({
@@ -258,9 +225,12 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 		}
 	}
 	
+	// ✅ Hook per il documento PDF
+	const { pdfDocRef } = usePdfDocument({ fileUrl })
+
 	// ✅ Estrai stato dal hook
 	const viewerState = usePdfViewerState()
-	const { contextMenu, setContextMenu, lastSelection, setLastSelection, extractPos, setExtractPos, extractPage, setExtractPage, extractOpen, setExtractOpen, ocrInspectOpen, setOcrInspectOpen, pageElsRef } = viewerState
+	const { contextMenu, setContextMenu, lastSelection, setLastSelection, extractPos, setExtractPos, extractPage, setExtractPage, extractOpen, setExtractOpen, ocrInspectOpen, setOcrInspectOpen } = viewerState
 	
 	// ✅ Hook per la search logic
 	const { matches, setMatches, searchCacheRef, runSearch } = usePdfSearch(docId, fileUrl, pdfDocRef)
@@ -329,16 +299,20 @@ const [areas, setAreas] = useState<Area[]>([])
       }, 500)
       return () => window.clearTimeout(t)
     }, [totalPages])
-const overlayRootsRef = useRef<Map<number, HTMLElement>>(new Map())
-const selectRootsRef = useRef<Map<number, HTMLElement>>(new Map())
-const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
 const [selectMode, setSelectMode] = useState<boolean>(true) // ✅ SEMPRE ATTIVA
-const mouseDownPageRef = useRef<number | null>(null)
-const mouseDownPosRef = useRef<{ xPct:number; yPct:number } | null>(null)
 const [selectKind, setSelectKind] = useState<'NATIVE'|'OCR'>('NATIVE')
-const [selectTick, setSelectTick] = useState<number>(0)
 const [_selBox, setSelBox] = useState<{ x:number; y:number; w:number; h:number }|null>(null)
 const selectionHandledRef = useRef<boolean>(false)
+
+	// ✅ Hook per gli overlay e la gestione delle pagine
+	const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, selectTick, setSelectTick } = usePdfOverlays({
+		hostRef,
+		selectMode,
+		selectKind
+	})
+
+	// ✅ Hook per gli stili di selezione nativa
+	usePdfNativeStyles({ hostRef, selectMode, selectKind })
 
 	// ✅ Hook per le annotazioni
 	const { tool, setTool, annots, setAnnots, draft, setDraft } = usePdfAnnotations({
@@ -408,154 +382,14 @@ const suppressClearRef = useRef<boolean>(false)
 
 	// ✅ Audit mode ora gestito dal hook usePdfAudit
 
-	// Search panel state
-	const [panelW, setPanelW] = useState<number>(320)
-	const [searchQ, setSearchQ] = useState<string>('')
-	// matches e searchCacheRef ora gestiti dal hook usePdfSearch
-	const resizingRef = useRef<boolean>(false)
-	const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
+	// ✅ Hook per il search panel
+	const { panelW, setPanelW, searchQ, setSearchQ, showAdvanced, setShowAdvanced, resizingRef } = usePdfSearchPanel()
 
-	useEffect(() => {
-		let cancelled = false
-		;(async () => {
-			try {
-				logger.debug('PDF[getDocument][start]', { fileUrl })
-				const loadingTask = (pdfjsLib as any).getDocument({ url: fileUrl, disableWorker: true })
-				const doc = await loadingTask.promise
-				logger.debug('PDF[getDocument][done]', { pages: doc?.numPages || 0 })
-				if (!cancelled) pdfDocRef.current = doc
-			} catch {}
-		})()
-		return () => { cancelled = true }
-	}, [fileUrl])
+	// ✅ PDF document loading ora gestito dal hook usePdfDocument
 
 	// ✅ Audit style logic ora gestita dal hook usePdfAudit
 
-    // Ensure native selection works: enable selection on text-layer only (avoid wrapper selection flicker)
-	useEffect(() => {
-		const host = hostRef.current
-		if (!host) return
-        ensureNativeSelectStyles()
-    if (selectMode && selectKind==='NATIVE') host.classList.add('ai-native-select')
-    else host.classList.remove('ai-native-select')
-    try { console.log('[NATIVE][enable][toggle-class]', { applied: host.classList.contains('ai-native-select'), selectMode, selectKind }) } catch {}
-		const textLayers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
-		const pageLayers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
-		try { console.log('[NATIVE][enable] applying mode', { selectMode, selectKind, textLayers: textLayers.length, pageLayers: pageLayers.length }) } catch {}
-		for (const tl of textLayers) {
-			if (selectMode && selectKind === 'NATIVE') {
-				tl.style.pointerEvents = 'auto'
-				tl.style.userSelect = 'text'
-				;(tl.style as any).webkitUserSelect = 'text'
-				try { console.log('[NATIVE][enable] text-layer enabled') } catch {}
-			} else {
-				tl.style.removeProperty('pointer-events')
-				tl.style.removeProperty('user-select')
-				;(tl.style as any).webkitUserSelect = ''
-			}
-		}
-		for (const pl of pageLayers) {
-			if (selectMode && selectKind === 'NATIVE') {
-            // IMPORTANT: non catturare gli eventi sul page-layer, altrimenti la selezione cade nel vuoto
-            pl.style.pointerEvents = 'none'
-				pl.style.userSelect = 'none'
-				;(pl.style as any).webkitUserSelect = 'none'
-			} else {
-				pl.style.removeProperty('pointer-events')
-				pl.style.removeProperty('user-select')
-				;(pl.style as any).webkitUserSelect = ''
-			}
-		}
-    return () => { host.classList.remove('ai-native-select') }
-	}, [selectMode, selectKind])
-
-	// Track page layers and ensure overlay/select roots
-	useEffect(() => {
-		const host = hostRef.current
-		if (!host) return
-		const ensureRoots = () => {
-            let added = 0
-				// Primary: holders with data-page-number
-				let holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
-				// Fallback: if none, infer pages from page-layer order
-				if (holders.length === 0) {
-					const layers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
-					holders = layers.map((layer, idx) => {
-						// Try extract absolute page number from nearest attributes
-						let pageNum = 0
-						const hA = layer.closest('[data-page-number]') as HTMLElement | null
-						if (hA) {
-							const parsed = parseInt(hA.getAttribute('data-page-number') || '', 10)
-							if (Number.isFinite(parsed) && parsed > 0) pageNum = parsed
-						}
-						if (!pageNum) {
-							let p: HTMLElement | null = layer
-							for (let i = 0; i < 5 && p; i++) {
-								const aria = p.getAttribute('aria-label') || ''
-								const m = aria.match(/\bP(?:age|agina)\s+(\d+)/i)
-								if (m) { pageNum = parseInt(m[1], 10); break }
-								p = p.parentElement as HTMLElement | null
-							}
-						}
-						const fake = document.createElement('div')
-						fake.setAttribute('data-page-number', String(pageNum || (idx + 1)))
-						Object.defineProperty(fake, 'querySelector', { value: (sel: string) => (sel === '.rpv-core__page-layer' ? layer : null) })
-						return fake as any
-					})
-				}
-            for (const holder of holders) {
-                const parsed = parseInt(holder.getAttribute('data-page-number') || '', 10)
-                if (!Number.isFinite(parsed) || parsed <= 0) continue
-                const pageNum = parsed
-					const pageLayer = (holder as any).querySelector('.rpv-core__page-layer') as HTMLElement | null
-                if (!pageLayer) continue
-                pageElsRef.current.set(pageNum, pageLayer)
-                elToPageRef.current.set(pageLayer, pageNum)
-                const textLayer = (pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement) || pageLayer
-                if (!textLayer.style.position) textLayer.style.position = 'relative'
-                let over = overlayRootsRef.current.get(pageNum)
-                if (!over) {
-                    over = document.createElement('div')
-                    over.className = 'ai-overlay-root'
-                    Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
-                    textLayer.appendChild(over)
-                    overlayRootsRef.current.set(pageNum, over)
-                    console.log('[OVERLAY-ROOT][CREATE]', { pageNum, hasOver: !!over })
-                    added++
-                }
-                let sel = selectRootsRef.current.get(pageNum)
-                if (!sel) {
-                    sel = document.createElement('div')
-                    sel.className = 'ai-select-root'
-                    if (!pageLayer.style.position) pageLayer.style.position = 'relative'
-                    pageLayer.appendChild(sel)
-                    selectRootsRef.current.set(pageNum, sel)
-                    added++
-                }
-					Object.assign(sel.style, {
-						position:'absolute', inset:'0', zIndex:'2000', userSelect:'none',
-					cursor: (selectMode && selectKind==='OCR') ? 'crosshair' : '',
-					pointerEvents: (selectMode && selectKind==='OCR') ? 'auto' : 'none',
-					touchAction: (selectMode && selectKind==='OCR') ? ('none' as any) : ''
-                } as any)
-            }
-            if (added > 0) setSelectTick(t => t + 1)
-        }
-            ensureRoots()
-				const mo = new MutationObserver(() => ensureRoots())
-                mo.observe(host, { subtree:true, childList:true, attributes:true, attributeFilter:['style','class'] })
-                // Aggiorna i roots anche su scroll/zoom e su resize
-                const onAny = () => ensureRoots()
-                // attach to inner scroll containers if present
-                const scs = [
-                  host.querySelector('.rpv-core__inner') as HTMLElement | null,
-                  host.querySelector('.rpv-core__pages') as HTMLElement | null,
-                  host.querySelector('.rpv-core__viewer') as HTMLElement | null,
-                ].filter(Boolean) as HTMLElement[]
-                scs.forEach(sc => sc.addEventListener('scroll', onAny, { capture: true, passive: true } as any))
-                window.addEventListener('resize', onAny)
-                return () => { mo.disconnect(); scs.forEach(sc => sc.removeEventListener('scroll', onAny, { capture: true } as any)); window.removeEventListener('resize', onAny) }
-	}, [selectMode, selectKind])
+	// ✅ Native selection styles e overlay management ora gestiti dai hook usePdfNativeStyles e usePdfOverlays
 
 
 
@@ -567,14 +401,8 @@ const suppressClearRef = useRef<boolean>(false)
 
 	// ✅ Pointer drawing handlers ora gestiti dal hook usePdfAnnotations
 
-	// Resizer events
-	useEffect(() => {
-		const onMove = (e: MouseEvent) => { if (!resizingRef.current) return; setPanelW(w => Math.max(220, Math.min(560, w - e.movementX))) }
-		const onUp = () => { resizingRef.current = false; document.body.style.cursor = '' }
-		document.addEventListener('mousemove', onMove)
-		document.addEventListener('mouseup', onUp)
-		return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-	}, [])
+	// ✅ Panel resizer ora gestito dal hook usePdfPanelResizer
+	usePdfPanelResizer({ resizingRef, setPanelW })
 
 	
 

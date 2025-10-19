@@ -57,11 +57,9 @@ interface UsePdfViewerStateReturn {
 	setSelBox: (box: { x: number; y: number; w: number; h: number } | null) => void
 	scaleRef: React.MutableRefObject<number>
 	zoomDebounceRef: React.MutableRefObject<number | null>
-	pdfDocRef: React.MutableRefObject<any>
-	pageElsRef: React.MutableRefObject<Map<number, HTMLElement>>
-	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
-	selectRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
-	elToPageRef: React.MutableRefObject<Map<HTMLElement, number>>
+	// pdfDocRef ora gestito dal hook usePdfDocument
+	// pageElsRef ora gestito dal hook usePdfOverlays
+	// overlayRootsRef, selectRootsRef, elToPageRef ora gestiti dal hook usePdfOverlays
 	mouseDownPageRef: React.MutableRefObject<number | null>
 	mouseDownPosRef: React.MutableRefObject<{ xPct: number; yPct: number } | null>
 	openedAtRef: React.MutableRefObject<number>
@@ -105,11 +103,9 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 	// Refs
 	const scaleRef = useRef<number>(1)
 	const zoomDebounceRef = useRef<number | null>(null)
-	const pdfDocRef = useRef<any>(null)
-	const pageElsRef = useRef<Map<number, HTMLElement>>(new Map())
-	const overlayRootsRef = useRef<Map<number, HTMLElement>>(new Map())
-	const selectRootsRef = useRef<Map<number, HTMLElement>>(new Map())
-	const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
+	// pdfDocRef ora gestito dal hook usePdfDocument
+	// pageElsRef ora gestito dal hook usePdfOverlays
+	// overlayRootsRef, selectRootsRef, elToPageRef ora gestiti dal hook usePdfOverlays
 	const mouseDownPageRef = useRef<number | null>(null)
 	const mouseDownPosRef = useRef<{ xPct: number; yPct: number } | null>(null)
 	const openedAtRef = useRef<number>(0)
@@ -173,11 +169,9 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 		setSelBox,
 		scaleRef,
 		zoomDebounceRef,
-		pdfDocRef,
-		pageElsRef,
-		overlayRootsRef,
-		selectRootsRef,
-		elToPageRef,
+		// pdfDocRef ora gestito dal hook usePdfDocument
+		// pageElsRef ora gestito dal hook usePdfOverlays
+		// overlayRootsRef, selectRootsRef, elToPageRef ora gestiti dal hook usePdfOverlays
 		mouseDownPageRef,
 		mouseDownPosRef,
 		openedAtRef,
