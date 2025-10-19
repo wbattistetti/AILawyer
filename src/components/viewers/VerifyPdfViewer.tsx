@@ -34,6 +34,8 @@ import { ExtractDialog } from './pdf-viewer/components/ExtractDialog'
 import { usePdfViewerState } from './pdf-viewer/hooks/usePdfViewerState'
 import { usePdfSearch, type MatchItem } from './pdf-viewer/hooks/usePdfSearch'
 import { useNativeSelection } from './pdf-viewer/hooks/useNativeSelection'
+import { usePdfDeskew } from './pdf-viewer/hooks/usePdfDeskew'
+import { usePdfAudit } from './pdf-viewer/hooks/usePdfAudit'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -189,61 +191,7 @@ export interface VerifyPdfViewerProps {
 	docId?: string
 }
 
-// Simple token classifier for demo; replace with pseudonymizer
-function classifyToken(str: string): 'safe' | 'pseudo' | 'suspect' {
-	const raw = (str || '').trim()
-	if (!raw) return 'safe'
-	// Pseudonym tokens (already replaced): TL[...] or PREFIX_xxxx
-	if (/^TL\[[A-Z]+\]:\s*[A-Z_0-9-]+$/.test(raw) || /^[A-Z]{2,}_[0-9a-f]{4,}$/i.test(raw)) return 'pseudo'
-	// Pure punctuation or numbers
-	if (/^[\p{P}\p{S}]+$/u.test(raw)) return 'safe'
-	if (/^\d+[\d\s\.\-\/]*$/.test(raw)) return 'safe'
-	// Normalize accents/case
-	const norm = raw
-		.normalize('NFD')
-		.replace(/\p{Diacritic}/gu, '')
-		.toLowerCase()
-	// Short tokens are rarely informative PII
-	if (norm.length <= 2) return 'safe'
-	// Italian stopwords + connectors (expanded)
-	const STOP = new Set<string>([
-		'il','lo','la','l','i','gli','le',
-		'un','una','uno',
-		'di','del','dello','della','dei','degli','delle',"dell'",
-		'a','al','allo','alla','ai','agli','alle',"all'",
-		'da','dal','dallo','dalla','dai','dagli','dalle',"dall'",
-		'in','nel','nello','nella','nei','negli','nelle',"nell'",
-		'con','col','coi',
-		'su','sul','sullo','sulla','sui','sugli','sulle',"sull'",
-		'per','tra','fra','e','ed','o','oppure',
-		'che','non','come','anche','sono','era','furono',
-		'presso'
-	])
-	if (STOP.has(norm)) return 'safe'
-	// Common legal/admin nouns to be greyed (not PII)
-	const LEGAL = new Set<string>([
-		'cortese','attenzione','dottor','dottore','dottoressa','avvocato','avv','procura','procuratore','aggiunto','sostituto','repubblica','direzione','distrettuale','antimafia','ufficio','sezione','sez','proc','procedimento','penale','numero','n','rg','rgnr','registro','generale','atti','fascicolo','tribunale','corte','giudice','pm','pubblico','ministero'
-	])
-	if (LEGAL.has(norm)) return 'safe'
-	// Months and days
-	const MONTHS = new Set<string>(['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre','lunedi','martedi','mercoledi','giovedi','venerdi','sabato','domenica'])
-	if (MONTHS.has(norm)) return 'safe'
-	// Default: flag as suspect (to be reviewed)
-	return 'suspect'
-}
-
-function ensureAuditStyles() {
-	const id = 'audit-token-styles'
-	if (document.getElementById(id)) return
-	const style = document.createElement('style')
-	style.id = id
-	style.textContent = `
-	.tok-safe{ color:#bdbdbd !important; font-weight:400; }
-	.tok-pseudo{ color:#6f6f6f !important; background:rgba(0,0,0,.08); padding:0 .08em; border-radius:.16em; }
-	.tok-suspect{ background:#fff2b2; color:#111 !important; font-weight:600; border-radius:.16em; }
-	`
-	document.head.appendChild(style)
-}
+// ✅ Audit logic ora gestita dal hook usePdfAudit
 
 function ensureNativeSelectStyles() {
     const id = 'native-select-tweaks'
@@ -425,6 +373,16 @@ const selectionHandledRef = useRef<boolean>(false)
 		setContextMenu,
 		selectionHandledRef
 	})
+
+	// ✅ Hook per la deskew logic
+	const { autoDeskew, setAutoDeskew, skewAngles, setSkewAngles, persistSkew, estimateSkewForPage, applyImmediateToPage } = usePdfDeskew({
+		docId,
+		pdfDocRef,
+		hostRef
+	})
+
+	// ✅ Hook per la audit logic
+	const { audit, setAudit } = usePdfAudit({ hostRef })
 const [extractType, setExtractType] = useState<string>('verbale')
 const [extractNotes, setExtractNotes] = useState<string>('')
 const [showNotes, setShowNotes] = useState<boolean>(false)
@@ -439,153 +397,9 @@ const suppressClearRef = useRef<boolean>(false)
 // Global selection overlay (fallback, robust across pages)
 // legacy globals removed (use per-page overlay)
 
-    // Deskew toggle + angles (per-page) loaded da localStorage
-    const [autoDeskew, setAutoDeskew] = useState<boolean>(false)
-    const [skewAngles, setSkewAngles] = useState<Record<number, number>>({})
-    const appliedSkewRef = useRef<Record<number, number>>({})
-    useEffect(() => {
-        try {
-            const keyA = `ocr_skew_${docId || 'current'}`
-            const keyB = `skew_angles_${docId || 'current'}`
-            const raw = localStorage.getItem(keyA) || localStorage.getItem(keyB) || '{}'
-            const parsed = JSON.parse(raw || '{}')
-            if (parsed && typeof parsed === 'object') setSkewAngles(parsed)
-        } catch { setSkewAngles({}) }
-    }, [docId])
-    const persistSkew = (next: Record<number, number>) => {
-        try {
-            const key = `ocr_skew_${docId || 'current'}`
-            localStorage.setItem(key, JSON.stringify(next))
-        } catch {}
-    }
-    const estimateSkewForPage = async (pageNum: number): Promise<number> => {
-        try {
-            const doc = pdfDocRef.current
-            if (!doc) return 0
-            const page = await doc.getPage(pageNum)
-            const base = page.getViewport({ scale: 1 })
-            const targetW = 800
-            const scale = Math.max(0.2, Math.min(2.5, targetW / Math.max(1, base.width)))
-            const vp = page.getViewport({ scale })
-            const off = document.createElement('canvas')
-            off.width = Math.ceil(vp.width)
-            off.height = Math.ceil(vp.height)
-            const offCtx = off.getContext('2d')!
-            await page.render({ canvasContext: offCtx as any, viewport: vp } as any).promise
-            const testAngles: number[] = []
-            for (let a = -5; a <= 5; a += 0.5) testAngles.push(Number(a.toFixed(2)))
-            let best = 0
-            let bestScore = -Infinity
-            const tmp = document.createElement('canvas')
-            const tmpCtx = tmp.getContext('2d')!
-            for (const ang of testAngles) {
-                const rad = ang * Math.PI / 180
-                const w = off.width, h = off.height
-                const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad))
-                const bw = Math.ceil(w * cos + h * sin)
-                const bh = Math.ceil(w * sin + h * cos)
-                tmp.width = bw; tmp.height = bh
-                tmpCtx.save()
-                tmpCtx.clearRect(0,0,bw,bh)
-                tmpCtx.translate(bw/2, bh/2)
-                tmpCtx.rotate(rad)
-                tmpCtx.drawImage(off, -w/2, -h/2)
-                tmpCtx.restore()
-                const data = tmpCtx.getImageData(0,0,bw,bh).data
-                // metric: row contrast derivative
-                let prev = 0
-                let score = 0
-                for (let y = 0; y < bh; y += 2) {
-                    let row = 0
-                    for (let x = 0; x < bw; x += 2) {
-                        const idx = (y * bw + x) * 4
-                        // simple luma
-                        const r = data[idx], g = data[idx+1], b = data[idx+2]
-                        row += (r*0.2126 + g*0.7152 + b*0.0722)
-                    }
-                    if (y > 0) score += Math.abs(row - prev)
-                    prev = row
-                }
-                if (score > bestScore) { bestScore = score; best = ang }
-            }
-            return best
-        } catch { return 0 }
-    }
-    useEffect(() => {
-        const host = hostRef.current
-        if (!host) return
-        const apply = () => {
-            // ✅ Usa data-virtual-index invece di data-page-number
-            const pageLayers = Array.from(host.querySelectorAll('[data-virtual-index]')) as HTMLElement[]
-            for (const pageLayer of pageLayers) {
-                const virtualIdx = parseInt(pageLayer.getAttribute('data-virtual-index') || '0', 10)
-                const pn = virtualIdx + 1 // Converti da zero-based a 1-based
-                const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
-                const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
-                const target = canvasLayer || canvasEl || pageLayer
-                const angle = autoDeskew ? (skewAngles?.[pn] || 0) : 0
-                if (angle && Math.abs(angle) >= 0.5) {
-                    target.style.transform = `rotate(${angle}deg)`
-                    target.style.transformOrigin = 'center center'
-                    ;(target.style as any).willChange = 'transform'
-                    const parent = (target.parentElement || pageLayer) as HTMLElement
-                    try { parent.style.overflow = 'visible' } catch {}
-                    if (appliedSkewRef.current[pn] !== angle) {
-                        try { console.log('[DESKEW][apply]', { page: pn, angle }) } catch {}
-                        appliedSkewRef.current[pn] = angle
-                    }
-                } else {
-                    target.style.removeProperty('transform')
-                    target.style.removeProperty('transform-origin')
-                    ;(target.style as any).willChange = ''
-                    try { (pageLayer as HTMLElement).style.removeProperty('overflow') } catch {}
-                    if (appliedSkewRef.current[pn]) {
-                        try { console.log('[DESKEW][clear]', { page: pn }) } catch {}
-                        delete appliedSkewRef.current[pn]
-                    }
-                }
-            }
-        }
-        // expose for external triggers (e.g., onZoom)
-        ;(window as any).__deskewApply = apply
-        // run once
-        apply()
-        // throttle re-applies to next frame to avoid layout thrash during zoom
-        let queued = false
-        const schedule = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; apply() }) }
-        const mo = new MutationObserver(() => schedule())
-        mo.observe(host, { subtree: true, childList: true, attributes: true })
-        return () => mo.disconnect()
-    }, [autoDeskew, skewAngles, docId])
+    // ✅ Deskew logic ora gestita dal hook usePdfDeskew
 
-    // Helper per applicare subito alla pagina corrente, chiamato al click
-    const applyImmediateToPage = useCallback((pageNum: number, angle: number) => {
-        const host = hostRef.current
-        if (!host) return
-        // ✅ Usa data-virtual-index (zero-based: page 1 = index 0)
-        const zeroBasedIdx = pageNum - 1
-        const pageLayer = (host.querySelector(`[data-virtual-index="${zeroBasedIdx}"]`) as HTMLElement) || null
-        if (!pageLayer) { try { console.warn('[DESKEW][immediate] pageLayer not found', { pageNum, zeroBasedIdx }) } catch {}; return }
-        const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
-        const canvasEl = pageLayer.querySelector('canvas') as HTMLCanvasElement | null
-        const target = canvasLayer || canvasEl || pageLayer
-        if (angle && Math.abs(angle) >= 0.5) {
-            target.style.transform = `rotate(${angle}deg)`
-            target.style.transformOrigin = 'center center'
-            ;(target.style as any).willChange = 'transform'
-            ;(pageLayer.style as any).overflow = 'visible'
-            try { console.log('[DESKEW][immediate][apply]', { page: pageNum, angle, target: target.className || target.tagName }) } catch {}
-        } else {
-            target.style.removeProperty('transform')
-            target.style.removeProperty('transform-origin')
-            ;(target.style as any).willChange = ''
-            try { pageLayer.style.removeProperty('overflow') } catch {}
-            try { console.log('[DESKEW][immediate][clear]', { page: pageNum }) } catch {}
-        }
-    }, [])
-
-	// Audit mode (digital text only)
-	const [audit, setAudit] = useState<boolean>(false)
+	// ✅ Audit mode ora gestito dal hook usePdfAudit
 
 	// Search panel state
 	const [panelW, setPanelW] = useState<number>(320)
@@ -609,49 +423,7 @@ const suppressClearRef = useRef<boolean>(false)
 		return () => { cancelled = true }
 	}, [fileUrl])
 
-	// Apply/clear audit style on text layers (digital text) and add page dim overlays + canvas filter
-	useEffect(() => {
-		const host = hostRef.current
-		if (!host) return
-		const apply = () => {
-			// 1) Text layer (when present): color spans per token class
-			const layers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
-			if (audit) ensureAuditStyles()
-			for (const layer of layers) {
-				if (audit) {
-					layer.setAttribute('data-audit', 'on')
-					layer.style.opacity = '1'
-					layer.style.mixBlendMode = 'normal'
-					// keep audit visuals; pointer-events handled by native-selection effect
-					layer.style.pointerEvents = 'none'
-					// classify each span
-					const spans = Array.from(layer.querySelectorAll('span')) as HTMLSpanElement[]
-					for (const sp of spans) {
-						const txt = sp.textContent || ''
-						const cls = classifyToken(txt)
-						sp.classList.remove('tok-safe','tok-pseudo','tok-suspect')
-						sp.classList.add(cls==='safe'?'tok-safe':cls==='pseudo'?'tok-pseudo':'tok-suspect')
-					}
-				} else {
-					layer.removeAttribute('data-audit')
-					layer.style.removeProperty('opacity')
-					layer.style.removeProperty('mix-blend-mode')
-					layer.style.removeProperty('pointer-events')
-					const spans = Array.from(layer.querySelectorAll('span')) as HTMLSpanElement[]
-					for (const sp of spans) { sp.classList.remove('tok-safe','tok-pseudo','tok-suspect') }
-				}
-			}
-			// 2) Canvas: fade so text layer colors are visible
-			const canvases = Array.from(host.querySelectorAll('.rpv-core__page-layer canvas')) as HTMLCanvasElement[]
-			for (const cv of canvases) {
-				if (audit) { (cv.style as any).opacity = '0.06' } else { cv.style.removeProperty('opacity') }
-			}
-		}
-		apply()
-		const mo = new MutationObserver(() => apply())
-		mo.observe(host, { subtree: true, childList: true })
-		return () => mo.disconnect()
-	}, [audit])
+	// ✅ Audit style logic ora gestita dal hook usePdfAudit
 
     // Ensure native selection works: enable selection on text-layer only (avoid wrapper selection flicker)
 	useEffect(() => {
