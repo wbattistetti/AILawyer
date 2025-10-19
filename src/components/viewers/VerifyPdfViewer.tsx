@@ -43,10 +43,12 @@ import { usePdfDocument } from './pdf-viewer/hooks/usePdfDocument'
 import { usePdfNativeStyles } from './pdf-viewer/hooks/usePdfNativeStyles'
 import { usePdfOverlays } from './pdf-viewer/hooks/usePdfOverlays'
 import { usePdfPanelResizer } from './pdf-viewer/hooks/usePdfPanelResizer'
+import { usePdfExtract } from './pdf-viewer/hooks/usePdfExtract'
 import { PdfToolbarAdvanced } from './pdf-viewer/components/PdfToolbarAdvanced'
 import { AnnotationOverlays } from './pdf-viewer/components/AnnotationOverlays'
 import { SearchPanel } from './pdf-viewer/components/SearchPanel'
 import { PdfViewerCore } from './pdf-viewer/components/PdfViewerCore'
+import { searchViaOcrBackend } from './pdf-viewer/utils/searchViaOcrBackend'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -55,131 +57,6 @@ type VLine = { x: number; x1: number; y: number; y1: number; text: string }
 
 // MatchItem ora importato dal hook usePdfSearch
 
-// Search using backend OCR text/layout when PDF has no native text
-async function searchViaOcrBackend(docId: string, qRaw: string): Promise<MatchItem[]> {
-  try {
-    const doc: any = await api.getDocumento(docId)
-    const layout = Array.isArray(doc?.ocrLayout)
-      ? doc.ocrLayout
-      : (() => {
-          try { return JSON.parse(doc?.ocrLayout || '[]') } catch { return [] }
-        })()
-    const sep = '\f'
-    const pagesText: string[] = String(doc?.ocrText || '').split(sep)
-    logger.debug('OCR[data][pages]', { pagesWithText: pagesText.length, pagesWithLayout: Array.isArray(layout) ? layout.length : 0 })
-    const out: MatchItem[] = []
-    const needle = (qRaw || '').toLowerCase()
-
-    for (let p = 0; p < Math.max(pagesText.length, layout.length); p++) {
-      const pageIdx = p
-      const pageTextRaw = String(pagesText[p] || '')
-      // Normalize accents/case to match common inputs with/without maiuscole e apostrofi
-      const normalize = (s: string) => s
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .replace(/[’'`´]/g, "'")
-        .toLowerCase()
-      const pageText = normalize(pageTextRaw)
-      const pageLayout = layout[p] || {}
-      let words: Array<{ text: string; x0: number; y0: number; x1: number; y1: number }> = pageLayout.words || []
-      const width = pageLayout.width || pageLayout.imgW || 0
-      const height = pageLayout.height || pageLayout.imgH || 0
-      console.log('[OCR][page][raw]', { 
-        page: pageIdx + 1, 
-        textLen: pageTextRaw.length, 
-        wordsLen: words?.length || 0, 
-        width, 
-        height,
-        layoutKeys: Object.keys(pageLayout),
-        firstWord: words[0] || null
-      })
-      logger.debug('OCR[page][stats]', { page: pageIdx + 1, textLen: pageTextRaw.length, words: words?.length || 0, width, height })
-      if (!pageText) continue
-
-      // NO FALLBACK: se mancano bbox, skippa la pagina
-      if (!words.length || !width || !height) {
-        console.error('[OCR][page][SKIP]', { 
-          page: pageIdx + 1, 
-          reason: !words.length ? 'no words' : !width ? 'no width' : 'no height',
-          layoutKeys: Object.keys(pageLayout)
-        })
-        continue
-      }
-
-      // Match "word-level" usando TESTO ESATTO, non posizione geometrica
-      // words[] sono in ordine geometrico, pageTextRaw in ordine logico
-      // Soluzione: cerca la query nel testo, poi trova le parole esatte che compongono il match
-      
-      const needle = normalize(qRaw)
-      const normalizedPageText = normalize(pageTextRaw)
-      let pos = 0
-      
-      while (true) {
-        const idx = normalizedPageText.indexOf(needle, pos)
-        if (idx < 0) break
-        const start = idx
-        const end = idx + needle.length
-        
-        // Estrai il testo matchato dal testo originale (non normalizzato)
-        const matchedText = pageTextRaw.slice(start, end)
-        const matchedNorm = normalize(matchedText)
-        
-        // Cerca in words[] le parole che compongono ESATTAMENTE questo match
-        // Strategia: matcha parole il cui testo normalizzato è una sottostringa del match
-        const matchWords = words.filter(w => {
-          const wText = normalize(w.text || '')
-          if (!wText) return false
-          // Match solo se la parola è CONTENUTA nel testo matchato (non viceversa!)
-          return matchedNorm.includes(wText)
-        })
-        
-        // Calcola bbox union
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-        for (const w of matchWords) {
-          x0 = Math.min(x0, w.x0)
-          y0 = Math.min(y0, w.y0)
-          x1 = Math.max(x1, w.x1)
-          y1 = Math.max(y1, w.y1)
-        }
-        
-        // NO FALLBACK: se nessuna parola matchata, skippa questo match
-        if (matchWords.length === 0 || x0 === Infinity) {
-          console.warn('[OCR][match][SKIP]', { page: pageIdx + 1, start, reason: 'no matching words' })
-          pos = end
-          continue
-        }
-        
-        // Snippet: dall'inizio della riga corrente + max 2-3 righe
-        let lineStart = start
-        while (lineStart > 0 && pageTextRaw[lineStart - 1] !== '\n') {
-          lineStart--
-        }
-        
-        let lineEnd = end
-        let linesCount = 0
-        for (let i = end; i < pageTextRaw.length && linesCount < 2; i++) {
-          lineEnd = i + 1
-          if (pageTextRaw[i] === '\n') linesCount++
-        }
-        
-        const snippet = pageTextRaw.slice(lineStart, Math.min(pageTextRaw.length, lineEnd)).trim()
-        console.log('[OCR][match][word]', { 
-          page: pageIdx + 1, 
-          query: qRaw,
-          start,
-          matchedText,
-          matchWords: matchWords.length,
-          matchWordsTexts: matchWords.map(w => w.text).join('|'),
-          bbox: { x0: x0.toFixed(3), y0: y0.toFixed(3), x1: x1.toFixed(3), y1: y1.toFixed(3), w: (x1-x0).toFixed(3), h: (y1-y0).toFixed(3) },
-          snippet: snippet.slice(0, 100)
-        })
-        out.push({ id: `${p}:${start}`, page: pageIdx + 1, snippet, x0Pct: x0, x1Pct: x1, y0Pct: y0, y1Pct: y1, qLen: needle.length, charIdx: start })
-        pos = end
-      }
-    }
-    return out
-  } catch { return [] }
-}
 
 export interface VerifyPdfViewerProps {
 	fileUrl: string
@@ -353,17 +230,24 @@ const selectionHandledRef = useRef<boolean>(false)
 	// ✅ Hook per la audit logic
 	const { audit, setAudit } = usePdfAudit({ hostRef })
 
-const [extractType, setExtractType] = useState<string>('verbale')
-const [extractNotes, setExtractNotes] = useState<string>('')
-const [showNotes, setShowNotes] = useState<boolean>(false)
-const [extractTitle, setExtractTitle] = useState<string>('')
-const [selectedAnnot, setSelectedAnnot] = useState<Annotation | null>(null)
-// ✅ drawingRef ora gestito dal hook usePdfAnnotations
-const openedAtRef = useRef<number>(0)
-const isSelectingRef = useRef<boolean>(false)
-const lastNativeRangeRef = useRef<Range | null>(null)
-const lastDraftBoxRef = useRef<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number } | null>(null)
-const suppressClearRef = useRef<boolean>(false)
+	// ✅ Hook per lo stato dell'estratto
+	const {
+		extractType,
+		setExtractType,
+		extractNotes,
+		setExtractNotes,
+		showNotes,
+		setShowNotes,
+		extractTitle,
+		setExtractTitle,
+		selectedAnnot,
+		setSelectedAnnot,
+		openedAtRef,
+		isSelectingRef,
+		lastNativeRangeRef,
+		lastDraftBoxRef,
+		suppressClearRef
+	} = usePdfExtract()
 
 	// ✅ Hook per il jump-to logic
 	const { goToMatch } = usePdfJumpTo({
@@ -378,51 +262,13 @@ const suppressClearRef = useRef<boolean>(false)
 		searchCacheRef,
 		fileUrl
 	})
-// Note: no custom anchoring; let the browser handle selection during drag
-// Global selection overlay (fallback, robust across pages)
-// legacy globals removed (use per-page overlay)
-
-    // ✅ Deskew logic ora gestita dal hook usePdfDeskew
-
-	// ✅ Audit mode ora gestito dal hook usePdfAudit
 
 	// ✅ Hook per il search panel
 	const { panelW, setPanelW, searchQ, setSearchQ, showAdvanced, setShowAdvanced, resizingRef } = usePdfSearchPanel()
 
-	// ✅ PDF document loading ora gestito dal hook usePdfDocument
-
-	// ✅ Audit style logic ora gestita dal hook usePdfAudit
-
-	// ✅ Native selection styles e overlay management ora gestiti dai hook usePdfNativeStyles e usePdfOverlays
-
-
-
-// Search logic ora gestita dal hook usePdfSearch
-
-// removed unused snippet renderer
-
-	// ✅ goToMatch ora gestito dal hook usePdfJumpTo
-
-	// ✅ Pointer drawing handlers ora gestiti dal hook usePdfAnnotations
-
-	// ✅ Panel resizer ora gestito dal hook usePdfPanelResizer
+	// ✅ Panel resizer
 	usePdfPanelResizer({ resizingRef, setPanelW })
 
-	
-
-	// ✅ Jump-to handler ora gestito dal hook usePdfJumpTo
-
-	// Log draft state on every render
-	React.useEffect(() => {
-		if (draft) {
-			console.log('[DRAFT][STATE]', { 
-				hasDraft: !!draft, 
-				page: draft.page, 
-				id: draft.id,
-				rootExists: !!overlayRootsRef.current.get(draft.page)
-			})
-		}
-	}, [draft])
 
 	return (
 		<React.Fragment>
@@ -535,53 +381,6 @@ const suppressClearRef = useRef<boolean>(false)
 					overlayRootsRef={overlayRootsRef}
 				/>
 
-				{/* Legacy per-page overlay removed in favor of SvgSelectLayer and native selection */}
-				{false && totalPages > 0 && Array.from({ length: totalPages }).map((_, i) => {
-                  const pageNum = i + 1
-                  const root = selectRootsRef.current.get(pageNum)
-                  if (!root || !selectMode) return null
-                  const pageLayer = pageElsRef.current.get(pageNum)
-                  const textLayer = pageLayer?.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
-                  const onSel = async (sel: any) => {
-                    try {
-                      const pageR = pageLayer!.getBoundingClientRect()
-                      const doc = pdfDocRef.current
-                      const page = await doc.getPage(pageNum)
-                      const base = page.getViewport({ scale: 1 })
-                      const domW = pageR.width
-                      const scale = Math.max(0.1, domW / base.width)
-                      const vp = page.getViewport({ scale })
-                      const { x0, y0, x1, y1 } = getPdfCoords(sel.viewportBox, vp)
-                      let text = ''
-                      try { if (textLayer) { const r = await getSelectedTextInRect(textLayer, sel.viewportBox); text = r.text } } catch {}
-                      // center the panel over selection, clamped to viewport
-                      const panelW = 420, panelH = 260
-                      let px = pageR.left + sel.viewportBox.x + (sel.viewportBox.w/2) - (panelW/2)
-                      let py = pageR.top + sel.viewportBox.y + (sel.viewportBox.h/2) - (panelH/2)
-                      const viewportW = window.innerWidth || document.documentElement.clientWidth
-                      const viewportH = window.innerHeight || document.documentElement.clientHeight
-                      px = Math.max(8, Math.min(px, viewportW - panelW - 8))
-                      py = Math.max(8, Math.min(py, viewportH - panelH - 8))
-                      setExtractPos({ x: px, y: py })
-                      setExtractPage(pageNum)
-                      setLastSelection({ pdfPageNumber: pageNum, bboxPdf: { x0,y0,x1,y1 }, viewportBox: sel.viewportBox, text })
-                      setExtractOpen(true)
-                    } catch (err) {
-                      console.warn('[EXTRACT] per-page sel error', err)
-                    }
-                  }
-                  return createPortal(
-                    <PdfSelectionOverlay
-                      key={`sel-${pageNum}-${selectTick}`}
-                      pdfPageNumber={pageNum}
-                      viewport={null as any}
-                      textLayerDiv={textLayer}
-                      onSelection={onSel}
-                      enabled={selectMode}
-                    />,
-                    root
-                  )
-                })}
             
 		{/* Extract Dialog */}
 		<ExtractDialog
@@ -626,7 +425,6 @@ const suppressClearRef = useRef<boolean>(false)
 				searchCacheRef={searchCacheRef}
 			/>
 		</div>
-        {/* global overlay rimosso: usiamo solo overlay per-pagina */}
 		
 		{/* Context Menu */}
 		<ContextMenu
