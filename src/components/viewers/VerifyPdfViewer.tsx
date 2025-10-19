@@ -43,6 +43,10 @@ import { usePdfDocument } from './pdf-viewer/hooks/usePdfDocument'
 import { usePdfNativeStyles } from './pdf-viewer/hooks/usePdfNativeStyles'
 import { usePdfOverlays } from './pdf-viewer/hooks/usePdfOverlays'
 import { usePdfPanelResizer } from './pdf-viewer/hooks/usePdfPanelResizer'
+import { PdfToolbarAdvanced } from './pdf-viewer/components/PdfToolbarAdvanced'
+import { AnnotationOverlays } from './pdf-viewer/components/AnnotationOverlays'
+import { SearchPanel } from './pdf-viewer/components/SearchPanel'
+import { PdfViewerCore } from './pdf-viewer/components/PdfViewerCore'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -431,251 +435,105 @@ const suppressClearRef = useRef<boolean>(false)
 						<span className="text-muted-foreground whitespace-nowrap px-1">/ {totalPages || '-'}</span>
 					</div>
 
-				{/* Quick search bar - nascosto quando pannello aperto */}
-				{!showAdvanced && (
-					<div className="flex items-center gap-1 ml-2">
-						<Search size={16} className="text-gray-500" />
-						<input 
-							value={searchQ} 
-							onChange={(e)=>setSearchQ(e.target.value)} 
-							onKeyDown={(e)=>{ 
-								if(e.key==='Enter'){ 
-									runSearch(searchQ, searchPluginInstance, searchViaOcrBackend)
-									setShowAdvanced(true)  // ✅ Apri pannello automaticamente
-								} 
-							}} 
-							placeholder="Cerca nel documento" 
-							className="w-72 border rounded px-2 py-1" 
-						/>
-						<button className="px-2 py-1 border rounded" title="Apri pannello ricerca" onClick={()=>setShowAdvanced(true)}>
-							<PanelRightOpen size={16} />
+					{/* Quick search bar - nascosto quando pannello aperto */}
+					{!showAdvanced && (
+						<div className="flex items-center gap-1 ml-2">
+							<Search size={16} className="text-gray-500" />
+							<input 
+								value={searchQ} 
+								onChange={(e)=>setSearchQ(e.target.value)} 
+								onKeyDown={(e)=>{ 
+									if(e.key==='Enter'){ 
+										runSearch(searchQ, searchPluginInstance, searchViaOcrBackend)
+										setShowAdvanced(true)  // ✅ Apri pannello automaticamente
+									} 
+								}} 
+								placeholder="Cerca nel documento" 
+								className="w-72 border rounded px-2 py-1" 
+							/>
+							<button className="px-2 py-1 border rounded" title="Apri pannello ricerca" onClick={()=>setShowAdvanced(true)}>
+								<PanelRightOpen size={16} />
+							</button>
+						</div>
+					)}
+					
+					{/* Pulsante per chiudere il pannello quando è aperto */}
+					{showAdvanced && (
+						<button 
+							className="px-2 py-1 border rounded bg-blue-100 border-blue-400" 
+							title="Chiudi pannello ricerca" 
+							onClick={()=>setShowAdvanced(false)}
+						>
+							<PanelRightOpen size={16} className="rotate-180" />
 						</button>
-					</div>
-				)}
-				
-				{/* Pulsante per chiudere il pannello quando è aperto */}
-				{showAdvanced && (
-					<button 
-						className="px-2 py-1 border rounded bg-blue-100 border-blue-400" 
-						title="Chiudi pannello ricerca" 
-						onClick={()=>setShowAdvanced(false)}
-					>
-						<PanelRightOpen size={16} className="rotate-180" />
-					</button>
-				)}
-					<div className="flex items-center gap-2">
-						<button className={`px-2 py-1 rounded border ${tool==='highlight'?'bg-yellow-100 border-yellow-400':''}`} title="Evidenzia" onClick={()=>setTool(tool==='highlight'?'none':'highlight')}>
-							<Highlighter size={16} />
-						</button>
-						<button className={`px-2 py-1 rounded border ${tool==='underline'?'bg-sky-100 border-sky-400':''}`} title="Sottolinea" onClick={()=>setTool(tool==='underline'?'none':'underline')}>
-							<UnderlineIcon size={16} />
-						</button>
-						<button className={`px-2 py-1 rounded border ${tool==='strike'?'bg-red-100 border-red-400':''}`} title="Barra" onClick={()=>setTool(tool==='strike'?'none':'strike')}>
-							<StrikethroughIcon size={16} />
-						</button>
-                    <button className={`px-2 py-1 rounded border ${audit?'bg-gray-100 border-gray-400':''}`} title="Audit mode (testo digitale)" onClick={()=>setAudit(a=>!a)}>Audit</button>
-						<button className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
-							<MessageSquare size={16} />
-						</button>
-                        <button
-                          className={`px-2 py-1 rounded border ${autoDeskew ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
-                          title={autoDeskew ? 'Raddrizza: ON' : 'Raddrizza quando serve'}
-                          onClick={async()=>{
-                            const next = !autoDeskew
-                            try { console.log('[DESKEW][toggle]', { next }) } catch {}
-                            setAutoDeskew(next)
-                            if (next) {
-                              const p = Math.max(1, parseInt(pageInput || '1', 10))
-                              try { console.log('[DESKEW][estimate][start]', { page: p }) } catch {}
-                              if (!skewAngles[p]) {
-                                const ang = await estimateSkewForPage(p)
-                                try { console.log('[DESKEW][estimate][done]', { page: p, angle: ang }) } catch {}
-                                setSkewAngles(prev => { const n = { ...prev, [p]: ang }; persistSkew(n); return n })
-                                applyImmediateToPage(p, ang)
-                              } else {
-                                const ang = skewAngles[p]
-                                try { console.log('[DESKEW][cached]', { page: p, angle: ang }) } catch {}
-                                applyImmediateToPage(p, ang)
-                              }
-                            }
-                          }}
-                        >Raddrizza</button>
-					</div>
-				<div className="w-full md:w-auto md:ml-auto flex items-center gap-2 justify-start md:justify-end flex-wrap">
-					<div className="flex items-center gap-1">
-						<label className="text-xs text-gray-600">Selezione</label>
-						<select className="border rounded px-1 py-0.5 text-xs" value={selectKind} onChange={(e)=>setSelectKind(e.target.value as any)}>
-							<option value="NATIVE">Nativa</option>
-							<option value="OCR">OCR</option>
-						</select>
-					</div>
-						<span className="text-xs w-10 text-right">{zoomPct}%</span>
-						<input
-							type="range"
-							min={50}
-							max={300}
-							step={1}
-							value={zoomPct}
-							onChange={(e)=>{
-								const v = parseInt(e.target.value,10)
-								setZoomPct(v)
-								const s = v/100
-								scaleRef.current = s
-								if (zoomDebounceRef.current != null) {
-									window.clearTimeout(zoomDebounceRef.current)
-								}
-								zoomDebounceRef.current = window.setTimeout(() => {
-									try { zoomTo(s) } catch {}
-									const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-									if (viewer) viewer.style.setProperty('--scale-factor', String(s))
-								}, 80)
-							}}
-						/>
-					</div>
+					)}
+					
+					<PdfToolbarAdvanced
+						tool={tool}
+						setTool={setTool}
+						audit={audit}
+						setAudit={setAudit}
+						autoDeskew={autoDeskew}
+						setAutoDeskew={setAutoDeskew}
+						skewAngles={skewAngles}
+						setSkewAngles={setSkewAngles}
+						pageInput={pageInput}
+						selectKind={selectKind}
+						setSelectKind={setSelectKind}
+						zoomPct={zoomPct}
+						setZoomPct={setZoomPct}
+						scaleRef={scaleRef}
+						zoomDebounceRef={zoomDebounceRef}
+						hostRef={hostRef}
+						showAdvanced={showAdvanced}
+						setShowAdvanced={setShowAdvanced}
+						estimateSkewForPage={estimateSkewForPage}
+						persistSkew={persistSkew}
+						applyImmediateToPage={applyImmediateToPage}
+						zoomTo={zoomTo}
+					/>
 				</div>
 
-                <div ref={(el) => {
+				<div ref={(el) => {
 					hostRef.current = el
 					if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
 				}} className="flex-1 overflow-hidden relative" style={{ 
 					['--scale-factor' as any]: String(scaleRef.current || 1)
 				}}>
-					<Worker workerUrl="https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js">
-						<Viewer
-							fileUrl={fileUrl}
-							defaultScale={0.75}
-							plugins={[scrollMode, pageNav, searchPluginInstance, highlight, zoomPluginInstance]}
-							scrollMode={ScrollMode.Vertical}
-							initialPage={Math.max(0, (page || 1) - 1)}
-							onPageChange={(e) => { const cp = e.currentPage + 1; setPageInput(String(cp)); onPageChange?.(cp) }}
-                            onDocumentLoad={(e) => { 
-								const doc = (e as any).doc || (e as any).document
-								const total = doc?.numPages || 0
-								if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
-								if (total) { setTotalPages(total); setPageInput('1') }
-								const container = hostRef.current as HTMLElement | null
-								if (container) container.style.setProperty('--scale-factor', String(scaleRef.current || 1))
-								const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-								if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1))
-								try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch {}
-								try { console.log('[VIEWER][ready]', { docId: docId || 'current', total }) } catch {}
-							}}
-                            onZoom={(e: any) => { 
-								const s = (e?.scale || e?.zoom) as number
-								if (typeof s === 'number') { 
-									console.log('[ZOOM][viewer-onZoom] FIRED', { 
-										scale: s.toFixed(3), 
-										pct: Math.round(s*100),
-										scaleRefBefore: scaleRef.current.toFixed(3)
-									})
-									scaleRef.current = s
-									setZoomPct(Math.round(s*100))
-									;(window as any).__rpvLastZoomScale = s
-									const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-									if (viewer) {
-										viewer.style.setProperty('--scale-factor', String(s))
-										console.log('[ZOOM][viewer-onZoom] CSS var set', { 
-											scaleFactor: s.toFixed(3),
-											viewerExists: !!viewer
-										})
-									}
-									try { requestAnimationFrame(()=>{ try { (window as any).__deskewApply?.() } catch {} }) } catch {} 
-								} 
-							}}
-                            renderPage={(p: any) => (
-                                <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                    {p.canvasLayer.children}
-                                    {p.annotationLayer.children}
-                                    {p.textLayer.children}
-                                    {selectMode && selectKind==='OCR' && (
-                                        <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
-                                            <SvgSelectLayer
-                                                enabled={true}
-                                                pageIndex={p.pageIndex}
-                                                onSelect={async ({ pageNumber, viewportBox })=>{
-                                                const host = hostRef.current as HTMLElement | null; if (!host) return
-                                                const r = host.getBoundingClientRect()
-                                                const pageRoot = host.querySelector(`[data-page-number="${pageNumber}"]`) as HTMLElement | null
-                                                const pr = pageRoot?.getBoundingClientRect() || r
-                                                const panelW = 460, panelH = 260
-                                                const boxLeft = pr.left + viewportBox.x
-                                                const boxTop = pr.top + viewportBox.y
-                                                const boxRight = boxLeft + viewportBox.w
-                                                const boxBottom = boxTop + viewportBox.h
-                                                // Posizione centrata rispetto al rettangolo
-                                                let px = boxLeft + (viewportBox.w - panelW) / 2
-                                                let py = boxTop + (viewportBox.h - panelH) / 2
-                                                // Se il pannello ci sta dentro al box, clamp all'interno; altrimenti clamp a viewport
-                                                const fitsInside = viewportBox.w >= panelW && viewportBox.h >= panelH
-                                                if (fitsInside) {
-                                                    px = Math.max(boxLeft, Math.min(px, boxRight - panelW))
-                                                    py = Math.max(boxTop, Math.min(py, boxBottom - panelH))
-                                                } else {
-                                                    px = Math.max(8, Math.min(px, (window.innerWidth||1200) - panelW - 8))
-                                                    py = Math.max(8, Math.min(py, (window.innerHeight||800) - panelH - 8))
-                                                }
-                                                setExtractPos({ x: px, y: py })
-                                                setExtractPage(pageNumber)
-                                                // OCR mode: per ora DOM preview; con OCR useremo i box parola
-                                                const { text: preview } = await getTextInViewportBox(host, pageNumber, viewportBox)
-                                                let canonical = preview
-                                                // PDF-based opzionale
-                                                try {
-                                                    if (pdfDocRef.current) {
-                                                        const page = await pdfDocRef.current.getPage(pageNumber)
-                                                        // Viewport coerente con le dimensioni DOM della pagina
-                                                        const base = page.getViewport({ scale: 1 })
-                                                        const domW = pr.width
-                                                        const scale = Math.max(0.1, domW / base.width)
-                                                        const vp = page.getViewport({ scale })
-                                                        const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
-                                                        const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
-                                                        const res = await getTextInPdfBox(page, { x0, y0, x1, y1 })
-                                                        if (res.text && res.text.trim()) canonical = res.text
-                                                        try { console.log('[EXTRACT][PDF_BOX]', { pageNumber, domW, baseW: base.width, scale, pdfBox: { x0, y0, x1, y1 } }) } catch {}
-                                                    }
-                                                } catch {}
-                                                try { console.log('[EXTRACT][TEXT]', { pageNumber, viewportBox, preview, canonical }) } catch {}
-                                                setLastSelection({ pdfPageNumber: pageNumber, bboxPdf: undefined, viewportBox, text: canonical })
-                                                setExtractOpen(true)
-                                            }}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-						/>
-					</Worker>
+					<PdfViewerCore
+						fileUrl={fileUrl}
+						page={page}
+						onPageChange={onPageChange}
+						scrollMode={scrollMode}
+						pageNav={pageNav}
+						searchPluginInstance={searchPluginInstance}
+						highlight={highlight}
+						zoomPluginInstance={zoomPluginInstance}
+						selectMode={selectMode}
+						selectKind={selectKind}
+						hostRef={hostRef}
+						pdfDocRef={pdfDocRef}
+						scaleRef={scaleRef}
+						setPageInput={setPageInput}
+						setTotalPages={setTotalPages}
+						setZoomPct={setZoomPct}
+						setExtractPos={setExtractPos}
+						setExtractPage={setExtractPage}
+						setLastSelection={setLastSelection}
+						setExtractOpen={setExtractOpen}
+						docId={docId}
+					/>
 				</div>
 
 				{/* OCR Inspector ora gestito dal componente OcrInspector */}
 
-                {/* Overlays */}
-				{[...(selectedAnnot ? [selectedAnnot] : []), ...annots, ...(draft ? [draft] : [])].map(a => {
-					const root = overlayRootsRef.current.get(a.page)
-					if (a.id === 'draft') {
-						console.log('[OVERLAY][RENDER][DRAFT]', { 
-							page: a.page, 
-							type: a.type,
-							color: a.color,
-							box: { x0: a.x0Pct, y0: a.y0Pct, x1: a.x1Pct, y1: a.y1Pct },
-							hasRoot: !!root,
-							allRoots: Array.from(overlayRootsRef.current.keys())
-						})
-					}
-					if (!root) return null
-					const left = `${a.x0Pct * 100}%`
-					const top = `${a.y0Pct * 100}%`
-					const width = `${(a.x1Pct - a.x0Pct) * 100}%`
-					const height = `${Math.max(0.01, (a.y1Pct - a.y0Pct)) * 100}%`
-					const style: React.CSSProperties = { position:'absolute', left, top, width, height, pointerEvents:'none' }
-					let node: React.ReactNode = null
-					if (a.type==='highlight') node = <div style={{ ...style, background:a.color, borderRadius:2 }} />
-					if (a.type==='underline') node = <div style={{ ...style, height:2, background:a.color }} />
-					if (a.type==='strike') node = <div style={{ ...style, height:2, background:a.color }} />
-					if (a.type==='comment') node = <div style={{ ...style, width:12, height:12, background:'#f59e0b', borderRadius:2 }} title={a.text} />
-					return createPortal(node, root)
-				})}
+				{/* Overlays */}
+				<AnnotationOverlays
+					selectedAnnot={selectedAnnot}
+					annots={annots}
+					draft={draft}
+					overlayRootsRef={overlayRootsRef}
+				/>
 
 				{/* Legacy per-page overlay removed in favor of SvgSelectLayer and native selection */}
 				{false && totalPages > 0 && Array.from({ length: totalPages }).map((_, i) => {
@@ -753,86 +611,20 @@ const suppressClearRef = useRef<boolean>(false)
 
             </div>
 
-            {showAdvanced && (
-			<React.Fragment>
-					<div onMouseDown={()=>{ resizingRef.current = true; document.body.style.cursor = 'ew-resize' }} className="w-1.5 cursor-col-resize bg-transparent hover:bg-blue-300" title="Ridimensiona">
-						<GripVertical size={12} className="mx-auto text-gray-400" />
-					</div>
-					<div className="h-full border-l bg-white flex flex-col" style={{ width: panelW }}>
-					{/* Header pannello ricerca con X per chiudere */}
-					<div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
-						<h3 className="font-semibold text-sm">Risultati ricerca</h3>
-						<button 
-							className="p-1 hover:bg-gray-200 rounded" 
-							title="Chiudi pannello"
-							onClick={()=>setShowAdvanced(false)}
-						>
-							<X size={18} />
-						</button>
-					</div>
-						
-                        <SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={true} onSearch={async(q, _scope)=>{
-                            console.log('[SEARCH][document] Backend search start', { q, docId })
-                            
-                            try {
-                                // ✅ USA LA STESSA API DELL'ARCHIVIO!
-                                const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
-                                const response = await fetch(`${apiUrl}/search/archive?q=${encodeURIComponent(q)}&docId=${docId}`)
-                                
-                                if (!response.ok) throw new Error('Search failed')
-                                const data = await response.json()
-                                
-                                console.log('[SEARCH][document] API response', { total: data.total, matches: data.matches?.length })
-                                
-                                // Converti i risultati nel formato atteso
-                                const found = data.matches || []
-                                setMatches(found)
-                                
-                                const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
-                                const actualDocId = docId || 'current'
-                                console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found.length })
-                                
-                                const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: found.map((m: any)=>({
-                                    id: m.id,
-                                    docId: actualDocId,
-                                    docTitle,
-                                    kind: 'pdf' as const,
-                                    page: m.page,
-                                    q: q,
-                                    x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct,
-                                    charIdx: m.charIdx, qLength: m.qLen,
-                                    snippet: m.snippet,
-                                    score: 0,
-                                })) }]
-                                
-                                return { id: cryptoRandom(), query: q, scope: 'current' as any, total: found.length, groups } as any
-                                
-                            } catch (error) {
-                                console.error('[SEARCH][document] API error', error)
-                                return { id: cryptoRandom(), query: q, scope: 'current' as any, total: 0, groups: [] } as any
-                            }
-                        }} adapterFactory={() => ({
-							goToMatch: async (m: any) => {
-								try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: m.q }) } catch {}
-								const mi = { id: m.id, page: m.page, snippet: m.snippet, x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct, charIdx: m.charIdx, qLen: m.qLength } as any
-								await (goToMatch as any)(mi)
-                                // disegna rettangoli sugli hit correnti (dalla cache dell'ultima ricerca)
-                                try {
-                                  const cacheKey = `${fileUrl}::${(m.q||'').toLowerCase()}::${docId || 'no-doc'}`
-                                  const cached = searchCacheRef.current.get(cacheKey) || []
-                                  const matches = cached.map((mm:any)=>({ page:mm.page, x0Pct:mm.x0Pct, y0Pct:mm.y0Pct, x1Pct:mm.x1Pct, y1Pct:mm.y1Pct }))
-                                  // drawOcrRects(matches.filter(Boolean)) // Ora gestito dal componente OcrInspector
-                                  const box = [{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }]
-                                  const paint = () => { try { /* drawOcrRects(box) */ } catch {} } // Ora gestito dal componente OcrInspector
-                                  paint(); setTimeout(paint, 100); setTimeout(paint, 300)
-                                } catch {}
-							}
-						})}>
-							<SearchPanelTree showInput={true} showScopeSelector={false} initialQuery={searchQ} />
-						</SearchProvider>
-					</div>
-			</React.Fragment>
-			)}
+			<SearchPanel
+				showAdvanced={showAdvanced}
+				setShowAdvanced={setShowAdvanced}
+				panelW={panelW}
+				resizingRef={resizingRef}
+				searchQ={searchQ}
+				docId={docId}
+				fileUrl={fileUrl}
+				totalPages={totalPages}
+				setMatches={setMatches}
+				searchPluginInstance={searchPluginInstance}
+				goToMatch={goToMatch}
+				searchCacheRef={searchCacheRef}
+			/>
 		</div>
         {/* global overlay rimosso: usiamo solo overlay per-pagina */}
 		

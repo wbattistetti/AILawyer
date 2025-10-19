@@ -18,8 +18,10 @@ export const OcrInspector: React.FC<OcrInspectorProps> = ({
 }) => {
 	const { ocrInspect, setOcrInspect, ocrDrag, setOcrDrag, loadOcrPageText, drawOcrRects, drawFixedDebugRect } = useOcrInspector(docId)
 
-	// Esponi le funzioni per l'uso esterno
-	React.useImperativeHandle(React.forwardRef(() => null), () => ({
+	// Esponi le funzioni per l'uso esterno tramite ref
+	const ocrInspectorRef = React.useRef<any>(null)
+	
+	React.useImperativeHandle(ocrInspectorRef, () => ({
 		loadOcrPageText: (pageNum: number) => {
 			loadOcrPageText(pageNum)
 			onOcrInspectOpenChange(true)
