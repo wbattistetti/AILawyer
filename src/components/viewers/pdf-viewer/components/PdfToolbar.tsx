@@ -37,15 +37,6 @@ interface PdfToolbarProps {
 	zoomPct: number
 	onZoomChange: (value: number) => void
 
-	// Extract
-	extractTitle: string
-	extractType: string
-	extractNotes: string
-	extractPage: number
-	lastSelection: any
-	docId?: string
-	fileUrl: string
-	drawerOptions: Array<{ id: string; label: string }>
 
 	// Refs (for internal use)
 	pageNav?: any
@@ -75,49 +66,11 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 	onSelectKindChange,
 	zoomPct,
 	onZoomChange,
-	extractTitle,
-	extractType,
-	extractNotes,
-	extractPage,
-	lastSelection,
-	docId,
-	fileUrl,
-	drawerOptions,
 	pageNav,
 	scaleRef,
 	zoomDebounceRef,
 	hostRef
 }) => {
-	const handleSaveExtract = () => {
-		const title = (extractTitle || '').trim() || 'Estratto'
-		if (!lastSelection || !(lastSelection.text||'').trim()) {
-			console.warn('[EXTRACT][SAVE][toolbar] no selection')
-			return
-		}
-		const payload = {
-			kind: 'EXTRACT',
-			type: extractType,
-			title,
-			notes: extractNotes || '',
-			source: { docId: docId || 'current', fileUrl, page: extractPage, range: (lastSelection as any)?.range || null },
-			viewportBox: lastSelection?.viewportBox || null,
-			bboxPdf: lastSelection?.bboxPdf || null,
-			text: lastSelection?.text || '',
-			createdAt: new Date().toISOString(),
-		}
-		const safe = (s: string) => (s || 'estratto').replace(/[^a-zA-Z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,64)
-		const fileName = `${safe(title)}_p${extractPage}.json`
-		try {
-			const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-			const file = new File([blob], fileName, { type: 'application/json' })
-			const chosen = drawerOptions.find(o => o.id === extractType)
-			const drawerTitle = chosen?.label || ''
-			const target = drawerTitle ? { type: 'drawer', title: drawerTitle } : { type: 'archive' }
-			const ev = new CustomEvent('app:upload-files', { detail: { files: [file], target } })
-			window.dispatchEvent(ev)
-			try { window.dispatchEvent(new Event('ai-select-clear')) } catch {}
-		} catch (e) { console.warn('[EXTRACT][SAVE][toolbar][err]', e) }
-	}
 
 	return (
 		<div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-white">
@@ -205,14 +158,6 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 					Raddrizza
 				</button>
 
-				{/* Toolbar Save (selection native or OCR) */}
-				<button
-					className="px-2 py-1 rounded border"
-					title="Salva estratto"
-					onClick={handleSaveExtract}
-				>
-					<SaveIcon size={16} />
-				</button>
 			</div>
 
 			{/* Right side controls */}

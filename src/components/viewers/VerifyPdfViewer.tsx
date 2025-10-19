@@ -29,6 +29,9 @@ import { api } from '../../lib/api'
 import { logger } from '../../utils/logger'
 import { buildReadingText, matchInBuilt } from '../../features/ocr/readingOrder'
 import { useCleanPdfZoom } from '../../hooks/useCleanPdfZoom'
+import { ContextMenu } from './pdf-viewer/components/ContextMenu'
+import { OcrInspector } from './pdf-viewer/components/OcrInspector'
+import { usePdfViewerState } from './pdf-viewer/hooks/usePdfViewerState'
 
 
 type VLine = { x: number; x1: number; y: number; y1: number; text: string }
@@ -323,6 +326,10 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 		}
 	}
 	
+	// ✅ Estrai stato dal hook
+	const viewerState = usePdfViewerState()
+	const { contextMenu, setContextMenu, lastSelection, setLastSelection, extractPos, setExtractPos, extractPage, setExtractPage, extractOpen, setExtractOpen, ocrInspectOpen, setOcrInspectOpen, pageElsRef } = viewerState
+	
 	const searchPluginInstance = searchPlugin()
 const highlight = highlightPlugin({
   renderHighlights: (props) => {
@@ -355,277 +362,13 @@ const [annots, setAnnots] = useState<Annotation[]>([])
 const [draft, setDraft] = useState<Annotation | null>(null)
 type Area = { id: string; pageIndex: number; left: number; top: number; width: number; height: number }
 const [areas, setAreas] = useState<Area[]>([])
-	// ==== OCR INSPECTOR (TEMP) ====
-	const [ocrInspectOpen, setOcrInspectOpen] = useState<boolean>(false)
-	const [ocrInspect, setOcrInspect] = useState<{ page: number; text: string } | null>(null)
-	const [ocrDrag, setOcrDrag] = useState<{ x: number; y: number; dx: number; dy: number; dragging: boolean }>({ x: 24, y: 24, dx: 0, dy: 0, dragging: false })
+	// ==== OCR INSPECTOR ====
+	// Ora gestito dal componente OcrInspector
 
-	async function loadOcrPageText(pageNum: number) {
-		try {
-			if (!docId) return
-			const doc: any = await api.getDocumento(docId)
-			const raw = String(doc?.ocrText || '')
-			try { console.log('[OCR][inspector] fetch doc', { pageNum, hasText: !!raw, textLen: raw.length, hasLayout: !!doc?.ocrLayout }) } catch {}
-			// Prova a ricostruire a capo dalle words dell'ocrLayout
-			let textFromLayout = ''
-			try {
-				const layoutRaw: any = (doc as any).ocrLayout
-				const arr = Array.isArray(layoutRaw) ? layoutRaw : (()=>{ try{ return JSON.parse(layoutRaw || '[]') } catch { return [] } })()
-				const lay = (arr.find((p: any) => p?.page === pageNum) || arr[pageNum - 1])
-				try { console.log('[OCR][inspector] layout page', { pageNum, pages: Array.isArray(arr)?arr.length:0, hasLay: !!lay, words: lay?.words?.length || 0 }) } catch {}
-                if (lay && Array.isArray(lay.words) && lay.words.length > 0) {
-                    const ws = lay.words.filter((w: any) => w && String(w.text||'').trim())
-                    const hasIdx = ws.every((w: any) => Number.isFinite(w.b) && Number.isFinite(w.p) && Number.isFinite(w.l) && Number.isFinite(w.wi))
-                    if (hasIdx) {
-                        const sorted = ws.slice().sort((a: any, b: any) =>
-                            (a.b||0)-(b.b||0) || (a.p||0)-(b.p||0) || (a.l||0)-(b.l||0) || (a.wi||0)-(b.wi||0)
-                        )
-                        let parts: string[] = []
-                        let last = { b: -1, p: -1, l: -1 }
-                        for (const w of sorted) {
-                            const nb = w.b||0, np = w.p||0, nl = w.l||0
-                            if (last.b !== -1) {
-                                if (nb !== last.b) parts.push('\n\n')
-                                else if (np !== last.p) parts.push('\n\n')
-                                else if (nl !== last.l) parts.push('\n')
-                                else parts.push(' ')
-                            }
-                            parts.push(String(w.text||'').trim())
-                            last = { b: nb, p: np, l: nl }
-                        }
-                        textFromLayout = parts.join('').replace(/[ \t]+/g,' ').replace(/\s+\n/g,'\n').trim()
-                    } else {
-                        // fallback semplice per quando non abbiamo indici
-                        type Word = { x0:number; x1:number; y0:number; y1:number; text:string }
-                        const words = (ws as Word[])
-                        const withMid = words.map(w => ({ ...w, xMid: (w.x0 + w.x1)/2, yMid: (w.y0 + w.y1)/2, h: (w.y1 - w.y0) }))
-                        withMid.sort((a,b)=> a.yMid===b.yMid ? a.x0-b.x0 : a.yMid-b.yMid)
-                        const hs = withMid.map(w=>w.h).filter(n=>n>0)
-                        const medH = hs.length ? [...hs].sort((a,b)=>a-b)[Math.floor(hs.length/2)] : 0.02
-                        const thrY = Math.max(0.003, medH*0.35)
-                        type Line = { y:number; parts: typeof withMid }
-                        const lines: any[] = []
-                        for (const w of withMid) {
-                            const last = lines[lines.length-1]
-                            if (!last || Math.abs(last.y - w.yMid) > thrY) lines.push({ y: w.yMid, parts:[w] })
-                            else { last.parts.push(w); last.y = (last.y*(last.parts.length-1) + w.yMid)/last.parts.length }
-                        }
-                        for (const ln of lines) ln.parts.sort((p:any,q:any)=>p.x0-q.x0)
-                        const texts = lines.sort((a,b)=>a.y-b.y).map(ln => ln.parts.map((p:any)=>String(p.text||'').trim()).join(' '))
-                        textFromLayout = texts.map(t=>t.replace(/\s+/g,' ').trim()).filter(Boolean).join('\n')
-                    }
-                }
-			} catch {}
 
-			let text = ''
-			if (textFromLayout && textFromLayout.trim()) {
-				text = textFromLayout
-			} else if (raw) {
-				// Usa separatore esatto del backend ("\n\f\n"), fallback a solo form-feed
-                const primary = raw.split(/\n\f\n/g)
-                const fallback = raw.split(/\f/g)
-                const parts = primary.length >= fallback.length ? primary : fallback
-                const idx = pageNum - 1
-                if (idx >= 0 && idx < parts.length) {
-                    text = String(parts[idx] || '')
-                } else {
-                    text = ''
-                }
-                try { console.log('[OCR][inspector] split fallback', { parts: parts.length, pickIdx: idx, inRange: (idx>=0 && idx<parts.length), len: text.length }) } catch {}
-				// Non forzare più uno spazio: lasciamo la pagina vuota per evidenziare il fallimento OCR
-			} else {
-				// Fallback: se non abbiamo OCR per questa pagina, prova a leggere il testo nativo della pagina via pdf.js
-				try {
-					const anyPdf: any = (await import('pdfjs-dist/legacy/build/pdf.js')) as any
-					if (anyPdf && anyPdf.getDocument) {
-						const docMeta: any = await api.getDocumento(docId)
-						const fileKey = docMeta?.ocrPdfKey || docMeta?.s3Key
-						if (fileKey) {
-							const url = api.getLocalFileUrl(fileKey)
-							const res = await fetch(url)
-							const buf = await res.arrayBuffer()
-							const pdf = await anyPdf.getDocument({ data: new Uint8Array(buf), disableWorker: true }).promise
-							const p = Math.max(1, Math.min(pageNum, pdf.numPages || 1))
-							const page = await pdf.getPage(p)
-							const content = await page.getTextContent()
-							const items = content.items as any[]
-							text = items.map(it => String(it.str || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ')
-							try { console.log('[OCR][inspector] pdfjs fallback', { pageNum: p, len: text.length }) } catch {}
-						}
-					}
-				} catch {}
-				if (!text) text = '<nessun testo OCR disponibile>'
-			}
-			setOcrInspect({ page: pageNum, text })
-			setOcrInspectOpen(true)
-		} catch (e) {
-			try { console.warn('[OCR][inspector] load error', e) } catch {}
-		}
-	}
-	// ==== OCR INSPECTOR (TEMP) ====
-    function ensureOverlayForPage(pageNum: number): HTMLDivElement | null {
-      const container = hostRef.current as HTMLElement | null
-      if (!container) return null
-      // Usa SEMPRE il layer di pagina di react-pdf-viewer
-      const pages = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
-      const pageEl = (pages && pages.length >= pageNum) ? pages[pageNum - 1] : null
-      if (!pageEl) { console.warn('[GOTO] page layer not found'); return null }
 
-      let overlay = pageEl.querySelector('.ocr-overlay') as HTMLDivElement | null
-      if (!overlay) {
-        overlay = document.createElement('div')
-        overlay.className = 'ocr-overlay'
-        overlay.style.position = 'absolute'
-        overlay.style.inset = '0'
-        overlay.style.pointerEvents = 'none'
-        overlay.style.zIndex = '30'
-        pageEl.style.position = 'relative'
-        pageEl.appendChild(overlay)
-      }
-      // Misure coerenti al layer
-      overlay.style.width = '100%'
-      overlay.style.height = '100%'
-      return overlay
-    }
 
-    function drawOcrRects(matches: Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>, color?: string) {
-      lastOcrMatchesRef.current = matches
-      const byPage = new Map<number, Array<typeof matches[0]>>()
-      for (const m of matches) {
-        if (!byPage.has(m.page)) byPage.set(m.page, [])
-        byPage.get(m.page)!.push(m)
-      }
-      for (const [pageNum, hits] of byPage) {
-        const overlay = ensureOverlayForPage(pageNum)
-        if (!overlay) {
-          // SKIP: pagina non ancora renderizzata (verrà disegnata dopo lo scroll)
-          try { console.log('[GOTO][draw] page not ready, will draw on scroll', { pageNum }) } catch {}
-          continue
-        }
-      overlay.innerHTML = ''
-      const w = overlay.clientWidth
-      const h = overlay.clientHeight
-        try { console.log('[GOTO][draw] overlay size', { pageNum, w, h, hits: hits.length }) } catch {}
-        for (const m of hits) {
-          const x = Math.max(0, Math.min(w, m.x0Pct * w))
-          const y = Math.max(0, Math.min(h, m.y0Pct * h))
-          const rw = Math.max(1, Math.min(w, (m.x1Pct - m.x0Pct) * w))
-          const rh = Math.max(1, Math.min(h, (m.y1Pct - m.y0Pct) * h))
-          const el = document.createElement('div')
-          el.style.position = 'absolute'
-          el.style.left = `${x}px`
-          el.style.top = `${y}px`
-          el.style.width = `${rw}px`
-          el.style.height = `${rh}px`
-          const c = color || 'rgba(59,130,246,1)'
-          el.style.background = c.replace('1)', '.20)')
-          el.style.outline = `2px solid ${c}`
-          el.style.borderRadius = '2px'
-          el.style.pointerEvents = 'none'
-          overlay.appendChild(el)
-          try { console.log('[GOTO][draw] box', { page: pageNum, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct, x, y, rw, rh }) } catch {}
-        }
-      }
-    }
 
-    function drawFixedDebugRect(pageNum: number) {
-      const overlay = ensureOverlayForPage(pageNum)
-      if (!overlay) return
-      const el = document.createElement('div')
-      el.style.position = 'absolute'
-      el.style.left = `10px`
-      el.style.top = `10px`
-      el.style.width = `40px`
-      el.style.height = `20px`
-      el.style.background = 'rgba(220,38,38,.20)'
-      el.style.outline = '2px solid rgba(220,38,38,1)'
-      el.style.borderRadius = '2px'
-      el.style.pointerEvents = 'none'
-      overlay.appendChild(el)
-    }
-
-    useEffect(() => {
-      const onResize = () => {
-        if (!lastOcrMatchesRef.current?.length) return
-        drawOcrRects(lastOcrMatchesRef.current)
-      }
-      
-      // Ridisegna quando l'utente scrolla (pagine diventano visibili)
-      const onScroll = () => {
-        if (!lastOcrMatchesRef.current?.length) return
-        // Debounce per evitare troppi ridisegni
-        clearTimeout((window as any).__ocrScrollTimeout)
-        ;(window as any).__ocrScrollTimeout = setTimeout(() => {
-          drawOcrRects(lastOcrMatchesRef.current!)
-        }, 100)
-      }
-      
-      const scrollContainer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | null
-      
-      window.addEventListener('resize', onResize)
-      scrollContainer?.addEventListener('scroll', onScroll)
-      
-      return () => {
-        window.removeEventListener('resize', onResize)
-        scrollContainer?.removeEventListener('scroll', onScroll)
-        clearTimeout((window as any).__ocrScrollTimeout)
-      }
-    }, [])
-
-	// ==== OCR INSPECTOR (TEMP) ====
-	useEffect(() => {
-		const host = hostRef.current as HTMLElement | null
-		if (!host) return
-		const onClick = (ev: MouseEvent) => {
-			try { console.log('[OCR][inspector][click]') } catch {}
-			let el = ev.target as HTMLElement | null
-			while (
-				el &&
-				!(el as any).dataset?.pageNumber &&
-				!el.getAttribute?.('data-page-number') &&
-				!(el.id || '').startsWith('pageContainer')
-			) {
-				el = el.parentElement
-			}
-			let pageNum = 0
-			if (el) {
-				const ds = (el as any).dataset || {}
-				const pageStr = ds.pageNumber || el.getAttribute?.('data-page-number') || (el.id || '').replace('pageContainer', '')
-				pageNum = Math.max(0, parseInt(String(pageStr || ''), 10))
-			}
-			if (!pageNum) {
-				// Fallback: trova il layer pagina più vicino e mappa via elToPageRef
-				const pageLayer = (ev.target as HTMLElement)?.closest('.rpv-core__page-layer') as HTMLElement | null
-				if (pageLayer) {
-					pageNum = elToPageRef.current.get(pageLayer) || 0
-					if (!pageNum) {
-						const list = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
-						const idx = list.indexOf(pageLayer)
-						pageNum = idx >= 0 ? (idx + 1) : 0
-					}
-				}
-			}
-			if (!pageNum) { try { console.warn('[OCR][inspector] no page resolved') } catch {}; return }
-			try { console.log('[OCR][inspector] page', pageNum) } catch {}
-			loadOcrPageText(pageNum)
-		}
-		host.addEventListener('click', onClick)
-		return () => host.removeEventListener('click', onClick)
-	}, [docId])
-
-	useEffect(() => {
-		const onMove = (e: MouseEvent) => {
-			setOcrDrag(prev => prev.dragging ? { ...prev, x: e.clientX - prev.dx, y: e.clientY - prev.dy } : prev)
-		}
-		const onUp = () => setOcrDrag(prev => prev.dragging ? { ...prev, dragging: false } : prev)
-		window.addEventListener('mousemove', onMove)
-		window.addEventListener('mouseup', onUp)
-		return () => {
-			window.removeEventListener('mousemove', onMove)
-			window.removeEventListener('mouseup', onUp)
-		}
-	}, [])
-	// ==== OCR INSPECTOR (TEMP) ====
 
 	// Quick toggle and load current page via hotkey (Ctrl+O)
 	useEffect(() => {
@@ -633,7 +376,7 @@ const [areas, setAreas] = useState<Area[]>([])
 			if (e.ctrlKey && String(e.key).toLowerCase() === 'o') {
 				e.preventDefault()
 				const p = Math.max(1, parseInt(pageInput || '1', 10))
-				loadOcrPageText(p)
+				// loadOcrPageText(p) // Ora gestito dal componente OcrInspector
 			}
 		}
 		window.addEventListener('keydown', onKey)
@@ -644,35 +387,30 @@ const [areas, setAreas] = useState<Area[]>([])
     useEffect(() => {
       if (!(window as any).__OCR_DEBUG) return
       const t = window.setTimeout(async () => {
-        try { drawFixedDebugRect(1) } catch {}
+        // try { drawFixedDebugRect(1) } catch {} // Ora gestito dal componente OcrInspector
         try {
           const hits = await runSearch('oggetto')
           if (Array.isArray(hits) && hits.length > 0) {
             const h = hits[0]
-            drawOcrRects([{ page: h.page, x0Pct: h.x0Pct!, y0Pct: h.y0Pct!, x1Pct: h.x1Pct!, y1Pct: h.y1Pct! }], 'rgba(16,185,129,1)')
+            // drawOcrRects([{ page: h.page, x0Pct: h.x0Pct!, y0Pct: h.y0Pct!, x1Pct: h.x1Pct!, y1Pct: h.y1Pct! }], 'rgba(16,185,129,1)') // Ora gestito dal componente OcrInspector
           }
         } catch {}
       }, 500)
       return () => window.clearTimeout(t)
     }, [totalPages])
-const pageElsRef = useRef<Map<number, HTMLElement>>(new Map())
 const overlayRootsRef = useRef<Map<number, HTMLElement>>(new Map())
 const selectRootsRef = useRef<Map<number, HTMLElement>>(new Map())
 const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
-const [selectMode, setSelectMode] = useState<boolean>(false)
+const [selectMode, setSelectMode] = useState<boolean>(true) // ✅ SEMPRE ATTIVA
 const mouseDownPageRef = useRef<number | null>(null)
 const mouseDownPosRef = useRef<{ xPct:number; yPct:number } | null>(null)
 const [selectKind, setSelectKind] = useState<'NATIVE'|'OCR'>('NATIVE')
 const [selectTick, setSelectTick] = useState<number>(0)
 const [_selBox, setSelBox] = useState<{ x:number; y:number; w:number; h:number }|null>(null)
-const [extractOpen, setExtractOpen] = useState<boolean>(false)
 	const drawerOptions = getDrawerOptionsSorted()
 	const [extractType, setExtractType] = useState<string>(drawerOptions[0]?.id || 'verbale')
 const [extractNotes, setExtractNotes] = useState<string>('')
 const [showNotes, setShowNotes] = useState<boolean>(false)
-const [extractPage, setExtractPage] = useState<number>(1)
-const [extractPos, setExtractPos] = useState<{ x:number; y:number }>({ x: 100, y: 100 })
-const [lastSelection, setLastSelection] = useState<any|null>(null)
 const [extractTitle, setExtractTitle] = useState<string>('')
 const drawingRef = useRef<{ page:number; startX:number; startY:number; x:number; y:number }|null>(null)
 const openedAtRef = useRef<number>(0)
@@ -1195,7 +933,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			const x1Pct = Math.max(0, Math.min(1, m.x1Pct ?? 1))
 			const y1Pct = Math.max(0, Math.min(1, m.y1Pct ?? 1))
 			console.log('[GOTO][bbox-in]', { page: m.page, x0Pct, y0Pct, x1Pct, y1Pct, prW: pr.width, prH: pr.height })
-			drawOcrRects([{ page: m.page, x0Pct, y0Pct, x1Pct, y1Pct }], 'rgba(59,130,246,1)')
+			// drawOcrRects([{ page: m.page, x0Pct, y0Pct, x1Pct, y1Pct }], 'rgba(59,130,246,1)') // Ora gestito dal componente OcrInspector
 			// Trova highlight native nella pagina corrente
 			const nodes = Array.from(document.querySelectorAll('.rpv-search__highlight')) as HTMLElement[]
 			const onPage = nodes
@@ -1219,7 +957,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 				const nx1 = Math.min(1, (hr.right - pr.left) / pr.width)
 				const ny1 = Math.min(1, (hr.bottom - pr.top) / pr.height)
 				console.log('[GOTO][hi][nearest]', { page: m.page, nx0, ny0, nx1, ny1, bestD })
-				drawOcrRects([{ page: m.page, x0Pct: nx0, y0Pct: ny0, x1Pct: nx1, y1Pct: ny1 }], 'rgba(16,185,129,1)')
+				// drawOcrRects([{ page: m.page, x0Pct: nx0, y0Pct: ny0, x1Pct: nx1, y1Pct: ny1 }], 'rgba(16,185,129,1)') // Ora gestito dal componente OcrInspector
 			}
 		} catch (e) { console.warn('[GOTO][bbox-refine][err]', e) }
 		let root = overlayRootsRef.current.get(m.page)
@@ -1311,21 +1049,45 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			try {
 				if (selectionHandledRef.current) { try { console.log('[NATIVE][guard] already handled') } catch {}; return }
 				const sel = window.getSelection()
-				const raw = String(sel || '')
+				let raw = String(sel || '')
 				console.log('[NATIVE][sel][CRITICAL]', { 
 					hasSel: !!sel, 
 					rangeCount: sel?.rangeCount,
 					rawText: raw,
 					rawLength: raw.length,
-					isEmpty: !raw.trim()
+					isEmpty: !raw.trim(),
+					extractOpen: extractOpen // ✅ DEBUG: controlla se il form è aperto
 				})
 				if (!sel || sel.rangeCount === 0) { 
 					console.warn('[NATIVE][sel] no selection or rangeCount=0')
 					return 
 				}
 				if (!raw || !raw.trim()) { 
-					console.warn('[NATIVE][sel] empty text - selection exists but no text captured')
-					return 
+					// ✅ FIX: Se la selezione esiste ma è vuota, ripristina dal range salvato
+					if (lastNativeRangeRef.current && extractOpen) {
+						console.log('[NATIVE][sel][RESTORE] Ripristinando selezione dal range salvato')
+						try {
+							sel.removeAllRanges()
+							sel.addRange(lastNativeRangeRef.current)
+							const restoredText = sel.toString()
+							console.log('[NATIVE][sel][RESTORED]', { restoredText: restoredText.substring(0, 80) })
+							// Aggiorna raw con il testo ripristinato
+							raw = restoredText
+							if (raw && raw.trim()) {
+								console.log('[NATIVE][sel][SUCCESS] Selezione ripristinata con successo')
+								// Continua con la logica normale usando il testo ripristinato
+							} else {
+								console.warn('[NATIVE][sel][FAIL] Impossibile ripristinare la selezione')
+								return
+							}
+						} catch (e) {
+							console.error('[NATIVE][sel][RESTORE-ERROR]', e)
+							return
+						}
+					} else {
+						console.warn('[NATIVE][sel] empty text - selection exists but no text captured')
+						return 
+					}
 				}
                 const range = sel.getRangeAt(0)
                 lastNativeRangeRef.current = range.cloneRange()
@@ -1679,15 +1441,18 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 					setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
 				}
 				
-				// Apri il dialog
+				// Apri il context menu invece del dialog
 				selectionHandledRef.current = true
-				setExtractOpen(true)
+				setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
 				
 			} catch (error) {
 				console.error('[DRAG][EXTRACT][ERROR]', error)
 			} finally {
-				// Pulisci draft e refs
+				// ✅ NATIVE: rimuovi il rettangolo (c'è la selezione nativa del browser)
 				try { setDraft(null) } catch {}
+				console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo, mantenendo selezione nativa')
+				
+				// Pulisci sempre i refs
 				lastDraftBoxRef.current = null
 				mouseDownPageRef.current = null
 				mouseDownPosRef.current = null
@@ -1884,9 +1649,9 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
             try {
                 const m = detail?.match
                 if (m && m.page && m.x0Pct != null && m.y0Pct != null && m.x1Pct != null && m.y1Pct != null) {
-                    drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)')
+                    // drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)') // Ora gestito dal componente OcrInspector
                     requestAnimationFrame(() => {
-                        try { drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)') } catch {}
+                        // try { drawOcrRects([{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }], 'rgba(16,185,129,1)') } catch {} // Ora gestito dal componente OcrInspector
                     })
                 }
             } catch {}
@@ -2010,18 +1775,6 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 							<StrikethroughIcon size={16} />
 						</button>
                     <button className={`px-2 py-1 rounded border ${audit?'bg-gray-100 border-gray-400':''}`} title="Audit mode (testo digitale)" onClick={()=>setAudit(a=>!a)}>Audit</button>
-                    <button
-                      aria-pressed={selectMode}
-                      className={`px-2 py-1 rounded border ${selectMode ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
-                      title={selectMode ? 'Selezione estratto: ON' : 'Selezione estratto: OFF'}
-                      onClick={(ev)=>{
-                        ev.preventDefault()
-                        const next = !selectMode
-                        try { console.log('[NATIVE][UI] toggle Estratto', { next, selectKind }) } catch {}
-                        setSelectMode(next)
-                        if (!next) { setSelBox(null); setExtractOpen(false); setLastSelection(null); selectionHandledRef.current = false; try { const s = window.getSelection(); s && s.removeAllRanges() } catch {} }
-                      }}
-                    >Estratto</button>
 						<button className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
 							<MessageSquare size={16} />
 						</button>
@@ -2048,42 +1801,6 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                             }
                           }}
                         >Raddrizza</button>
-					{/* Toolbar Save (selection native or OCR) */}
-					<button
-					  className="px-2 py-1 rounded border"
-					  title="Salva estratto"
-					  onClick={()=>{
-					    const title = (extractTitle || '').trim() || 'Estratto'
-					    if (!lastSelection || !(lastSelection.text||'').trim()) { console.warn('[EXTRACT][SAVE][toolbar] no selection'); return }
-					    const payload = {
-					      kind: 'EXTRACT',
-					      type: extractType,
-					      title,
-					      notes: extractNotes || '',
-                          source: { docId: docId || 'current', fileUrl, page: extractPage, range: (lastSelection as any)?.range || null },
-					      viewportBox: lastSelection?.viewportBox || null,
-					      bboxPdf: lastSelection?.bboxPdf || null,
-					      text: lastSelection?.text || '',
-					      createdAt: new Date().toISOString(),
-					    }
-                        // remove debug log
-					    const safe = (s: string) => (s || 'estratto').replace(/[^a-zA-Z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,64)
-					    const fileName = `${safe(title)}_p${extractPage}.json`
-                        try { console.log('[EXTRACT][SAVE][toolbar]', { extractPage, payload }) } catch {}
-					    try {
-					      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-					      const file = new File([blob], fileName, { type: 'application/json' })
-					      const chosen = drawerOptions.find(o => o.id === extractType)
-					      const drawerTitle = chosen?.label || ''
-					      const target = drawerTitle ? { type: 'drawer', title: drawerTitle } : { type: 'archive' }
-					      const ev = new CustomEvent('app:upload-files', { detail: { files: [file], target } })
-					      window.dispatchEvent(ev)
-					      try { window.dispatchEvent(new Event('ai-select-clear')) } catch {}
-					    } catch (e) { console.warn('[EXTRACT][SAVE][toolbar][err]', e) }
-					  }}
-					>
-					  <SaveIcon size={16} />
-					</button>
 					</div>
 				<div className="w-full md:w-auto md:ml-auto flex items-center gap-2 justify-start md:justify-end flex-wrap">
 					<div className="flex items-center gap-1">
@@ -2232,34 +1949,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 					</Worker>
 				</div>
 
-				{/* ==== OCR INSPECTOR (TEMP) ==== */}
-				{ocrInspectOpen && (
-					<div
-						className="fixed z-[99999] bg-white shadow-xl border rounded"
-						style={{ left: ocrDrag.x, top: ocrDrag.y, width: 520, maxHeight: 420, overflow: 'auto' }}
-					>
-						<div
-							className="cursor-move px-3 py-2 border-b bg-gray-50 select-none flex items-center justify-between"
-							onMouseDown={(e) => {
-								setOcrDrag(prev => ({ ...prev, dragging: true, dx: e.clientX - prev.x, dy: e.clientY - prev.y }))
-							}}
-						>
-							<div className="text-sm font-semibold">OCR pagina {ocrInspect?.page || ''}</div>
-							<div className="flex items-center gap-2">
-								<button
-									className="text-xs px-2 py-1 border rounded"
-									onClick={() => setOcrInspectOpen(false)}
-								>
-									Chiudi
-								</button>
-							</div>
-						</div>
-						<div className="p-3 text-xs whitespace-pre-wrap">
-							{(ocrInspect?.text && ocrInspect.text.slice(0, 20000)) || '<vuoto>'}
-						</div>
-					</div>
-				)}
-				{/* ==== OCR INSPECTOR (TEMP) ==== */}
+				{/* OCR Inspector ora gestito dal componente OcrInspector */}
 
                 {/* Overlays */}
 				{[...(selectedAnnot ? [selectedAnnot] : []), ...annots, ...(draft ? [draft] : [])].map(a => {
@@ -2338,7 +2028,18 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
             
 {extractOpen && (
             <React.Fragment>
-      <div className="fixed inset-0 z-[999]" onClick={()=>{ if (!suppressClearRef.current) { setExtractOpen(false); setSelBox(null) } }} />
+      <div className="fixed inset-0 z-[999]" onClick={()=>{ 
+        if (!suppressClearRef.current) { 
+          // ✅ LOGICA INTELLIGENTE: pulisci selezione in base al tipo
+          if (selectKind === 'OCR') {
+            setDraft(null) // OCR: rimuovi rettangolo quando chiudi
+          } else {
+            // NATIVE: mantieni selezione nativa, rimuovi solo selBox
+          }
+          setExtractOpen(false); 
+          setSelBox(null) 
+        } 
+      }} />
                     <div className="fixed z-[1000] bg-white rounded-lg shadow-2xl border border-gray-200" style={{ left: extractPos.x, top: extractPos.y, width: 480, minHeight: 300, maxHeight: Math.min(600, (window.innerHeight||800) - 32) }}>
                             <div className="p-6 max-h-full flex flex-col" onMouseDown={(e)=>{ e.stopPropagation(); suppressClearRef.current = true }} onMouseUp={()=>{ suppressClearRef.current = false }}>
 
@@ -2354,6 +2055,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                         placeholder="Scrivi un titolo per l'estratto…"
                                         value={extractTitle}
                                         onChange={(e)=>setExtractTitle(e.target.value)}
+                                        autoFocus
                                     />
                                 </div>
 
@@ -2398,6 +2100,12 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                 <button
                                     className="px-4 py-2 border border-gray-300 rounded-lg text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                                     onClick={()=>{
+                                        // ✅ LOGICA INTELLIGENTE: pulisci selezione in base al tipo
+                                        if (selectKind === 'OCR') {
+                                            setDraft(null) // OCR: rimuovi rettangolo quando annulli
+                                        } else {
+                                            // NATIVE: mantieni selezione nativa
+                                        }
                                         setSelectedAnnot(null);
                                         setShowNotes(false); // Reset notes visibility
                                         setExtractOpen(false);
@@ -2468,8 +2176,14 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                             } catch {}
                                             // Optionally skip immediate upload; if you want immediate persistence, re-dispatch upload-files
                                         } catch (e) { console.warn('[EXTRACT][SAVE][err]', e) }
-                                        try { window.dispatchEvent(new Event('ai-select-clear')) } catch {}
-                                        try { const s = window.getSelection(); s && s.removeAllRanges() } catch {}
+                                        // ✅ LOGICA INTELLIGENTE: pulisci selezione in base al tipo
+                                        if (selectKind === 'OCR') {
+                                            setDraft(null) // OCR: rimuovi rettangolo dopo salvataggio
+                                        } else {
+                                            // NATIVE: mantieni selezione nativa, rimuovi solo eventi
+                                            try { window.dispatchEvent(new Event('ai-select-clear')) } catch {}
+                                            try { const s = window.getSelection(); s && s.removeAllRanges() } catch {}
+                                        }
                                         selectionHandledRef.current = false
                                         setShowNotes(false); // Reset notes visibility
                                         setExtractOpen(false)
@@ -2525,7 +2239,7 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                 const actualDocId = docId || 'current'
                                 console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found.length })
                                 
-                                const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: found.map((m)=>({
+                                const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: found.map((m: any)=>({
                                     id: m.id,
                                     docId: actualDocId,
                                     docTitle,
@@ -2554,9 +2268,9 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
                                   const cacheKey = `${fileUrl}::${(m.q||'').toLowerCase()}::${docId || 'no-doc'}`
                                   const cached = searchCacheRef.current.get(cacheKey) || []
                                   const matches = cached.map((mm:any)=>({ page:mm.page, x0Pct:mm.x0Pct, y0Pct:mm.y0Pct, x1Pct:mm.x1Pct, y1Pct:mm.y1Pct }))
-                                  drawOcrRects(matches.filter(Boolean))
+                                  // drawOcrRects(matches.filter(Boolean)) // Ora gestito dal componente OcrInspector
                                   const box = [{ page: m.page, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct }]
-                                  const paint = () => { try { drawOcrRects(box) } catch {} }
+                                  const paint = () => { try { /* drawOcrRects(box) */ } catch {} } // Ora gestito dal componente OcrInspector
                                   paint(); setTimeout(paint, 100); setTimeout(paint, 300)
                                 } catch {}
 							}
@@ -2568,6 +2282,27 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 			)}
 		</div>
         {/* global overlay rimosso: usiamo solo overlay per-pagina */}
+		
+		{/* Context Menu */}
+		<ContextMenu
+			contextMenu={contextMenu}
+			lastSelection={lastSelection}
+			pageElsRef={pageElsRef}
+			onContextMenuChange={setContextMenu}
+			onOcrInspectOpenChange={setOcrInspectOpen}
+			onExtractPosChange={setExtractPos}
+			onExtractPageChange={setExtractPage}
+			onExtractOpenChange={setExtractOpen}
+		/>
+
+		{/* OCR Inspector */}
+		<OcrInspector
+			docId={docId}
+			ocrInspectOpen={ocrInspectOpen}
+			onOcrInspectOpenChange={setOcrInspectOpen}
+			hostRef={hostRef}
+			lastOcrMatchesRef={lastOcrMatchesRef}
+		/>
 		</React.Fragment>
 	)
 }
