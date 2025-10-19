@@ -2505,24 +2505,45 @@ const runSearch = async (qOverride?: string): Promise<MatchItem[]> => {
 					</div>
 						
                         <SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={true} onSearch={async(q, _scope)=>{
-                            (setSearchQ as any)(q)
-                            const found = await runSearch(q)
-							const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
-							const actualDocId = docId || 'current'
-							console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found?.length || 0 })
-                            const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: (found || []).map((m)=>({
-								id: m.id,
-								docId: actualDocId,
-								docTitle,
-								kind: 'pdf' as const,
-								page: m.page,
-								q: q,
-								x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct,
-								charIdx: m.charIdx, qLength: m.qLen,
-								snippet: m.snippet,
-								score: 0,
-							})) }]
-                            return { id: cryptoRandom(), query: q, scope: 'current' as any, total: (found || []).length, groups } as any
+                            console.log('[SEARCH][document] Backend search start', { q, docId })
+                            
+                            try {
+                                // ✅ USA LA STESSA API DELL'ARCHIVIO!
+                                const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
+                                const response = await fetch(`${apiUrl}/search/archive?q=${encodeURIComponent(q)}&docId=${docId}`)
+                                
+                                if (!response.ok) throw new Error('Search failed')
+                                const data = await response.json()
+                                
+                                console.log('[SEARCH][document] API response', { total: data.total, matches: data.matches?.length })
+                                
+                                // Converti i risultati nel formato atteso
+                                const found = data.matches || []
+                                setMatches(found)
+                                
+                                const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
+                                const actualDocId = docId || 'current'
+                                console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found.length })
+                                
+                                const groups = [{ doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: found.map((m)=>({
+                                    id: m.id,
+                                    docId: actualDocId,
+                                    docTitle,
+                                    kind: 'pdf' as const,
+                                    page: m.page,
+                                    q: q,
+                                    x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct,
+                                    charIdx: m.charIdx, qLength: m.qLen,
+                                    snippet: m.snippet,
+                                    score: 0,
+                                })) }]
+                                
+                                return { id: cryptoRandom(), query: q, scope: 'current' as any, total: found.length, groups } as any
+                                
+                            } catch (error) {
+                                console.error('[SEARCH][document] API error', error)
+                                return { id: cryptoRandom(), query: q, scope: 'current' as any, total: 0, groups: [] } as any
+                            }
                         }} adapterFactory={() => ({
 							goToMatch: async (m: any) => {
 								try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: m.q }) } catch {}

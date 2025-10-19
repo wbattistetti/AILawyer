@@ -21,7 +21,7 @@ function normalize(text: string): string {
 export async function searchRoutes(fastify: FastifyInstance) {
   
   // Ricerca globale in tutti i documenti dell'archivio
-  fastify.get<{ Querystring: { q?: string; limit?: string } }>(
+  fastify.get<{ Querystring: { q?: string; limit?: string; docId?: string } }>(
     '/search/archive',
     async (request, reply) => {
       try {
@@ -31,6 +31,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
         }
 
         const limit = parseInt(request.query.limit || '50', 10)
+        const docId = request.query.docId // Parametro opzionale per filtrare un documento specifico
         const normalizedQ = normalize(query)
 
         fastify.log.info({ msg: '[SEARCH][archive] start', query, normalizedQ, limit })
@@ -38,6 +39,8 @@ export async function searchRoutes(fastify: FastifyInstance) {
         // 1. Trova documenti con OCR O con testo nativo
         const documenti = await prisma.documento.findMany({
           where: {
+            // Se docId è specificato, filtra solo quel documento
+            ...(docId ? { id: docId } : {}),
             OR: [
               // Documenti con OCR completato
               {

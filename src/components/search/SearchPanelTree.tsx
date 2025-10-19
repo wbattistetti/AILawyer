@@ -28,21 +28,21 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   const onSubmit = () => { 
     if (q.trim()) {
       search(q.trim())
-      setQ('')  // Svuota textbox dopo Enter
+      // Non svuotare più la query per mantenere l'evidenziazione
     }
   }
   const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
   const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
 
-  const renderSnippet = (snippet: string) => {
-    // Usa initialQuery perché q viene svuotato dopo la ricerca
-    const query = (initialQuery || '').trim()
-    if (!query) return <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>{snippet}</span>
-    const idx = snippet.toLowerCase().indexOf(query.toLowerCase())
+  const renderSnippet = (snippet: string, query?: string) => {
+    // Usa la query passata come parametro o fallback a initialQuery
+    const searchQuery = (query || initialQuery || '').trim()
+    if (!searchQuery) return <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>{snippet}</span>
+    const idx = snippet.toLowerCase().indexOf(searchQuery.toLowerCase())
     if (idx < 0) return <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>{snippet}</span>
     const before = snippet.slice(0, idx)
-    const match = snippet.slice(idx, idx + query.length)
-    const after = snippet.slice(idx + query.length)
+    const match = snippet.slice(idx, idx + searchQuery.length)
+    const after = snippet.slice(idx + searchQuery.length)
     return (
       <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>
         {before}
@@ -113,7 +113,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                     onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
                                   >
                                     <TypeIcon size={14} className="text-amber-600" />
-                                    {renderSnippet(m.snippet)}
+                                    {renderSnippet(m.snippet, q)}
                                   </li>
                                 ))}
                               </ul>
