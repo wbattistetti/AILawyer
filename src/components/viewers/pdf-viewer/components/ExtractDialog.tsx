@@ -1,12 +1,11 @@
 import React from 'react'
-import { getDrawerOptionsSorted } from '../../../../features/drawers/drawerRegistry'
 import { formatDocTitle } from '../../../../utils/misc'
 
 interface ExtractDialogProps {
 	extractOpen: boolean
 	extractPos: { x: number; y: number }
 	extractTitle: string
-	extractType: string
+	extractDate: string
 	extractNotes: string
 	extractPage: number
 	showNotes: boolean
@@ -17,7 +16,7 @@ interface ExtractDialogProps {
 	hostRef: React.RefObject<HTMLDivElement>
 	suppressClearRef: React.MutableRefObject<boolean>
 	onExtractTitleChange: (title: string) => void
-	onExtractTypeChange: (type: string) => void
+	onExtractDateChange: (date: string) => void
 	onExtractNotesChange: (notes: string) => void
 	onShowNotesChange: (show: boolean) => void
 	onExtractOpenChange: (open: boolean) => void
@@ -31,7 +30,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	extractOpen,
 	extractPos,
 	extractTitle,
-	extractType,
+	extractDate,
 	extractNotes,
 	extractPage,
 	showNotes,
@@ -42,7 +41,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	hostRef,
 	suppressClearRef,
 	onExtractTitleChange,
-	onExtractTypeChange,
+	onExtractDateChange,
 	onExtractNotesChange,
 	onShowNotesChange,
 	onExtractOpenChange,
@@ -51,7 +50,6 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	onSelectedAnnotChange,
 	onSelectionHandledChange
 }) => {
-	const drawerOptions = getDrawerOptionsSorted()
 
 	if (!extractOpen) return null
 
@@ -83,7 +81,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	const handleSave = () => {
 		const payload = {
 			kind: 'EXTRACT',
-			type: extractType,
+			date: extractDate,
 			title: extractTitle.trim(),
 			notes: extractNotes || '',
 			source: { docId: docId || 'current', fileUrl, page: extractPage, range: (lastSelection as any)?.range || null },
@@ -98,19 +96,12 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 		try {
 			const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
 			const file = new File([blob], fileName, { type: 'application/json' })
-			// Map combo choice to explicit tags so drawers will match regardless of title wording
-			const chosen = drawerOptions.find(o => o.id === extractType)
-			const tags: string[] = chosen ? [chosen.id] : []
+			// Fixed tags for "estratti" drawer
+			const tags: string[] = ['estratti']
 			// Add as in-memory pending extract first (visualize immediately), persistence will happen on Save pratica
 			try {
 			  const pending = ((window as any).__pendingExtracts || []) as Array<any>
-			  const pickColor = () => {
-			    if (tags.includes('verbale_sequestro') || tags.includes('verbale')) return '#fbbf24'
-			    if (tags.includes('intercettazioni')) return '#ec4899'
-			    if (tags.includes('reati')) return '#64748b'
-			    return '#94a3b8'
-			  }
-			  const bg = pickColor()
+			  const bg = '#94a3b8' // Fixed color for estratti
 			  const label = (fileName || 'Estratto').slice(0, 24)
 			  const svg = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 			    <svg xmlns='http://www.w3.org/2000/svg' width='256' height='360'>
@@ -188,19 +179,17 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 							/>
 						</div>
 
-						{/* ✅ Layout ottimizzato: dropdown largo + pulsante stretto affiancati */}
+						{/* ✅ Layout ottimizzato: data + pulsante note affiancati */}
 						<div className="flex items-end gap-2">
 							<div className="flex-[2]">
-								<label className="text-sm block mb-1 font-medium text-gray-700">Aggiungi estratto al cassetto</label>
-								<select 
-									className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" 
-									value={extractType} 
-									onChange={(e)=>onExtractTypeChange(e.target.value)}
-								>
-									{drawerOptions.map((opt)=> (
-									  <option key={opt.id} value={opt.id}>{opt.label}</option>
-									))}
-								</select>
+								<label className="text-sm block mb-1 font-medium text-gray-700">Data *</label>
+								<input
+									type="date"
+									className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+									value={extractDate}
+									onChange={(e)=>onExtractDateChange(e.target.value)}
+									placeholder="GG/MM/AAAA"
+								/>
 							</div>
 
 							<div className="flex-[1]">
@@ -238,7 +227,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 						</button>
 						<button
 							className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 text-[13px] font-medium hover:bg-blue-700 disabled:hover:bg-blue-600 transition-colors"
-							disabled={!extractTitle.trim()}
+							disabled={!extractTitle.trim() || !extractDate.trim()}
 							onClick={handleSave}
 						>
 							Salva

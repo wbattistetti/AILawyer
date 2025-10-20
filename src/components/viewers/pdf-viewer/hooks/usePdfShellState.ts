@@ -53,8 +53,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
   
   // Hook per lo stato dell'estratto
   const {
-    extractType,
-    setExtractType,
+    extractDate,
+    setExtractDate,
     extractNotes,
     setExtractNotes,
     showNotes,
@@ -136,8 +136,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     setAudit,
     
     // Extract state
-    extractType,
-    setExtractType,
+    extractDate,
+    setExtractDate,
     extractNotes,
     setExtractNotes,
     showNotes,

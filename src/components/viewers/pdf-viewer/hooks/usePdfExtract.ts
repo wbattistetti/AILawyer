@@ -3,12 +3,12 @@ import type { Annotation } from './usePdfAnnotations'
 
 export function usePdfExtract() {
 	// Extract dialog state
-	const [extractType, setExtractType] = useState<string>('verbale')
+	const [extractDate, setExtractDate] = useState<string>('')
 	const [extractNotes, setExtractNotes] = useState<string>('')
 	const [showNotes, setShowNotes] = useState<boolean>(false)
 	const [extractTitle, setExtractTitle] = useState<string>('')
 	const [selectedAnnot, setSelectedAnnot] = useState<Annotation | null>(null)
-	
+
 	// Refs for extract functionality
 	const openedAtRef = useRef<number>(0)
 	const isSelectingRef = useRef<boolean>(false)
@@ -18,8 +18,8 @@ export function usePdfExtract() {
 
 	return {
 		// Extract state
-		extractType,
-		setExtractType,
+		extractDate,
+		setExtractDate,
 		extractNotes,
 		setExtractNotes,
 		showNotes,
@@ -28,7 +28,7 @@ export function usePdfExtract() {
 		setExtractTitle,
 		selectedAnnot,
 		setSelectedAnnot,
-		
+
 		// Extract refs
 		openedAtRef,
 		isSelectingRef,

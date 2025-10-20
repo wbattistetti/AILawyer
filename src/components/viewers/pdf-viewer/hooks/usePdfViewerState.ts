@@ -27,8 +27,8 @@ interface UsePdfViewerStateReturn {
 	setExtractOpen: (open: boolean) => void
 	extractTitle: string
 	setExtractTitle: (title: string) => void
-	extractType: string
-	setExtractType: (type: string) => void
+	extractDate: string
+	setExtractDate: (date: string) => void
 	extractNotes: string
 	setExtractNotes: (notes: string) => void
 	showNotes: boolean
@@ -85,7 +85,7 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 	const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false })
 	const [extractOpen, setExtractOpen] = useState<boolean>(false)
 	const [extractTitle, setExtractTitle] = useState<string>('')
-	const [extractType, setExtractType] = useState<string>('verbale')
+	const [extractDate, setExtractDate] = useState<string>('')
 	const [extractNotes, setExtractNotes] = useState<string>('')
 	const [showNotes, setShowNotes] = useState<boolean>(false)
 	const [extractPage, setExtractPage] = useState<number>(1)
@@ -143,8 +143,8 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 		setExtractOpen,
 		extractTitle,
 		setExtractTitle,
-		extractType,
-		setExtractType,
+		extractDate,
+		setExtractDate,
 		extractNotes,
 		setExtractNotes,
 		showNotes,

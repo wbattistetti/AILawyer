@@ -232,8 +232,8 @@ const selectionHandledRef = useRef<boolean>(false)
 
 	// ✅ Hook per lo stato dell'estratto
 	const {
-		extractType,
-		setExtractType,
+		extractDate,
+		setExtractDate,
 		extractNotes,
 		setExtractNotes,
 		showNotes,
@@ -387,7 +387,7 @@ const selectionHandledRef = useRef<boolean>(false)
 			extractOpen={extractOpen}
 			extractPos={extractPos}
 			extractTitle={extractTitle}
-			extractType={extractType}
+			extractDate={extractDate}
 			extractNotes={extractNotes}
 			extractPage={extractPage}
 			showNotes={showNotes}
@@ -398,7 +398,7 @@ const selectionHandledRef = useRef<boolean>(false)
 			hostRef={hostRef}
 			suppressClearRef={suppressClearRef}
 			onExtractTitleChange={setExtractTitle}
-			onExtractTypeChange={setExtractType}
+			onExtractDateChange={setExtractDate}
 			onExtractNotesChange={setExtractNotes}
 			onShowNotesChange={setShowNotes}
 			onExtractOpenChange={setExtractOpen}
