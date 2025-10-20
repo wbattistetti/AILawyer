@@ -151,20 +151,22 @@ export const useNativeSelection = ({
 			host.classList.remove('is-dragging')
 			
 			// ✅ NUOVA LOGICA: Usa le coordinate del draft box invece di window.getSelection()
-			const draftBox = lastDraftBoxRef.current
+			const draftBoxes = lastDraftBoxRef.current
 			console.log('[DRAG][END]', { 
-				hasDraftBox: !!draftBox,
-				draftBox
+				hasDraftBox: !!draftBoxes,
+				draftBoxes
 			})
 			
-			if (!draftBox) {
+			if (!draftBoxes || draftBoxes.length === 0) {
 				console.warn('[DRAG][END] No draft box saved, skipping extraction')
 				try { setDraft(null) } catch {}
 				return
 			}
 			
 			try {
-				const pageNum = draftBox.page
+				// Per compatibilità, prendi la prima pagina (MVP per trans-pagina verrà dopo)
+				const firstDraftBox = draftBoxes[0]
+				const pageNum = firstDraftBox.page
 				const pageLayer = pageElsRef.current.get(pageNum)
 				
 				if (!pageLayer) {
@@ -184,13 +186,13 @@ export const useNativeSelection = ({
 				
 				// Converti percentuali in coordinate pixel
 				const viewportBox = {
-					x: draftBox.x0Pct * pr.width,
-					y: draftBox.y0Pct * pr.height,
-					w: (draftBox.x1Pct - draftBox.x0Pct) * pr.width,
-					h: (draftBox.y1Pct - draftBox.y0Pct) * pr.height
+					x: firstDraftBox.x0Pct * pr.width,
+					y: firstDraftBox.y0Pct * pr.height,
+					w: (firstDraftBox.x1Pct - firstDraftBox.x0Pct) * pr.width,
+					h: (firstDraftBox.y1Pct - firstDraftBox.y0Pct) * pr.height
 				}
 				
-				console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox })
+				console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox: firstDraftBox })
 				
 				// Estrai il testo usando le coordinate del rettangolo
 				const { text } = await getSelectedTextInRect(textLayer, viewportBox)
@@ -349,6 +351,21 @@ export const useNativeSelection = ({
 				const x = Math.max(0, Math.min((ev.clientX - r.left) / r.width, 1))
 				const y = Math.max(0, Math.min((ev.clientY - r.top) / r.height, 1))
 				
+				// ✅ DETECT CROSS-PAGE: Controlla se il mouse ha superato i bordi della pagina
+				const crossedRightBoundary = x >= 0.95 && ev.clientX > r.right
+				const crossedLeftBoundary = x <= 0.05 && ev.clientX < r.left
+				const crossedBottomBoundary = y >= 0.95 && ev.clientY > r.bottom
+				const crossedTopBoundary = y <= 0.05 && ev.clientY < r.top
+				
+				// Se crossa un bordo, inizia la logica trans-pagina
+				if (crossedRightBoundary || crossedLeftBoundary || crossedBottomBoundary || crossedTopBoundary) {
+					console.log('[DRAG][CROSS-PAGE]', { 
+						crossedRightBoundary, crossedLeftBoundary, crossedBottomBoundary, crossedTopBoundary,
+						mouseX: ev.clientX, mouseY: ev.clientY,
+						pageRect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+					})
+				}
+				
 				const draftBox = {
 					id: 'draft', 
 					page: mouseDownPageRef.current, 
@@ -428,13 +445,13 @@ export const useNativeSelection = ({
 				})
 				
 				// Salva le coordinate del draft per l'estrazione testo
-				lastDraftBoxRef.current = {
+				lastDraftBoxRef.current = [{
 					page: draftBox.page,
 					x0Pct: draftBox.x0Pct,
 					y0Pct: draftBox.y0Pct,
 					x1Pct: draftBox.x1Pct,
 					y1Pct: draftBox.y1Pct
-				}
+				}]
 				
 				// Mostra box stabile durante drag
 				setDraft(draftBox)
