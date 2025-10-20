@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
 // import { PdfReader } from '../../components/viewers/PdfReader'
 import { VerifyPdfViewer } from '../viewers/VerifyPdfViewer'
+import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
 // import { OcrVerify } from '../../components/ocr/OcrVerify'
@@ -92,6 +93,9 @@ export function PraticaCanvasPage() {
   const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null)
   const [showAnalysis, setShowAnalysis] = useState<boolean>(false)
   const [archiveUploadingCount, setArchiveUploadingCount] = useState<number>(0)
+  
+  // Test mode for new PdfViewerShell
+  const [testNewViewer, setTestNewViewer] = useState(false)
 
   // Dropzone: applicata alla colonna sinistra
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -614,198 +618,55 @@ export function PraticaCanvasPage() {
   const renderDocViewer = (doc: Documento) => (
     <div className="flex-1 overflow-hidden flex flex-col h-full">
       <div className="border-b px-2 py-1 text-sm flex items-center gap-2">
+        {/* Aggiungi questo pulsante di toggle */}
+        <button
+          className={`px-2 py-1 rounded ${testNewViewer ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}
+          onClick={() => setTestNewViewer(v => !v)}
+          title="Test Nuovo Viewer"
+        >
+          {testNewViewer ? '🆕 Nuovo Viewer' : '✅ Vecchio Viewer'}
+        </button>
+        
         <button
           className={`px-2 py-1 rounded ${verifyEnabled ? 'bg-blue-100 text-blue-700' : 'hover:bg-muted'}`}
           onClick={() => setVerifyEnabled(v => !v)}
           title="Attiva/Disattiva Verify"
-        >Verify {verifyEnabled ? 'ON' : 'OFF'}</button>
+        >
+          Verify {verifyEnabled ? 'ON' : 'OFF'}
+        </button>
       </div>
+
+      {/* Aggiungi indicator di test */}
+      {testNewViewer && (
+        <div className="bg-yellow-100 text-yellow-800 p-1 text-xs text-center">
+          🆕 TESTING PdfViewerShell - Ctrl+Shift+V per toggle
+        </div>
+      )}
+
       {/* Panel content */}
       <div className="flex-1 overflow-hidden">
-        <div
-            className="h-full relative overflow-x-hidden overflow-hidden"
-            ref={verifyHostRef}
-            tabIndex={0}
-            onPointerMove={async (e) => {
-              if (!verifyEnabled || verifyPinned) { setVerifyHover(null); return }
-              const pageEl = (e.target as HTMLElement)?.closest('[data-vp-page]') as HTMLElement | null
-              if (!pageEl) { setVerifyHover(null); return }
-              const pageNum = Number((pageEl as any).dataset.pageNum) || (syncPage || 1)
-              const rect = pageEl.getBoundingClientRect()
-              const vp = verifyPageSize[pageNum]
-              if (!vp) { setVerifyHover(null); return }
-              const insideY = (e as unknown as PointerEvent).clientY - rect.top
-              const yMousePdf = (insideY / rect.height) * vp.height
-
-              // Prefer PDF OCR text layer quando disponibile
-              if (doc.ocrPdfKey) {
-                if (!verifyDocRef.current) {
-                  try { const task = pdfjsLib.getDocument({ url: api.getLocalFileUrl(doc.ocrPdfKey) }); verifyDocRef.current = await task.promise } catch { return }
-                }
-                if (!verifyLinesByPage[pageNum]) {
-                  try {
-                    const page = await verifyDocRef.current.getPage(pageNum)
-                    const vpObj = page.getViewport({ scale: 1, rotation: (page as any).rotate || 0 })
-                    const tc = await page.getTextContent()
-                    setVerifyPageSize(prev => ({ ...prev, [pageNum]: { width: vpObj.width, height: vpObj.height } }))
-                    const items = (tc.items as any[])
-                    let avgH = 0
-                    for (const it of items) avgH += (it.height || 10)
-                    avgH = items.length ? avgH / items.length : 10
-                    const thr = Math.max(2, avgH * 0.6)
-                    type LineAgg = { y0: number; y1: number; x0: number; x1: number; parts: { x: number; str: string; h: number }[]; yMid: number; sumH: number; n: number }
-                    const aggs: LineAgg[] = []
-                    for (const it of items) {
-                      const t = it.transform
-                      const x = t[4] as number
-                      const yTop = t[5] as number
-                      const h = (it.height as number) || 10
-                      const w = (it.width as number) || ((it.str?.length || 1) * h * 0.5)
-                      const yMid = vpObj.height - (yTop - h / 2)
-                      let target: LineAgg | null = null
-                      for (const ln of aggs) { if (Math.abs(ln.yMid - yMid) <= thr) { target = ln; break } }
-                      if (!target) { target = { y0: yTop - h, y1: yTop, x0: x, x1: x + w, parts: [], yMid, sumH: 0, n: 0 }; aggs.push(target) }
-                      else {
-                        target.y0 = Math.min(target.y0, yTop - h)
-                        target.y1 = Math.max(target.y1, yTop)
-                        target.x0 = Math.min(target.x0, x)
-                        target.x1 = Math.max(target.x1, x + w)
-                        target.yMid = (target.yMid + yMid) / 2
-                      }
-                      target.parts.push({ x, str: (it as any).str || '', h })
-                      target.sumH += h
-                      target.n += 1
-                    }
-                    const lines = aggs.map(ln => {
-                      const sorted = ln.parts.sort((p1: any, p2: any) => p1.x - p2.x)
-                      const text = sorted.map((p: any) => p.str).join(' ').replace(/\.{2,}/g, ' ').replace(/\s+/g, ' ').trim()
-                      const avgH2 = ln.n ? ln.sumH / ln.n : (ln.y1 - ln.y0)
-                      return { y: ln.y0, y1: ln.y1, x: ln.x0, x1: ln.x1, text, mid: ln.yMid, avgH: avgH2 }
-                    })
-                    setVerifyLinesByPage(prev => ({ ...prev, [pageNum]: lines }))
-                  } catch {}
-                }
-                const lines = verifyLinesByPage[pageNum]
-                if (!lines || !lines.length) { setVerifyHover(null); return }
-                const vpH = vp.height
-                let best = lines[0]
-                let bestDist = Math.abs(((best.y + best.y1) / 2) - yMousePdf)
-                for (const l of lines) { const d = Math.abs(((l.y + l.y1) / 2) - yMousePdf); if (d < bestDist) { best = l; bestDist = d } }
-                const vpW = vp.width
-                const lineHPdf = best.avgH || (best.y1 - best.y)
-                const gapPdf = Math.max(lineHPdf * 0.5, 6 * (vpH / rect.height))
-                const gapPct = 100 * (gapPdf / vpH)
-                const text = (best.text || '').trim()
-                if (!text) { setVerifyHover(null); return }
-                setVerifyHover({ text, page: pageNum, pdfX0: best.x, pdfX1: best.x1, pdfY0: best.y, pdfY1: best.y1, vpW, vpH, gapPct })
-                // dynamic font sizing skipped for now
-                return
-              }
-
-              // Fallback A: usa ocrLayout precomputato
-              try {
-                const raw: any = (doc as any).ocrLayout
-                if (!raw) { setVerifyHover(null); return }
-                let arr: any = Array.isArray(raw) ? raw : JSON.parse(raw)
-                const lay = arr.find((p: any) => p?.page === pageNum) || arr[0]
-                if (!lay || !Array.isArray(lay.words)) { setVerifyHover(null); return }
-                if (!verifyLinesByPage[pageNum]) {
-                  type Word = { x0: number; x1: number; y0: number; y1: number; text: string }
-                  const words = (lay.words as Word[])
-                  const heights = words.map(w => (w.y1 - w.y0))
-                  const avgH = heights.length ? heights.reduce((a, b) => a + b, 0) / heights.length : 10
-                  const thr = Math.max(2, avgH * 0.6)
-                  type Agg = { y0: number; y1: number; x0: number; x1: number; yMid: number; parts: { x: number; text: string; h: number }[]; sumH: number; n: number }
-                  const aggs: Agg[] = []
-                  for (const w of words) {
-                    const yMid = (w.y0 + w.y1) / 2
-                    let target: Agg | null = null
-                    for (const ln of aggs) { if (Math.abs(ln.yMid - yMid) <= thr) { target = ln; break } }
-                    if (!target) { target = { y0: w.y0, y1: w.y1, x0: w.x0, x1: w.x1, yMid, parts: [], sumH: 0, n: 0 }; aggs.push(target) }
-                    else {
-                      target.y0 = Math.min(target.y0, w.y0)
-                      target.y1 = Math.max(target.y1, w.y1)
-                      target.x0 = Math.min(target.x0, w.x0)
-                      target.x1 = Math.max(target.x1, w.x1)
-                      target.yMid = (target.yMid + yMid) / 2
-                    }
-                    target.parts.push({ x: w.x0, text: w.text, h: (w.y1 - w.y0) })
-                    target.sumH += (w.y1 - w.y0)
-                    target.n += 1
-                  }
-                  const lines: VLine[] = aggs.map(a => {
-                    const sorted = a.parts.sort((p, q) => p.x - q.x)
-                    const text = sorted.map(p => p.text).join(' ').replace(/\.{2,}/g, ' ').replace(/\s+/g, ' ').trim()
-                    const avgH2 = a.n ? a.sumH / a.n : (a.y1 - a.y0)
-                    return { y: a.y0, y1: a.y1, x: a.x0, x1: a.x1, text, mid: a.yMid, avgH: avgH2 }
-                  })
-                  setVerifyLinesByPage(prev => ({ ...prev, [pageNum]: lines }))
-                  setVerifyPageSize(prev => ({ ...prev, [pageNum]: { width: lay.width || 595, height: lay.height || 842 } }))
-                }
-                const lines = verifyLinesByPage[pageNum]
-                if (!lines || !lines.length) { setVerifyHover(null); return }
-                const pdfH = vp.height
-                const pdfW = vp.width
-                const yPdf = yMousePdf
-                let best = lines[0]
-                let bestDist = Math.abs(((best.y + best.y1) / 2) - yPdf)
-                for (const l of lines) { const d = Math.abs(((l.y + l.y1) / 2) - yPdf); if (d < bestDist) { best = l; bestDist = d } }
-                const gapPdf = Math.max((best.avgH || (best.y1 - best.y)) * 0.5, 6 * (pdfH / rect.height))
-                const gapPct = 100 * (gapPdf / pdfH)
-                const text = (best.text || '').trim()
-                if (!text) { setVerifyHover(null); return }
-                setVerifyHover({ text, page: pageNum, pdfX0: best.x, pdfX1: best.x1, pdfY0: best.y, pdfY1: best.y1, vpW: pdfW, vpH: pdfH, gapPct })
-                // dynamic font sizing skipped for now
-              } catch { if (verifyDebug) console.log('[VERIFY] ocrLayout parse error'); setVerifyHover(null) }
-
-              // Fallback B: se non c'è ocrPdfKey né ocrLayout, prova PDF originale (come sopra)
-            }}
-            onMouseLeave={() => { if (!verifyPinned) setVerifyHover(null) }}
-            onKeyDown={(ev)=>{
-              if (ev.key === 'F2') {
-                if (verifyEnabled && verifyHover && !verifyPinned) { setVerifyPinned(true); setVerifyEditText(verifyHover.text) }
-              }
-              if (ev.key === 'F9') { setVerifyDebug(v => !v) }
-              if (verifyPinned && (ev.key === 'Escape' || ev.key === 'Enter')) {
-                setVerifyPinned(false)
-                setVerifyHover(null)
-              }
-            }}
-          >
-            <VerifyPdfViewer
-              fileUrl={api.getLocalFileUrl(doc.s3Key)}
-              page={syncPage || 1}
-              lines={verifyLinesByPage[syncPage || 1] as any}
-              docId={doc.id}
-              onPageChange={(p)=> setSyncPage(p)}
-            />
-
-            {/* Overlay per hover/tooltip: montato nel wrapper pagina e posizionato in % */}
-            {verifyEnabled && verifyHover && pageRefs.get(verifyHover.page) && createPortal(
-              (() => {
-                const { pdfX0, pdfX1, pdfY0, pdfY1, vpW, vpH, gapPct, text } = verifyHover
-                const leftPct = 100 * (pdfX0 / vpW)
-                const topPct = 100 * (pdfY0 / vpH)
-                const widthPct = 100 * ((pdfX1 - pdfX0) / vpW)
-                const heightPct = 100 * ((pdfY1 - pdfY0) / vpH)
-                const tooltipTopPct = topPct + heightPct + gapPct
-                return (
-                  <>
-                    <div className="absolute pointer-events-none border-2 border-blue-500/70 bg-blue-200/20 rounded" style={{ left: `${leftPct}%`, top: `${topPct}%`, width: `${widthPct}%`, height: `${heightPct}%` }} />
-                    {verifyPinned ? (
-                      <textarea className="absolute bg-white px-2 py-1 rounded shadow border outline-none" style={{ left: `${leftPct}%`, top: `${tooltipTopPct}%`, width: `${widthPct}%` }} value={verifyEditText} onChange={(ev)=>setVerifyEditText(ev.target.value)} />
-                    ) : (
-                      <div className="absolute pointer-events-auto bg-black/80 text-white px-2 py-1 rounded shadow flex items-center" style={{ left: `${leftPct}%`, top: `${tooltipTopPct}%`, maxWidth: '100%' }}>
-                        <span style={{ display:'block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{text}</span>
-                      </div>
-                    )}
-                  </>
-                )
-              })(), pageRefs.get(verifyHover.page) as HTMLElement)
-            }
-          </div>
-        </div>
+        {/* SOSTITUISCI il VerifyPdfViewer con questo: */}
+        {testNewViewer ? (
+          // 🔥 NUOVO PDF VIEWER SHELL (IN TEST)
+          <PdfViewerShell
+            fileUrl={api.getLocalFileUrl(doc.s3Key)}
+            page={syncPage || 1}
+            lines={verifyLinesByPage[syncPage || 1] as any}
+            docId={doc.id}
+            onPageChange={(p)=> setSyncPage(p)}
+          />
+        ) : (
+          // ✅ VECCHIO VERIFY PDF VIEWER (SICURO)
+          <VerifyPdfViewer
+            fileUrl={api.getLocalFileUrl(doc.s3Key)}
+            page={syncPage || 1}
+            lines={verifyLinesByPage[syncPage || 1] as any}
+            docId={doc.id}
+            onPageChange={(p)=> setSyncPage(p)}
+          />
+        )}
       </div>
+    </div>
   )
 
   const handleRemoveThumb = async (documentId: string) => {
@@ -1551,34 +1412,35 @@ export function PraticaCanvasPage() {
       }
     }
     
-    const handleDragLeave = () => {
-      dragCounter--
-      if (dragCounter < 0) dragCounter = 0
-    }
-    
-    const handleDrop = () => {
-      dragCounter = 0
-    }
-    
-    const handleDragOver = (e: DragEvent) => {
-      // Necessary to allow drop
+    const handleDragLeave = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
-        e.preventDefault()
+        dragCounter--
+        if (dragCounter === 0) {
+          // Last leave, restore previous tab
+          dockV2Ref.current?.restorePreviousTab()
+        }
       }
     }
     
-    window.addEventListener('dragenter', handleDragEnter as any)
-    window.addEventListener('dragleave', handleDragLeave as any)
-    window.addEventListener('drop', handleDrop as any)
-    window.addEventListener('dragover', handleDragOver as any)
-    
+    document.addEventListener('dragenter', handleDragEnter)
+    document.addEventListener('dragleave', handleDragLeave)
     return () => {
-      window.removeEventListener('dragenter', handleDragEnter as any)
-      window.removeEventListener('dragleave', handleDragLeave as any)
-      window.removeEventListener('drop', handleDrop as any)
-      window.removeEventListener('dragover', handleDragOver as any)
+      document.removeEventListener('dragenter', handleDragEnter)
+      document.removeEventListener('dragleave', handleDragLeave)
     }
   }, [])
+  
+  // Hotkey for toggling between old and new viewer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        setTestNewViewer(prev => !prev);
+        console.log('🔄 Toggled viewer:', !testNewViewer ? 'PdfViewerShell' : 'VerifyPdfViewer');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [testNewViewer]);
 
   const renderEvents = useCallback(() => <EventsTab currentDocId={selectedDocId || undefined} />, [selectedDocId])
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
