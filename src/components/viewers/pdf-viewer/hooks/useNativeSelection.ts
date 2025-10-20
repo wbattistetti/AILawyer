@@ -37,13 +37,13 @@ export const useNativeSelection = ({
 	const isSelectingRef = useRef(false)
 	const mouseDownPageRef = useRef<number | null>(null)
 	const mouseDownPosRef = useRef<{ xPct: number; yPct: number } | null>(null)
-	const lastDraftBoxRef = useRef<{
+	const lastDraftBoxRef = useRef<Array<{
 		page: number
 		x0Pct: number
 		y0Pct: number
 		x1Pct: number
 		y1Pct: number
-	} | null>(null)
+	}> | null>(null)
 	const timerRef = useRef<number | null>(null)
 
 	const handleSelection = useCallback(() => {
