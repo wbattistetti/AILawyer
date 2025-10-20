@@ -144,181 +144,213 @@ export const useNativeSelection = ({
 			}
 			if (timer) window.clearTimeout(timer)
 			
-			console.log('[NATIVE][DEBUG] MouseUp - isSelecting: false, removing is-dragging class')
-			console.log('[NATIVE][event] mouseup within viewer', { x: ev.clientX, y: ev.clientY, wasSelecting: isSelectingRef.current })
+			console.log('[NATIVE][DEBUG] MouseUp - isSelecting:', isSelectingRef.current, 'removing is-dragging class')
 			
-			isSelectingRef.current = false
-			host.classList.remove('is-dragging')
-			
-			// ✅ NUOVA LOGICA: Usa le coordinate del draft box invece di window.getSelection()
-			const draftBoxes = lastDraftBoxRef.current
-			console.log('[DRAG][END]', { 
-				hasDraftBox: !!draftBoxes,
-				draftBoxes
-			})
-			
-			if (!draftBoxes || draftBoxes.length === 0) {
-				console.warn('[DRAG][END] No draft box saved, skipping extraction')
-				try { setDraft(null) } catch {}
-				return
+			// Rimuovi classe dragging
+			if (hostRef.current) {
+				hostRef.current.classList.remove('is-dragging')
 			}
 			
-			try {
-				// Per compatibilità, prendi la prima pagina (MVP per trans-pagina verrà dopo)
-				const firstDraftBox = draftBoxes[0]
-				const pageNum = firstDraftBox.page
-				const pageLayer = pageElsRef.current.get(pageNum)
-				
-				if (!pageLayer) {
-					console.warn('[DRAG][END] No page layer found for page', pageNum)
-					try { setDraft(null) } catch {}
-					return
-				}
-				
-				const textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
-				if (!textLayer) {
-					console.warn('[DRAG][END] No text layer found for page', pageNum)
-					try { setDraft(null) } catch {}
-					return
-				}
-				
-				const pr = pageLayer.getBoundingClientRect()
-				
-				// Converti percentuali in coordinate pixel
-				const viewportBox = {
-					x: firstDraftBox.x0Pct * pr.width,
-					y: firstDraftBox.y0Pct * pr.height,
-					w: (firstDraftBox.x1Pct - firstDraftBox.x0Pct) * pr.width,
-					h: (firstDraftBox.y1Pct - firstDraftBox.y0Pct) * pr.height
-				}
-				
-				console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox: firstDraftBox })
-				
-				// Estrai il testo usando le coordinate del rettangolo
-				const { text } = await getSelectedTextInRect(textLayer, viewportBox)
-				
-				console.log('[DRAG][EXTRACT][TEXT]', { 
-					textLength: text.length, 
-					textPreview: text.substring(0, 100)
+			// Log posizione mouse
+			console.log('[NATIVE][event] mouseup within viewer', { 
+				x: ev.clientX, y: ev.clientY, 
+				wasSelecting: isSelectingRef.current 
+			})
+			
+			// Se stava selezionando, gestisci fine drag
+			if (isSelectingRef.current) {
+				console.log('[DRAG][END]', { 
+					hasDraftBox: !!lastDraftBoxRef.current, 
+					draftBoxes: lastDraftBoxRef.current 
 				})
 				
-				// ✅ NUOVO: Crea selezione nativa programmaticamente dalle coordinate del rettangolo
-				try {
-					const textLayerRect = textLayer.getBoundingClientRect()
-					const spans = Array.from(textLayer.querySelectorAll<HTMLElement>('span'))
+				if (lastDraftBoxRef.current && lastDraftBoxRef.current.length > 0) {
+					console.log('[DRAG][END] Processing draft boxes:', lastDraftBoxRef.current)
 					
-					const spansInBox: HTMLElement[] = []
-					for (const span of spans) {
-						const r = span.getBoundingClientRect()
-						const yTop = r.top - textLayerRect.top
-						const yBot = r.bottom - textLayerRect.top
-						const xLeft = r.left - textLayerRect.left
-						const xRight = r.right - textLayerRect.left
-						
-						// Controlla se lo span interseca il rettangolo
-						const overlap = !(xRight < viewportBox.x || xLeft > (viewportBox.x + viewportBox.w) || 
-										 yBot < viewportBox.y || yTop > (viewportBox.y + viewportBox.h))
-						
-						if (overlap) spansInBox.push(span)
-					}
-					
-					console.log('[NATIVE-SEL][CREATE]', { 
-						spansFound: spansInBox.length,
-						boxCoords: viewportBox
+					// Per MVP: usa solo il primo box (pagina originale)
+					const firstBox = lastDraftBoxRef.current[0]
+					console.log('[DRAG][EXTRACT][START]', { 
+						pageNum: firstBox.page, 
+						viewportBox: firstBox, 
+						draftBox: firstBox 
 					})
 					
-					if (spansInBox.length > 0) {
-						// Ordina gli span per posizione (top -> bottom, left -> right)
-						spansInBox.sort((a, b) => {
-							const ra = a.getBoundingClientRect()
-							const rb = b.getBoundingClientRect()
-							const diffY = (ra.top - textLayerRect.top) - (rb.top - textLayerRect.top)
-							if (Math.abs(diffY) > 5) return diffY // Diversa riga
-							return (ra.left - textLayerRect.left) - (rb.left - textLayerRect.left) // Stessa riga, ordina per x
+					// ✅ NUOVA LOGICA: Usa le coordinate del draft box invece di window.getSelection()
+					const draftBoxes = lastDraftBoxRef.current
+					console.log('[DRAG][END]', { 
+						hasDraftBox: !!draftBoxes,
+						draftBoxes
+					})
+					
+					if (!draftBoxes || draftBoxes.length === 0) {
+						console.warn('[DRAG][END] No draft box saved, skipping extraction')
+						try { setDraft(null) } catch {}
+						return
+					}
+					
+					try {
+						// Per compatibilità, prendi la prima pagina (MVP per trans-pagina verrà dopo)
+						const firstDraftBox = draftBoxes[0]
+						const pageNum = firstDraftBox.page
+						const pageLayer = pageElsRef.current.get(pageNum)
+						
+						if (!pageLayer) {
+							console.warn('[DRAG][END] No page layer found for page', pageNum)
+							try { setDraft(null) } catch {}
+							return
+						}
+						
+						const textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
+						if (!textLayer) {
+							console.warn('[DRAG][END] No text layer found for page', pageNum)
+							try { setDraft(null) } catch {}
+							return
+						}
+						
+						const pr = pageLayer.getBoundingClientRect()
+						
+						// Converti percentuali in coordinate pixel
+						const viewportBox = {
+							x: firstDraftBox.x0Pct * pr.width,
+							y: firstDraftBox.y0Pct * pr.height,
+							w: (firstDraftBox.x1Pct - firstDraftBox.x0Pct) * pr.width,
+							h: (firstDraftBox.y1Pct - firstDraftBox.y0Pct) * pr.height
+						}
+						
+						console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox: firstDraftBox })
+						
+						// Estrai il testo usando le coordinate del rettangolo
+						const { text } = await getSelectedTextInRect(textLayer, viewportBox)
+						
+						console.log('[DRAG][EXTRACT][TEXT]', { 
+							textLength: text.length, 
+							textPreview: text.substring(0, 100)
 						})
 						
-						// Crea Range dal primo all'ultimo span
-						const range = document.createRange()
-						const firstSpan = spansInBox[0]
-						const lastSpan = spansInBox[spansInBox.length - 1]
-						
-						// Seleziona dall'inizio del primo span alla fine dell'ultimo
-						const firstNode = firstSpan.firstChild || firstSpan
-						const lastNode = lastSpan.lastChild || lastSpan
-						
-						range.setStart(firstNode, 0)
-						range.setEnd(lastNode, lastNode.textContent?.length || 0)
-						
-						// Applica la selezione
-						const sel = window.getSelection()
-						if (sel) {
-							sel.removeAllRanges()
-							sel.addRange(range)
-							console.log('[NATIVE-SEL][APPLIED]', { 
-								selectedText: sel.toString().substring(0, 80),
-								rangeText: range.toString().substring(0, 80)
+						// ✅ NUOVO: Crea selezione nativa programmaticamente dalle coordinate del rettangolo
+						try {
+							const textLayerRect = textLayer.getBoundingClientRect()
+							const spans = Array.from(textLayer.querySelectorAll<HTMLElement>('span'))
+							
+							const spansInBox: HTMLElement[] = []
+							for (const span of spans) {
+								const r = span.getBoundingClientRect()
+								const yTop = r.top - textLayerRect.top
+								const yBot = r.bottom - textLayerRect.top
+								const xLeft = r.left - textLayerRect.left
+								const xRight = r.right - textLayerRect.left
+								
+								// Controlla se lo span interseca il rettangolo
+								const overlap = !(xRight < viewportBox.x || xLeft > (viewportBox.x + viewportBox.w) || 
+												 yBot < viewportBox.y || yTop > (viewportBox.y + viewportBox.h))
+								
+								if (overlap) spansInBox.push(span)
+							}
+							
+							console.log('[NATIVE-SEL][CREATE]', { 
+								spansFound: spansInBox.length,
+								boxCoords: viewportBox
 							})
+							
+							if (spansInBox.length > 0) {
+								// Ordina gli span per posizione (top -> bottom, left -> right)
+								spansInBox.sort((a, b) => {
+									const ra = a.getBoundingClientRect()
+									const rb = b.getBoundingClientRect()
+									const diffY = (ra.top - textLayerRect.top) - (rb.top - textLayerRect.top)
+									if (Math.abs(diffY) > 5) return diffY // Diversa riga
+									return (ra.left - textLayerRect.left) - (rb.left - textLayerRect.left) // Stessa riga, ordina per x
+								})
+								
+								// Crea Range dal primo all'ultimo span
+								const range = document.createRange()
+								const firstSpan = spansInBox[0]
+								const lastSpan = spansInBox[spansInBox.length - 1]
+								
+								// Seleziona dall'inizio del primo span alla fine dell'ultimo
+								const firstNode = firstSpan.firstChild || firstSpan
+								const lastNode = lastSpan.lastChild || lastSpan
+								
+								range.setStart(firstNode, 0)
+								range.setEnd(lastNode, lastNode.textContent?.length || 0)
+								
+								// Applica la selezione
+								const sel = window.getSelection()
+								if (sel) {
+									sel.removeAllRanges()
+									sel.addRange(range)
+									console.log('[NATIVE-SEL][APPLIED]', { 
+										selectedText: sel.toString().substring(0, 80),
+										rangeText: range.toString().substring(0, 80)
+									})
+								}
+							} else {
+								console.warn('[NATIVE-SEL] No spans found in box')
+							}
+						} catch (err) {
+							console.error('[NATIVE-SEL][ERROR]', err)
 						}
-					} else {
-						console.warn('[NATIVE-SEL] No spans found in box')
+						
+						// Calcola posizione pannello
+						const panelW = 460, panelH = 260
+						let px = pr.left + viewportBox.x + (viewportBox.w - panelW) / 2
+						let py = pr.top + viewportBox.y + (viewportBox.h - panelH) / 2
+						px = Math.max(8, Math.min(px, (window.innerWidth||1200) - panelW - 8))
+						py = Math.max(8, Math.min(py, (window.innerHeight||800) - panelH - 8))
+						
+						setExtractPos({ x: px, y: py })
+						setExtractPage(pageNum)
+						
+						// Calcola PDF coordinates
+						try {
+							if (pdfDocRef.current) {
+								const page = await pdfDocRef.current.getPage(pageNum)
+								const base = page.getViewport({ scale: 1 })
+								const domW = pr.width
+								const scale = Math.max(0.1, domW / base.width)
+								const vp = page.getViewport({ scale })
+								const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
+								const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
+								
+								const selection = { 
+									pdfPageNumber: pageNum, 
+									bboxPdf: { x0, y0, x1, y1 }, 
+									viewportBox, 
+									text 
+								}
+								
+								console.log('[DRAG][EXTRACT][SET-SELECTION]', { hasText: !!text, textLen: text.length })
+								setLastSelection(selection)
+							} else {
+								setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+							}
+						} catch (e) {
+							console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
+							setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+						}
+						
+						// Apri il context menu invece del dialog
+						selectionHandledRef.current = true
+						setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
+						
+					} catch (error) {
+						console.error('[DRAG][EXTRACT][ERROR]', error)
+					} finally {
+						// ✅ NATIVE: rimuovi il rettangolo (c'è la selezione nativa del browser)
+						try { setDraft(null) } catch {}
+						console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo, mantenendo selezione nativa')
+						
+						// Pulisci sempre i refs
+						lastDraftBoxRef.current = null
+						mouseDownPageRef.current = null
+						mouseDownPosRef.current = null
 					}
-				} catch (err) {
-					console.error('[NATIVE-SEL][ERROR]', err)
+				} else {
+					console.log('[DRAG][END] No draft box saved, skipping extraction')
 				}
 				
-				// Calcola posizione pannello
-				const panelW = 460, panelH = 260
-				let px = pr.left + viewportBox.x + (viewportBox.w - panelW) / 2
-				let py = pr.top + viewportBox.y + (viewportBox.h - panelH) / 2
-				px = Math.max(8, Math.min(px, (window.innerWidth||1200) - panelW - 8))
-				py = Math.max(8, Math.min(py, (window.innerHeight||800) - panelH - 8))
-				
-				setExtractPos({ x: px, y: py })
-				setExtractPage(pageNum)
-				
-				// Calcola PDF coordinates
-				try {
-					if (pdfDocRef.current) {
-						const page = await pdfDocRef.current.getPage(pageNum)
-						const base = page.getViewport({ scale: 1 })
-						const domW = pr.width
-						const scale = Math.max(0.1, domW / base.width)
-						const vp = page.getViewport({ scale })
-						const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
-						const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
-						
-						const selection = { 
-							pdfPageNumber: pageNum, 
-							bboxPdf: { x0, y0, x1, y1 }, 
-							viewportBox, 
-							text 
-						}
-						
-						console.log('[DRAG][EXTRACT][SET-SELECTION]', { hasText: !!text, textLen: text.length })
-						setLastSelection(selection)
-					} else {
-						setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
-					}
-				} catch (e) {
-					console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
-					setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
-				}
-				
-				// Apri il context menu invece del dialog
-				selectionHandledRef.current = true
-				setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
-				
-			} catch (error) {
-				console.error('[DRAG][EXTRACT][ERROR]', error)
-			} finally {
-				// ✅ NATIVE: rimuovi il rettangolo (c'è la selezione nativa del browser)
-				try { setDraft(null) } catch {}
-				console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo, mantenendo selezione nativa')
-				
-				// Pulisci sempre i refs
-				lastDraftBoxRef.current = null
-				mouseDownPageRef.current = null
-				mouseDownPosRef.current = null
+				// Reset flag
+				isSelectingRef.current = false
 			}
 		}
 
@@ -357,15 +389,6 @@ export const useNativeSelection = ({
 				const crossedBottomBoundary = y >= 0.95 && ev.clientY > r.bottom
 				const crossedTopBoundary = y <= 0.05 && ev.clientY < r.top
 				
-				// Se crossa un bordo, inizia la logica trans-pagina
-				if (crossedRightBoundary || crossedLeftBoundary || crossedBottomBoundary || crossedTopBoundary) {
-					console.log('[DRAG][CROSS-PAGE]', { 
-						crossedRightBoundary, crossedLeftBoundary, crossedBottomBoundary, crossedTopBoundary,
-						mouseX: ev.clientX, mouseY: ev.clientY,
-						pageRect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
-					})
-				}
-				
 				const draftBox = {
 					id: 'draft', 
 					page: mouseDownPageRef.current, 
@@ -375,6 +398,62 @@ export const useNativeSelection = ({
 					y0Pct: Math.min(mouseDownPosRef.current.yPct, y),
 					x1Pct: Math.max(mouseDownPosRef.current.xPct, x),
 					y1Pct: Math.max(mouseDownPosRef.current.yPct, y)
+				}
+				
+				// Se crossa un bordo, inizia la logica trans-pagina
+				if (crossedRightBoundary || crossedLeftBoundary || crossedBottomBoundary || crossedTopBoundary) {
+					console.log('[TRANS-PAGE][START] Mouse crossed boundary', { 
+						crossedRightBoundary, crossedLeftBoundary, crossedBottomBoundary, crossedTopBoundary
+					})
+					
+					// 1. DETERMINA DIREZIONE
+					const direction = crossedRightBoundary ? 'right' : 
+									 crossedLeftBoundary ? 'left' :
+									 crossedBottomBoundary ? 'down' : 'up'
+					
+					// 2. TROVA PAGINA ADIACENTE (funzione helper)
+					const findAdjacentPage = (currentPage: number, dir: string): number | null => {
+						// Ottieni totalPages dal PDF document invece di parametro
+						const pdfDoc = pdfDocRef.current
+						const totalPages = pdfDoc?.numPages || 0
+						
+						if (dir === 'right' || dir === 'down') return currentPage + 1 <= totalPages ? currentPage + 1 : null
+						if (dir === 'left' || dir === 'up') return currentPage - 1 >= 1 ? currentPage - 1 : null
+						return null
+					}
+					
+					const adjacentPage = findAdjacentPage(mouseDownPageRef.current!, direction)
+					console.log('[TRANS-PAGE][ADJACENT] Found page', { 
+						from: mouseDownPageRef.current, 
+						to: adjacentPage,
+						direction 
+					})
+					
+					if (adjacentPage) {
+						console.log('[TRANS-PAGE][ADJACENT] Found adjacent page', { 
+							from: mouseDownPageRef.current, 
+							to: adjacentPage,
+							direction 
+						})
+						
+						// 3. CALCOLA COORDINATE SU NUOVA PAGINA (MVP: copia stessa area)
+						const newDraftBox = {
+							...draftBox,
+							page: adjacentPage,
+							// MVP: usa stesse coordinate percentuali (per ora)
+							x0Pct: draftBox.x0Pct,
+							y0Pct: draftBox.y0Pct,
+							x1Pct: draftBox.x1Pct,
+							y1Pct: draftBox.y1Pct
+						}
+						console.log('[TRANS-PAGE][NEW-BOX] Created', newDraftBox)
+						
+						// 4. AGGIUNGI AL ARRAY (supporto 2 pagine max per MVP)
+						lastDraftBoxRef.current = [draftBox, newDraftBox]
+						console.log('[TRANS-PAGE][SAVED] Draft boxes:', lastDraftBoxRef.current)
+					} else {
+						console.log('[TRANS-PAGE][NO-ADJACENT] No adjacent page found')
+					}
 				}
 				
 				// ✅ NUOVO: Se copre più righe, estendi fino alla fine del testo (non fino al bordo pagina)
@@ -444,14 +523,12 @@ export const useNativeSelection = ({
 					isMultiLine
 				})
 				
-				// Salva le coordinate del draft per l'estrazione testo
-				lastDraftBoxRef.current = [{
-					page: draftBox.page,
-					x0Pct: draftBox.x0Pct,
-					y0Pct: draftBox.y0Pct,
-					x1Pct: draftBox.x1Pct,
-					y1Pct: draftBox.y1Pct
-				}]
+				// ✅ Aggiorna solo se non è già una selezione multi-pagina
+				if (!lastDraftBoxRef.current || lastDraftBoxRef.current.length <= 1) {
+					lastDraftBoxRef.current = [draftBox]
+				} else {
+					console.log('[DRAG][MOVE] Preserving multi-page selection:', lastDraftBoxRef.current.length, 'pages')
+				}
 				
 				// Mostra box stabile durante drag
 				setDraft(draftBox)
