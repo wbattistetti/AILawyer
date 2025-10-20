@@ -24,6 +24,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
 	const handleCreateExtract = () => {
 		console.log('[CONTEXT-MENU] Crea estratto clicked', { lastSelection: !!lastSelection })
+		
+		// DEBUG: Log dettagliato per identificare problemi di posizionamento
+		console.log('[CONTEXT-MENU-DEBUG]', {
+			hasLastSelection: !!lastSelection,
+			hasPage: lastSelection?.pdfPageNumber,
+			pageInRef: lastSelection ? pageElsRef.current.has(lastSelection.pdfPageNumber) : false,
+			viewportBox: lastSelection?.viewportBox,
+			pageElsRefSize: pageElsRef.current.size
+		})
+		
 		onContextMenuChange({ x: 0, y: 0, visible: false })
 		onOcrInspectOpenChange(false) // Mantieni nascosto durante creazione estratto
 
@@ -54,10 +64,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 			
 			if (spaceBelow >= panelH) {
 				// ✅ SOTTO la selezione (preferenza)
-				py = selectionBottom + 20
+				py = Math.min(selectionBottom + 20, windowH - panelH - 20) // ← LIMITE INFERIORE
 			} else if (spaceAbove >= panelH) {
 				// ✅ SOPRA la selezione
-				py = selectionTop - panelH - 20
+				py = Math.max(8, selectionTop - panelH - 20) // ← LIMITE SUPERIORE
 			} else {
 				// ✅ SOPRA la selezione (anche se copre parzialmente)
 				py = Math.max(8, selectionTop - panelH - 20)
@@ -65,6 +75,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 			
 			// Assicura che il form rimanga nel viewport
 			py = Math.max(8, Math.min(py, windowH - panelH - 8))
+
+			// DEBUG: Log dettagliato coordinate per identificare problema posizionamento
+			console.log('[CONTEXT-MENU-POSITION]', {
+				selectionTop, selectionBottom, 
+				windowH, panelH,
+				spaceBelow, spaceAbove,
+				finalPosition: { x: px, y: py },
+				viewportBox: vb,
+				pageRect: { top: pr.top, bottom: pr.bottom }
+			})
 
 			onExtractPosChange({ x: px, y: py })
 			onExtractPageChange(lastSelection.pdfPageNumber)
@@ -75,6 +95,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
 	if (!contextMenu.visible) return null
 
+	// ✅ FIX: Previeni che il context menu vada troppo in basso
+	const menuHeight = 100 // Altezza approssimativa del menu
+	const safeY = Math.min(contextMenu.y, window.innerHeight - menuHeight - 10)
+	
 	return (
 		<div>
 			{/* Overlay invisibile per catturare click fuori */}
@@ -82,7 +106,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 				className="fixed inset-0 z-[9998]" 
 				onClick={() => onContextMenuChange({ x: 0, y: 0, visible: false })}
 			/>
-			<div className="fixed z-[9999]" style={{ left: contextMenu.x, top: contextMenu.y }}>
+			<div className="fixed z-[9999]" style={{ left: contextMenu.x, top: safeY }}>
 				<div className="bg-white border border-gray-200 rounded-lg shadow-2xl p-3 min-w-[200px] pointer-events-auto">
 					<button
 						className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
