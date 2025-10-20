@@ -58,3 +58,14 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Disable text selection during drag in PDF viewer */
+.is-dragging .rpv-core__text-layer {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+.is-dragging {
+  cursor: crosshair !important;
+}

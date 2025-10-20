@@ -72,6 +72,7 @@ export const useNativeSelection = ({
 
 			isSelectingRef.current = true
 			host.classList.add('is-dragging')
+			console.log('[NATIVE][DEBUG] MouseDown - isSelecting: true, added is-dragging class')
 
 			// Trova la pagina del mouse down
 			let pn = 0
@@ -143,6 +144,7 @@ export const useNativeSelection = ({
 			}
 			if (timer) window.clearTimeout(timer)
 			
+			console.log('[NATIVE][DEBUG] MouseUp - isSelecting: false, removing is-dragging class')
 			console.log('[NATIVE][event] mouseup within viewer', { x: ev.clientX, y: ev.clientY, wasSelecting: isSelectingRef.current })
 			
 			isSelectingRef.current = false
