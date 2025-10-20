@@ -1,5 +1,4 @@
-import React, { useRef, useMemo } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useRef } from 'react'
 import { scrollModePlugin } from '@react-pdf-viewer/scroll-mode'
 import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation'
 import { searchPlugin } from '@react-pdf-viewer/search'
@@ -13,8 +12,8 @@ import { SearchPanel } from './components/SearchPanel'
 import { ContextMenu } from './components/ContextMenu'
 import { OcrInspector } from './components/OcrInspector'
 import { ExtractDialog } from './components/ExtractDialog'
-import { searchViaOcrBackend } from './services/ocrSearch'
 import { PdfToolbarAdvanced } from './components/PdfToolbarAdvanced'
+import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 
 interface PdfViewerShellProps {
   fileUrl: string
@@ -37,13 +36,24 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   
   console.log('[PdfViewerShell] Rendering with props:', { fileUrl, page, docId })
   
+  // Zoom hook integration
+  const { containerRef: zoomContainerRef } = useCleanPdfZoom({
+    zoomToPlugin: (scale: number) => {
+      console.log('[ZOOM] Calling plugin with scale', scale.toFixed(3))
+      if (typeof shell?.zoomTo === 'function') {
+        shell.zoomTo(scale)
+      }
+    },
+    getCurrentScale: () => shell?.scaleRef?.current || 1
+  })
+  
   // Use useRef for plugins instead of useMemo to avoid React Hooks rules violation
   const scrollModeRef = useRef(scrollModePlugin())
   const pageNavRef = useRef(pageNavigationPlugin())
   const searchRef = useRef(searchPlugin())
   const zoomRef = useRef(zoomPlugin())
   const highlightRef = useRef(highlightPlugin({
-    renderHighlights: (props) => {
+    renderHighlights: () => {
       return React.createElement(React.Fragment)
     }
   }))
@@ -104,9 +114,12 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           />
 
           <div 
-            ref={hostRef} 
+            ref={(el) => {
+              hostRef.current = el
+              if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+            }}
             className="flex-1 overflow-hidden relative" 
-            style={{ ['--scale-factor' as any]: String(shell.zoomPct / 100) }}
+            style={{ ['--scale-factor' as any]: String(shell.scaleRef?.current || 1) }}
           >
             <PdfViewerCore
               fileUrl={fileUrl}

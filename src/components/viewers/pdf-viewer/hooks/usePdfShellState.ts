@@ -26,8 +26,11 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
-  const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef } = usePdfSearch(docId, fileUrl)
+  const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef, matches, setMatches, runSearch } = usePdfSearch(docId, fileUrl)
   const lastOcrMatchesRef = useRef<Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>>([])
+  
+  // Areas state for jump-to functionality
+  const [areas, setAreas] = useState<Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>>([])
   
   // Feature hooks
   const { tool, setTool, annots, setAnnots, draft, setDraft } = usePdfAnnotations({ hostRef })
@@ -37,6 +40,16 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
   // Utility hooks
   const { pdfDocRef } = usePdfDocument({ fileUrl })
   const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef } = usePdfOverlays({ hostRef })
+  
+  // Zoom functionality
+  const scaleRef = useRef<number>(1)
+  const zoomDebounceRef = useRef<number | null>(null)
+  const zoomTo = (scale: number) => {
+    scaleRef.current = scale
+    if (typeof zoom.zoomTo === 'function') {
+      zoom.zoomTo(scale)
+    }
+  }
   
   // Hook per lo stato dell'estratto
   const {
@@ -65,8 +78,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     searchPluginInstance: search,
     overlayRootsRef,
     setSelectedAnnot: viewerState.setSelectedAnnot,
-    areas: [],
-    setAreas: () => {},
+    areas,
+    setAreas,
     searchCacheRef,
     fileUrl
   })
@@ -142,6 +155,16 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     estimateSkewForPage,
     applyImmediateToPage,
     persistSkew,
+    
+    // Search functions
+    matches,
+    setMatches,
+    runSearch,
+    
+    // Zoom functions
+    zoomTo,
+    scaleRef,
+    zoomDebounceRef,
     
     // Refs for child components
     hostRef,

@@ -1,6 +1,26 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { getSelectedTextInRect } from '../utils/textExtraction'
 
+// ✅ Helper functions per trans-page selection (da esperto)
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+const getMousePctOnPage = (host: HTMLElement, page: number, clientX: number, clientY: number) => {
+	const pageEl = host.querySelector(`[data-page-number="${page}"]`) as HTMLElement | null;
+	const layer = (pageEl?.querySelector('.rpv-core__page-layer') as HTMLElement) || pageEl;
+	if (!layer) return { xPct: 0, yPct: 0, ok: false };
+
+	const r = layer.getBoundingClientRect();
+	const xPct = clamp01((clientX - r.left) / r.width);
+	const yPct = clamp01((clientY - r.top) / r.height);
+	return { xPct, yPct, ok: true };
+};
+
+const normBoxY = <T extends { y0Pct: number; y1Pct: number }>(b: T): T => {
+	const y0 = Math.min(b.y0Pct, b.y1Pct);
+	const y1 = Math.max(b.y0Pct, b.y1Pct);
+	return { ...b, y0Pct: y0, y1Pct: y1 };
+};
+
 export interface NativeSelectionHookProps {
 	selectMode: boolean
 	selectKind: 'NATIVE' | 'OCR'
@@ -34,6 +54,13 @@ export const useNativeSelection = ({
 	setContextMenu,
 	selectionHandledRef
 }: NativeSelectionHookProps) => {
+	
+	// Selection blocker function to prevent native text selection during custom drag
+	const selectionBlocker = useCallback(() => {
+		if (!isSelectingRef.current) return;
+		const sel = window.getSelection?.();
+		if (sel && sel.rangeCount) sel.removeAllRanges();
+	}, []);
 	const isSelectingRef = useRef(false)
 	const mouseDownPageRef = useRef<number | null>(null)
 	const mouseDownPosRef = useRef<{ xPct: number; yPct: number } | null>(null)
@@ -69,6 +96,11 @@ export const useNativeSelection = ({
 			const hostR = host.getBoundingClientRect()
 			
 			if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) return
+
+			// Activate native selection suppression
+			host.classList.add('rpv--suppress-native-select')
+			document.addEventListener('selectionchange', selectionBlocker, true)
+			window.getSelection?.()?.removeAllRanges()
 
 			isSelectingRef.current = true
 			host.classList.add('is-dragging')
@@ -145,6 +177,10 @@ export const useNativeSelection = ({
 			if (timer) window.clearTimeout(timer)
 			
 			console.log('[NATIVE][DEBUG] MouseUp - isSelecting:', isSelectingRef.current, 'removing is-dragging class')
+			
+			// Deactivate native selection suppression
+			document.removeEventListener('selectionchange', selectionBlocker, true)
+			host.classList.remove('rpv--suppress-native-select')
 			
 			// Rimuovi classe dragging
 			if (hostRef.current) {
@@ -336,9 +372,13 @@ export const useNativeSelection = ({
 					} catch (error) {
 						console.error('[DRAG][EXTRACT][ERROR]', error)
 					} finally {
-						// ✅ NATIVE: rimuovi il rettangolo (c'è la selezione nativa del browser)
-						try { setDraft(null) } catch {}
-						console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo, mantenendo selezione nativa')
+						// ✅ NATIVE: rimuovi il rettangolo SOLO per single-page
+						if (!lastDraftBoxRef.current || lastDraftBoxRef.current.length <= 1) {
+							try { setDraft(null) } catch {}
+							console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo single-page')
+						} else {
+							console.log('[DRAG][EXTRACT][MULTI] Mantenendo draft multi-page visibile')
+						}
 						
 						// Pulisci sempre i refs
 						lastDraftBoxRef.current = null
@@ -436,17 +476,90 @@ export const useNativeSelection = ({
 							direction 
 						})
 						
-						// 3. CALCOLA COORDINATE SU NUOVA PAGINA (MVP: copia stessa area)
-						const newDraftBox = {
-							...draftBox,
-							page: adjacentPage,
-							// MVP: usa stesse coordinate percentuali (per ora)
-							x0Pct: draftBox.x0Pct,
-							y0Pct: draftBox.y0Pct,
-							x1Pct: draftBox.x1Pct,
-							y1Pct: draftBox.y1Pct
+						// ✅ SOLUZIONE ESPERTO: Usa helper per calcolare coordinate intelligenti
+						const { xPct: mx, yPct: my, ok } = getMousePctOnPage(hostRef.current!, adjacentPage, ev.clientX, ev.clientY);
+						if (!ok) {
+							console.log('[TRANS-PAGE][NO-PAGE-LAYER] Cannot get mouse position on adjacent page');
+							return;
 						}
+						
+						// ✅ CORRETTO: y0Pct=0 quando scendi, y1Pct=1 quando sali
+						const base = (direction === 'down')
+							? { y0Pct: 0, y1Pct: my }    // Dall'INIZIO fino al mouse
+							: (direction === 'up')
+							? { y0Pct: my, y1Pct: 1 }   // Dal mouse fino alla FINE
+							: (direction === 'right')
+							? { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: 0, x1Pct: mx }
+							: { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: mx, x1Pct: 1 };
+						
+						const newDraftBox = normBoxY({
+							id: `draft-${adjacentPage}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+							page: adjacentPage,
+							type: 'highlight',
+							color: 'rgba(59,130,246,0.3)',
+							x0Pct: draftBox.x0Pct,
+							x1Pct: draftBox.x1Pct,
+							...base
+						} as any);
 						console.log('[TRANS-PAGE][NEW-BOX] Created', newDraftBox)
+						
+						// ✅ FORZA CREAZIONE OVERLAY ROOT PER PAGINA ADIACENTE (HOT-FIX ESPERTO)
+						const adjacentRoot = overlayRootsRef.current.get(adjacentPage);
+						if (!adjacentRoot && hostRef.current) {
+							const pageEl = hostRef.current.querySelector(
+								`[data-page-number="${adjacentPage}"]`
+							) as HTMLElement | null;
+
+							if (pageEl) {
+								// ✅ Append nel layer giusto: .rpv-core__page-layer
+								const pageLayer = pageEl.querySelector('.rpv-core__page-layer') as HTMLElement;
+								
+								// LOG 1: Verifica se trova il page layer
+								console.log('[OVERLAY][DEBUG] Looking for page layer:', adjacentPage)
+								console.log('[OVERLAY][DEBUG] Page layer found:', !!pageLayer, pageLayer)
+								
+								if (!pageLayer) {
+									console.log('[OVERLAY][DEBUG] No page layer found, checking page element:', pageEl)
+									return;
+								}
+
+								// LOG 2: Verifica dimensioni PRIMA di creare root  
+								const prBefore = pageLayer.getBoundingClientRect()
+								console.log('[OVERLAY][DEBUG] Page layer rect before:', {
+									width: prBefore.width,
+									height: prBefore.height,
+									top: prBefore.top,
+									left: prBefore.left
+								})
+
+								const newRoot = document.createElement('div');
+								newRoot.className = 'rpv-custom__overlay-layer';
+								Object.assign(newRoot.style, {
+									position: 'absolute',
+									inset: '0',                // fill
+									zIndex: '3',               // sopra text/annotation (canvas=0, text=1, ann=2)
+									pointerEvents: 'none',     // non bloccare selezioni native
+									contain: 'strict',         // migliore perf
+								});
+
+								pageLayer.appendChild(newRoot);
+								overlayRootsRef.current.set(adjacentPage, newRoot);
+
+								// LOG 3: Dopo aver creato root, verifica dimensioni
+								const rr = newRoot.getBoundingClientRect()
+								console.log('[OVERLAY][DEBUG] Root rect after creation:', {
+									width: rr.width,
+									height: rr.height,
+									top: rr.top,
+									left: rr.left
+								})
+
+								// LOG 4: Verifica se root è effettivamente nel DOM
+								console.log('[OVERLAY][DEBUG] Root in DOM:', document.contains(newRoot))
+								console.log('[OVERLAY][DEBUG] Root parent:', newRoot.parentElement)
+								console.log('[OVERLAY][DEBUG] Root computed z-index:', window.getComputedStyle(newRoot).zIndex)
+							}
+						}
 						
 						// 4. AGGIUNGI AL ARRAY (supporto 2 pagine max per MVP)
 						lastDraftBoxRef.current = [draftBox, newDraftBox]
@@ -531,7 +644,22 @@ export const useNativeSelection = ({
 				}
 				
 				// Mostra box stabile durante drag
-				setDraft(draftBox)
+				console.log('[DRAG][MOVE][BEFORE-SET-DRAFT]', {
+					hasMultiPage: !!(lastDraftBoxRef.current && lastDraftBoxRef.current.length > 1),
+					multiPageCount: lastDraftBoxRef.current?.length || 0,
+					currentDraftBox: draftBox
+				})
+				
+				if (lastDraftBoxRef.current && lastDraftBoxRef.current.length > 1) {
+					console.log('[DRAG][MOVE][SET-DRAFT-MULTI]', {
+						pages: lastDraftBoxRef.current.length,
+						boxes: lastDraftBoxRef.current.map(b => ({ page: b.page, x0: b.x0Pct, y0: b.y0Pct }))
+					})
+					setDraft(lastDraftBoxRef.current)  // ✅ Array completo per multi-page
+				} else {
+					console.log('[DRAG][MOVE][SET-DRAFT-SINGLE]', { page: draftBox.page })
+					setDraft(draftBox)  // ✅ Singolo box
+				}
 			} catch (err) {
 				console.error('[DRAG][MOVE][ERROR]', err)
 			}

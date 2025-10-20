@@ -69,3 +69,19 @@
 .is-dragging {
   cursor: crosshair !important;
 }
+
+/* Custom overlay layer for multi-page selection */
+.rpv-custom__overlay-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Disable native text selection during custom drag operations */
+.rpv--suppress-native-select,
+.rpv--suppress-native-select .rpv-core__text-layer,
+.rpv--suppress-native-select .rpv-core__text-layer * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}

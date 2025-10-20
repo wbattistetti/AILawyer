@@ -1,10 +1,11 @@
 import React from 'react'
 import { Highlighter, Underline as UnderlineIcon, Strikethrough as StrikethroughIcon, MessageSquare, PanelRightOpen } from 'lucide-react'
+import { Tool } from '../hooks/usePdfAnnotations'
 
 interface PdfToolbarAdvancedProps {
 	// Toolbar state
-	tool: string
-	setTool: (tool: string | ((prev: string) => string)) => void
+	tool: Tool
+	setTool: (tool: Tool | ((prev: Tool) => Tool)) => void
 	audit: boolean
 	setAudit: (audit: boolean) => void
 	autoDeskew: boolean

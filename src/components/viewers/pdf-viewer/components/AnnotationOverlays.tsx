@@ -5,7 +5,7 @@ import type { Annotation } from '../hooks/usePdfAnnotations'
 interface AnnotationOverlaysProps {
 	selectedAnnot: Annotation | null
 	annots: Annotation[]
-	draft: Annotation | null
+	draft: Annotation | Annotation[] | null  // ✅ Support array for multi-page
 	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
 }
 
@@ -15,9 +15,19 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	draft,
 	overlayRootsRef
 }) => {
+	// ✅ Convert draft to array (single or multi-page)
+	const draftArray = Array.isArray(draft) ? draft : (draft ? [draft] : [])
+	
+	// ✅ Combine all annotations including multi-page drafts
+	const allAnnotations = [
+		...(selectedAnnot ? [selectedAnnot] : []), 
+		...annots, 
+		...draftArray
+	]
+
 	return (
 		<>
-			{[...(selectedAnnot ? [selectedAnnot] : []), ...annots, ...(draft ? [draft] : [])].map(a => {
+			{allAnnotations.map(a => {
 				const root = overlayRootsRef.current.get(a.page)
 				if (a.id === 'draft') {
 					console.log('[OVERLAY][RENDER][DRAFT]', { 
