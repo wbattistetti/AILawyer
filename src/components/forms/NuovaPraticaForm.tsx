@@ -9,24 +9,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Pratica } from '@/types'
 
 const praticaSchema = z.object({
-  nome: z.string().min(1, 'Nome pratica è obbligatorio'),
-  cliente: z.string().optional(),
+  numeroRuolo: z.string().min(1, 'Numero RGN/NR è obbligatorio'),
+  cliente: z.string().min(1, 'Cliente/i è obbligatorio'),
   foro: z.string().optional(),
-  controparte: z.string().optional(),
   pmGiudice: z.string().optional(),
-  numeroRuolo: z.string().optional(),
 })
 
 type PraticaFormData = z.infer<typeof praticaSchema>
 
 interface NuovaPraticaFormProps {
   onSubmit: (data: {
-    nome: string
-    cliente?: string
+    numeroRuolo: string
+    cliente: string
     foro?: string
-    controparte?: string
     pmGiudice?: string
-    numeroRuolo?: string
   }) => void
   isLoading?: boolean
 }
@@ -50,30 +46,18 @@ export function NuovaPraticaForm({ onSubmit, isLoading }: NuovaPraticaFormProps)
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* PRIMA RIGA: 3 campi affiancati */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="nome">Nome Pratica *</Label>
+              <Label htmlFor="numeroRuolo">Numero RGN/NR *</Label>
               <Input
-                id="nome"
-                {...register('nome')}
-                placeholder="es. Procedimento penale vs. Rossi Mario"
-                className={errors.nome ? 'border-red-500' : ''}
+                id="numeroRuolo"
+                {...register('numeroRuolo')}
+                placeholder="es. 12345/2024"
+                className={errors.numeroRuolo ? 'border-red-500' : ''}
               />
-              {errors.nome && (
-                <p className="text-sm text-red-500">{errors.nome.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cliente">Cliente</Label>
-              <Input
-                id="cliente"
-                {...register('cliente')}
-                placeholder="es. Mario Rossi"
-                className={errors.cliente ? 'border-red-500' : ''}
-              />
-              {errors.cliente && (
-                <p className="text-sm text-red-500">{errors.cliente.message}</p>
+              {errors.numeroRuolo && (
+                <p className="text-sm text-red-500">{errors.numeroRuolo.message}</p>
               )}
             </div>
 
@@ -91,15 +75,6 @@ export function NuovaPraticaForm({ onSubmit, isLoading }: NuovaPraticaFormProps)
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="controparte">Controparte</Label>
-              <Input
-                id="controparte"
-                {...register('controparte')}
-                placeholder="es. Procura della Repubblica"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="pmGiudice">PM/Giudice</Label>
               <Input
                 id="pmGiudice"
@@ -107,15 +82,23 @@ export function NuovaPraticaForm({ onSubmit, isLoading }: NuovaPraticaFormProps)
                 placeholder="es. Dott. Giuseppe Verdi"
               />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="numeroRuolo">Numero RGN/NR</Label>
-              <Input
-                id="numeroRuolo"
-                {...register('numeroRuolo')}
-                placeholder="es. 12345/2024"
-              />
-            </div>
+          {/* SECONDA RIGA: Cliente/i a larghezza completa (obbligatorio) */}
+          <div className="space-y-2">
+            <Label htmlFor="cliente">Cliente/i *</Label>
+            <Input
+              id="cliente"
+              {...register('cliente')}
+              placeholder="es. Mario Rossi, Anna Bianchi, Luca Verdi"
+              className={errors.cliente ? 'border-red-500' : ''}
+            />
+            {errors.cliente && (
+              <p className="text-sm text-red-500">{errors.cliente.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Inserisci uno o più nomi separati da virgola
+            </p>
           </div>
 
           <div className="flex justify-end space-x-4 pt-4">
