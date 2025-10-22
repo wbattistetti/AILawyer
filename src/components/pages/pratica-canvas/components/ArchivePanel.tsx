@@ -3,6 +3,7 @@ import { Upload, RefreshCw } from 'lucide-react'
 import { ThumbCard } from '../../../viewers/ThumbCard'
 import { api } from '../../../../lib/api'
 import { useArchive } from '../hooks/useArchive'
+import { useOcr } from '../hooks/useOcr'
 import { ArchivePanelProps } from '../types'
 
 export function ArchivePanel({
@@ -12,22 +13,24 @@ export function ArchivePanel({
   setShowAnalysis,
   selectedDocId,
   setSelectedDocId,
-  ocrProgressByDoc,
-  ocrEtaByDoc,
-  ocrStatusByDoc,
-  ocrCancellingByDoc,
-  transcribedPctByDoc,
-  ocrJobByDoc,
-  setOcrProgressByDoc,
-  setOcrEtaByDoc,
-  setOcrStatusByDoc,
-  setOcrCancellingByDoc,
-  setTranscribedPctByDoc,
-  onOcr
+  onOcr,
+  onOcrCancel
 }: ArchivePanelProps) {
   
   // Usa l'hook useArchive per la gestione documenti
   const { documenti, uploads, clientThumbByS3, handleFileDrop, handleRemoveThumb } = useArchive(praticaId, comparti)
+  
+  // Usa l'hook useOcr per la gestione OCR
+  const { 
+    ocrProgressByDoc, 
+    ocrEtaByDoc, 
+    ocrStatusByDoc, 
+    ocrCancellingByDoc, 
+    transcribedPctByDoc,
+    ocrJobByDoc,
+    handleOcr,
+    handleOcrCancel 
+  } = useOcr(praticaId)
 
   // Dropzone: applicata alla colonna sinistra
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
@@ -99,18 +102,8 @@ export function ArchivePanel({
               onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
               onTable={() => { setSelectedDocId(doc.id); /* onOpenInTable sarà gestito separatamente */ }}
               onRemove={() => handleRemoveThumb(doc.id)}
-              onOcr={() => onOcr(doc)}
-              onOcrCancel={async () => {
-                const d = documenti.find(x=>x.id===doc.id); if (!d) return
-                const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
-                setTranscribedPctByDoc({ ...transcribedPctByDoc, [d.id]: pct })
-                setOcrEtaByDoc({ ...ocrEtaByDoc, [d.id]: null })
-                setOcrStatusByDoc({ ...ocrStatusByDoc, [d.id]: null })
-                setOcrProgressByDoc({ ...ocrProgressByDoc, [d.id]: 0 })
-                setOcrCancellingByDoc({ ...ocrCancellingByDoc, [d.id]: true })
-                const jid = ocrJobByDoc[d.id]
-                if (jid) { try { await api.cancelJob(jid) } catch {} }
-              }}
+              onOcr={() => handleOcr(doc)}
+              onOcrCancel={() => handleOcrCancel(doc)}
               ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
               ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
               ocrStatusText={ocrStatusByDoc[doc.id] ?? null}

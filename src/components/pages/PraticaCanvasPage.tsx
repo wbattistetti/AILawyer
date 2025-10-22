@@ -30,6 +30,8 @@ import { ThingCardsPanel } from '../../features/cards/ThingCardsPanel'
 import { loadOcrState, saveOcrState, clearDoc, type OcrState } from '../../utils/ocrState'
 import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
+import { useArchive } from './pratica-canvas/hooks/useArchive'
+import { useOcr } from './pratica-canvas/hooks/useOcr'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -39,27 +41,44 @@ export function PraticaCanvasPage() {
 
   const [pratica, setPratica] = useState<Pratica | null>(null)
   const [comparti, setComparti] = useState<Comparto[]>([])
-  const [documenti, setDocumenti] = useState<Documento[]>([])
-  const [uploads, setUploads] = useState<UploadProgress[]>([])
-  // Client-side provisional thumbs for PDFs (by s3Key)
-  const [clientThumbByS3, setClientThumbByS3] = useState<Record<string, string>>({})
   const [previewDoc] = useState<Documento | null>(null)
-  // const [activeTab, setActiveTab] = useState<'original' | 'ocr' | 'split' | 'verify'>('original')
   const [syncPage, setSyncPage] = useState<number | null>(null)
-  // removed unused scroll sync state after simplifying viewer
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
   const [previewWidth, setPreviewWidth] = useState<number>(576) // px, ~36rem
   const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
   const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
-  const [ocrProgressByDoc, setOcrProgressByDoc] = useState<Record<string, number>>({})
-  const [ocrEtaByDoc, setOcrEtaByDoc] = useState<Record<string, string>>({})
-  const [ocrStatusByDoc, setOcrStatusByDoc] = useState<Record<string, string>>({})
-  const [ocrCancelledByDoc, setOcrCancelledByDoc] = useState<Record<string, boolean>>({})
-  const [ocrJobByDoc, setOcrJobByDoc] = useState<Record<string, string>>({})
-  const [ocrCancellingByDoc, setOcrCancellingByDoc] = useState<Record<string, boolean>>({})
-  const [transcribedPctByDoc, setTranscribedPctByDoc] = useState<Record<string, number>>({})
-  const ocrStatsRef = useRef<Record<string, { lastMs: number; lastR: number; lastO: number; switched: boolean; samplesR: number[]; samplesO: number[] }>>({})
+  const [showAnalysis, setShowAnalysis] = useState(false)
+  const [archiveUploadingCount, setArchiveUploadingCount] = useState(0)
+
+  // Usa i nuovi hooks per la gestione documenti e OCR
+  const { 
+    documenti, 
+    setDocumenti,
+    uploads, 
+    clientThumbByS3, 
+    handleFileDrop, 
+    handleRemoveThumb
+  } = useArchive(id, comparti)
+  
+  const {
+    ocrProgressByDoc,
+    setOcrProgressByDoc,
+    ocrEtaByDoc,
+    setOcrEtaByDoc,
+    ocrStatusByDoc,
+    setOcrStatusByDoc,
+    ocrCancellingByDoc,
+    setOcrCancellingByDoc,
+    transcribedPctByDoc,
+    setTranscribedPctByDoc,
+    ocrJobByDoc,
+    setOcrJobByDoc,
+    handleOcr,
+    handleOcrCancel,
+    persistOcrState
+  } = useOcr(id)
+
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
   const [headerH, setHeaderH] = useState<number>(56)
@@ -88,25 +107,10 @@ export function PraticaCanvasPage() {
   const [verifyPinned, setVerifyPinned] = useState<boolean>(false)
   const [verifyEditText, setVerifyEditText] = useState<string>('')
   const [verifyDebug, setVerifyDebug] = useState<boolean>(false)
-  const [verifyEnabled, setVerifyEnabled] = useState<boolean>(false)
+  const [verifyEnabled, setVerifyEnabled] = useState(false)
   const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null)
   const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null)
-  const [showAnalysis, setShowAnalysis] = useState<boolean>(false)
-  const [archiveUploadingCount, setArchiveUploadingCount] = useState<number>(0)
-  
-  // Test mode for new PdfViewerShell
   const [testNewViewer, setTestNewViewer] = useState(false)
-
-  // Dropzone: applicata alla colonna sinistra
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop: (files) => handleFileDrop(files, null, { type: 'archive' }),
-    noClick: true,
-    multiple: true,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'],
-    },
-  })
 
   // Removed px remap useEffect per expert's guidance; overlay is positioned in % within page wrapper
 
@@ -332,270 +336,46 @@ export function PraticaCanvasPage() {
     return () => { window.removeEventListener('resize', update); try { ro.disconnect() } catch {} }
   }, [pratica])
 
+  // Load pratica data
   useEffect(() => {
-    if (id) {
-      loadPraticaData(id)
-      // restore only viewMode for V2
+    if (!id) return
+    const load = async () => {
       try {
-        const raw = localStorage.getItem(`ws_${id}`)
-        if (raw) {
-          const ws = JSON.parse(raw)
-          if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') setViewMode(ws.viewMode)
-        }
-      } catch {}
+        setIsLoading(true)
+        const [p, c] = await Promise.all([api.getPratica(id!), api.getComparti(id!)])
+        setPratica(p)
+        setComparti(c)
+      } catch (error) {
+        console.error('Failed to load pratica:', error)
+        toast({ title: 'Errore', description: 'Impossibile caricare la pratica', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [id])
-
-  // Hydrate OCR UI state from localStorage
-  useEffect(() => {
-    if (!id) return
-    const st = loadOcrState(id)
-    setOcrProgressByDoc(st.progress || {})
-    setOcrEtaByDoc(st.eta || {})
-    setOcrStatusByDoc(st.status || {})
-    setOcrCancelledByDoc(st.cancelled || {})
-  }, [id])
-
-  const persistOcrState = useCallback(() => {
-    if (!id) return
-    const st: OcrState = { progress: ocrProgressByDoc, eta: ocrEtaByDoc, status: ocrStatusByDoc, cancelled: ocrCancelledByDoc }
-    saveOcrState(id, st)
-  }, [id, ocrProgressByDoc, ocrEtaByDoc, ocrStatusByDoc, ocrCancelledByDoc])
+    load()
+    
+    // restore viewMode
+    try {
+      const raw = localStorage.getItem(`ws_${id}`)
+      if (raw) {
+        const ws = JSON.parse(raw)
+        if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') setViewMode(ws.viewMode)
+      }
+    } catch {}
+  }, [id, toast])
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 
-  const loadPraticaData = async (praticaId: string) => {
-    setIsLoading(true)
-    try {
-      const [praticaData, compartiData, documentiData] = await Promise.all([
-        api.getPratica(praticaId),
-        api.getComparti(praticaId),
-        api.getDocumentiByPratica(praticaId),
-      ])
-
-      setPratica(praticaData)
-      setComparti(compartiData)
-      setDocumenti(documentiData)
-    } catch (error) {
-      console.error('Errore nel caricamento dei dati:', error)
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare i dati della pratica.',
-        variant: 'destructive',
-      })
-      navigate('/')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleFileDrop = async (files: File[], _compartoId?: string | null, target?: { type?: string; id?: string; title?: string; tags?: string[] } | null) => {
+  const handleRefresh = async () => {
     if (!id) return
-
-    // Validation
-    if (files.length > MAX_FILES_PER_BATCH) {
-      toast({
-        title: 'Troppi file',
-        description: `Puoi caricare massimo ${MAX_FILES_PER_BATCH} file alla volta.`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const oversizedFiles = files.filter(file => file.size > MAX_UPLOAD_SIZE)
-    if (oversizedFiles.length > 0) {
-      toast({
-        title: 'File troppo grandi',
-        description: `Alcuni file superano il limite di ${MAX_UPLOAD_SIZE / 1024 / 1024}MB.`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    // Temporaneo: usa un comparto placeholder lato backend
-
-    // Pre-dedupe: evita duplicati PRIMA di creare voci di upload
-    const existingHashes = new Set((documenti.map(d => (d as any).hash).filter(Boolean) as string[]))
-    const toProcess: File[] = []
-    let skipped = 0
-    // Helper: sha256 del file (client-side)
-    const digestHex = async (file: File) => {
-      try {
-        const buf = await file.arrayBuffer()
-        const hash = await crypto.subtle.digest('SHA-256', buf)
-        const b = new Uint8Array(hash)
-        return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('')
-      } catch {
-        return ''
-      }
-    }
-    for (const f of files) {
-      let dup = false
-      const h = await digestHex(f)
-      if (h && existingHashes.has(h)) dup = true
-      // Fallback: match su filename+size se hash mancante
-      if (!dup && (!h || h.length === 0)) {
-        const existsByNameSize = documenti.some(d => d.filename === f.name && (d as any).size === f.size)
-        if (existsByNameSize) dup = true
-      }
-      if (dup) { skipped++; continue }
-      toProcess.push(f)
-    }
-    if (skipped > 0) {
-      toast({ title: 'Duplicati ignorati', description: `${skipped} file già presenti non sono stati aggiunti.` })
-    }
-
-    // Initialize upload progress SOLO per i file da processare
-    const newUploads: UploadProgress[] = toProcess.map(file => ({
-      file,
-      progress: 0,
-      status: 'pending',
-    }))
-
-    setUploads(prev => [...prev, ...newUploads])
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch {}
-
-    // Helper: generate client-side PDF first-page thumb (non blocking)
-    const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
-      try {
-        const arrayBuffer = await file.arrayBuffer()
-        const task = pdfjsLib.getDocument({ data: arrayBuffer })
-        const pdf = await task.promise
-        const page = await pdf.getPage(1)
-        const vp1 = page.getViewport({ scale: 1 })
-        const scale = targetW / vp1.width
-        const viewport = page.getViewport({ scale })
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.ceil(viewport.width)
-        canvas.height = Math.ceil(viewport.height)
-        const ctx = canvas.getContext('2d')!
-        await page.render({ canvasContext: ctx as any, viewport }).promise
-        return canvas.toDataURL('image/png')
-      } catch {
-        return ''
-      }
-    }
-
-    // Evita duplicati: salta file già presenti per s3Key equivalente (stesso nome+size durante la sessione)
-    const existingKeys = new Set(documenti.map(d => d.s3Key))
-
-    // Process each file
-    for (let i = 0; i < toProcess.length; i++) {
-      const file = toProcess[i]
-      const uploadIndex = uploads.length + i
-
-      try {
-        // Update status to uploading
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { ...upload, status: 'uploading', progress: 10 } : upload
-        ))
-        try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch {}
-
-        // Get upload URL
-        const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
-
-        // Skip se già presente in archivio (stesso s3Key)
-        if (existingKeys.has(s3Key)) {
-          setUploads(prev => prev.map((upload, idx) => 
-            idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
-          ))
-          continue
-        }
-
-        // Fire client-side PDF thumb generation (non-blocking)
-        const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
-        if (isPdf) {
-          generateClientPdfThumb(file, 320).then((dataUrl) => {
-            if (dataUrl) setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
-          }).catch(() => {})
-        }
-        
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { ...upload, progress: 30 } : upload
-        ))
-
-        // Upload file
-        await api.uploadFile(uploadUrl, file)
-        
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { ...upload, progress: 60 } : upload
-        ))
-
-        // Create document record
-        const tags: string[] = [...(target?.tags || [])]
-        if (target?.type === 'drawer') {
-          const key = (target.title || '').toLowerCase()
-          // Robust matching for drawer titles
-          if (tags.length === 0) {
-            if (key.includes('sequestro')) tags.push('verbale_sequestro','verbale')
-            else if (key.includes('arresto')) tags.push('verbale_arresto','verbale')
-            else if (key.includes('verbali') || key.includes('verbale')) tags.push('verbale')
-            else if (key.includes('intercett')) tags.push('intercettazioni')
-            else if (key.includes('reati')) tags.push('reati')
-          }
-        }
-        const documento = await api.createDocumento({
-          praticaId: id,
-          compartoId: comparti.find(c => c.key === 'da_classificare')?.id || (comparti[0]?.id ?? ''),
-          filename: file.name,
-          mime: file.type,
-          size: file.size,
-          s3Key,
-          hash: '', // Will be calculated by backend
-          ocrStatus: 'pending',
-          tags,
-        })
-
-        existingKeys.add(s3Key)
-
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { ...upload, progress: 80, status: 'processing' } : upload
-        ))
-
-        // Non lanciare OCR per ora
-
-        // Update uploads and documents
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
-        ))
-
-        // Dedupe: se il backend ha restituito un documento già esistente (stesso hash/id),
-        // aggiorna in-place invece di aggiungere un duplicato
-        setDocumenti(prev => {
-          const i = prev.findIndex(d => d.id === documento.id)
-          if (i >= 0) {
-            const next = [...prev]
-            next[i] = { ...prev[i], ...documento }
-            return next
-          }
-          return [documento, ...prev]
-        })
-        try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch {}
-
-      } catch (error) {
-        console.error('Errore nell\'upload:', error)
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { 
-            ...upload, 
-            status: 'error', 
-            error: 'Errore durante il caricamento' 
-          } : upload
-        ))
-      }
-    }
-
-    toast({
-      title: 'Upload completato',
-      description: `${files.length} file caricati con successo.`,
-    })
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch {}
-  }
-
-  // Removed unused handlers
-
-  const handleRefresh = () => {
-    if (id) {
-      loadPraticaData(id)
+    try {
+      const [p, c] = await Promise.all([api.getPratica(id), api.getComparti(id)])
+      setPratica(p)
+      setComparti(c)
+      toast({ title: 'Pratica aggiornata' })
+    } catch (error) {
+      console.error('Failed to refresh pratica:', error)
+      toast({ title: 'Errore', description: 'Impossibile aggiornare la pratica', variant: 'destructive' })
     }
   }
 
@@ -668,31 +448,6 @@ export function PraticaCanvasPage() {
       </div>
     </div>
   )
-
-  const handleRemoveThumb = async (documentId: string) => {
-    // Rimuovi dall'UI immediatamente (ottimistico)
-    const docToRemove = documenti.find(d => d.id === documentId)
-    setDocumenti(prev => prev.filter(d => d.id !== documentId))
-    
-    try {
-      // Chiama API per eliminare dal DB e storage
-      await api.deleteDocumento(documentId)
-      toast({
-        title: 'Documento eliminato',
-        description: docToRemove?.filename || 'Documento rimosso con successo'
-      })
-    } catch (error) {
-      // Se fallisce, ripristina nell'UI
-      console.error('Errore eliminazione documento:', error)
-      toast({
-        title: 'Errore',
-        description: 'Impossibile eliminare il documento. Ricarico i dati...',
-        variant: 'destructive'
-      })
-      // Ricarica i dati per ripristinare lo stato corretto
-      if (id) loadPraticaData(id)
-    }
-  }
 
   // legacy alias removed
 
@@ -1057,205 +812,7 @@ export function PraticaCanvasPage() {
     )
   }
 
-  // Render Archivio come pane standalone
-  const renderArchivePane = () => (
-    <div
-      {...getRootProps()}
-      className={`w-full h-full min-h-full flex flex-col border-2 border-dashed rounded-md transition ${
-        isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300'
-      }`}
-      style={{ padding: '12px' }}
-      onClick={() => { if (documenti.length === 0) open() }}>
-      <input {...getInputProps()} />
-
-      {/* Toolbar Archivio */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-neutral-600">Archivio</div>
-        <div className="flex items-center gap-2">
-          <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); setShowAnalysis(s=>!s) }}>Analizza</button>
-          <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); open() }}>Carica…</button>
-        </div>
-      </div>
-
-      {/* Upload spinner overlay */}
-      {uploads.some(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)) && (
-        <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
-          <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
-          <div className="text-sm text-neutral-800">
-            {(uploads.filter(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)).length > 1)
-              ? 'Sto caricando i documenti…'
-              : 'Sto caricando il documento…'}
-          </div>
-        </div>
-      )}
-
-      {!showAnalysis && documenti.length === 0 && (
-        <div className="flex-1 flex items-center justify-center text-center">
-          <div>
-            <Upload className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm">Trascina qui i file della pratica oppure clicca per selezionarli</p>
-          </div>
-        </div>
-      )}
-
-      {!showAnalysis && (
-        <div className="grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
-        {documenti.map(doc => {
-          const isPdf = doc.mime?.startsWith('application/pdf') || doc.filename.toLowerCase().endsWith('.pdf')
-          const ver = (doc as any)?.updatedAt ? `?v=${encodeURIComponent((doc as any).updatedAt as any)}` : ''
-          const serverThumb = isPdf && doc.hash ? `${api.getThumbUrl(doc.hash)}${ver}` : ''
-          const clientThumb = clientThumbByS3[doc.s3Key]
-          const thumb = clientThumb || serverThumb || ''
-          return (
-            <ThumbCard
-              key={doc.id}
-              title={doc.filename}
-              imgSrc={thumb}
-              selected={selectedDocId === doc.id}
-              onSelect={() => setSelectedDocId(doc.id)}
-              onPreview={() => { setSelectedDocId(doc.id); openInTable(doc) }}
-              onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
-              onTable={() => { setSelectedDocId(doc.id); openInTable(doc) }}
-              onRemove={() => handleRemoveThumb(doc.id)}
-              onOcr={() => handleOcr(doc)}
-              onOcrCancel={async () => {
-                const d = documenti.find(x=>x.id===doc.id); if (!d) return
-                const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
-                setTranscribedPctByDoc(prev => ({ ...prev, [d.id]: pct }))
-                setOcrEtaByDoc(prev => ({ ...prev, [d.id]: null }))
-                setOcrStatusByDoc(prev => ({ ...prev, [d.id]: null }))
-                setOcrProgressByDoc(prev => { const { [d.id]: _, ...rest } = prev; return rest })
-                setOcrCancellingByDoc(prev => ({ ...prev, [d.id]: true }))
-                const jid = ocrJobByDoc[d.id]
-                if (jid) { try { await api.cancelJob(jid) } catch {} }
-              }}
-              ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
-              ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
-              ocrStatusText={ocrStatusByDoc[doc.id] ?? null}
-              hasOcr={!!doc.ocrPdfKey}
-              ocrCancelling={!!ocrCancellingByDoc[doc.id]}
-              transcribedPct={typeof transcribedPctByDoc[doc.id] === 'number' ? transcribedPctByDoc[doc.id] : null}
-            />
-          )
-        })}
-        </div>
-      )}
-
-      {showAnalysis && (
-        <div className="flex-1 overflow-hidden border rounded bg-white">
-          <AnalysisPanel />
-        </div>
-      )}
-    </div>
-  )
-
-  // Seed Tavolo: not needed in V2 (tabs managed by DockWorkspaceV2)
-
-  // Queue OCR for a document and start polling job progress
-  const handleOcr = async (documento: Documento, mode: 'quick' | 'full' = 'full', limitPages?: number) => {
-    try {
-      setSelectedDocId(documento.id)
-      console.log('[OCR] queue request', documento.id, documento.filename)
-      toast({ title: 'OCR avviato', description: documento.filename })
-      // Queue job
-      const job = await api.queueOcr(documento.id, mode, limitPages)
-      try { console.log('[OCR][queue-ok]', { docId: documento.id, jobId: job.id }) } catch {}
-      setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
-      setOcrJobByDoc(prev => ({ ...prev, [documento.id]: job.id }))
-      setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
-
-      // Polling loop
-      let active = true
-      const poll = async () => {
-        if (!active) return
-        try {
-          const j = await api.getJob(job.id)
-          console.log('[OCR] job', j.status, j.progress)
-          // Preferisci percentuale calcolata dalle pagine fatte se disponibile
-          const meta = (() => { try { return JSON.parse(j.result || '{}')?.meta || {} } catch { return {} } })()
-          const elapsedMs = (() => { try { return JSON.parse(j.result || '{}')?.elapsedMs || 0 } catch { return 0 } })()
-          const done = Number(meta.currentPage || 0)
-          const total = Number(meta.totalPages || 0)
-          const pctByMeta = total > 0 ? Math.floor((done / total) * 100) : Math.round((j.progress || 0))
-          const percent = Math.max(0, Math.min(100, pctByMeta))
-          const isCancelling = !!ocrCancellingByDoc[documento.id]
-          const hasFrozen = typeof transcribedPctByDoc[documento.id] === 'number'
-          if (!isCancelling && !hasFrozen) {
-            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: percent }))
-            const phase = meta.phase || 'OCR'
-            setOcrStatusByDoc(prev => ({
-              ...prev,
-              [documento.id]: (percent < 100)
-                ? (done > 0 && total > 0 ? `${phase} pagina ${done} di ${total}…` : 'Preparazione…')
-                : null
-            }))
-            let etaText: string | null = null
-            if (done > 0 && total > done && percent < 100) {
-              const avgPerPage = elapsedMs / done
-              const remainingMs = Math.max(0, (total - done) * avgPerPage)
-              const etaDate = new Date(Date.now() + remainingMs)
-              const hh = String(etaDate.getHours()).padStart(2, '0')
-              const mm = String(etaDate.getMinutes()).padStart(2, '0')
-              const mins = Math.round(remainingMs / 60000)
-              etaText = `Fine stimata: ${hh}:${mm} (≈${mins} min)`
-            }
-            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: etaText }))
-            persistOcrState()
-          }
-          if (j.status === 'cancelling') {
-            // reflect cancelling in overlay
-            setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: true }))
-            console.log('[OCR][ui][cancelling]', { docId: documento.id })
-          }
-          // Considera 'failed' da SIGTERM come cancellazione cooperativa
-          const isSigtermFail = (j.status === 'failed') && /sigterm|killed|termination/i.test(String(j.error || ''))
-          if (j.status === 'cancelled' || isSigtermFail) {
-            active = false
-            // freeze percent and hide overlay
-            setTranscribedPctByDoc(prev => ({ ...prev, [documento.id]: percent }))
-            setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
-            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
-            setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
-            setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
-            console.log('[OCR][cancelled][ui]', { docId: documento.id, percent })
-            return
-          }
-
-          if (j.status === 'completed' || j.status === 'failed') {
-            active = false
-            if (j.status === 'failed') {
-              toast({ title: 'OCR fallito', description: j.error || 'Errore sconosciuto', variant: 'destructive' })
-            } else {
-              toast({ title: 'OCR completato', description: documento.filename })
-              // Soft refresh: aggiorna SOLO il documento corrente, senza rimettere la pagina in loading
-              try {
-                const refreshed = await api.getDocumento(documento.id)
-                setDocumenti(prev => prev.map(d => d.id === documento.id ? { ...d, ...refreshed } : d))
-              } catch (e) {
-                console.warn('[OCR] soft refresh failed', e)
-              }
-            }
-            // Forza 100% e azzera ETA/Stato
-            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 100 }))
-            setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
-            setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
-            persistOcrState()
-            if (id) clearDoc(id, documento.id)
-            // Clear progress overlay after a short delay
-            setTimeout(() => {
-              setOcrProgressByDoc(prev => { const { [documento.id]: _, ...rest } = prev; return rest })
-            }, 1500)
-            return
-          }
-        } catch {}
-        setTimeout(poll, 1000)
-      }
-      poll()
-    } catch (error) {
-      console.error('[OCR] queue error', error)
-      toast({ title: 'Errore', description: 'Impossibile avviare OCR', variant: 'destructive' })
-    }
-  }
+  // REMOVED: renderArchivePane & handleOcr - now replaced by DocumentCollection and useOcr hook
 
   useEffect(() => {
     // Listen to uploads triggered from Drawer viewers
@@ -1415,10 +972,7 @@ export function PraticaCanvasPage() {
     const handleDragLeave = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         dragCounter--
-        if (dragCounter === 0) {
-          // Last leave, restore previous tab
-          dockV2Ref.current?.restorePreviousTab()
-        }
+        // Note: restore previous tab removed as not available in DockWorkspaceV2Handle
       }
     }
     
@@ -1578,7 +1132,7 @@ export function PraticaCanvasPage() {
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (
-                  <div className="absolute inset-极 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
+                  <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
                     <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
                     <div className="text-sm text-neutral-800">
                       {archiveUploadingCount === 1 ? 'Sto caricando il file…' : `Sto caricando i ${archiveUploadingCount} file…`}
