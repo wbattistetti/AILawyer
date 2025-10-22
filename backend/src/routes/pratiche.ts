@@ -4,12 +4,10 @@ import { prisma } from '../lib/database.js'
 import { PraticaCreateInput } from '../types/index.js'
 
 const praticaCreateSchema = z.object({
-  nome: z.string().min(1),
-  cliente: z.string().optional(),
+  numeroRuolo: z.string().min(1),
+  cliente: z.string().min(1),
   foro: z.string().optional(),
-  controparte: z.string().optional(),
   pmGiudice: z.string().optional(),
-  numeroRuolo: z.string().optional(),
 })
 
 const COMPARTI_DEFAULT = [
@@ -24,6 +22,14 @@ const COMPARTI_DEFAULT = [
   { key: 'udienze_verbali', nome: 'Udienze & Verbali', ordine: 8 },
   { key: 'provvedimenti_giudice', nome: 'Provvedimenti del giudice (GIP/GUP/Trib.)', ordine: 9 },
 ]
+
+// Funzione helper per processare i nomi clienti
+function parseClientNames(clienteString: string): string[] {
+  return clienteString
+    .split(',')
+    .map(name => name.trim())
+    .filter(name => name.length > 0);
+}
 
 export async function praticheRoutes(fastify: FastifyInstance) {
   // List pratiche (simple, latest first)
@@ -42,20 +48,38 @@ export async function praticheRoutes(fastify: FastifyInstance) {
     try {
       const parsed = praticaCreateSchema.parse(request.body)
       const data = {
-        nome: parsed.nome,
-        cliente: parsed.cliente ?? '',
+        numeroRuolo: parsed.numeroRuolo,
+        cliente: parsed.cliente,
         foro: parsed.foro ?? '',
-        controparte: parsed.controparte ?? null,
         pmGiudice: parsed.pmGiudice ?? null,
-        numeroRuolo: parsed.numeroRuolo ?? null,
       }
       const pratica = await prisma.pratica.create({
         data,
       })
 
-      // Create default comparti (compat fallback without createMany)
+      // Parse client names from comma-separated string
+      const clientNames = parseClientNames(parsed.cliente);
+      
+      // Create client compartments with specific order after default ones
+      const clientComparti = clientNames.map((clientName, index) => ({
+        key: `cliente_${clientName.toLowerCase().replace(/\s+/g, '_')}`,
+        nome: clientName,
+        ordine: COMPARTI_DEFAULT.length + index, // Place after default compartments
+      }));
+
+      // DEBUG LOGS
+      console.log('Cliente input:', parsed.cliente);
+      console.log('Client names parsed:', clientNames);
+      console.log('Client comparti to create:', clientComparti);
+
+      // Combine default and client compartments
+      const allComparti = [...COMPARTI_DEFAULT, ...clientComparti];
+
+      console.log('All comparti to create:', allComparti);
+
+      // Create all comparti
       await prisma.$transaction(
-        COMPARTI_DEFAULT.map(comparto =>
+        allComparti.map(comparto =>
           prisma.comparto.create({
             data: {
               praticaId: pratica.id,

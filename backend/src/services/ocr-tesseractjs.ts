@@ -1,5 +1,5 @@
 import { createWorker } from 'tesseract.js'
-import * as Canvas from 'canvas'
+import { Canvas, Image, ImageData, Path2D, DOMMatrix } from '@napi-rs/canvas'
 import fs from 'fs'
 import { gzipSync } from 'zlib'
 import path from 'path'
@@ -16,18 +16,10 @@ const require = createRequire(import.meta.url)
 const { getDocument } = require('pdfjs-dist/legacy/build/pdf.js') as { getDocument: any }
 
 // Provide global constructors expected by pdf.js in Node (only if available)
-if (typeof (globalThis as any).ImageData === 'undefined' && (Canvas as any).ImageData) {
-  ;(globalThis as any).ImageData = (Canvas as any).ImageData
-}
-if (typeof (globalThis as any).Path2D === 'undefined' && (Canvas as any).Path2D) {
-  ;(globalThis as any).Path2D = (Canvas as any).Path2D
-}
-if (typeof (globalThis as any).DOMMatrix === 'undefined' && (Canvas as any).DOMMatrix) {
-  ;(globalThis as any).DOMMatrix = (Canvas as any).DOMMatrix
-}
-if (typeof (globalThis as any).Image === 'undefined' && (Canvas as any).Image) {
-  ;(globalThis as any).Image = (Canvas as any).Image
-}
+;(globalThis as any).ImageData = ImageData
+;(globalThis as any).Path2D = Path2D  
+;(globalThis as any).DOMMatrix = DOMMatrix
+;(globalThis as any).Image = Image
 
 // Patch drawImage to accept ImageData objects by converting to a temporary canvas
 const CtxProto: any = (Canvas as any).CanvasRenderingContext2D?.prototype

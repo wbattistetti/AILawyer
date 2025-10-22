@@ -3,8 +3,28 @@ import type { CaseGraph } from '../types/graph'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash } from 'lucide-react'
 import { DrawerWall, DrawerItem } from '../../drawers/DrawerWall'
 import type { DrawerType } from '../../drawers/types'
+// Aggiungi import per API call
+import { api } from '@/lib/api'
+import { useState, useEffect } from 'react'
 
-export function CabinetView({ graph, onOpen }: { graph: CaseGraph; onOpen: (nodeId: string) => void }) {
+export function CabinetView({ graph, onOpen, praticaId }: { 
+  graph: CaseGraph; 
+  onOpen: (nodeId: string) => void;
+  praticaId: string;
+}) {
+  
+  const [comparti, setComparti] = useState<Comparto[]>([])
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
+
+  // Chiamata API diretta invece di useQuery
+  useEffect(() => {
+    if (praticaId) {
+      api.getComparti(praticaId)
+        .then(setComparti)
+        .catch(console.error)
+    }
+  }, [praticaId])
+
   const colorFor = (label?: string) => {
     const s = (label || '').toLowerCase()
     // Usa gli stessi colori del flowchart (GraphCanvas.colorFor)
@@ -30,21 +50,35 @@ export function CabinetView({ graph, onOpen }: { graph: CaseGraph; onOpen: (node
     return <Boxes className="w-4 h-4 text-slate-600" />
   }
 
-  const [openMap, setOpenMap] = React.useState<Record<string, boolean>>({})
   function typeFor(label?: string): DrawerType | undefined {
     const s = (label || '').toLowerCase()
     // Document collections
     if (s.includes('elenco verbali') || s.includes('verbale di sequestro') || s.includes('verbale di arresto') || s.includes('reati contestati') || s.includes('intercett')) return 'DocumentCollection'
     return undefined
   }
-  const items: DrawerItem[] = useMemo(() => graph.nodes.map(n => ({
-    id: n.id,
-    color: colorFor(n.label),
-    label: n.label,
-    icon: iconFor(n.label),
-    isOpen: !!openMap[n.id],
-    type: typeFor(n.label),
-  })), [graph, openMap])
+
+  // Combina nodi del grafo + comparti clienti
+  const allItems = useMemo(() => {
+    const graphItems = graph.nodes.map(n => ({
+      id: n.id,
+      color: colorFor(n.label),
+      label: n.label,
+      icon: iconFor(n.label),
+      isOpen: !!openMap[n.id],
+      type: typeFor(n.label),
+    }))
+    
+    const clientItems = comparti?.filter(c => c.key.startsWith('cliente_')).map(c => ({
+      id: c.key,
+      label: c.nome,
+      color: '#3b82f6', // blue per clienti
+      icon: <Users className="w-4 h-4" />,
+      isOpen: !!openMap[c.key],
+      type: 'DocumentCollection' as const
+    })) || []
+    
+    return [...graphItems, ...clientItems]
+  }, [graph, comparti, openMap])
 
   const handleToggle = (id: string) => {
     setOpenMap(m => ({ ...m, [id]: !m[id] }))
@@ -52,7 +86,7 @@ export function CabinetView({ graph, onOpen }: { graph: CaseGraph; onOpen: (node
   }
 
   return (
-    <DrawerWall items={items} onToggle={handleToggle} className="w-full h-full" />
+    <DrawerWall items={allItems} onToggle={handleToggle} className="w-full h-full" />
   )
 }
 

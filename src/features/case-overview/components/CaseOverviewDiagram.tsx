@@ -15,6 +15,7 @@ import CabinetView from './CabinetView'
 export interface CaseOverviewDiagramProps {
   graph: CaseGraph
   peopleIndex: Record<string, string>
+  praticaId: string // Aggiungi questa prop
   initialState?: Partial<OverviewViewState>
   onOpenList?: (blockId: string) => void
   onOpenDocument?: (nodeId: string) => void
@@ -46,7 +47,11 @@ export function CaseOverviewDiagram(props: CaseOverviewDiagramProps) {
       </div>
       <div className="h-[calc(100%-2rem)] bg-white relative">
         {state.viewMode === 'CABINET' ? (
-          <CabinetView graph={props.graph} onOpen={(id)=>{ /* open editor via custom event - consumed by GraphCanvas editor */ }} />
+          <CabinetView 
+            graph={props.graph} 
+            onOpen={(id)=>{ /* open editor via custom event - consumed by GraphCanvas editor */ }}
+            praticaId={props.praticaId} // Passa praticaId
+          />
         ) : (
           <GraphBuilder />
         )}

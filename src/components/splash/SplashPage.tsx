@@ -59,7 +59,15 @@ export function SplashPage() {
         p.foro.toLowerCase().includes(q)
       )
     })
-    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .sort((a, b) => (a.numeroRuolo || '').localeCompare(b.numeroRuolo || ''))
+
+  const sortedPratiche = filteredPratiche
+    .map(pratica => ({
+      ...pratica,
+    }))
+    .sort((a, b) => 
+      (a.numeroRuolo || '').localeCompare(b.numeroRuolo || '')
+    );
 
   const handleDeletePratica = (pratica: Pratica) => {
     console.log('🗑️ [DELETE][START] Click cestino su pratica:', { id: pratica.id, nome: pratica.nome, status: pratica.status })
@@ -113,7 +121,7 @@ export function SplashPage() {
       } catch (error) {
         console.error('❌ [DELETE][API][ERROR] Errore eliminazione pratica:', error)
         // Se fallisce, ripristina
-        setAll(prev => [...prev, pratica].sort((a, b) => a.nome.localeCompare(b.nome)))
+        setAll(prev => [...prev, pratica].sort((a, b) => (a.numeroRuolo || '').localeCompare(b.numeroRuolo || '')))
         if (pratica.status === 'draft') {
           setDraftCount(prev => prev + 1)
         }
@@ -142,7 +150,7 @@ export function SplashPage() {
     if (deletedPratica) {
       console.log('✅ [UNDO] Ripristino pratica nell\'UI:', deletedPratica.nome)
       // Ripristina la pratica nella lista
-      setAll(prev => [...prev, deletedPratica].sort((a, b) => a.nome.localeCompare(b.nome)))
+      setAll(prev => [...prev, deletedPratica].sort((a, b) => (a.numeroRuolo || '').localeCompare(b.numeroRuolo || '')))
       if (deletedPratica.status === 'draft') {
         setDraftCount(prev => prev + 1)
       }
@@ -182,7 +190,7 @@ export function SplashPage() {
         console.error('❌ [DISMISS][API][ERROR] Errore eliminazione pratica:', error)
         // Se fallisce, ripristina la pratica
         console.log('↩️ [DISMISS] Ripristino pratica a causa dell\'errore')
-        setAll(prev => [...prev, praticaToDelete].sort((a, b) => a.nome.localeCompare(b.nome)))
+        setAll(prev => [...prev, praticaToDelete].sort((a, b) => (a.numeroRuolo || '').localeCompare(b.numeroRuolo || '')))
         if (praticaToDelete.status === 'draft') {
           setDraftCount(prev => prev + 1)
         }
@@ -347,12 +355,12 @@ export function SplashPage() {
                   
                   {/* Pratiche List */}
                   <div className="max-h-96 overflow-y-auto list-none">
-                    {filteredPratiche.length === 0 ? (
+                    {sortedPratiche.length === 0 ? (
                       <div className="p-8 text-center text-slate-500">
                         {searchQuery ? 'Nessuna pratica trovata' : 'Nessuna pratica disponibile'}
                       </div>
                     ) : (
-                      filteredPratiche.map(p => (
+                      sortedPratiche.map(p => (
                         <div
                           key={p.id}
                           className="group relative border-b last:border-b-0 hover:bg-slate-50 transition"

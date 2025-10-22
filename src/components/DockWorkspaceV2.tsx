@@ -22,6 +22,7 @@ type Props = {
   renderExplorer?: () => React.ReactNode
   isExplorerFullscreen?: boolean
   onLeftBorderTabChange?: (component: string) => void
+  praticaId?: string // Aggiungi questa prop
 }
 
 export type DockWorkspaceV2Handle = {
@@ -30,7 +31,7 @@ export type DockWorkspaceV2Handle = {
   switchToArchive: () => void
 }
 
-export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onLeftBorderTabChange }, ref) {
+export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onLeftBorderTabChange, praticaId }, ref) {
   const LayoutAny = Layout as any
   const layoutRootRef = useRef<HTMLDivElement>(null)
   
@@ -233,7 +234,15 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     if (comp === 'ids') return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
     if (comp === 'events') return <div className="w-full h-full overflow-auto bg-white">{renderEvents ? renderEvents() : null}</div>
     if (comp === 'overview') {
-      return <div className="w-full h-full overflow-hidden bg-white"><CaseOverviewDiagram graph={baselineGraph as any} peopleIndex={{}} /></div>
+      return (
+        <div className="w-full h-full overflow-hidden bg-white">
+          <CaseOverviewDiagram 
+            graph={baselineGraph as any} 
+            peopleIndex={{}} 
+            praticaId={praticaId || ''} // Passa praticaId
+          />
+        </div>
+      )
     }
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }

@@ -1,5 +1,13 @@
 import fs from 'fs/promises'
 import { createRequire } from 'module'
+import { Canvas, Image, ImageData, Path2D, DOMMatrix } from '@napi-rs/canvas'
+
+// Polyfill globale per pdfjs-dist
+;(globalThis as any).Canvas = Canvas
+;(globalThis as any).Image = Image
+;(globalThis as any).ImageData = ImageData
+;(globalThis as any).Path2D = Path2D
+;(globalThis as any).DOMMatrix = DOMMatrix
 
 // Import pdf.js usando require (necessario per Node.js con ES modules)
 const require = createRequire(import.meta.url)

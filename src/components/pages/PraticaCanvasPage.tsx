@@ -1526,6 +1526,7 @@ export function PraticaCanvasPage() {
           renderExplorer={() => <Explorer {...ExplorerProps} />}
           isExplorerFullscreen={isExplorerFullscreen}
           onLeftBorderTabChange={handleLeftBorderTabChange}
+          praticaId={id} // Aggiungi questa prop
           renderArchive={() => {
             const showOverlay = archiveUploadingCount > 0
             return (
@@ -1577,7 +1578,7 @@ export function PraticaCanvasPage() {
                   uploadingCount={archiveUploadingCount}
                 />
                 {showOverlay && (
-                  <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
+                  <div className="absolute inset-极 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
                     <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
                     <div className="text-sm text-neutral-800">
                       {archiveUploadingCount === 1 ? 'Sto caricando il file…' : `Sto caricando i ${archiveUploadingCount} file…`}

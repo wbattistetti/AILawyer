@@ -157,6 +157,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             extractOpen={shell.extractOpen}
             extractPos={shell.extractPos}
             extractTitle={shell.extractTitle}
+
             extractDate={shell.extractDate}
             extractNotes={shell.extractNotes}
             extractPage={shell.extractPage}

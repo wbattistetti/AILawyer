@@ -12,13 +12,11 @@ datasource db {
 
 model Pratica {
   id          String   @id @default(cuid())
-  nome        String
+  numeroRuolo String   // OBBLIGATORIO invece di nome
   cliente     String
   foro        String
-  controparte String?
-  pmGiudice   String?
-  numeroRuolo String?
-  status      String   @default("draft") // draft, committed
+  pmGiudice   String?  // Solo questo opzionale
+  status      String   @default("draft")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
