@@ -1,21 +1,17 @@
-import React from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, RefreshCw } from 'lucide-react'
 import { ThumbCard } from '../../../viewers/ThumbCard'
 import { api } from '../../../../lib/api'
+import { useArchive } from '../hooks/useArchive'
 import { ArchivePanelProps } from '../types'
 
 export function ArchivePanel({
   praticaId,
-  documenti,
-  uploads,
-  clientThumbByS3,
+  comparti,
   showAnalysis,
   setShowAnalysis,
   selectedDocId,
   setSelectedDocId,
-  archiveUploadingCount,
-  setArchiveUploadingCount,
   ocrProgressByDoc,
   ocrEtaByDoc,
   ocrStatusByDoc,
@@ -27,17 +23,15 @@ export function ArchivePanel({
   setOcrStatusByDoc,
   setOcrCancellingByDoc,
   setTranscribedPctByDoc,
-  setOcrJobByDoc,
-  onFileDrop,
-  onRemoveDocument,
-  onOpenInTable,
-  onOcr,
-  onOcrCancel
+  onOcr
 }: ArchivePanelProps) {
   
+  // Usa l'hook useArchive per la gestione documenti
+  const { documenti, uploads, clientThumbByS3, handleFileDrop, handleRemoveThumb } = useArchive(praticaId, comparti)
+
   // Dropzone: applicata alla colonna sinistra
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop: (files) => onFileDrop(files, { type: 'archive' }),
+    onDrop: (files) => handleFileDrop(files, null, { type: 'archive' }),
     noClick: true,
     multiple: true,
     accept: {
@@ -58,7 +52,7 @@ export function ArchivePanel({
 
       {/* Toolbar Archivio */}
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-neutral-600">Archiv极</div>
+        <div className="text-sm text-neutral-600">Archivio</div>
         <div className="flex items-center gap-2">
           <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); setShowAnalysis(!showAnalysis) }}>Analizza</button>
           <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); open() }}>Carica…</button>
@@ -68,7 +62,7 @@ export function ArchivePanel({
       {/* Upload spinner overlay */}
       {uploads.some(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)) && (
         <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
-          <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />极
+          <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
           <div className="text-sm text-neutral-800">
             {(uploads.filter(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)).length > 1)
               ? 'Sto caricando i documenti…'
@@ -87,7 +81,7 @@ export function ArchivePanel({
       )}
 
       {!showAnalysis && (
-        <div className="grid [grid-template-columns:repeat(auto-fill,极inmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
+        <div className="grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
         {documenti.map(doc => {
           const isPdf = doc.mime?.startsWith('application/pdf') || doc.filename.toLowerCase().endsWith('.pdf')
           const ver = (doc as any)?.updatedAt ? `?v=${encodeURIComponent((doc as any).updatedAt as any)}` : ''
@@ -101,10 +95,10 @@ export function ArchivePanel({
               imgSrc={thumb}
               selected={selectedDocId === doc.id}
               onSelect={() => setSelectedDocId(doc.id)}
-              onPreview={() => { setSelectedDocId(doc.id); onOpenInTable(doc) }}
+              onPreview={() => { setSelectedDocId(doc.id); /* onOpenInTable sarà gestito separatamente */ }}
               onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
-              onTable={() => { setSelectedDocId(doc.id); onOpenInTable(doc) }}
-              onRemove={() => onRemoveDocument(doc.id)}
+              onTable={() => { setSelectedDocId(doc.id); /* onOpenInTable sarà gestito separatamente */ }}
+              onRemove={() => handleRemoveThumb(doc.id)}
               onOcr={() => onOcr(doc)}
               onOcrCancel={async () => {
                 const d = documenti.find(x=>x.id===doc.id); if (!d) return
@@ -112,7 +106,7 @@ export function ArchivePanel({
                 setTranscribedPctByDoc({ ...transcribedPctByDoc, [d.id]: pct })
                 setOcrEtaByDoc({ ...ocrEtaByDoc, [d.id]: null })
                 setOcrStatusByDoc({ ...ocrStatusByDoc, [d.id]: null })
-                setOcrProgressByDoc({ ...ocrProgressByDoc, [d.id]: undefined })
+                setOcrProgressByDoc({ ...ocrProgressByDoc, [d.id]: 0 })
                 setOcrCancellingByDoc({ ...ocrCancellingByDoc, [d.id]: true })
                 const jid = ocrJobByDoc[d.id]
                 if (jid) { try { await api.cancelJob(jid) } catch {} }

@@ -3,30 +3,22 @@ import { OcrState } from '../../../../utils/ocrState'
 
 export interface ArchivePanelProps {
   praticaId: string | undefined
-  documenti: Documento[]
-  uploads: UploadProgress[]
-  clientThumbByS3: Record<string, string>
+  comparti: any[]
   showAnalysis: boolean
   setShowAnalysis: (show: boolean) => void
   selectedDocId: string | null
   setSelectedDocId: (id: string | null) => void
-  archiveUploadingCount: number
-  setArchiveUploadingCount: (count: number) => void
   ocrProgressByDoc: Record<string, number>
-  ocrEtaByDoc: Record<string, string>
-  ocrStatusByDoc: Record<string, string>
+  ocrEtaByDoc: Record<string, string | null>
+  ocrStatusByDoc: Record<string, string | null>
   ocrCancellingByDoc: Record<string, boolean>
   transcribedPctByDoc: Record<string, number>
   ocrJobByDoc: Record<string, string>
   setOcrProgressByDoc: (progress: Record<string, number>) => void
-  setOcrEtaByDoc: (eta: Record<string, string>) => void
-  setOcrStatusByDoc: (status: Record<string, string>) => void
+  setOcrEtaByDoc: (eta: Record<string, string | null>) => void
+  setOcrStatusByDoc: (status: Record<string, string | null>) => void
   setOcrCancellingByDoc: (cancelling: Record<string, boolean>) => void
   setTranscribedPctByDoc: (pct: Record<string, number>) => void
-  setOcrJobByDoc: (jobs: Record<string, string>) => void
-  onFileDrop: (files: File[], target?: { type?: string; id?: string; title?: string; tags?: string[] } | null) => void
-  onRemoveDocument: (documentId: string) => void
-  onOpenInTable: (documento: Documento) => void
   onOcr: (documento: Documento, mode?: 'quick' | 'full', limitPages?: number) => void
   onOcrCancel: (documento: Documento) => void
 }
