@@ -25,6 +25,7 @@
     "@napi-rs/canvas": "^0.1.80",
     "@prisma/client": "5.7.0",
     "bullmq": "^4.15.0",
+    "canvas": "^3.2.0",
     "dotenv": "^16.6.1",
     "execa": "^9.6.0",
     "fastify": "^4.24.3",
