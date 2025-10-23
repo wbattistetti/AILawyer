@@ -1,21 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
-// import { PdfReader } from '../../components/viewers/PdfReader'
 import { VerifyPdfViewer } from '../viewers/VerifyPdfViewer'
 import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
-// import { OcrVerify } from '../../components/ocr/OcrVerify'
 import { useToast } from '../../hooks/use-toast'
-import { Pratica, Comparto, Documento, UploadProgress } from '../../types'
-import { ArrowLeft, Upload, RefreshCw, FileText, Play, Pause, Square, ChevronDown, ChevronRight, X } from 'lucide-react'
-import { useDropzone } from 'react-dropzone'
-import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../lib/constants'
-import { ThumbCard } from '../viewers/ThumbCard'
+import { Pratica, Comparto, Documento } from '../../types'
+import { ArrowLeft, Upload, RefreshCw, X, FileText, Play, Pause, Square, ChevronDown, ChevronRight } from 'lucide-react'
 import { DocumentCollection } from '../../features/documents/DocumentCollection'
 import { SearchProvider } from '../search/SearchProvider'
 import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
@@ -27,12 +21,12 @@ import { detectContacts } from '../../features/parsers/contacts'
 import { detectVehicles } from '../../features/parsers/vehicles'
 import { extractEvents as nlpExtractEvents } from '../../services/nlp/client'
 import { ThingCardsPanel } from '../../features/cards/ThingCardsPanel'
-import { loadOcrState, saveOcrState, clearDoc, type OcrState } from '../../utils/ocrState'
 import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
 import { PdfViewerManager } from './pratica-canvas/components/PdfViewerManager'
+import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -42,21 +36,13 @@ export function PraticaCanvasPage() {
 
   const [pratica, setPratica] = useState<Pratica | null>(null)
   const [comparti, setComparti] = useState<Comparto[]>([])
-  const [previewDoc] = useState<Documento | null>(null)
-  const [syncPage, setSyncPage] = useState<number | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
-  const [previewWidth, setPreviewWidth] = useState<number>(576) // px, ~36rem
   const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
-  const resizeRef = useRef<{ startX: number; startW: number; ghost?: HTMLDivElement } | null>(null)
-  const [showAnalysis, setShowAnalysis] = useState(false)
-  const [archiveUploadingCount, setArchiveUploadingCount] = useState(0)
+  const [syncPage, setSyncPage] = useState<number | null>(null)
+  const [testNewViewer, setTestNewViewer] = useState(false)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
     documenti,
-    setDocumenti,
-    uploads,
     clientThumbByS3,
     handleFileDrop,
     handleRemoveThumb
@@ -64,21 +50,20 @@ export function PraticaCanvasPage() {
 
   const {
     ocrProgressByDoc,
-    setOcrProgressByDoc,
     ocrEtaByDoc,
-    setOcrEtaByDoc,
     ocrStatusByDoc,
-    setOcrStatusByDoc,
     ocrCancellingByDoc,
-    setOcrCancellingByDoc,
     transcribedPctByDoc,
-    setTranscribedPctByDoc,
-    ocrJobByDoc,
-    setOcrJobByDoc,
     handleOcr,
-    handleOcrCancel,
-    persistOcrState
+    handleOcrCancel
   } = useOcr(id)
+
+  // Usa il nuovo hook per error handling e loading states
+  const {
+    isLoading,
+    setIsLoading,
+    handleRefresh: handleRefreshHook
+  } = useErrorHandling()
 
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
@@ -86,10 +71,9 @@ export function PraticaCanvasPage() {
   // Workspace (Tavolo)
   const [viewMode, setViewMode] = useState<'archivio' | 'tavolo'>('archivio')
   // Simplified viewer: no split view metrics needed
-  // Verify mode state
-  const verifyDocRef = useRef<any | null>(null)
-  const verifyHostRef = useRef<HTMLDivElement | null>(null)
-  const { registerPage, unregisterPage, getPageRect, hitTestPage, pageRefs } = usePageRegistry(verifyHostRef as any)
+  // Verify mode state (currently disabled)
+  // const verifyHostRef = useRef<HTMLDivElement | null>(null)
+  // const { registerPage, unregisterPage, getPageRect, hitTestPage, pageRefs } = usePageRegistry(verifyHostRef as any)
   type VLine = { y: number; y1: number; x: number; x1: number; text: string; mid?: number; avgH?: number }
   const [verifyLinesByPage, setVerifyLinesByPage] = useState<Record<number, VLine[]>>({})
   const [verifyHover, setVerifyHover] = useState<{
@@ -103,226 +87,16 @@ export function PraticaCanvasPage() {
     vpH: number
     gapPct: number
   } | null>(null)
-  // const [verifyFontSize, setVerifyFontSize] = useState<number>(12)
   const [verifyPageSize, setVerifyPageSize] = useState<Record<number, { width: number; height: number }>>({})
   const [verifyPinned, setVerifyPinned] = useState<boolean>(false)
   const [verifyEditText, setVerifyEditText] = useState<string>('')
   const [verifyDebug, setVerifyDebug] = useState<boolean>(false)
   const [verifyEnabled, setVerifyEnabled] = useState(false)
   const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null)
-  const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null)
-  const [testNewViewer, setTestNewViewer] = useState(false)
 
-  // Removed px remap useEffect per expert's guidance; overlay is positioned in % within page wrapper
 
-  useEffect(() => {
-    const host = verifyHostRef.current
-    if (!host) return
-    let cancelled = false
-    const findInner = () => {
-      if (cancelled) return
-      // Heuristica: primo discendente scrollabile
-      let inner: HTMLElement | null = null
-      const stack: HTMLElement[] = [host]
-      while (stack.length) {
-        const el = stack.pop()!
-        const cs = getComputedStyle(el)
-        const canScroll = /(auto|scroll)/.test(cs.overflowY || '') && el.scrollHeight > el.clientHeight + 4
-        if (el !== host && canScroll) { inner = el; break }
-        stack.push(...Array.from(el.children).filter(n => n instanceof HTMLElement) as HTMLElement[])
-      }
-      inner = inner || (host.querySelector('.rpv-core__inner') as HTMLElement | null) || (host.querySelector('.rpv-core__pages') as HTMLElement | null) || (host.querySelector('.rpv-core__viewer') as HTMLElement | null)
-      if (inner) {
-        setOverlayTarget(inner)
-        if (verifyDebug) console.log('[VERIFY] overlay target mounted', inner.className)
-      } else {
-        if (verifyDebug) console.log('[VERIFY] waiting for inner container...')
-        requestAnimationFrame(findInner)
-      }
-    }
-    findInner()
-    return () => { cancelled = true }
-  }, [verifyEnabled, verifyHostRef.current])
 
-  useEffect(() => { if (verifyDebug) console.log('[VERIFY] enabled =', verifyEnabled) }, [verifyEnabled, verifyDebug])
 
-  // Registry: track pages inside the viewer and keep their rects updated
-  useEffect(() => {
-    const host = verifyHostRef.current
-    if (!host) return
-    const scan = () => {
-      const nodes = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
-      const seen = new Set<number>()
-      for (const el of nodes) {
-        const num = parseInt(el.getAttribute('data-page-number') || '', 10)
-        if (!num) continue
-        seen.add(num)
-        registerPage(num, el)
-      }
-      // Fallback robusto: usa i canvas ordinati per posizione e ancora alla syncPage
-      if (seen.size === 0) {
-        const canvases = Array.from(host.querySelectorAll('canvas')) as HTMLElement[]
-        const sorted = canvases
-          .map(el => ({ el, rect: el.getBoundingClientRect() }))
-          .sort((a, b) => a.rect.top - b.rect.top)
-        if (sorted.length) {
-          // Trova canvas ancora alla parte alta del viewer
-          const refTop = (overlayTarget || host).getBoundingClientRect().top
-          let anchorIdx = 0
-          let best = Infinity
-          for (let i = 0; i < sorted.length; i++) {
-            const d = Math.abs(sorted[i].rect.top - refTop)
-            if (d < best) { best = d; anchorIdx = i }
-          }
-          const base = (syncPage || 1)
-          for (let i = 0; i < sorted.length; i++) {
-            const num = base + (i - anchorIdx)
-            seen.add(num)
-            // Registra il canvas come elemento pagina per i rect; overlay resta nel container
-            registerPage(num, sorted[i].el)
-          }
-        }
-      }
-      // Unregister pages not seen
-      for (const key of Array.from(pageRefs.keys())) {
-        if (!seen.has(key)) unregisterPage(key)
-      }
-    }
-    scan()
-    const mo = new MutationObserver(() => scan())
-    mo.observe(host, { subtree: true, childList: true, attributes: true })
-    return () => mo.disconnect()
-  }, [verifyEnabled, registerPage, unregisterPage, pageRefs])
-
-  // Debug: log registry size periodically when Verify è ON
-  useEffect(() => {
-    if (!verifyEnabled || !verifyDebug) return
-    const id = setInterval(() => {
-      console.log('[VERIFY] pages registered =', pageRefs.size)
-    }, 500)
-    return () => clearInterval(id)
-  }, [verifyEnabled, verifyDebug, pageRefs])
-
-  // Ensure we always receive mousemove events even if React bubbling fails
-  useEffect(() => {
-    if (verifyDebug) console.log('[VERIFY] binding global mousemove')
-    const onMove = async (e: MouseEvent) => {
-      const hostDiv = verifyHostRef.current
-      if (!hostDiv) return
-      const pageNum = hitTestPage(e.clientX, e.clientY)
-      const rect = pageNum ? getPageRect(pageNum) : undefined
-      if (verifyDebug) console.log('[VERIFY] mouse over(win-reg)', { pageNum, hasRect: !!rect, enabled: verifyEnabled, pinned: verifyPinned })
-      if (!verifyEnabled || verifyPinned) return
-      if (!pageNum || !rect) { setVerifyHover(null); return }
-      const insideX = e.clientX - rect.left
-      const insideY = e.clientY - rect.top
-      if (insideX < 0 || insideY < 0 || insideX > rect.width || insideY > rect.height) { setVerifyHover(null); return }
-
-      // Prefer PDF OCR layer (when present on the current previewDoc)
-      const currentDoc = previewDoc
-      if (currentDoc?.ocrPdfKey) {
-        if (!verifyDocRef.current) {
-          try { const task = pdfjsLib.getDocument({ url: api.getLocalFileUrl(currentDoc.ocrPdfKey) }); verifyDocRef.current = await task.promise } catch { return }
-        }
-        if (!verifyLinesByPage[pageNum]) {
-          try {
-            const page = await verifyDocRef.current.getPage(pageNum)
-            const vp = page.getViewport({ scale: 1, rotation: (page as any).rotate || 0 })
-            const tc = await page.getTextContent()
-            if (verifyDebug) console.log('[VERIFY] ocrPdf text items', (tc as any).items?.length)
-            const items = (tc.items as any[])
-            let avgH = 0
-            for (const it of items) avgH += (it.height || 10)
-            avgH = items.length ? avgH / items.length : 10
-            const thr = Math.max(2, avgH * 0.6)
-            type LineAgg = { y0: number; y1: number; x0: number; x1: number; parts: { x: number; str: string; h: number }[]; yMid: number; sumH: number; n: number }
-            const aggs: LineAgg[] = []
-            for (const it of items) {
-              const t = it.transform
-              const x = t[4] as number
-              const yTop = t[5] as number
-              const h = (it.height as number) || 10
-              const w = (it.width as number) || ((it.str?.length || 1) * h * 0.5)
-              const yMid = vp.height - (yTop - h / 2)
-              let target: LineAgg | null = null
-              for (const ln of aggs) { if (Math.abs(ln.yMid - yMid) <= thr) { target = ln; break } }
-              if (!target) {
-                target = { y0: yTop - h, y1: yTop, x0: x, x1: x + w, parts: [], yMid, sumH: 0, n: 0 }
-                aggs.push(target)
-              } else {
-                target.y0 = Math.min(target.y0, yTop - h)
-                target.y1 = Math.max(target.y1, yTop)
-                target.x0 = Math.min(target.x0, x)
-                target.x1 = Math.max(target.x1, x + w)
-                target.yMid = (target.yMid + yMid) / 2
-              }
-              target.parts.push({ x, str: (it as any).str || '', h })
-              target.sumH += h
-              target.n += 1
-            }
-            const lines: VLine[] = aggs.map(ln => {
-              const sorted = ln.parts.sort((a, b) => a.x - b.x)
-              const text = sorted.map(p => p.str).join(' ').replace(/\.{2,}/g, ' ').replace(/\s+/g, ' ').trim()
-              const avgH2 = ln.n ? ln.sumH / ln.n : (ln.y1 - ln.y0)
-              return { y: vp.height - ln.y1, y1: vp.height - ln.y0, x: ln.x0, x1: ln.x1, text, mid: ln.yMid, avgH: avgH2 }
-            })
-            setVerifyLinesByPage(prev => ({ ...prev, [pageNum]: lines }))
-            setVerifyPageSize(prev => ({ ...prev, [pageNum]: { width: vp.width, height: vp.height } }))
-          } catch { }
-        }
-        const lines = verifyLinesByPage[pageNum]
-        if (!lines || !lines.length) { if (verifyDebug) console.log('[VERIFY] no lines for page', pageNum); setVerifyHover(null); return }
-        const vpH = verifyPageSize[pageNum]?.height || lines.reduce((m, l) => Math.max(m, l.y1), 0)
-        const pdfY = (insideY / rect.height) * vpH
-        let best = lines[0]
-        let bestDist = Math.abs(((best.y + best.y1) / 2) - pdfY)
-        for (const l of lines) {
-          const d = Math.abs(((l.y + l.y1) / 2) - pdfY)
-          if (d < bestDist) { best = l; bestDist = d }
-        }
-        const vpW = verifyPageSize[pageNum]?.width || lines.reduce((m, l) => Math.max(m, l.x1), 0)
-        // const hostRect = (overlayTarget || hostDiv).getBoundingClientRect()
-        const lineHPdf = best.avgH || (best.y1 - best.y)
-        const gapPdf = Math.max(lineHPdf * 0.5, 6 * (vpH / rect.height))
-        const gapPct = 100 * (gapPdf / vpH)
-        const text = (best.text || '').trim()
-        if (!text) { setVerifyHover(null); return }
-        setVerifyHover({
-          text,
-          page: pageNum,
-          pdfX0: best.x,
-          pdfX1: best.x1,
-          pdfY0: best.y,
-          pdfY1: best.y1,
-          vpW,
-          vpH,
-          gapPct
-        })
-        return
-      }
-
-      // ocrLayout / original fallback are handled by the in-DOM handler; here we stop
-    }
-    window.addEventListener('mousemove', onMove)
-    return () => window.removeEventListener('mousemove', onMove)
-  }, [verifyEnabled, verifyPinned, syncPage, verifyDebug, verifyLinesByPage, verifyPageSize, hitTestPage, getPageRect])
-
-  // Global hotkeys for debug and pin even when the host doesn't have focus
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'F9') {
-        setVerifyDebug(v => !v)
-      }
-      if (ev.key === 'F2') {
-        if (verifyEnabled && verifyHover && !verifyPinned) { setVerifyPinned(true); setVerifyEditText(verifyHover.text) }
-      }
-      if (verifyPinned && (ev.key === 'Escape' || ev.key === 'Enter')) {
-        setVerifyPinned(false); setVerifyHover(null)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [verifyEnabled, verifyHover, verifyPinned])
 
   // Measure header height dynamically
   useEffect(() => {
@@ -367,18 +141,6 @@ export function PraticaCanvasPage() {
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 
-  const handleRefresh = async () => {
-    if (!id) return
-    try {
-      const [p, c] = await Promise.all([api.getPratica(id), api.getComparti(id)])
-      setPratica(p)
-      setComparti(c)
-      toast({ title: 'Pratica aggiornata' })
-    } catch (error) {
-      console.error('Failed to refresh pratica:', error)
-      toast({ title: 'Errore', description: 'Impossibile aggiornare la pratica', variant: 'destructive' })
-    }
-  }
 
   // removed legacy handlePreview
 
@@ -411,17 +173,6 @@ export function PraticaCanvasPage() {
 
   // legacy alias removed
 
-  const openInTable = (documento: Documento) => {
-    try {
-      // Apri nel Tabset centrale di DockWorkspaceV2
-      setTimeout(() => {
-        dockV2Ref.current?.openDoc({ id: documento.id, title: documento.filename })
-      }, 0)
-      toast({ title: 'Aperto nel Tavolo', description: documento.filename })
-    } catch {
-      toast({ title: 'Errore', description: 'Impossibile aprire nel Tavolo', variant: 'destructive' })
-    }
-  }
 
   // Simple placeholder analysis panel
   function AnalysisPanel() {
@@ -741,7 +492,7 @@ export function PraticaCanvasPage() {
                 <span className="ml-1">{globalAggPct}%</span>
               </span>
             </div>
-            <button className="absolute top-1/2 -translate-y-1/2 right-2 text-neutral-700 hover:text-neutral-900" onClick={() => setShowAnalysis(false)} title="Chiudi">
+            <button className="absolute top-1/2 -translate-y-1/2 right-2 text-neutral-700 hover:text-neutral-900" onClick={() => { }} title="Chiudi">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -836,7 +587,7 @@ export function PraticaCanvasPage() {
       try {
         const t = e?.detail?.target
         const c = e?.detail?.count || 0
-        if (t?.type === 'archive') setArchiveUploadingCount(c)
+        // Archive uploading count disabled - removed setArchiveUploadingCount
       } catch { }
     }
     window.addEventListener('app:uploading' as any, onUploading as any)
@@ -956,7 +707,7 @@ export function PraticaCanvasPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [testNewViewer]);
 
-  const renderEvents = useCallback(() => <EventsTab currentDocId={selectedDocId || undefined} />, [selectedDocId])
+  const renderEvents = useCallback(() => <EventsTab />, [])
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
   const renderIds = useCallback(() => <ThingCardsPanel kind="id" />, [])
 
@@ -1016,7 +767,7 @@ export function PraticaCanvasPage() {
 
             <div className="flex items-center space-x-2">
               <Button variant="outline" size="sm" onClick={() => navigate('/')}>Apri pratica…</Button>
-              <Button variant="outline" size="sm" onClick={handleRefresh}>
+              <Button variant="outline" size="sm" onClick={() => handleRefreshHook(id!)}>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Salva pratica
               </Button>
@@ -1042,7 +793,7 @@ export function PraticaCanvasPage() {
           onLeftBorderTabChange={handleLeftBorderTabChange}
           praticaId={id} // Aggiungi questa prop
           renderArchive={() => {
-            const showOverlay = archiveUploadingCount > 0
+            const showOverlay = false // Archive uploading overlay disabled
             return (
               <div className="relative w-full h-full">
                 <DocumentCollection
@@ -1065,23 +816,18 @@ export function PraticaCanvasPage() {
                   })}
                   onOpen={(doc) => {
                     const trovato = documenti.find(x => x.id === doc.id)
-                    if (trovato) openInTable(trovato)
+                    if (trovato) {
+                      dockV2Ref.current?.openDoc({ id: trovato.id, title: trovato.filename })
+                      toast({ title: 'Aperto nel Tavolo', description: trovato.filename })
+                    }
                   }}
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
                   onRemove={(doc) => { handleRemoveThumb(doc.id) }}
                   onOcr={(doc) => { const d = documenti.find(x => x.id === doc.id); if (d) handleOcr(d, 'full') }}
                   onOcrCancel={async (doc) => {
                     const d = documenti.find(x => x.id === doc.id); if (!d) return
-                    // UX: nascondi subito overlay e mostra label con la % corrente
-                    const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
-                    setTranscribedPctByDoc(prev => ({ ...prev, [d.id]: pct }))
-                    setOcrEtaByDoc(prev => ({ ...prev, [d.id]: null }))
-                    setOcrStatusByDoc(prev => ({ ...prev, [d.id]: null }))
-                    setOcrProgressByDoc(prev => { const { [d.id]: _, ...rest } = prev; return rest })
-                    setOcrCancellingByDoc(prev => ({ ...prev, [d.id]: true }))
-                    // Backend: segnala cancellazione (inline mode usa registro in memoria)
-                    const jid = ocrJobByDoc[d.id]
-                    if (jid) { try { await api.cancelJob(jid) } catch { } }
+                    // Use hook's handleOcrCancel
+                    await handleOcrCancel(d)
                   }}
 
                   progressById={ocrProgressByDoc as any}
@@ -1089,13 +835,13 @@ export function PraticaCanvasPage() {
                   statusById={ocrStatusByDoc as any}
                   cancellingById={ocrCancellingByDoc as any}
                   transcribedPctById={transcribedPctByDoc as any}
-                  uploadingCount={archiveUploadingCount}
+                  uploadingCount={0}
                 />
                 {showOverlay && (
                   <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
                     <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
                     <div className="text-sm text-neutral-800">
-                      {archiveUploadingCount === 1 ? 'Sto caricando il file…' : `Sto caricando i ${archiveUploadingCount} file…`}
+                      Caricamento file...
                     </div>
                   </div>
                 )}
@@ -1106,7 +852,7 @@ export function PraticaCanvasPage() {
             <SearchProvider defaultScope={'archive'} registry={{
               getAllDocs: () => documenti.map(d => ({ id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: (d.mime?.includes('word') ? 'word' : 'pdf') })),
               getOpenDocs: () => [],
-              ensureDocOpen: async (docId: string) => { const d = documenti.find(x => x.id === docId); if (d) openInTable(d); return null },
+              ensureDocOpen: async (docId: string) => { const d = documenti.find(x => x.id === docId); if (d) { dockV2Ref.current?.openDoc({ id: d.id, title: d.filename }); toast({ title: 'Aperto nel Tavolo', description: d.filename }) }; return null },
             }} onSearch={async (q, _scope) => {
               try {
                 const anyPdf: any = pdfjsLib as any
@@ -1183,14 +929,17 @@ export function PraticaCanvasPage() {
               onOpenOccurrence={(o) => {
                 // Open doc tab, then dispatch navigation event used by VerifyPdfViewer
                 const d = documenti.find(x => x.id === o.docId)
-                if (d) openInTable(d)
+                if (d) {
+                  dockV2Ref.current?.openDoc({ id: d.id, title: d.filename })
+                  toast({ title: 'Aperto nel Tavolo', description: d.filename })
+                }
                 try {
                   window.dispatchEvent(new CustomEvent('app:goto-match', { detail: { docId: o.docId, q: '', match: { id: o.id, docId: o.docId, docTitle: o.docTitle, kind: 'pdf', page: o.page, q: '', x0Pct: o.box.x0Pct, x1Pct: o.box.x1Pct, y0Pct: o.box.y0Pct, y1Pct: o.box.y1Pct, snippet: o.snippet, score: 1 } } }))
                 } catch { }
               }}
             />
           )}
-          renderDoc={(docId) => {
+          renderDoc={(docId: string) => {
             const doc = documenti.find(d => d.id === docId)
             if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
             return renderDocViewer(doc)
@@ -1200,66 +949,16 @@ export function PraticaCanvasPage() {
           renderIds={renderIds}
         />
 
-        {/* Divider resizer between panels: (legacy archivio preview) */}
-        {false && viewMode === 'archivio' && previewDoc && (
-          <div
-            className="w-1.5 cursor-col-resize mx-1 self-stretch bg-transparent hover:bg-blue-400/30"
-            onMouseDown={(e) => {
-              e.preventDefault()
-              const body = document.body as HTMLBodyElement
-              const prevCursor = body.style.cursor
-              const prevSelect = body.style.userSelect
-              body.style.cursor = 'col-resize'
-              body.style.userSelect = 'none'
-
-              // Create ghost guide line
-              const ghost = document.createElement('div')
-              ghost.style.position = 'fixed'
-              ghost.style.top = '0'
-              ghost.style.bottom = '0'
-              ghost.style.width = '2px'
-              ghost.style.background = 'rgba(59,130,246,0.8)'
-              ghost.style.left = e.clientX + 'px'
-              ghost.style.zIndex = '9999'
-              ghost.style.pointerEvents = 'none'
-              ghost.style.boxShadow = '0 0 0 1px rgba(59,130,246,0.6)'
-              document.body.appendChild(ghost)
-
-              resizeRef.current = { startX: e.clientX, startW: previewWidth, ghost }
-              const onMove = (ev: MouseEvent) => {
-                if (!resizeRef.current?.ghost) return
-                resizeRef.current.ghost.style.left = ev.clientX + 'px'
-              }
-              const onUp = () => {
-                window.removeEventListener('mousemove', onMove)
-                window.removeEventListener('mouseup', onUp)
-                const curr = resizeRef.current
-                const dx = curr ? curr.startX - (parseInt(curr.ghost?.style.left || String(curr.startX)) || curr.startX) : 0
-                const next = Math.min(Math.max((curr?.startW || previewWidth) + dx, 320), Math.floor(window.innerWidth * 0.6))
-                setPreviewWidth(next)
-                // trigger fit-to-width in PdfReader by dispatching a resize event so it recomputes layout
-                window.dispatchEvent(new Event('resize'))
-                // Cleanup ghost and styles
-                if (curr?.ghost && curr.ghost.parentNode) curr.ghost.parentNode.removeChild(curr.ghost)
-                resizeRef.current = null
-                body.style.cursor = prevCursor
-                body.style.userSelect = prevSelect
-              }
-              window.addEventListener('mousemove', onMove)
-              window.addEventListener('mouseup', onUp)
-            }}
-            title="Ridimensiona"
-          />
-        )}
+        {/* Divider resizer removed - preview panel disabled */}
 
         {/* Right: Preview panel in Archivio */}
-        {false && viewMode === 'archivio' && previewDoc && (
+        {false && (
           <div
             className="relative bg-white border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
-            style={{ width: previewWidth }}
+            style={{ width: 576 }}
           >
             <div className="px-3 py-2 border-b text-sm font-medium flex items-center justify-between">
-              <span className="truncate pr-2">{previewDoc?.filename || ''}</span>
+              <span className="truncate pr-2">Preview</span>
               <div />
             </div>
             {/* Preview usa il nuovo viewer in modalità lite (senza overlay) */}
