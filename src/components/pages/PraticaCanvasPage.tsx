@@ -32,6 +32,7 @@ import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
+import { PdfViewerManager } from './pratica-canvas/components/PdfViewerManager'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -52,15 +53,15 @@ export function PraticaCanvasPage() {
   const [archiveUploadingCount, setArchiveUploadingCount] = useState(0)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
-  const { 
-    documenti, 
+  const {
+    documenti,
     setDocumenti,
-    uploads, 
-    clientThumbByS3, 
-    handleFileDrop, 
+    uploads,
+    clientThumbByS3,
+    handleFileDrop,
     handleRemoveThumb
   } = useArchive(id, comparti)
-  
+
   const {
     ocrProgressByDoc,
     setOcrProgressByDoc,
@@ -267,7 +268,7 @@ export function PraticaCanvasPage() {
             })
             setVerifyLinesByPage(prev => ({ ...prev, [pageNum]: lines }))
             setVerifyPageSize(prev => ({ ...prev, [pageNum]: { width: vp.width, height: vp.height } }))
-          } catch {}
+          } catch { }
         }
         const lines = verifyLinesByPage[pageNum]
         if (!lines || !lines.length) { if (verifyDebug) console.log('[VERIFY] no lines for page', pageNum); setVerifyHover(null); return }
@@ -279,7 +280,7 @@ export function PraticaCanvasPage() {
           const d = Math.abs(((l.y + l.y1) / 2) - pdfY)
           if (d < bestDist) { best = l; bestDist = d }
         }
-        const vpW = verifyPageSize[pageNum]?.width || lines.reduce((m,l)=> Math.max(m, l.x1), 0)
+        const vpW = verifyPageSize[pageNum]?.width || lines.reduce((m, l) => Math.max(m, l.x1), 0)
         // const hostRect = (overlayTarget || hostDiv).getBoundingClientRect()
         const lineHPdf = best.avgH || (best.y1 - best.y)
         const gapPdf = Math.max(lineHPdf * 0.5, 6 * (vpH / rect.height))
@@ -333,7 +334,7 @@ export function PraticaCanvasPage() {
     const ro = new ResizeObserver(() => update())
     if (headerRef.current) ro.observe(headerRef.current)
     window.addEventListener('resize', update)
-    return () => { window.removeEventListener('resize', update); try { ro.disconnect() } catch {} }
+    return () => { window.removeEventListener('resize', update); try { ro.disconnect() } catch { } }
   }, [pratica])
 
   // Load pratica data
@@ -353,7 +354,7 @@ export function PraticaCanvasPage() {
       }
     }
     load()
-    
+
     // restore viewMode
     try {
       const raw = localStorage.getItem(`ws_${id}`)
@@ -361,7 +362,7 @@ export function PraticaCanvasPage() {
         const ws = JSON.parse(raw)
         if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') setViewMode(ws.viewMode)
       }
-    } catch {}
+    } catch { }
   }, [id, toast])
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
@@ -396,57 +397,16 @@ export function PraticaCanvasPage() {
 
   // Reusable viewer for a documento with Verify mode toggle
   const renderDocViewer = (doc: Documento) => (
-    <div className="flex-1 overflow-hidden flex flex-col h-full">
-      <div className="border-b px-2 py-1 text-sm flex items-center gap-2">
-        {/* Aggiungi questo pulsante di toggle */}
-        <button
-          className={`px-2 py-1 rounded ${testNewViewer ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}
-          onClick={() => setTestNewViewer(v => !v)}
-          title="Test Nuovo Viewer"
-        >
-          {testNewViewer ? '🆕 Nuovo Viewer' : '✅ Vecchio Viewer'}
-        </button>
-        
-        <button
-          className={`px-2 py-1 rounded ${verifyEnabled ? 'bg-blue-100 text-blue-700' : 'hover:bg-muted'}`}
-          onClick={() => setVerifyEnabled(v => !v)}
-          title="Attiva/Disattiva Verify"
-        >
-          Verify {verifyEnabled ? 'ON' : 'OFF'}
-        </button>
-      </div>
-
-      {/* Aggiungi indicator di test */}
-      {testNewViewer && (
-        <div className="bg-yellow-100 text-yellow-800 p-1 text-xs text-center">
-          🆕 TESTING PdfViewerShell - Ctrl+Shift+V per toggle
-        </div>
-      )}
-
-      {/* Panel content */}
-      <div className="flex-1 overflow-hidden">
-        {/* SOSTITUISCI il VerifyPdfViewer con questo: */}
-        {testNewViewer ? (
-          // 🔥 NUOVO PDF VIEWER SHELL (IN TEST)
-          <PdfViewerShell
-            fileUrl={api.getLocalFileUrl(doc.s3Key)}
-            page={syncPage || 1}
-            lines={verifyLinesByPage[syncPage || 1] as any}
-            docId={doc.id}
-            onPageChange={(p)=> setSyncPage(p)}
-          />
-        ) : (
-          // ✅ VECCHIO VERIFY PDF VIEWER (SICURO)
-          <VerifyPdfViewer
-            fileUrl={api.getLocalFileUrl(doc.s3Key)}
-            page={syncPage || 1}
-            lines={verifyLinesByPage[syncPage || 1] as any}
-            docId={doc.id}
-            onPageChange={(p)=> setSyncPage(p)}
-          />
-        )}
-      </div>
-    </div>
+    <PdfViewerManager
+      doc={doc}
+      syncPage={syncPage}
+      setSyncPage={setSyncPage}
+      verifyEnabled={verifyEnabled}
+      setVerifyEnabled={setVerifyEnabled}
+      verifyLinesByPage={verifyLinesByPage}
+      testNewViewer={testNewViewer}
+      setTestNewViewer={setTestNewViewer}
+    />
   )
 
   // legacy alias removed
@@ -465,7 +425,7 @@ export function PraticaCanvasPage() {
 
   // Simple placeholder analysis panel
   function AnalysisPanel() {
-    const dbg = (...args: any[]) => { try { if ((window as any).__ANALYSIS_LOG) console.log('[ANALYSIS]', ...args) } catch {} }
+    const dbg = (...args: any[]) => { try { if ((window as any).__ANALYSIS_LOG) console.log('[ANALYSIS]', ...args) } catch { } }
     // Global capturing logger to guarantee logs on Play clicks
     useEffect(() => {
       const handler = (e: any) => {
@@ -477,7 +437,7 @@ export function PraticaCanvasPage() {
           const doc = el.getAttribute('data-ana-doc') || ''
           // eslint-disable-next-line no-console
           console.log('[ANA DEBUG] click', { action, key, doc })
-        } catch {}
+        } catch { }
       }
       document.addEventListener('click', handler, true)
       return () => document.removeEventListener('click', handler, true)
@@ -500,8 +460,8 @@ export function PraticaCanvasPage() {
     const [docState, setDocState] = useState<Record<string, DocState>>({})
     const abortRef = useRef<Map<string, { ocr?: AbortController; entities?: AbortController; contacts?: AbortController; vehicles?: AbortController; events?: AbortController }>>(new Map())
     const ensureAbort = (id: string) => { let m = abortRef.current.get(id); if (!m) { m = {}; abortRef.current.set(id, m) } return m }
-    const stopTask = (id: string, task: 'ocr'|'entities'|'contacts'|'vehicles'|'events') => { try { ensureAbort(id)[task]?.abort() } catch {} setDocState(prev => ({ ...prev, [id]: { ...ensureState(id), running: { ...ensureState(id).running, [task]: false } } })) }
-    const stopAllTasks = (id: string) => { const m = ensureAbort(id); try { m.ocr?.abort() } catch {}; try { m.entities?.abort() } catch {}; try { m.contacts?.abort() } catch {}; try { m.vehicles?.abort() } catch {}; try { m.events?.abort() } catch {}; setDocState(prev => ({ ...prev, [id]: { ...ensureState(id), running: { ocr:false, entities:false, contacts:false, vehicles:false, events:false } } })) }
+    const stopTask = (id: string, task: 'ocr' | 'entities' | 'contacts' | 'vehicles' | 'events') => { try { ensureAbort(id)[task]?.abort() } catch { } setDocState(prev => ({ ...prev, [id]: { ...ensureState(id), running: { ...ensureState(id).running, [task]: false } } })) }
+    const stopAllTasks = (id: string) => { const m = ensureAbort(id); try { m.ocr?.abort() } catch { }; try { m.entities?.abort() } catch { }; try { m.contacts?.abort() } catch { }; try { m.vehicles?.abort() } catch { }; try { m.events?.abort() } catch { }; setDocState(prev => ({ ...prev, [id]: { ...ensureState(id), running: { ocr: false, entities: false, contacts: false, vehicles: false, events: false } } })) }
 
     // Perf: throttle progress updates and cache adapters per doc
     const lastUpdateRef = useRef<number>(0)
@@ -511,7 +471,7 @@ export function PraticaCanvasPage() {
       const commit = (now - (lastUpdateRef.current || 0)) > 120 || page >= total
       if (!commit) return
       lastUpdateRef.current = now
-      const pct = Math.max(0, Math.min(1, page / Math.max(1,total)))
+      const pct = Math.max(0, Math.min(1, page / Math.max(1, total)))
       setDocState(prev => ({ ...prev, [docId]: { ...ensureState(docId), pages: total, progress: { ...ensureState(docId).progress, [key]: pct }, running: { ...ensureState(docId).running, [key]: true } } }))
       dbg('progress', { docId, task: String(key), page, total, pct })
     }
@@ -534,8 +494,8 @@ export function PraticaCanvasPage() {
           })
         })
       })
-      return () => { try { off() } catch {} }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      return () => { try { off() } catch { } }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
     const getAdapters = async (doc: Documento) => {
       if (adapterCacheRef.current.has(doc.id)) { dbg('adapters:cache-hit', { docId: doc.id }); return adapterCacheRef.current.get(doc.id) as any[] }
@@ -545,7 +505,7 @@ export function PraticaCanvasPage() {
       return adapters
     }
 
-    const ensureState = (id: string) => (docState[id] || { pages: undefined, page: 0, running: { ocr:false, entities:false, contacts:false, vehicles:false, events:false }, progress: { ocr:0, entities:0, contacts:0, vehicles:0, events:0 } })
+    const ensureState = (id: string) => (docState[id] || { pages: undefined, page: 0, running: { ocr: false, entities: false, contacts: false, vehicles: false, events: false }, progress: { ocr: 0, entities: 0, contacts: 0, vehicles: 0, events: 0 } })
 
     const startEntities = async (doc: Documento) => {
       const ds = ensureState(doc.id)
@@ -560,7 +520,7 @@ export function PraticaCanvasPage() {
           totalPages = Math.max(totalPages, (ensureState(doc.id).pages || p.page))
           const curr = ensureState(doc.id)
           const pages = curr.pages || totalPages
-          setProgressThrottled(doc.id,'entities',p.page,pages)
+          setProgressThrottled(doc.id, 'entities', p.page, pages)
           dbg('entities:progress', { docId: doc.id, page: p.page, pages })
         }, { persist: false, signal: ctrl.signal })
       } catch (e) {
@@ -581,7 +541,7 @@ export function PraticaCanvasPage() {
       dbg('ocr:done', { docId: doc.id })
     }
 
-    const startParsers = async (doc: Documento, tasks: Array<'contacts'|'vehicles'>) => {
+    const startParsers = async (doc: Documento, tasks: Array<'contacts' | 'vehicles'>) => {
       try {
         dbg('parsers:start', { docId: doc.id, tasks })
         const ds = ensureState(doc.id)
@@ -599,11 +559,11 @@ export function PraticaCanvasPage() {
             try {
               const items = detectContacts({ docId: doc.id, title: doc.filename, page, tokens })
               if (items?.length) {
-                try { window.dispatchEvent(new CustomEvent('app:things', { detail: { docId: doc.id, items } })) } catch {}
+                try { window.dispatchEvent(new CustomEvent('app:things', { detail: { docId: doc.id, items } })) } catch { }
                 dbg('contacts:items', { docId: doc.id, page, count: items.length })
               }
-            } catch {}
-            setProgressThrottled(doc.id,'contacts',page,total)
+            } catch { }
+            setProgressThrottled(doc.id, 'contacts', page, total)
             dbg('contacts:progress', { docId: doc.id, page, total })
           }
           if (tasks.includes('vehicles')) {
@@ -611,11 +571,11 @@ export function PraticaCanvasPage() {
             try {
               const items = detectVehicles({ docId: doc.id, title: doc.filename, page, tokens })
               if (items?.length) {
-                try { window.dispatchEvent(new CustomEvent('app:things', { detail: { docId: doc.id, items } })) } catch {}
+                try { window.dispatchEvent(new CustomEvent('app:things', { detail: { docId: doc.id, items } })) } catch { }
                 dbg('vehicles:items', { docId: doc.id, page, count: items.length })
               }
-            } catch {}
-            setProgressThrottled(doc.id,'vehicles',page,total)
+            } catch { }
+            setProgressThrottled(doc.id, 'vehicles', page, total)
             dbg('vehicles:progress', { docId: doc.id, page, total })
           }
         }
@@ -638,9 +598,9 @@ export function PraticaCanvasPage() {
         dbg('events:meta', { docId: doc.id, pages: total })
         for await (const { page, tokens } of ad.streamPageTokens()) {
           // call backend but ignore result here; orchestrator already indexes events
-          const text = tokens.map((t: { text:string })=>t.text).join(' ')
-          try { await nlpExtractEvents(text, { doc_id: doc.id, page }, { signal: ctrl.signal }) } catch {}
-          setProgressThrottled(doc.id,'events',page,total)
+          const text = tokens.map((t: { text: string }) => t.text).join(' ')
+          try { await nlpExtractEvents(text, { doc_id: doc.id, page }, { signal: ctrl.signal }) } catch { }
+          setProgressThrottled(doc.id, 'events', page, total)
           dbg('events:progress', { docId: doc.id, page, total })
         }
       } finally {
@@ -662,16 +622,16 @@ export function PraticaCanvasPage() {
       dbg('all:start', { docId: doc.id })
       if (JOB_SYSTEM_ENABLED) { enqueueAll(doc); return }
       // NON avviare OCR in modalità fallback: parte solo su click esplicito
-      try { startEntities(doc) } catch {}
-      try { startParsers(doc, ['contacts','vehicles']) } catch {}
-      try { startEvents(doc) } catch {}
+      try { startEntities(doc) } catch { }
+      try { startParsers(doc, ['contacts', 'vehicles']) } catch { }
+      try { startEvents(doc) } catch { }
     }
 
     const headerBar = (docId: string, docTitle: string, aggPct: number, isOpen: boolean, onToggle: () => void) => (
       <div className="relative overflow-visible"
-           onMouseEnter={()=>setHoverDoc(docId)}
-           onMouseLeave={()=>setHoverDoc(prev=> (prev===docId? null: prev))}>
-        <div className="relative w-full h-8 rounded overflow-hidden flex items-center" style={{ backgroundColor:'#d8ecff' }}>
+        onMouseEnter={() => setHoverDoc(docId)}
+        onMouseLeave={() => setHoverDoc(prev => (prev === docId ? null : prev))}>
+        <div className="relative w-full h-8 rounded overflow-hidden flex items-center" style={{ backgroundColor: '#d8ecff' }}>
           <FileText className="w-4 h-4 text-neutral-600 ml-2 mr-2 shrink-0" />
           {/* Idle: solo testo; Running: progress bar */}
           {aggPct > 0 ? (
@@ -681,13 +641,13 @@ export function PraticaCanvasPage() {
                 <span className="truncate pr-2">{docTitle}</span>
                 <span className="flex items-center">
                   {/* inline toolbar just left of % with 3px gap */}
-                  <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e)=>{ e.stopPropagation(); }} onClick={(e)=>{ e.stopPropagation(); }}>
-                    <button type="button" data-ana-action="play-all" data-ana-doc={docId} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={Object.values(ensureState(docId).running).some(Boolean)} onClick={(e)=>{ e.stopPropagation(); try { console.log('[ANALYSIS] doc:play-all', { docId }) } catch {}; const d=documenti.find(x=>x.id===docId); if(d){ startAll(d); } }}><Play className="w-3.5 h-3.5" /></button>
-                    <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e)=>e.stopPropagation()}><Pause className="w-3.5 h-3.5" /></button>
-                    <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e)=>{ e.stopPropagation(); stopAllTasks(docId) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
+                  <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e) => { e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); }}>
+                    <button type="button" data-ana-action="play-all" data-ana-doc={docId} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={Object.values(ensureState(docId).running).some(Boolean)} onClick={(e) => { e.stopPropagation(); try { console.log('[ANALYSIS] doc:play-all', { docId }) } catch { }; const d = documenti.find(x => x.id === docId); if (d) { startAll(d); } }}><Play className="w-3.5 h-3.5" /></button>
+                    <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e) => e.stopPropagation()}><Pause className="w-3.5 h-3.5" /></button>
+                    <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e) => { e.stopPropagation(); stopAllTasks(docId) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
                   </span>
                   {Math.round(aggPct)}%
-                  <button type="button" className="ml-2 text-neutral-600 hover:text-neutral-900" onClick={(e)=>{ e.stopPropagation(); onToggle(); }} aria-label={isOpen ? 'Comprimi' : 'Espandi'} title={isOpen ? 'Comprimi' : 'Espandi'}>
+                  <button type="button" className="ml-2 text-neutral-600 hover:text-neutral-900" onClick={(e) => { e.stopPropagation(); onToggle(); }} aria-label={isOpen ? 'Comprimi' : 'Espandi'} title={isOpen ? 'Comprimi' : 'Espandi'}>
                     {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
                 </span>
@@ -697,13 +657,13 @@ export function PraticaCanvasPage() {
             <div className="relative group flex-1 flex items-center justify-between px-2 text-xs text-black">
               <span className="truncate pr-2">{docTitle}</span>
               <span className="flex items-center">
-                <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e)=>{ e.stopPropagation(); }} onClick={(e)=>{ e.stopPropagation(); }}>
-                  <button type="button" data-ana-action="play-all" data-ana-doc={docId} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={Object.values(ensureState(docId).running).some(Boolean)} onClick={(e)=>{ e.stopPropagation(); try { console.log('[ANALYSIS] doc:play-all', { docId }) } catch {}; const d=documenti.find(x=>x.id===docId); if(d){ startAll(d); } }}><Play className="w-3.5 h-3.5" /></button>
-                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e)=>e.stopPropagation()}><Pause className="w-3.5 h-3.5" /></button>
-                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e)=>{ e.stopPropagation(); stopAllTasks(docId) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
+                <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e) => { e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); }}>
+                  <button type="button" data-ana-action="play-all" data-ana-doc={docId} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={Object.values(ensureState(docId).running).some(Boolean)} onClick={(e) => { e.stopPropagation(); try { console.log('[ANALYSIS] doc:play-all', { docId }) } catch { }; const d = documenti.find(x => x.id === docId); if (d) { startAll(d); } }}><Play className="w-3.5 h-3.5" /></button>
+                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e) => e.stopPropagation()}><Pause className="w-3.5 h-3.5" /></button>
+                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={(e) => { e.stopPropagation(); stopAllTasks(docId) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
                 </span>
                 0%
-                <button type="button" className="ml-2 text-neutral-600 hover:text-neutral-900" onClick={(e)=>{ e.stopPropagation(); onToggle(); }} aria-label={isOpen ? 'Comprimi' : 'Espandi'} title={isOpen ? 'Comprimi' : 'Espandi'}>
+                <button type="button" className="ml-2 text-neutral-600 hover:text-neutral-900" onClick={(e) => { e.stopPropagation(); onToggle(); }} aria-label={isOpen ? 'Comprimi' : 'Espandi'} title={isOpen ? 'Comprimi' : 'Espandi'}>
                   {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
               </span>
@@ -716,19 +676,19 @@ export function PraticaCanvasPage() {
 
     const taskRow = (taskKey: string, label: string, pct: number) => (
       <div className="relative overflow-visible"
-           onMouseEnter={()=>setHoverTask(taskKey)}
-           onMouseLeave={()=>setHoverTask(prev=> (prev===taskKey? null: prev))}>
+        onMouseEnter={() => setHoverTask(taskKey)}
+        onMouseLeave={() => setHoverTask(prev => (prev === taskKey ? null : prev))}>
         {pct > 0 ? (
           <div className="relative group w-full h-7 bg-white rounded border border-black overflow-hidden">
             <div className="absolute inset-y-0 left-0 bg-blue-700" style={{ width: `${pct}%` }} />
             <div className="absolute inset-0 flex items-center justify-between px-2 text-[12px] text-black">
               <span className="truncate pr-2">{label}</span>
               <span className="flex items-center">
-              <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e)=>{ e.stopPropagation(); }} onClick={(e)=>{ e.stopPropagation(); }}>
-                <button type="button" data-ana-action="play" data-ana-key={taskKey} data-ana-doc={taskKey.split(':')[0]} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={ensureState(taskKey.split(':')[0]).running[taskKey.split(':')[1] as keyof DocState['running']]} onClick={()=>{ const [docId,task]=taskKey.split(':'); try { console.log('[ANALYSIS] play:click', { docId, task }) } catch {}; const d=documenti.find(x=>x.id===docId); if(!d) return; if(task==='ocr') startOcr(d); if(task==='entities') startEntities(d); if(task==='contacts') startParsers(d,['contacts']); if(task==='vehicles') startParsers(d,['vehicles']); if(task==='events') startEvents(d); }}><Play className="w-3.5 h-3.5" /></button>
-                <button className="p-0.5 text-neutral-700 hover:text-neutral-900"><Pause className="w-3.5 h-3.5" /></button>
-                <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={()=>{ const [docId,task]=taskKey.split(':') as [string, any]; stopTask(docId, task) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
-              </span>
+                <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e) => { e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); }}>
+                  <button type="button" data-ana-action="play" data-ana-key={taskKey} data-ana-doc={taskKey.split(':')[0]} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={ensureState(taskKey.split(':')[0]).running[taskKey.split(':')[1] as keyof DocState['running']]} onClick={() => { const [docId, task] = taskKey.split(':'); try { console.log('[ANALYSIS] play:click', { docId, task }) } catch { }; const d = documenti.find(x => x.id === docId); if (!d) return; if (task === 'ocr') startOcr(d); if (task === 'entities') startEntities(d); if (task === 'contacts') startParsers(d, ['contacts']); if (task === 'vehicles') startParsers(d, ['vehicles']); if (task === 'events') startEvents(d); }}><Play className="w-3.5 h-3.5" /></button>
+                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900"><Pause className="w-3.5 h-3.5" /></button>
+                  <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={() => { const [docId, task] = taskKey.split(':') as [string, any]; stopTask(docId, task) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
+                </span>
                 {Math.round(pct)}%
               </span>
             </div>
@@ -737,10 +697,10 @@ export function PraticaCanvasPage() {
           <div className="relative group w-full h-7 flex items-center justify-between px-2 text-[12px] text-black bg-white rounded">
             <span className="truncate pr-2">{label}</span>
             <span className="flex items-center">
-              <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e)=>{ e.stopPropagation(); }} onClick={(e)=>{ e.stopPropagation(); }}>
-                <button type="button" data-ana-action="play" data-ana-key={taskKey} data-ana-doc={taskKey.split(':')[0]} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={ensureState(taskKey.split(':')[0]).running[taskKey.split(':')[1] as keyof DocState['running']]} onClick={()=>{ const [docId,task]=taskKey.split(':'); console.log('[ANALYSIS] play:click', { docId, task }); const d=documenti.find(x=>x.id===docId); if(!d) return; if(task==='ocr') startOcr(d); if(task==='entities') startEntities(d); if(task==='contacts') startParsers(d,['contacts']); if(task==='vehicles') startParsers(d,['vehicles']); if(task==='events') startEvents(d); }}><Play className="w-3.5 h-3.5" /></button>
+              <span className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ marginRight: '3px' }} onMouseDown={(e) => { e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); }}>
+                <button type="button" data-ana-action="play" data-ana-key={taskKey} data-ana-doc={taskKey.split(':')[0]} className="p-0.5 text-neutral-700 hover:text-neutral-900" disabled={ensureState(taskKey.split(':')[0]).running[taskKey.split(':')[1] as keyof DocState['running']]} onClick={() => { const [docId, task] = taskKey.split(':'); console.log('[ANALYSIS] play:click', { docId, task }); const d = documenti.find(x => x.id === docId); if (!d) return; if (task === 'ocr') startOcr(d); if (task === 'entities') startEntities(d); if (task === 'contacts') startParsers(d, ['contacts']); if (task === 'vehicles') startParsers(d, ['vehicles']); if (task === 'events') startEvents(d); }}><Play className="w-3.5 h-3.5" /></button>
                 <button className="p-0.5 text-neutral-700 hover:text-neutral-900"><Pause className="w-3.5 h-3.5" /></button>
-                <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={()=>{ const [docId,task]=taskKey.split(':') as [string, any]; stopTask(docId, task) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
+                <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={() => { const [docId, task] = taskKey.split(':') as [string, any]; stopTask(docId, task) }} title="Stop"><Square className="w-3.5 h-3.5" /></button>
               </span>
               0%
             </span>
@@ -749,7 +709,7 @@ export function PraticaCanvasPage() {
       </div>
     )
 
-    const SmallToolbar = ({ onPlay, onPause, onStop }: { onPlay?:()=>void; onPause?:()=>void; onStop?:()=>void }) => (
+    const SmallToolbar = ({ onPlay, onPause, onStop }: { onPlay?: () => void; onPause?: () => void; onStop?: () => void }) => (
       <span className="inline-flex items-center gap-1 bg-white/90 border border-neutral-300 rounded px-1 py-0.5">
         <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={onPlay}><Play className="w-3.5 h-3.5" /></button>
         <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={onPause}><Pause className="w-3.5 h-3.5" /></button>
@@ -765,7 +725,7 @@ export function PraticaCanvasPage() {
         const tasks = tasksTemplate.map(t => ({ ...t, w: ds.progress[t.id as keyof typeof ds.progress] || 0 }))
         return tasks.reduce((s, t) => s + (t.w * (weight[t.id] || 0)), 0)
       })
-      const avg = perDoc.length ? (perDoc.reduce((a,b)=>a+b,0) / perDoc.length) : 0
+      const avg = perDoc.length ? (perDoc.reduce((a, b) => a + b, 0) / perDoc.length) : 0
       return Math.round(avg * 100)
     })()
 
@@ -781,7 +741,7 @@ export function PraticaCanvasPage() {
                 <span className="ml-1">{globalAggPct}%</span>
               </span>
             </div>
-            <button className="absolute top-1/2 -translate-y-1/2 right-2 text-neutral-700 hover:text-neutral-900" onClick={()=>setShowAnalysis(false)} title="Chiudi">
+            <button className="absolute top-1/2 -translate-y-1/2 right-2 text-neutral-700 hover:text-neutral-900" onClick={() => setShowAnalysis(false)} title="Chiudi">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -793,13 +753,13 @@ export function PraticaCanvasPage() {
             const agg = tasks.reduce((s, t) => s + (t.w * (weight[t.id] || 0)), 0) * 100
             const isOpen = open[doc.id] ?? true
             return (
-              <div key={doc.id} className="rounded overflow-visible" style={{ backgroundColor:'#eef6ff' }}>
-                <div className="px-3 py-2 rounded-t" style={{ backgroundColor:'#d8ecff' }}>
-                  {headerBar(doc.id, doc.filename, agg, isOpen, ()=>setOpen(prev=>({ ...prev, [doc.id]: !isOpen })))}
+              <div key={doc.id} className="rounded overflow-visible" style={{ backgroundColor: '#eef6ff' }}>
+                <div className="px-3 py-2 rounded-t" style={{ backgroundColor: '#d8ecff' }}>
+                  {headerBar(doc.id, doc.filename, agg, isOpen, () => setOpen(prev => ({ ...prev, [doc.id]: !isOpen })))}
                 </div>
                 {isOpen && (
                   <div className="pb-3 pr-3 pl-6 space-y-2 overflow-visible rounded-b">
-                    {tasks.map((t: { id:string; label:string; w:number }) => (
+                    {tasks.map((t: { id: string; label: string; w: number }) => (
                       <div key={t.id}>{taskRow(`${doc.id}:${t.id}`, t.label, (t.w || 0) * 100)}</div>
                     ))}
                   </div>
@@ -822,11 +782,11 @@ export function PraticaCanvasPage() {
         const target = e?.detail?.target || null
         if (!files || files.length === 0) return
         handleFileDrop(files, null, target)
-      } catch {}
+      } catch { }
     }
     const broadcastDocs = () => {
       try {
-                const items = documenti.map(d => {
+        const items = documenti.map(d => {
           const getTags = (doc: any) => {
             if (Array.isArray(doc.tags)) return doc.tags
             if (typeof doc.tags === 'string') { try { return JSON.parse(doc.tags) } catch { return [] } }
@@ -838,7 +798,7 @@ export function PraticaCanvasPage() {
           const mkFallbackThumb = (doc: typeof d) => {
             const tags = getTags(doc)
             const pickColor = () => {
-              if (tags.includes('verbale_sequestro') || tags.includes('verbale') ) return '#fbbf24' // amber
+              if (tags.includes('verbale_sequestro') || tags.includes('verbale')) return '#fbbf24' // amber
               if (tags.includes('intercettazioni')) return '#ec4899' // pink
               if (tags.includes('reati')) return '#64748b' // slate
               return '#94a3b8'
@@ -851,12 +811,12 @@ export function PraticaCanvasPage() {
                 <rect x='24' y='24' width='208' height='36' rx='6' fill='${bg}'/>
                 <text x='128' y='48' text-anchor='middle' font-family='Inter, Arial, sans-serif' font-size='16' fill='white'>Estratto</text>
                 <text x='24' y='100' font-family='Inter, Arial, sans-serif' font-size='14' fill='#111'>${label}</text>
-                <text x='24' y='330' font-family='Inter, Arial, sans-serif' font-size='12' fill='#6b7280'>${(doc.mime||'').split('/').pop()?.toUpperCase() || 'FILE'}</text>
+                <text x='24' y='330' font-family='Inter, Arial, sans-serif' font-size='12' fill='#6b7280'>${(doc.mime || '').split('/').pop()?.toUpperCase() || 'FILE'}</text>
               </svg>`
             return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
           }
           const thumb = clientThumb || serverThumb || (isPdf ? api.getLocalFileUrl(d.s3Key) : mkFallbackThumb(d))
-                  return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d) }
+          return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d) }
         })
         // Include in-memory pending extracts as virtual items (if any)
         try {
@@ -867,7 +827,7 @@ export function PraticaCanvasPage() {
         } catch {
           window.dispatchEvent(new CustomEvent('app:documents', { detail: { items } }))
         }
-      } catch {}
+      } catch { }
     }
     const onRequestDocs = () => broadcastDocs()
     window.addEventListener('app:upload-files' as any, onUpload as any)
@@ -877,7 +837,7 @@ export function PraticaCanvasPage() {
         const t = e?.detail?.target
         const c = e?.detail?.count || 0
         if (t?.type === 'archive') setArchiveUploadingCount(c)
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app:uploading' as any, onUploading as any)
     // initial broadcast so drawers get the list immediately
@@ -891,7 +851,7 @@ export function PraticaCanvasPage() {
           const title = d?.meta?.title || 'Estratto'
           const text = d?.meta?.text || d?.meta?.content || ''
           const source = d?.meta?.source
-          try { console.log('[OPEN][tmpdoc]', { id: d.docId, title, source }) } catch {}
+          try { console.log('[OPEN][tmpdoc]', { id: d.docId, title, source }) } catch { }
           dockV2Ref.current?.openTmpDoc({ id: d.docId, title, content: text, text, source })
           return
         }
@@ -900,15 +860,15 @@ export function PraticaCanvasPage() {
           dockV2Ref.current.openDoc({ id: doc.id, title: doc.filename })
           // page sync handled by viewer via event elsewhere
           const ev = new CustomEvent('app:goto-match', { detail: { docId: d.docId, match: d.match, q: d.q } })
-          try { console.log('[OPEN][persisted][goto-match][dispatch]', ev.detail) } catch {}
+          try { console.log('[OPEN][persisted][goto-match][dispatch]', ev.detail) } catch { }
           window.dispatchEvent(ev)
         }
-      } catch {}
+      } catch { }
     }
     const onGotoSource = (e: any) => {
       try {
         const detail = e?.detail || {}
-        try { console.log('[GOTO-SOURCE][recv]', detail) } catch {}
+        try { console.log('[GOTO-SOURCE][recv]', detail) } catch { }
         const srcTitle: string | undefined = detail.title
         const srcDocId: string | undefined = detail.docId
         const page: number | undefined = detail.page
@@ -931,17 +891,17 @@ export function PraticaCanvasPage() {
             }
             // If range present, include for logging/debug and potential future multi-page highlight
             if (detail?.range && typeof detail.range.startPage === 'number') { (match as any).range = detail.range }
-            const dispatchGoto = () => { const ev = new CustomEvent('app:goto-match', { detail: { docId: doc.id, match } }); try { console.log('[GOTO-MATCH][dispatch]', ev.detail) } catch {}; try { window.dispatchEvent(ev) } catch {} }
+            const dispatchGoto = () => { const ev = new CustomEvent('app:goto-match', { detail: { docId: doc.id, match } }); try { console.log('[GOTO-MATCH][dispatch]', ev.detail) } catch { }; try { window.dispatchEvent(ev) } catch { } }
             // Wait for viewer readiness if needed
-            const onReady = (re: any) => { try { if (re?.detail?.docId === doc.id) { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } } catch {} }
+            const onReady = (re: any) => { try { if (re?.detail?.docId === doc.id) { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } } catch { } }
             try {
               window.addEventListener('app:viewer-ready' as any, onReady as any, { once: true } as any)
               // also fire after a short delay in case viewer is already ready
-              setTimeout(() => { try { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } catch {} }, 150)
+              setTimeout(() => { try { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } catch { } }, 150)
             } catch { dispatchGoto() }
           }
         }
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app:open-doc', onOpen as any)
     window.addEventListener('app:goto-source', onGotoSource as any)
@@ -957,7 +917,7 @@ export function PraticaCanvasPage() {
   // Auto-switch to Archive tab when dragging files from outside
   useEffect(() => {
     let dragCounter = 0 // Track dragenter/dragleave to handle nested elements
-    
+
     const handleDragEnter = (e: DragEvent) => {
       // Only detect files dragged from outside the window
       if (e.dataTransfer?.types?.includes('Files')) {
@@ -968,14 +928,14 @@ export function PraticaCanvasPage() {
         }
       }
     }
-    
+
     const handleDragLeave = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         dragCounter--
         // Note: restore previous tab removed as not available in DockWorkspaceV2Handle
       }
     }
-    
+
     document.addEventListener('dragenter', handleDragEnter)
     document.addEventListener('dragleave', handleDragLeave)
     return () => {
@@ -983,7 +943,7 @@ export function PraticaCanvasPage() {
       document.removeEventListener('dragleave', handleDragLeave)
     }
   }, [])
-  
+
   // Hotkey for toggling between old and new viewer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1029,7 +989,7 @@ export function PraticaCanvasPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-background">
-      
+
       {/* Header */}
       <div ref={headerRef} className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur border-b">
         <div className="w-full px-3 py-2">
@@ -1043,7 +1003,7 @@ export function PraticaCanvasPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Home
               </Button>
-              
+
               <div>
                 <h1 className="text-xl font-bold">{pratica.nome}</h1>
                 <div className="flex items-center space-x-4 text-sm text-muted-foreground">
@@ -1093,11 +1053,11 @@ export function PraticaCanvasPage() {
                     const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : ''
                     const clientThumb = clientThumbByS3[d.s3Key]
                     const thumb = clientThumb || serverThumb || ''
-                    return { 
-                      id: d.id, 
-                      filename: d.filename, 
-                      s3Key: d.s3Key, 
-                      mime: d.mime, 
+                    return {
+                      id: d.id,
+                      filename: d.filename,
+                      s3Key: d.s3Key,
+                      mime: d.mime,
                       thumb,
                       hasNativeText: d.hasNativeText ?? false,
                       ocrStatus: d.ocrStatus
@@ -1108,10 +1068,10 @@ export function PraticaCanvasPage() {
                     if (trovato) openInTable(trovato)
                   }}
                   onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
-                  onRemove={(doc)=>{ handleRemoveThumb(doc.id) }}
-                  onOcr={(doc)=>{ const d = documenti.find(x=>x.id===doc.id); if (d) handleOcr(d,'full') }}
-                  onOcrCancel={async (doc)=>{
-                    const d = documenti.find(x=>x.id===doc.id); if (!d) return
+                  onRemove={(doc) => { handleRemoveThumb(doc.id) }}
+                  onOcr={(doc) => { const d = documenti.find(x => x.id === doc.id); if (d) handleOcr(d, 'full') }}
+                  onOcrCancel={async (doc) => {
+                    const d = documenti.find(x => x.id === doc.id); if (!d) return
                     // UX: nascondi subito overlay e mostra label con la % corrente
                     const pct = Math.max(0, Math.min(100, Number(ocrProgressByDoc[d.id] ?? 0)))
                     setTranscribedPctByDoc(prev => ({ ...prev, [d.id]: pct }))
@@ -1121,9 +1081,9 @@ export function PraticaCanvasPage() {
                     setOcrCancellingByDoc(prev => ({ ...prev, [d.id]: true }))
                     // Backend: segnala cancellazione (inline mode usa registro in memoria)
                     const jid = ocrJobByDoc[d.id]
-                    if (jid) { try { await api.cancelJob(jid) } catch {} }
+                    if (jid) { try { await api.cancelJob(jid) } catch { } }
                   }}
-                  
+
                   progressById={ocrProgressByDoc as any}
                   etaById={ocrEtaByDoc as any}
                   statusById={ocrStatusByDoc as any}
@@ -1146,14 +1106,14 @@ export function PraticaCanvasPage() {
             <SearchProvider defaultScope={'archive'} registry={{
               getAllDocs: () => documenti.map(d => ({ id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: (d.mime?.includes('word') ? 'word' : 'pdf') })),
               getOpenDocs: () => [],
-              ensureDocOpen: async (docId: string) => { const d = documenti.find(x=>x.id===docId); if (d) openInTable(d); return null },
-            }} onSearch={async(q, _scope)=>{
+              ensureDocOpen: async (docId: string) => { const d = documenti.find(x => x.id === docId); if (d) openInTable(d); return null },
+            }} onSearch={async (q, _scope) => {
               try {
                 const anyPdf: any = pdfjsLib as any
                 if (anyPdf && anyPdf.GlobalWorkerOptions && !anyPdf.GlobalWorkerOptions.workerSrc) {
                   anyPdf.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js'
                 }
-              } catch {}
+              } catch { }
               const targets = documenti.filter(d => (d.mime?.includes('pdf') || d.filename.toLowerCase().endsWith('.pdf')))
               const groups: any[] = []
               console.log('[ARCHIVE SEARCH] start', { q, targets: targets.length })
@@ -1173,13 +1133,13 @@ export function PraticaCanvasPage() {
                     const content = await page.getTextContent()
                     const items = content.items as any[]
                     let buffer = ''
-                    const boxes: { x:number;y:number;w:number;h:number }[] = []
+                    const boxes: { x: number; y: number; w: number; h: number }[] = []
                     for (const it of items) {
                       const s = (it.str || '') as string
                       const tx = it.transform
                       const h = (it.height as number) || Math.abs(tx[5] - (tx[5] - (it.height as number))) || 0
                       const cw = ((it.width as number) || 0) / Math.max(1, s.length)
-                      for (let i=0;i<s.length;i++){ const x=(tx[4] as number)+(cw*i); const y=(tx[5] as number)-h; boxes.push({x,y,w:cw,h}) }
+                      for (let i = 0; i < s.length; i++) { const x = (tx[4] as number) + (cw * i); const y = (tx[5] as number) - h; boxes.push({ x, y, w: cw, h }) }
                       buffer += s + ' '
                     }
                     const hay = buffer.toLowerCase(); const needle = q.toLowerCase()
@@ -1187,25 +1147,25 @@ export function PraticaCanvasPage() {
                     while (true) {
                       const idx = hay.indexOf(needle, pos); if (idx < 0) break
                       const start = idx, end = idx + needle.length
-                      let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity
-                      for (let i=start;i<end && i<boxes.length;i++){ const c=boxes[i]; l=Math.min(l,c.x); t=Math.min(t,c.y); r=Math.max(r,c.x+c.w); b=Math.max(b,c.y+c.h) }
-                      if (isFinite(l)&&isFinite(t)&&isFinite(r)&&isFinite(b)){
-                        const vp = page.getViewport({ scale:1 })
-                        const x0Pct = l/vp.width, x1Pct = r/vp.width
-                        const y0Pct = (vp.height - b)/vp.height, y1Pct = (vp.height - t)/vp.height
-                        matches.push({ id: `${d.id}-${p}-${start}`, docId: d.id, docTitle: d.filename, kind:'pdf', page:p, q, x0Pct, x1Pct, y0Pct, y1Pct, charIdx:start, qLength: needle.length, snippet: buffer.slice(Math.max(0,start-40), Math.min(buffer.length,end+40)).trim(), score:0, ord: ord++ })
+                      let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity
+                      for (let i = start; i < end && i < boxes.length; i++) { const c = boxes[i]; l = Math.min(l, c.x); t = Math.min(t, c.y); r = Math.max(r, c.x + c.w); b = Math.max(b, c.y + c.h) }
+                      if (isFinite(l) && isFinite(t) && isFinite(r) && isFinite(b)) {
+                        const vp = page.getViewport({ scale: 1 })
+                        const x0Pct = l / vp.width, x1Pct = r / vp.width
+                        const y0Pct = (vp.height - b) / vp.height, y1Pct = (vp.height - t) / vp.height
+                        matches.push({ id: `${d.id}-${p}-${start}`, docId: d.id, docTitle: d.filename, kind: 'pdf', page: p, q, x0Pct, x1Pct, y0Pct, y1Pct, charIdx: start, qLength: needle.length, snippet: buffer.slice(Math.max(0, start - 40), Math.min(buffer.length, end + 40)).trim(), score: 0, ord: ord++ })
                       }
                       pos = end
                     }
                   }
                   console.log('[ARCHIVE SEARCH] doc done', d.filename, { matches: matches.length })
-                  groups.push({ doc:{ id:d.id, title:d.filename, hash:d.hash||'', pages:0, kind:'pdf' }, matches })
+                  groups.push({ doc: { id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: 'pdf' }, matches })
                 } catch (err) {
                   console.warn('[ARCHIVE SEARCH] doc error', d.filename, err)
-                  groups.push({ doc:{ id:d.id, title:d.filename, hash:d.hash||'', pages:0, kind:'pdf' }, matches:[] })
+                  groups.push({ doc: { id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: 'pdf' }, matches: [] })
                 }
               }
-              const total = groups.reduce((s,g)=> s + g.matches.length, 0)
+              const total = groups.reduce((s, g) => s + g.matches.length, 0)
               console.log('[ARCHIVE SEARCH] done', { total })
               return { id: String(Date.now()), query: q, scope: 'archive' as any, total, groups } as any
             }}>
@@ -1226,7 +1186,7 @@ export function PraticaCanvasPage() {
                 if (d) openInTable(d)
                 try {
                   window.dispatchEvent(new CustomEvent('app:goto-match', { detail: { docId: o.docId, q: '', match: { id: o.id, docId: o.docId, docTitle: o.docTitle, kind: 'pdf', page: o.page, q: '', x0Pct: o.box.x0Pct, x1Pct: o.box.x1Pct, y0Pct: o.box.y0Pct, y1Pct: o.box.y1Pct, snippet: o.snippet, score: 1 } } }))
-                } catch {}
+                } catch { }
               }}
             />
           )}
@@ -1240,76 +1200,76 @@ export function PraticaCanvasPage() {
           renderIds={renderIds}
         />
 
-          {/* Divider resizer between panels: (legacy archivio preview) */}
-          {false && viewMode === 'archivio' && previewDoc && (
-            <div
-              className="w-1.5 cursor-col-resize mx-1 self-stretch bg-transparent hover:bg-blue-400/30"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                const body = document.body as HTMLBodyElement
-                const prevCursor = body.style.cursor
-                const prevSelect = body.style.userSelect
-                body.style.cursor = 'col-resize'
-                body.style.userSelect = 'none'
+        {/* Divider resizer between panels: (legacy archivio preview) */}
+        {false && viewMode === 'archivio' && previewDoc && (
+          <div
+            className="w-1.5 cursor-col-resize mx-1 self-stretch bg-transparent hover:bg-blue-400/30"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              const body = document.body as HTMLBodyElement
+              const prevCursor = body.style.cursor
+              const prevSelect = body.style.userSelect
+              body.style.cursor = 'col-resize'
+              body.style.userSelect = 'none'
 
-                // Create ghost guide line
-                const ghost = document.createElement('div')
-                ghost.style.position = 'fixed'
-                ghost.style.top = '0'
-                ghost.style.bottom = '0'
-                ghost.style.width = '2px'
-                ghost.style.background = 'rgba(59,130,246,0.8)'
-                ghost.style.left = e.clientX + 'px'
-                ghost.style.zIndex = '9999'
-                ghost.style.pointerEvents = 'none'
-                ghost.style.boxShadow = '0 0 0 1px rgba(59,130,246,0.6)'
-                document.body.appendChild(ghost)
+              // Create ghost guide line
+              const ghost = document.createElement('div')
+              ghost.style.position = 'fixed'
+              ghost.style.top = '0'
+              ghost.style.bottom = '0'
+              ghost.style.width = '2px'
+              ghost.style.background = 'rgba(59,130,246,0.8)'
+              ghost.style.left = e.clientX + 'px'
+              ghost.style.zIndex = '9999'
+              ghost.style.pointerEvents = 'none'
+              ghost.style.boxShadow = '0 0 0 1px rgba(59,130,246,0.6)'
+              document.body.appendChild(ghost)
 
-                resizeRef.current = { startX: e.clientX, startW: previewWidth, ghost }
-                const onMove = (ev: MouseEvent) => {
-                  if (!resizeRef.current?.ghost) return
-                  resizeRef.current.ghost.style.left = ev.clientX + 'px'
-                }
-                const onUp = () => {
-                  window.removeEventListener('mousemove', onMove)
-                  window.removeEventListener('mouseup', onUp)
-                  const curr = resizeRef.current
-                  const dx = curr ? curr.startX - (parseInt(curr.ghost?.style.left || String(curr.startX)) || curr.startX) : 0
-                  const next = Math.min(Math.max((curr?.startW || previewWidth) + dx, 320), Math.floor(window.innerWidth * 0.6))
-                  setPreviewWidth(next)
-                  // trigger fit-to-width in PdfReader by dispatching a resize event so it recomputes layout
-                  window.dispatchEvent(new Event('resize'))
-                  // Cleanup ghost and styles
-                  if (curr?.ghost && curr.ghost.parentNode) curr.ghost.parentNode.removeChild(curr.ghost)
-                  resizeRef.current = null
-                  body.style.cursor = prevCursor
-                  body.style.userSelect = prevSelect
-                }
-                window.addEventListener('mousemove', onMove)
-                window.addEventListener('mouseup', onUp)
-              }}
-              title="Ridimensiona"
-            />
-          )}
+              resizeRef.current = { startX: e.clientX, startW: previewWidth, ghost }
+              const onMove = (ev: MouseEvent) => {
+                if (!resizeRef.current?.ghost) return
+                resizeRef.current.ghost.style.left = ev.clientX + 'px'
+              }
+              const onUp = () => {
+                window.removeEventListener('mousemove', onMove)
+                window.removeEventListener('mouseup', onUp)
+                const curr = resizeRef.current
+                const dx = curr ? curr.startX - (parseInt(curr.ghost?.style.left || String(curr.startX)) || curr.startX) : 0
+                const next = Math.min(Math.max((curr?.startW || previewWidth) + dx, 320), Math.floor(window.innerWidth * 0.6))
+                setPreviewWidth(next)
+                // trigger fit-to-width in PdfReader by dispatching a resize event so it recomputes layout
+                window.dispatchEvent(new Event('resize'))
+                // Cleanup ghost and styles
+                if (curr?.ghost && curr.ghost.parentNode) curr.ghost.parentNode.removeChild(curr.ghost)
+                resizeRef.current = null
+                body.style.cursor = prevCursor
+                body.style.userSelect = prevSelect
+              }
+              window.addEventListener('mousemove', onMove)
+              window.addEventListener('mouseup', onUp)
+            }}
+            title="Ridimensiona"
+          />
+        )}
 
-          {/* Right: Preview panel in Archivio */}
-          {false && viewMode === 'archivio' && previewDoc && (
-            <div
-              className="relative bg-white border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
-              style={{ width: previewWidth }}
-            >
-              <div className="px-3 py-2 border-b text-sm font-medium flex items-center justify-between">
-                <span className="truncate pr-2">{previewDoc?.filename || ''}</span>
-                <div />
-        </div>
-              {/* Preview usa il nuovo viewer in modalità lite (senza overlay) */}
-              <div className="h-[calc(100vh-180px)]">
-                <div />
+        {/* Right: Preview panel in Archivio */}
+        {false && viewMode === 'archivio' && previewDoc && (
+          <div
+            className="relative bg-white border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
+            style={{ width: previewWidth }}
+          >
+            <div className="px-3 py-2 border-b text-sm font-medium flex items-center justify-between">
+              <span className="truncate pr-2">{previewDoc?.filename || ''}</span>
+              <div />
+            </div>
+            {/* Preview usa il nuovo viewer in modalità lite (senza overlay) */}
+            <div className="h-[calc(100vh-180px)]">
+              <div />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-          {/* Tavolo gestito interamente da DockWorkspaceV2 */}
+        {/* Tavolo gestito interamente da DockWorkspaceV2 */}
       </div>
 
       {/* Overlay globale disattivato */}

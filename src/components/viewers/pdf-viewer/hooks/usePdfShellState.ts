@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { usePdfViewerState } from './usePdfViewerState'
 import { usePdfSearch } from './usePdfSearch'
 import { useNativeSelection } from './useNativeSelection'
