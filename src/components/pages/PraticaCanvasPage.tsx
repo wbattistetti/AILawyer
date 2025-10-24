@@ -30,6 +30,7 @@ import { PdfViewerManager } from './pratica-canvas/components/PdfViewerManager'
 import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
 import { useWorkspaceManager } from './pratica-canvas/hooks/useWorkspaceManager';
 import { useEventListeners } from './pratica-canvas/hooks/useEventListeners';
+import { ArchiveRenderer } from './pratica-canvas/components/ArchiveRenderer';
 import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 
 export function PraticaCanvasPage() {
@@ -575,62 +576,23 @@ export function PraticaCanvasPage() {
           isExplorerFullscreen={isExplorerFullscreen}
           onLeftBorderTabChange={handleLeftBorderTabChange}
           praticaId={id} // Aggiungi questa prop
-          renderArchive={() => {
-            const showOverlay = false // Archive uploading overlay disabled
-            return (
-              <div className="relative w-full h-full">
-                <DocumentCollection
-                  title="Archivio"
-                  items={documenti.map(d => {
-                    const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf')
-                    const ver = (d as any)?.updatedAt ? `?v=${encodeURIComponent((d as any).updatedAt as any)}` : ''
-                    const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : ''
-                    const clientThumb = clientThumbByS3[d.s3Key]
-                    const thumb = clientThumb || serverThumb || ''
-                    return {
-                      id: d.id,
-                      filename: d.filename,
-                      s3Key: d.s3Key,
-                      mime: d.mime,
-                      thumb,
-                      hasNativeText: d.hasNativeText ?? false,
-                      ocrStatus: d.ocrStatus
-                    }
-                  })}
-                  onOpen={(doc) => {
-                    const trovato = documenti.find(x => x.id === doc.id)
-                    if (trovato) {
-                      dockV2Ref.current?.openDoc({ id: trovato.id, title: trovato.filename })
-                      toast({ title: 'Aperto nel Tavolo', description: trovato.filename })
-                    }
-                  }}
-                  onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
-                  onRemove={(doc) => { handleRemoveThumb(doc.id) }}
-                  onOcr={(doc) => { const d = documenti.find(x => x.id === doc.id); if (d) handleOcr(d, 'full') }}
-                  onOcrCancel={async (doc) => {
-                    const d = documenti.find(x => x.id === doc.id); if (!d) return
-                    // Use hook's handleOcrCancel
-                    await handleOcrCancel(d)
-                  }}
-
-                  progressById={ocrProgressByDoc as any}
-                  etaById={ocrEtaByDoc as any}
-                  statusById={ocrStatusByDoc as any}
-                  cancellingById={ocrCancellingByDoc as any}
-                  transcribedPctById={transcribedPctByDoc as any}
-                  uploadingCount={0}
-                />
-                {showOverlay && (
-                  <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
-                    <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
-                    <div className="text-sm text-neutral-800">
-                      Caricamento file...
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          }}
+          renderArchive={() => (
+            <ArchiveRenderer
+              documenti={documenti}
+              clientThumbByS3={clientThumbByS3}
+              dockV2Ref={dockV2Ref}
+              handleFileDrop={handleFileDrop}
+              handleRemoveThumb={handleRemoveThumb}
+              handleOcr={handleOcr}
+              handleOcrCancel={handleOcrCancel}
+              ocrProgressByDoc={ocrProgressByDoc}
+              ocrEtaByDoc={ocrEtaByDoc}
+              ocrStatusByDoc={ocrStatusByDoc}
+              ocrCancellingByDoc={ocrCancellingByDoc}
+              transcribedPctByDoc={transcribedPctByDoc}
+              toast={toast}
+            />
+          )}
           renderSearch={() => (
             <SearchProvider defaultScope={'archive'} registry={{
               getAllDocs: () => documenti.map(d => ({ id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: (d.mime?.includes('word') ? 'word' : 'pdf') })),
