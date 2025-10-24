@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/use-toast'
 import { Pratica, Comparto, Documento } from '../../types'
 import { ArrowLeft, Upload, RefreshCw, X, FileText, Play, Pause, Square, ChevronDown, ChevronRight } from 'lucide-react'
 import { DocumentCollection } from '../../features/documents/DocumentCollection'
+import { AnalysisPanel } from './pratica-canvas/components/AnalysisPanel'
 import { SearchProvider } from '../search/SearchProvider'
 import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
 import { buildPdfJsAdaptersFromDocs } from '../../features/entities/adapters/PdfJsDocAdapter'
@@ -27,6 +28,9 @@ import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
 import { PdfViewerManager } from './pratica-canvas/components/PdfViewerManager'
 import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
+import { useWorkspaceManager } from './pratica-canvas/hooks/useWorkspaceManager';
+import { useEventListeners } from './pratica-canvas/hooks/useEventListeners';
+import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -68,31 +72,29 @@ export function PraticaCanvasPage() {
   // Header height management for fixed toolbar
   const headerRef = useRef<HTMLDivElement | null>(null)
   const [headerH, setHeaderH] = useState<number>(56)
-  // Workspace (Tavolo)
-  const [viewMode, setViewMode] = useState<'archivio' | 'tavolo'>('archivio')
-  // Simplified viewer: no split view metrics needed
+
+  // Usa il nuovo hook per la gestione del workspace
+  const {
+    viewMode,
+    setViewMode,
+    dockV2Ref,
+    persistViewMode
+  } = useWorkspaceManager(id)
+
   // Verify mode state (currently disabled)
-  // const verifyHostRef = useRef<HTMLDivElement | null>(null)
-  // const { registerPage, unregisterPage, getPageRect, hitTestPage, pageRefs } = usePageRegistry(verifyHostRef as any)
   type VLine = { y: number; y1: number; x: number; x1: number; text: string; mid?: number; avgH?: number }
   const [verifyLinesByPage, setVerifyLinesByPage] = useState<Record<number, VLine[]>>({})
-  const [verifyHover, setVerifyHover] = useState<{
-    text: string
-    page: number
-    pdfX0: number
-    pdfX1: number
-    pdfY0: number
-    pdfY1: number
-    vpW: number
-    vpH: number
-    gapPct: number
-  } | null>(null)
-  const [verifyPageSize, setVerifyPageSize] = useState<Record<number, { width: number; height: number }>>({})
-  const [verifyPinned, setVerifyPinned] = useState<boolean>(false)
-  const [verifyEditText, setVerifyEditText] = useState<string>('')
-  const [verifyDebug, setVerifyDebug] = useState<boolean>(false)
   const [verifyEnabled, setVerifyEnabled] = useState(false)
-  const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null)
+
+  // Usa il nuovo hook per gestire tutti gli event listeners
+  useEventListeners({
+    documenti,
+    clientThumbByS3,
+    dockV2Ref,
+    testNewViewer,
+    setTestNewViewer,
+    handleFileDrop
+  })
 
 
 
@@ -128,16 +130,7 @@ export function PraticaCanvasPage() {
       }
     }
     load()
-
-    // restore viewMode
-    try {
-      const raw = localStorage.getItem(`ws_${id}`)
-      if (raw) {
-        const ws = JSON.parse(raw)
-        if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') setViewMode(ws.viewMode)
-      }
-    } catch { }
-  }, [id, toast])
+  }, [id, toast, setIsLoading])
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 
@@ -525,187 +518,7 @@ export function PraticaCanvasPage() {
 
   // REMOVED: renderArchivePane & handleOcr - now replaced by DocumentCollection and useOcr hook
 
-  useEffect(() => {
-    // Listen to uploads triggered from Drawer viewers
-    const onUpload = (e: any) => {
-      try {
-        const files: File[] = e?.detail?.files || []
-        const target = e?.detail?.target || null
-        if (!files || files.length === 0) return
-        handleFileDrop(files, null, target)
-      } catch { }
-    }
-    const broadcastDocs = () => {
-      try {
-        const items = documenti.map(d => {
-          const getTags = (doc: any) => {
-            if (Array.isArray(doc.tags)) return doc.tags
-            if (typeof doc.tags === 'string') { try { return JSON.parse(doc.tags) } catch { return [] } }
-            return []
-          }
-          const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf')
-          const serverThumb = isPdf && d.hash ? api.getThumbUrl(d.hash) : ''
-          const clientThumb = clientThumbByS3[d.s3Key]
-          const mkFallbackThumb = (doc: typeof d) => {
-            const tags = getTags(doc)
-            const pickColor = () => {
-              if (tags.includes('verbale_sequestro') || tags.includes('verbale')) return '#fbbf24' // amber
-              if (tags.includes('intercettazioni')) return '#ec4899' // pink
-              if (tags.includes('reati')) return '#64748b' // slate
-              return '#94a3b8'
-            }
-            const bg = pickColor()
-            const label = (doc.filename || 'Estratto').slice(0, 24)
-            const svg = `<?xml version="1.0" encoding="UTF-8"?>
-              <svg xmlns='http://www.w3.org/2000/svg' width='256' height='360'>
-                <rect width='100%' height='100%' rx='12' ry='12' fill='white' stroke='${bg}' stroke-width='3'/>
-                <rect x='24' y='24' width='208' height='36' rx='6' fill='${bg}'/>
-                <text x='128' y='48' text-anchor='middle' font-family='Inter, Arial, sans-serif' font-size='16' fill='white'>Estratto</text>
-                <text x='24' y='100' font-family='Inter, Arial, sans-serif' font-size='14' fill='#111'>${label}</text>
-                <text x='24' y='330' font-family='Inter, Arial, sans-serif' font-size='12' fill='#6b7280'>${(doc.mime || '').split('/').pop()?.toUpperCase() || 'FILE'}</text>
-              </svg>`
-            return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
-          }
-          const thumb = clientThumb || serverThumb || (isPdf ? api.getLocalFileUrl(d.s3Key) : mkFallbackThumb(d))
-          return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d) }
-        })
-        // Include in-memory pending extracts as virtual items (if any)
-        try {
-          const pendingRaw = (window as any).__pendingExtracts as Array<any> | undefined
-          const pending = Array.isArray(pendingRaw) ? pendingRaw : []
-          const all = [...pending, ...items]
-          window.dispatchEvent(new CustomEvent('app:documents', { detail: { items: all } }))
-        } catch {
-          window.dispatchEvent(new CustomEvent('app:documents', { detail: { items } }))
-        }
-      } catch { }
-    }
-    const onRequestDocs = () => broadcastDocs()
-    window.addEventListener('app:upload-files' as any, onUpload as any)
-    window.addEventListener('app:request-documents' as any, onRequestDocs as any)
-    const onUploading = (e: any) => {
-      try {
-        const t = e?.detail?.target
-        const c = e?.detail?.count || 0
-        // Archive uploading count disabled - removed setArchiveUploadingCount
-      } catch { }
-    }
-    window.addEventListener('app:uploading' as any, onUploading as any)
-    // initial broadcast so drawers get the list immediately
-    broadcastDocs()
-    const onOpen = (e: any) => {
-      try {
-        const d = e?.detail || {}
-        if (!d?.docId) return
-        // If tmp doc, open temporary tab
-        if (String(d.docId).startsWith('tmp:')) {
-          const title = d?.meta?.title || 'Estratto'
-          const text = d?.meta?.text || d?.meta?.content || ''
-          const source = d?.meta?.source
-          try { console.log('[OPEN][tmpdoc]', { id: d.docId, title, source }) } catch { }
-          dockV2Ref.current?.openTmpDoc({ id: d.docId, title, content: text, text, source })
-          return
-        }
-        const doc = documenti.find(x => x.id === d.docId)
-        if (doc && dockV2Ref.current) {
-          dockV2Ref.current.openDoc({ id: doc.id, title: doc.filename })
-          // page sync handled by viewer via event elsewhere
-          const ev = new CustomEvent('app:goto-match', { detail: { docId: d.docId, match: d.match, q: d.q } })
-          try { console.log('[OPEN][persisted][goto-match][dispatch]', ev.detail) } catch { }
-          window.dispatchEvent(ev)
-        }
-      } catch { }
-    }
-    const onGotoSource = (e: any) => {
-      try {
-        const detail = e?.detail || {}
-        try { console.log('[GOTO-SOURCE][recv]', detail) } catch { }
-        const srcTitle: string | undefined = detail.title
-        const srcDocId: string | undefined = detail.docId
-        const page: number | undefined = detail.page
-        const box = detail.box
-        // Trova il documento per id o per titolo
-        const doc = (srcDocId && documenti.find(x => x.id === srcDocId))
-          || (srcTitle && documenti.find(x => x.filename === srcTitle))
-          || documenti[0]
-        if (doc && dockV2Ref.current) {
-          dockV2Ref.current.openDoc({ id: doc.id, title: doc.filename })
-          // Se ho pagina o box, invia evento al viewer per navigare esattamente
-          if (typeof page === 'number' || box) {
-            // ensure 1-based page
-            const match: any = { page: typeof page === 'number' ? Math.max(1, Math.floor(page)) : 1 }
-            if (box && typeof box.x0Pct === 'number') {
-              match.x0Pct = box.x0Pct; match.x1Pct = box.x1Pct; match.y0Pct = box.y0Pct; match.y1Pct = box.y1Pct
-            } else {
-              // fallback viewport ampio
-              match.x0Pct = 0.05; match.x1Pct = 0.95; match.y0Pct = 0.1; match.y1Pct = 0.9
-            }
-            // If range present, include for logging/debug and potential future multi-page highlight
-            if (detail?.range && typeof detail.range.startPage === 'number') { (match as any).range = detail.range }
-            const dispatchGoto = () => { const ev = new CustomEvent('app:goto-match', { detail: { docId: doc.id, match } }); try { console.log('[GOTO-MATCH][dispatch]', ev.detail) } catch { }; try { window.dispatchEvent(ev) } catch { } }
-            // Wait for viewer readiness if needed
-            const onReady = (re: any) => { try { if (re?.detail?.docId === doc.id) { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } } catch { } }
-            try {
-              window.addEventListener('app:viewer-ready' as any, onReady as any, { once: true } as any)
-              // also fire after a short delay in case viewer is already ready
-              setTimeout(() => { try { window.removeEventListener('app:viewer-ready' as any, onReady as any); dispatchGoto() } catch { } }, 150)
-            } catch { dispatchGoto() }
-          }
-        }
-      } catch { }
-    }
-    window.addEventListener('app:open-doc', onOpen as any)
-    window.addEventListener('app:goto-source', onGotoSource as any)
-    return () => {
-      window.removeEventListener('app:open-doc', onOpen as any)
-      window.removeEventListener('app:goto-source', onGotoSource as any)
-      window.removeEventListener('app:upload-files' as any, onUpload as any)
-      window.removeEventListener('app:request-documents' as any, onRequestDocs as any)
-      window.removeEventListener('app:uploading' as any, onUploading as any)
-    }
-  }, [documenti, clientThumbByS3])
-
-  // Auto-switch to Archive tab when dragging files from outside
-  useEffect(() => {
-    let dragCounter = 0 // Track dragenter/dragleave to handle nested elements
-
-    const handleDragEnter = (e: DragEvent) => {
-      // Only detect files dragged from outside the window
-      if (e.dataTransfer?.types?.includes('Files')) {
-        dragCounter++
-        if (dragCounter === 1) {
-          // First enter, switch to Archive tab
-          dockV2Ref.current?.switchToArchive()
-        }
-      }
-    }
-
-    const handleDragLeave = (e: DragEvent) => {
-      if (e.dataTransfer?.types?.includes('Files')) {
-        dragCounter--
-        // Note: restore previous tab removed as not available in DockWorkspaceV2Handle
-      }
-    }
-
-    document.addEventListener('dragenter', handleDragEnter)
-    document.addEventListener('dragleave', handleDragLeave)
-    return () => {
-      document.removeEventListener('dragenter', handleDragEnter)
-      document.removeEventListener('dragleave', handleDragLeave)
-    }
-  }, [])
-
-  // Hotkey for toggling between old and new viewer
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
-        setTestNewViewer(prev => !prev);
-        console.log('🔄 Toggled viewer:', !testNewViewer ? 'PdfViewerShell' : 'VerifyPdfViewer');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [testNewViewer]);
+  // Event listeners gestiti dal hook useEventListeners
 
   const renderEvents = useCallback(() => <EventsTab />, [])
   const renderContacts = useCallback(() => <ThingCardsPanel kind="contact" />, [])
@@ -742,43 +555,13 @@ export function PraticaCanvasPage() {
     <div className="h-screen overflow-hidden bg-background">
 
       {/* Header */}
-      <div ref={headerRef} className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur border-b">
-        <div className="w-full px-3 py-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                onClick={() => navigate('/')}
-                className="flex items-center"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Home
-              </Button>
-
-              <div>
-                <h1 className="text-xl font-bold">{pratica.nome}</h1>
-                <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                  <span>Cliente: {pratica.cliente}</span>
-                  <span>Foro: {pratica.foro}</span>
-                  {pratica.numeroRuolo && <span>N. {pratica.numeroRuolo}</span>}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => navigate('/')}>Apri pratica…</Button>
-              <Button variant="outline" size="sm" onClick={() => handleRefreshHook(id!)}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Salva pratica
-              </Button>
-              <Button size="sm" onClick={() => open()}>
-                <Upload className="w-4 h-4 mr-2" />
-                Carica documenti
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <HeaderToolbar
+        pratica={pratica}
+        onHomeClick={() => navigate('/')}
+        onOpenPratica={() => navigate('/')}
+        onSavePratica={() => handleRefreshHook(id!)}
+        onUploadDocuments={() => open()}
+      />
 
       {/* Spacer per l'header fisso */}
       <div style={{ height: headerH }} />
