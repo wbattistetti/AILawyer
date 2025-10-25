@@ -33,9 +33,10 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   docId
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
-  
+  const viewerRef = useRef<any>(null) // PdfViewerHandle ref
+
   console.log('[PdfViewerShell] Rendering with props:', { fileUrl, page, docId })
-  
+
   // Zoom hook integration
   const { containerRef: zoomContainerRef } = useCleanPdfZoom({
     zoomToPlugin: (scale: number) => {
@@ -46,9 +47,9 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     },
     getCurrentScale: () => shell?.scaleRef?.current || 1
   })
-  
+
   // Use useRef for plugins instead of useMemo to avoid React Hooks rules violation
-  const scrollModeRef = useRef(scrollModePlugin())
+  const scrollModeRef = useRef(scrollModePlugin()) // ✅ RIPRISTINATO: Necessario per scroll funzionante
   const pageNavRef = useRef(pageNavigationPlugin())
   const searchRef = useRef(searchPlugin())
   const zoomRef = useRef(zoomPlugin())
@@ -57,15 +58,14 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       return React.createElement(React.Fragment)
     }
   }))
-  
+
   // Unified state management
   const shell = usePdfShellState({
     hostRef,
     fileUrl,
     docId,
-    pageNav: pageNavRef.current,
-    search: searchRef.current,
-    zoom: zoomRef.current
+    onPageChange,
+    viewerRef
   })
 
   console.log('[PdfViewerShell] Shell state:', shell)
@@ -113,15 +113,16 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             zoomTo={shell.zoomTo}
           />
 
-          <div 
+          <div
             ref={(el) => {
               hostRef.current = el
               if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
             }}
-            className="flex-1 overflow-hidden relative" 
+            className="flex-1 overflow-hidden relative"
             style={{ ['--scale-factor' as any]: String(shell.scaleRef?.current || 1) }}
           >
             <PdfViewerCore
+              ref={viewerRef}
               fileUrl={fileUrl}
               page={page}
               onPageChange={onPageChange}
@@ -191,7 +192,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           totalPages={shell.totalPages}
           setMatches={shell.setMatches}
           searchPluginInstance={searchRef.current}
-         goToMatch={shell.goToMatch}
+          goToMatch={shell.goToMatch}
           searchCacheRef={shell.searchCacheRef}
         />
       </div>

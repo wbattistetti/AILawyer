@@ -3,7 +3,6 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
-import { VerifyPdfViewer } from '../viewers/VerifyPdfViewer'
 import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
@@ -33,6 +32,7 @@ import { useEventListeners } from './pratica-canvas/hooks/useEventListeners';
 import { ArchiveRenderer } from './pratica-canvas/components/ArchiveRenderer';
 import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
+import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -44,7 +44,6 @@ export function PraticaCanvasPage() {
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
   const [syncPage, setSyncPage] = useState<number | null>(null)
-  const [testNewViewer, setTestNewViewer] = useState(false)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
@@ -83,18 +82,13 @@ export function PraticaCanvasPage() {
     persistViewMode
   } = useWorkspaceManager(id)
 
-  // Verify mode state (currently disabled)
-  type VLine = { y: number; y1: number; x: number; x1: number; text: string; mid?: number; avgH?: number }
-  const [verifyLinesByPage, setVerifyLinesByPage] = useState<Record<number, VLine[]>>({})
-  const [verifyEnabled, setVerifyEnabled] = useState(false)
+  // Verify mode state (completely removed)
 
   // Usa il nuovo hook per gestire tutti gli event listeners
   useEventListeners({
     documenti,
     clientThumbByS3,
     dockV2Ref,
-    testNewViewer,
-    setTestNewViewer,
     handleFileDrop
   })
 
@@ -157,12 +151,13 @@ export function PraticaCanvasPage() {
     <PdfViewerManager
       doc={doc}
       syncPage={syncPage}
-      setSyncPage={setSyncPage}
-      verifyEnabled={verifyEnabled}
-      setVerifyEnabled={setVerifyEnabled}
-      verifyLinesByPage={verifyLinesByPage}
-      testNewViewer={testNewViewer}
-      setTestNewViewer={setTestNewViewer}
+      setSyncPage={(page) => {
+        console.log('[CANVAS] setSyncPage called with:', page);
+        setSyncPage(page);
+      }}
+      verifyEnabled={false} // Verify mode is removed
+      setVerifyEnabled={() => { }} // Verify mode is removed
+      verifyLinesByPage={{} as any} // Verify mode is removed
     />
   )
 
@@ -602,24 +597,10 @@ export function PraticaCanvasPage() {
             />
           )}
           renderPersons={() => (
-            <PersonCardsPanel
-              getAllDocsMeta={async () => documenti.map(d => ({ praticaId: d.praticaId, hash: d.hash, docId: d.id, title: d.filename, pages: 0 }))}
-              buildAdapters={async (docs) => {
-                const map = new Map(docs.map(m => [m.docId, m]))
-                const selected = documenti.filter(d => map.has(d.id))
-                return buildPdfJsAdaptersFromDocs(selected)
-              }}
-              onOpenOccurrence={(o) => {
-                // Open doc tab, then dispatch navigation event used by VerifyPdfViewer
-                const d = documenti.find(x => x.id === o.docId)
-                if (d) {
-                  dockV2Ref.current?.openDoc({ id: d.id, title: d.filename })
-                  toast({ title: 'Aperto nel Tavolo', description: d.filename })
-                }
-                try {
-                  window.dispatchEvent(new CustomEvent('app:goto-match', { detail: { docId: o.docId, q: '', match: { id: o.id, docId: o.docId, docTitle: o.docTitle, kind: 'pdf', page: o.page, q: '', x0Pct: o.box.x0Pct, x1Pct: o.box.x1Pct, y0Pct: o.box.y0Pct, y1Pct: o.box.y1Pct, snippet: o.snippet, score: 1 } } }))
-                } catch { }
-              }}
+            <PersonsRenderer
+              documenti={documenti}
+              dockV2Ref={dockV2Ref}
+              toast={toast}
             />
           )}
           renderDoc={(docId: string) => {
@@ -627,9 +608,9 @@ export function PraticaCanvasPage() {
             if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
             return renderDocViewer(doc)
           }}
-          renderEvents={renderEvents}
-          renderContacts={renderContacts}
-          renderIds={renderIds}
+          renderEvents={() => <EventsTab />}
+          renderContacts={() => <ThingCardsPanel kind="contact" />}
+          renderIds={() => <ThingCardsPanel kind="id" />}
         />
 
         {/* Divider resizer removed - preview panel disabled */}

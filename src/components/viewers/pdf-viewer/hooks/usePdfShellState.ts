@@ -17,40 +17,38 @@ interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
   fileUrl: string
   docId?: string
-  pageNav: any
-  search: any
-  zoom: any
+  onPageChange?: (page: number) => void
+  viewerRef: React.RefObject<any> // PdfViewerHandle
 }
 
-export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoom }: UsePdfShellStateProps) {
+export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
   const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef, matches, setMatches, runSearch } = usePdfSearch(docId, fileUrl)
-  const lastOcrMatchesRef = useRef<Array<{ page:number; x0Pct:number; y0Pct:number; x1Pct:number; y1Pct:number }>>([])
-  
+  const lastOcrMatchesRef = useRef<Array<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }>>([])
+
   // Areas state for jump-to functionality
   const [areas, setAreas] = useState<Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>>([])
-  
+
   // Feature hooks
   const { tool, setTool, annots, setAnnots, draft, setDraft } = usePdfAnnotations({ hostRef })
   const { autoDeskew, setAutoDeskew, skewAngles, setSkewAngles, persistSkew, estimateSkewForPage, applyImmediateToPage } = usePdfDeskew({ docId, hostRef })
   const { audit, setAudit } = usePdfAudit({ hostRef })
-  
+
   // Utility hooks
   const { pdfDocRef } = usePdfDocument({ fileUrl })
   const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef } = usePdfOverlays({ hostRef })
-  
+
   // Zoom functionality
   const scaleRef = useRef<number>(1)
   const zoomDebounceRef = useRef<number | null>(null)
   const zoomTo = (scale: number) => {
     scaleRef.current = scale
-    if (typeof zoom.zoomTo === 'function') {
-      zoom.zoomTo(scale)
-    }
+    // Zoom ora gestito tramite viewerRef
+    viewerRef.current?.zoomTo?.(scale);
   }
-  
+
   // Hook per lo stato dell'estratto
   const {
     extractDate,
@@ -69,13 +67,11 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     lastDraftBoxRef,
     suppressClearRef
   } = usePdfExtract()
-  
+
   // Jump-to functionality
-  const { goToMatch } = usePdfJumpTo({ 
-    docId, 
-    hostRef, 
-    pageNav, 
-    searchPluginInstance: search,
+  const { goToMatch } = usePdfJumpTo({
+    docId,
+    hostRef,
     overlayRootsRef,
     setSelectedAnnot: viewerState.setSelectedAnnot,
     areas,
@@ -83,9 +79,9 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     searchCacheRef,
     fileUrl
   })
-  
+
   const selectionHandledRef = useRef(false)
-  
+
   // Native selection (simplified interface)
   const nativeSelection = useNativeSelection({
     selectMode: true,
@@ -118,10 +114,10 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     setShowAdvanced,
     panelW,
     resizingRef,
-    
+
     // Viewer state
     ...viewerState,
-    
+
     // Features
     tool,
     setTool,
@@ -134,7 +130,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     skewAngles,
     audit,
     setAudit,
-    
+
     // Extract state
     extractDate,
     setExtractDate,
@@ -146,26 +142,40 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     setExtractTitle,
     selectedAnnot,
     setSelectedAnnot,
-    
+
     // Functions
     jumpToPage: (page: number) => {
-      try { pageNav.jumpToPage?.(page - 1) } catch {}
+      console.log('[JUMP] jumpToPage called with page:', page);
+      console.log('[JUMP] viewerRef.current:', viewerRef.current);
+      console.log('[JUMP] isReady:', viewerRef.current?.isReady?.());
+      console.log('[JUMP] hostRef.current:', hostRef.current);
+
+      if (viewerRef.current?.isReady?.()) {
+        console.log('[JUMP] Viewer is ready, calling jumpToPage');
+        viewerRef.current.jumpToPage(page);
+      } else {
+        console.warn('[JUMP] Viewer not ready, retrying in 200ms');
+        setTimeout(() => {
+          console.log('[JUMP] Retry - isReady:', viewerRef.current?.isReady?.());
+          viewerRef.current?.jumpToPage?.(page);
+        }, 200);
+      }
     },
     goToMatch,
     estimateSkewForPage,
     applyImmediateToPage,
     persistSkew,
-    
+
     // Search functions
     matches,
     setMatches,
     runSearch,
-    
+
     // Zoom functions
     zoomTo,
     scaleRef,
     zoomDebounceRef,
-    
+
     // Refs for child components
     hostRef,
     pdfDocRef,
@@ -176,7 +186,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, pageNav, search, zoo
     lastOcrMatchesRef,
     setSelectionHandled: (handled: boolean) => { selectionHandledRef.current = handled },
     selectionHandledRef,
-    
+
     // Extract refs
     openedAtRef,
     isSelectingRef,

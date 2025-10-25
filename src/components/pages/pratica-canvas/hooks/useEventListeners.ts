@@ -6,8 +6,6 @@ interface UseEventListenersProps {
     documenti: Documento[];
     clientThumbByS3: Record<string, string>;
     dockV2Ref: RefObject<DockWorkspaceV2Handle | null>;
-    testNewViewer: boolean;
-    setTestNewViewer: (value: boolean | ((prev: boolean) => boolean)) => void;
     handleFileDrop: (files: File[], compartmentId: string | null, target: string | null) => Promise<void>;
 }
 
@@ -15,8 +13,6 @@ export function useEventListeners({
     documenti,
     clientThumbByS3,
     dockV2Ref,
-    testNewViewer,
-    setTestNewViewer,
     handleFileDrop
 }: UseEventListenersProps) {
 
@@ -205,18 +201,5 @@ export function useEventListeners({
             document.removeEventListener('dragleave', handleDragLeave)
         }
     }, [dockV2Ref])
-
-    // Hotkey for toggling between old and new viewer
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.ctrlKey && e.shiftKey && e.key === 'V') {
-                setTestNewViewer(prev => !prev)
-                console.log('🔄 Toggled viewer:', !testNewViewer ? 'PdfViewerShell' : 'VerifyPdfViewer')
-            }
-        }
-
-        window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [testNewViewer, setTestNewViewer])
 }
 

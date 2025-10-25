@@ -54,6 +54,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -85,3 +86,15 @@
   user-select: none !important;
   -webkit-user-select: none !important;
 }
+
+/* ✅ CENTRATURA SEMPLICE: Solo quello che serve per centrare il PDF */
+.rpv-core__viewer {
+  text-align: center !important;
+}
+
+.rpv-core__page-layer {
+  margin: 0 auto !important;
+  display: inline-block !important;
+}
+
+/* Debug labels removed - PDF centering working! */
