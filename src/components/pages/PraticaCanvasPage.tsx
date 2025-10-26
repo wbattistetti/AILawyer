@@ -42,7 +42,7 @@ export function PraticaCanvasPage() {
 
   const [pratica, setPratica] = useState<Pratica | null>(null)
   const [comparti, setComparti] = useState<Comparto[]>([])
-  const [isExplorerFullscreen, setIsExplorerFullscreen] = useState<boolean>(false)
+  // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
   const [syncPage, setSyncPage] = useState<number | null>(null)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
@@ -522,9 +522,7 @@ export function PraticaCanvasPage() {
   const renderIds = useCallback(() => <ThingCardsPanel kind="id" />, [])
 
   // Explorer fullscreen handlers - stato esplicito basato sulla tab selezionata
-  const handleLeftBorderTabChange = useCallback((component: string) => {
-    setIsExplorerFullscreen(component === 'explorer')
-  }, [])
+  // handleLeftBorderTabChange removed - fullscreen now handled by PanelWithFullscreenToggle
 
   if (isLoading) {
     return (
@@ -569,8 +567,8 @@ export function PraticaCanvasPage() {
           storageKey={`ws_dock_v2_${id}`}
           docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
           renderExplorer={() => <Explorer {...ExplorerProps} />}
-          isExplorerFullscreen={isExplorerFullscreen}
-          onLeftBorderTabChange={handleLeftBorderTabChange}
+          // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
+          // onLeftBorderTabChange removed - fullscreen now handled by PanelWithFullscreenToggle
           praticaId={id} // Aggiungi questa prop
           renderArchive={() => (
             <ArchiveRenderer

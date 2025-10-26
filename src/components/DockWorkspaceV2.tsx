@@ -1,13 +1,101 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react'
+import { Layout, Model, TabNode, IJsonModel, Actions } from 'flexlayout-react'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
+import { CabinetView } from '../features/case-overview/components/CabinetView'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
-import { baselineGraph } from '../features/case-overview/stories/_mocks'
+// baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText } from 'lucide-react'
+import type { Comparto } from '@/types'
 import './DockWorkspaceV2.css'
 
 type DocTab = { id: string; title: string }
+
+// ✅ STEP 4: Componente wrapper per pannelli con fullscreen toggle
+const PanelWithFullscreenToggle: React.FC<{
+  children: React.ReactNode
+  component: string
+  title: string
+  tabId: string
+  registerToggle: (id: string, fn: () => void) => void
+  fullscreenStates: Map<string, boolean>
+  setFullscreenStates: React.Dispatch<React.SetStateAction<Map<string, boolean>>>
+  forceRerender: () => void
+  forceTabUpdate: (tabId: string) => void
+}> = ({ children, component, title, tabId, registerToggle, fullscreenStates, setFullscreenStates, forceRerender, forceTabUpdate }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Pannelli che supportano fullscreen toggle
+  const supportsFullscreen = ['explorer', 'graph', 'cabinet'].includes(component)
+
+  console.log('[FULLSCREEN-TOGGLE] Rendering component:', component, 'supportsFullscreen:', supportsFullscreen)
+
+  if (!supportsFullscreen) {
+    console.log('[FULLSCREEN-TOGGLE] ❌ Component does not support fullscreen')
+    return <>{children}</>
+  }
+
+  console.log('[FULLSCREEN-TOGGLE] ✅ Rendering fullscreen button for component:', component)
+
+  // ✅ Sincronizza lo stato fullscreen con lo state globale per aggiornare l'icona del pulsante
+  useEffect(() => {
+    setFullscreenStates(prev => {
+      const newMap = new Map(prev)
+      newMap.set(tabId, isFullscreen)
+      return newMap
+    })
+    console.log('[FULLSCREEN-TOGGLE] State updated for tabId:', tabId, 'isFullscreen:', isFullscreen)
+    // Forza re-render del layout per aggiornare l'icona del pulsante
+    forceRerender()
+    // Forza aggiornamento della tab specifica
+    forceTabUpdate(tabId)
+  }, [isFullscreen, tabId, setFullscreenStates, forceRerender, forceTabUpdate])
+
+  // Registra un toggle imperativo per il bottone nell'header
+  useEffect(() => {
+    const toggle = () => {
+      console.log('[FULLSCREEN-TOGGLE] Toggle called for tabId:', tabId, 'current state:', isFullscreen)
+      setIsFullscreen((prev) => !prev)
+    }
+    registerToggle(tabId, toggle)
+    return () => registerToggle(tabId, () => { })
+  }, [registerToggle, tabId, isFullscreen])
+
+  return (
+    <div className="relative w-full h-full">
+      {/* Contenuto del pannello */}
+      <div className={isFullscreen ? 'fixed inset-0 z-40 bg-white' : 'w-full h-full'}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ✅ STEP 2: Tipi di comportamento per i pannelli
+type PanelBehavior = 'fullscreen' | 'dockable' | 'document' | 'overlay'
+
+// ✅ STEP 4: Mappatura comportamenti per componente (tutti dockable con fullscreen toggle)
+const PANEL_BEHAVIORS: Record<string, PanelBehavior> = {
+  // Pannelli dockable con fullscreen toggle (Explorer, Grafo, Armadio)
+  'explorer': 'dockable',
+  'graph': 'dockable',
+  'cabinet': 'dockable',
+
+  // Pannelli dockable normali (trascinabili e ridimensionabili nel canvas)
+  'archive': 'dockable',
+  'search': 'dockable',
+  'persons': 'dockable',
+  'contacts': 'dockable',
+  'ids': 'dockable',
+  'events': 'dockable',
+
+  // Documenti (si aprono come tab nel canvas)
+  'doc': 'document',
+  'tmpdoc': 'document',
+
+  // Overlay (si aprono sopra il contenuto)
+  'drawer': 'overlay'
+}
 
 type Props = {
   docs: DocTab[]
@@ -20,7 +108,7 @@ type Props = {
   storageKey?: string
   renderEvents?: () => React.ReactNode
   renderExplorer?: () => React.ReactNode
-  isExplorerFullscreen?: boolean
+  // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
   onLeftBorderTabChange?: (component: string) => void
   praticaId?: string // Aggiungi questa prop
 }
@@ -31,22 +119,92 @@ export type DockWorkspaceV2Handle = {
   switchToArchive: () => void
 }
 
-export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function DockWorkspaceV2({ docs, renderArchive, renderSearch, renderPersons, renderContacts, renderIds, renderDoc, storageKey = 'ws_dock_v2', renderEvents, renderExplorer, isExplorerFullscreen = false, onLeftBorderTabChange, praticaId }, ref) {
+function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Handle>) {
+  const {
+    docs,
+    renderArchive,
+    renderSearch,
+    renderPersons,
+    renderContacts,
+    renderIds,
+    renderDoc,
+    storageKey = 'ws_dock_v2',
+    renderEvents,
+    renderExplorer,
+    onLeftBorderTabChange,
+    praticaId
+  } = props
   const LayoutAny = Layout as any
   const layoutRootRef = useRef<HTMLDivElement>(null)
-  
+  const modelRef = useRef<Model | null>(null)
+  const fullscreenTogglesRef = useRef<Map<string, () => void>>(new Map())
+
+  // ✅ Traccia i pannelli dockable attivi per nascondere/mostrare le tab nella sidebar
+  const dockablePanelsRef = useRef<Map<string, { component: string; title: string; originalTabId: string }>>(new Map())
+  // ✅ Traccia quali componenti sono attualmente docked per nascondere le relative tab nella sidebar
+  const dockedComponentsRef = useRef<Set<string>>(new Set())
+  // ✅ State per forzare re-render quando cambiano i componenti docked
+  const [dockedComponents, setDockedComponents] = useState<Set<string>>(new Set())
+  // ✅ State globale per tracciare lo stato fullscreen di ogni componente (reattivo)
+  const [fullscreenStates, setFullscreenStates] = useState<Map<string, boolean>>(new Map())
+  // ✅ State per forzare re-render quando cambia lo stato fullscreen
+  const [fullscreenTrigger, setFullscreenTrigger] = useState(0)
+
+  const registerToggle = useCallback((id: string, fn: () => void) => {
+    if (!id) return
+    const map = fullscreenTogglesRef.current
+    if (fn && fn.name !== '') map.set(id, fn)
+    else map.delete(id)
+  }, [])
+
+  // ✅ Imperative handle per esporre metodi al parent
+  useImperativeHandle(ref, () => ({
+    openDoc: (doc: DocTab) => {
+      console.log('[IMPERATIVE] openDoc called:', doc)
+      // Implementazione per aprire documento
+    },
+    openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
+      console.log('[IMPERATIVE] openTmpDoc called:', meta)
+      // Implementazione per aprire documento temporaneo
+    },
+    switchToArchive: () => {
+      console.log('[IMPERATIVE] switchToArchive called')
+      // Implementazione per passare all'archivio
+    }
+  }), [])
+
+  // ✅ Funzione per forzare aggiornamento tab specifica
+  const forceTabUpdate = useCallback((tabId: string) => {
+    if (!modelRef.current) return
+    const node = modelRef.current.getNodeById(tabId)
+    if (node) {
+      console.log('[FORCE-TAB-UPDATE] Updating tab:', tabId)
+      modelRef.current.doAction(
+        Actions.updateNodeAttributes(tabId, { name: node.getName() })
+      )
+    }
+  }, [])
+
+  // ✅ Funzione per forzare re-render quando cambia lo stato fullscreen
+  const forceRerender = useCallback(() => {
+    console.log('[FORCE-RERENDER] Triggering re-render for fullscreen state change')
+    setFullscreenTrigger(prev => prev + 1)
+  }, [])
+
   const initial: IJsonModel = useMemo(() => {
-    // Start from a known good layout to avoid corrupted persisted models
+    // ✅ STEP 1: Reset layout per canvas vuoto - rimuovi layout persistito vecchio
+    try {
+      localStorage.removeItem(storageKey)
+    } catch { }
     return getDefaultModelJson()
   }, [storageKey])
 
   const [model, setModel] = useState(() => Model.fromJson(initial))
-  const modelRef = useRef(model)
   modelRef.current = model
 
   useEffect(() => {
     const json = model.toJson()
-    try { localStorage.setItem(storageKey, JSON.stringify(json)) } catch {}
+    try { localStorage.setItem(storageKey, JSON.stringify(json)) } catch { }
   }, [model, storageKey])
 
   // Listener per aprire un cassetto in una nuova tab
@@ -91,7 +249,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     return () => window.removeEventListener('app:open-drawer' as any, onOpenDrawer as any)
   }, [])
 
-  // Apri doc nel tabset centrale
+  // ✅ STEP 1: Apri doc creando dinamicamente il tabset
   const openDoc = (doc: DocTab) => {
     // Assicura struttura base
     ensureBaseStructure()
@@ -105,42 +263,69 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         if (cfg?.docId === doc.id || name === doc.title) exists = true
       }
     })
+
+    if (exists) return // Documento già aperto
+
     const json = modelRef.current.toJson() as any
-    let center = findById(json.layout, 'centerTabset')
-    if (!center) {
-      // ricrea centerTabset se manca
-      if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
-        json.layout = getDefaultModelJson().layout
-      } else {
-        json.layout.children.push({ type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] })
-      }
-      center = findById(json.layout, 'centerTabset')
+
+    // ✅ STEP 1: Crea dinamicamente il tabset per documenti
+    let docTabset = findById(json.layout, 'docTabset')
+    if (!docTabset) {
+      // Crea nuovo tabset per documenti
+      json.layout.children.push({
+        type: 'tabset',
+        id: 'docTabset',
+        enableTabStrip: true,
+        weight: 80,
+        children: []
+      })
+      docTabset = findById(json.layout, 'docTabset')
     }
-    if (!exists) {
-      center.children = center.children || []
-      center.children.push({ type: 'tab', name: doc.title, component: 'doc', config: { docId: doc.id } })
-      center.selected = center.children.length - 1
-    }
+
+    // Aggiungi il documento
+    docTabset.children = docTabset.children || []
+    docTabset.children.push({
+      type: 'tab',
+      name: doc.title,
+      component: 'doc',
+      config: { docId: doc.id }
+    })
+    docTabset.selected = docTabset.children.length - 1
+
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
   }
 
+  // ✅ STEP 1: Apri tmpdoc creando dinamicamente il tabset
   const openTmpDoc = (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
     ensureBaseStructure()
     const json = modelRef.current.toJson() as any
-    let center = findById(json.layout, 'centerTabset')
-    if (!center) {
-      if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
-        json.layout = getDefaultModelJson().layout
-      } else {
-        json.layout.children.push({ type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] })
-      }
-      center = findById(json.layout, 'centerTabset')
+
+    // ✅ STEP 1: Crea dinamicamente il tabset per documenti temporanei
+    let docTabset = findById(json.layout, 'docTabset')
+    if (!docTabset) {
+      // Crea nuovo tabset per documenti
+      json.layout.children.push({
+        type: 'tabset',
+        id: 'docTabset',
+        enableTabStrip: true,
+        weight: 80,
+        children: []
+      })
+      docTabset = findById(json.layout, 'docTabset')
     }
-    center.children = center.children || []
-    center.children.push({ type: 'tab', name: meta.title || 'Estratto', component: 'tmpdoc', config: { meta } })
-    center.selected = center.children.length - 1
+
+    // Aggiungi il documento temporaneo
+    docTabset.children = docTabset.children || []
+    docTabset.children.push({
+      type: 'tab',
+      name: meta.title || 'Estratto',
+      component: 'tmpdoc',
+      config: { meta }
+    })
+    docTabset.selected = docTabset.children.length - 1
+
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
@@ -150,7 +335,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     const json = modelRef.current.toJson() as any
     const leftBorder = (json.borders || []).find((b: any) => b.location === 'left')
     if (!leftBorder) return
-    
+
     // Trova index del tab archive
     const archiveIndex = leftBorder.children?.findIndex((t: any) => t.component === 'archive')
     if (archiveIndex !== undefined && archiveIndex >= 0) {
@@ -165,35 +350,6 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
   useImperativeHandle(ref, () => ({ openDoc, openTmpDoc, switchToArchive }))
 
   // Helper robusto per applicare/ritirare il fullscreen
-  const applyExplorerFullscreen = useCallback((on: boolean) => {
-    const m = modelRef.current
-    if (!m) return
-
-    // Trova border sinistro (usa id se lo hai messo nel JSON, altrimenti fallback su location)
-    const leftBorder = m.getBorderSet().getBorders()
-      .find(b => (b as any).getId?.() === 'leftBorder' || (b as any).getLocation?.() === 'left')
-    const borderId = (leftBorder as any)?.getId?.()
-    if (!borderId) return
-
-    // Calcolo size target del border (pixel)
-    const containerWidth = layoutRootRef.current?.clientWidth ?? 1600
-    const targetSize = on ? Math.max(800, containerWidth) : 320
-
-    // 1) Allarga/restringe il border sinistro
-    m.doAction({
-      type: 'FlexLayout_SetBorderSize',
-      borderId,
-      size: targetSize
-    } as any)
-
-    // 2) Schiaccia/ristabilisce il center tabset
-    m.doAction({
-      type: 'FlexLayout_UpdateNodeAttributes',
-      node: 'centerTabset',
-      attributes: { weight: on ? 0.0001 : 80 }
-    } as any)
-  }, [])
-
   // Al mount: sincronizza lo stato in base alla tab selezionata nel left border
   useEffect(() => {
     if (!onLeftBorderTabChange) return
@@ -206,27 +362,78 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Quando il parent cambia il flag, applichiamo le azioni in ordine
-  useEffect(() => {
-    applyExplorerFullscreen(isExplorerFullscreen)
-  }, [isExplorerFullscreen, applyExplorerFullscreen])
-
-  // Cambio modello (selezione tab compresa) -> notifica quale tab è attiva
+  // ✅ STEP 5: Cambio modello semplificato
   const handleModelChange = (m: Model) => {
+    modelRef.current = m
     setModel(m)
-    if (!onLeftBorderTabChange) return
-    const left = m.getBorderSet().getBorders()
-      .find(b => (b as any).getLocation?.() === 'left' || (b as any).getId?.() === 'leftBorder')
-    const sel = left?.getSelectedNode()
-    const comp = sel ? (sel as any).getComponent?.() : undefined
-    if (comp) onLeftBorderTabChange(comp)
   }
 
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
+    const title = node.getName()
+    const tabId = node.getId()
+
+    // ✅ STEP 4: Pannelli con fullscreen toggle
     if (comp === 'explorer') {
-      return <div className="w-full h-full overflow-hidden bg-white">{renderExplorer ? renderExplorer() : null}</div>
+      return (
+        <PanelWithFullscreenToggle
+          component={comp}
+          title={title}
+          tabId={tabId}
+          registerToggle={registerToggle}
+          fullscreenStates={fullscreenStates}
+          setFullscreenStates={setFullscreenStates}
+          forceRerender={forceRerender}
+          forceTabUpdate={forceTabUpdate}
+        >
+          <div className="w-full h-full overflow-hidden bg-white">{renderExplorer ? renderExplorer() : null}</div>
+        </PanelWithFullscreenToggle>
+      )
     }
+    if (comp === 'graph') {
+      return (
+        <PanelWithFullscreenToggle
+          component={comp}
+          title={title}
+          tabId={tabId}
+          registerToggle={registerToggle}
+          fullscreenStates={fullscreenStates}
+          setFullscreenStates={setFullscreenStates}
+          forceTabUpdate={forceTabUpdate}
+          forceRerender={forceRerender}
+        >
+          <div className="w-full h-full overflow-hidden bg-white">
+            <CaseOverviewDiagram
+              praticaId={praticaId || ''}
+            />
+          </div>
+        </PanelWithFullscreenToggle>
+      )
+    }
+    if (comp === 'cabinet') {
+      return (
+        <PanelWithFullscreenToggle
+          component={comp}
+          title={title}
+          tabId={tabId}
+          registerToggle={registerToggle}
+          fullscreenStates={fullscreenStates}
+          setFullscreenStates={setFullscreenStates}
+          forceTabUpdate={forceTabUpdate}
+          forceRerender={forceRerender}
+        >
+          <div className="w-full h-full overflow-hidden bg-white">
+            <CabinetView
+              graph={{ nodes: [], edges: [] } as any}
+              onOpen={() => { }}
+              praticaId={praticaId || ''}
+            />
+          </div>
+        </PanelWithFullscreenToggle>
+      )
+    }
+
+    // ✅ STEP 4: Pannelli dockable normali (senza fullscreen toggle)
     if (comp === 'archive') return <div className="w-full h-full overflow-auto bg-slate-50">{renderArchive()}</div>
     if (comp === 'search') return <div className="w-full h-full overflow-auto bg-white">{renderSearch ? renderSearch() : null}</div>
     if (comp === 'persons') return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
@@ -236,9 +443,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     if (comp === 'overview') {
       return (
         <div className="w-full h-full overflow-hidden bg-white">
-          <CaseOverviewDiagram 
-            graph={baselineGraph as any} 
-            peopleIndex={{}} 
+          <CaseOverviewDiagram
             praticaId={praticaId || ''} // Passa praticaId
           />
         </div>
@@ -249,7 +454,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
     }
     if (comp === 'tmpdoc') {
-      const cfg = (node.getConfig() || {}) as { meta?: { id: string; title: string; content?: string; text?: string; source?: { docId?: string; page?: number; title?: string; x0Pct?:number;x1Pct?:number;y0Pct?:number;y1Pct?:number } } }
+      const cfg = (node.getConfig() || {}) as { meta?: { id: string; title: string; content?: string; text?: string; source?: { docId?: string; page?: number; title?: string; x0Pct?: number; x1Pct?: number; y0Pct?: number; y1Pct?: number } } }
       const content = cfg.meta?.text || cfg.meta?.content || 'Estratto in memoria (non ancora salvato)'
       const src: any = cfg.meta?.source || {}
       const docLabel = (typeof src.title === 'string' && src.title.trim()) ? src.title : (src.docId || 'Documento')
@@ -258,7 +463,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       const pageEnd = Number.isFinite(src?.range?.endPage) ? Math.max(1, Math.floor(Number(src.range.endPage))) : undefined
       const pageNum = Number.isFinite(pageNumRaw) ? Math.max(1, Math.floor(pageNumRaw)) : (pageStart || undefined)
       const pageLabel = pageStart && pageEnd ? (pageStart === pageEnd ? String(pageStart) : `${pageStart}-${pageEnd}`) : (pageNum ?? '-')
-      try { console.log('[TMPDOC][header]', { meta: cfg.meta, src, pageNumRaw, pageNum }) } catch {}
+      try { console.log('[TMPDOC][header]', { meta: cfg.meta, src, pageNumRaw, pageNum }) } catch { }
       return (
         <div className="w-full h-full overflow-auto bg-white p-4">
           <div className="text-sm mb-3 flex items-center gap-2 flex-wrap">
@@ -269,11 +474,11 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
               onClick={() => {
                 try {
                   const detail: any = { docId: src.docId, title: src.title, page: pageNum }
-                  const box = (src.box && typeof src.box.x0Pct==='number') ? src.box : (typeof src.x0Pct === 'number' && typeof src.y0Pct === 'number' ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined)
+                  const box = (src.box && typeof src.box.x0Pct === 'number') ? src.box : (typeof src.x0Pct === 'number' && typeof src.y0Pct === 'number' ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined)
                   if (box) detail.box = box
-                  try { console.log('[TMPDOC][goto-source][dispatch]', detail) } catch {}
+                  try { console.log('[TMPDOC][goto-source][dispatch]', detail) } catch { }
                   window.dispatchEvent(new CustomEvent('app:goto-source', { detail }))
-                } catch {}
+                } catch { }
               }}
             >Mostra nel documento</button>
           </div>
@@ -297,7 +502,7 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     return undefined
   }
 
-  // Assicura che il modello abbia: border sinistro con Archivio e layout centrale con centerTabset
+  // ✅ STEP 1: Canvas vuoto che si riempie dinamicamente
   function getDefaultModelJson(): IJsonModel {
     return {
       global: {
@@ -307,10 +512,10 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       },
       layout: {
         type: 'row',
-        children: [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [ { type: 'tab', name: 'Overview', component: 'overview', id: 'overviewTab' } ] } ]
+        children: [] // ← CANVAS VUOTO - si riempie dinamicamente quando si attivano i pannelli
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: 0, children: [ { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' } ] } as any
+        { type: 'border', location: 'left', size: 320, selected: -1, children: [{ type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' }, { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }, { type: 'tab', name: 'Armadio', component: 'cabinet', id: 'cabinetTab' }] } as any
       ]
     } as IJsonModel
   }
@@ -322,24 +527,19 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       json.global.tabSetEnableTabStrip = true
       json.global.tabSetHeaderHeight = json.global.tabSetHeaderHeight || 28
 
-      // force row root
+      // ✅ STEP 1: Force row root with empty canvas
       if (!json.layout || json.layout.type !== 'row' || !Array.isArray(json.layout.children)) {
         json.layout = getDefaultModelJson().layout
       }
 
-      // ensure center
-      let center = findById(json.layout, 'centerTabset')
-      if (!center || center.type !== 'tabset') {
-        json.layout.children = [ { type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] } ]
-        center = findById(json.layout, 'centerTabset')
-      }
-      center.enableTabStrip = true
+      // ✅ STEP 1: Canvas vuoto - non forziamo centerTabset
+      // I pannelli verranno aggiunti dinamicamente quando necessario
 
       // ensure left border Archivio/Search
       if (!Array.isArray((json as any).borders)) (json as any).borders = []
       let left = (json as any).borders.find((b: any) => b.location === 'left')
       if (!left) {
-        (json as any).borders.push({ type: 'border', location: 'left', size: 320, selected: 0, children: [] })
+        (json as any).borders.push({ type: 'border', location: 'left', size: 320, selected: -1, children: [] })
         left = (json as any).borders.find((b: any) => b.location === 'left')
       }
       // Assicura che l'ID sia presente (per compatibilità con il nostro codice)
@@ -353,7 +553,8 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
       if (!hasSearch) left.children.push({ type: 'tab', name: 'Search', component: 'search', id: 'searchTab' })
       if (!hasPersons) left.children.push({ type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' })
       if (!hasEvents) left.children.push({ type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' })
-      if (typeof left.selected !== 'number') left.selected = 0
+      // ✅ STEP 1: Nessuna selezione di default - canvas completamente vuoto
+      if (typeof left.selected !== 'number') left.selected = -1
 
       return json
     } catch {
@@ -372,14 +573,221 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     }
   }
 
-  // Se docs passato è non vuoto e non ci sono tab → aggiungo le prime tab
-  useEffect(() => {
-    let tabCount = 0
-    modelRef.current.visitNodes(n => { if (n.getType() === 'tab' && (n as TabNode).getComponent() === 'doc') tabCount++ })
-    if (tabCount === 0 && docs.length > 0) {
-      openDoc(docs[0])
+  // ✅ STEP 1: Canvas vuoto - non apriamo automaticamente documenti
+  // Gli utenti dovranno cliccare sui documenti per aprirli
+
+  // ✅ STEP 3: Intercetta drag & drop per posizionamento intelligente
+  const handleAction = (action: any) => {
+    console.log('[ACTION] Action received:', action.type, action)
+
+    // ✅ STEP 6: Intercetta chiusura tab - mostra la tab nella sidebar
+    if (action.type === 'FlexLayout_DeleteTab') {
+      console.log('[DELETE-TAB] DeleteTab action detected!')
+      console.log('[DELETE-TAB] Action data:', action.data)
+
+      // Trova il nodo che sta per essere chiuso
+      const nodeId = action.data?.node
+      if (nodeId) {
+        const nodeToDelete = modelRef.current.getNodeById(nodeId)
+
+        if (nodeToDelete && nodeToDelete.getType() === 'tab') {
+          const component = nodeToDelete.getComponent()
+          const behavior = PANEL_BEHAVIORS[component]
+
+          if (behavior === 'dockable') {
+            // ✅ Rimuovi dalla lista dei componenti docked per mostrare la tab
+            dockedComponentsRef.current.delete(component)
+            setDockedComponents(new Set(dockedComponentsRef.current))
+            console.log('[DELETE-TAB] Component undocked:', component, 'Docked components:', Array.from(dockedComponentsRef.current))
+
+            // Rimuovi dal tracking
+            dockablePanelsRef.current.delete(nodeId)
+          }
+        }
+      }
+
+      return action // Permetti la chiusura
     }
-  }, [docs])
+
+    // ✅ STEP 5: Intercetta click su tab nella sidebar
+    if (action.type === 'FlexLayout_SelectTab') {
+      const tabNodeId = action.data?.tabNode
+
+      if (!tabNodeId) {
+        return action
+      }
+
+      // ✅ Ottieni il vero oggetto TabNode dal modello
+      const tabNode = modelRef.current.getNodeById(tabNodeId)
+
+      if (!tabNode) {
+        return action
+      }
+
+      const component = tabNode.getComponent()
+      const behavior = PANEL_BEHAVIORS[component]
+
+      // Se è un pannello dockable, gestisci il click
+      if (behavior === 'dockable') {
+        const title = tabNode.getName() || component
+        const tabId = tabNode.getId() || `${component}Tab`
+
+        // ✅ STEP 5: PRIMA rimuovi la tab dalla sidebar
+        const json = modelRef.current.toJson() as any
+        const leftBorder = json.borders?.find((b: any) => b.location === 'left')
+        if (leftBorder) {
+          // ✅ NON rimuovere la tab, ma segnala che il componente è docked
+          dockedComponentsRef.current.add(component)
+          setDockedComponents(new Set(dockedComponentsRef.current))
+          console.log('[SELECT-TAB] Component docked:', component, 'Docked components:', Array.from(dockedComponentsRef.current))
+
+          // Mantieni la sidebar non selezionata (strip-only)
+          leftBorder.selected = -1
+
+          const correctedModel = Model.fromJson(json)
+          setModel(correctedModel)
+        }
+
+        // ✅ STEP 5: POI crea il pannello dockable (con ID diverso)
+        setTimeout(() => {
+          createDockablePanel(component, title, 'left')
+        }, 100)
+
+        return undefined // Blocca la selezione normale
+      }
+    }
+
+    // Intercetta quando un tab viene trascinato
+    if (action.type === 'FlexLayout_DragTab') {
+      const { dragNode, dropInfo } = action
+      const component = dragNode.getComponent()
+      const behavior = PANEL_BEHAVIORS[component]
+
+      // Se è un pannello dockable, gestisci il posizionamento
+      if (behavior === 'dockable') {
+        // Permetti il drop solo nel canvas centrale
+        if (dropInfo && dropInfo.node && dropInfo.node.getType() === 'tabset') {
+          const targetTabset = dropInfo.node
+          const targetId = targetTabset.getId()
+
+          // Se il target è nel canvas centrale, permetti il drop
+          if (targetId === 'dockableTabset' || targetId === 'docTabset') {
+            return action // Permetti l'azione
+          }
+        }
+
+        // Se il drop è nel canvas vuoto, crea un nuovo tabset
+        if (dropInfo && dropInfo.node && dropInfo.node.getType() === 'row') {
+          return action // Permetti l'azione
+        }
+
+        // Blocca il drop in altre zone
+        return undefined // Blocca l'azione
+      }
+    }
+
+    // Per tutti gli altri tipi di azione, permetti il comportamento normale
+    return action
+  }
+
+  // ✅ STEP 3: Crea pannello dockable nel canvas centrale con posizionamento intelligente
+  const createDockablePanel = (component: string, title: string, preferredPosition?: 'left' | 'right' | 'top' | 'bottom') => {
+    console.log('[CREATE-DOCKABLE] Creating dockable panel:', { component, title, preferredPosition })
+    const json = modelRef.current.toJson() as any
+
+    // Verifica se il pannello è già aperto in qualche tabset
+    let existingTabset: any = null
+    let existingIndex = -1
+
+    // Cerca in tutti i tabsets esistenti
+    const findExistingPanel = (node: any): boolean => {
+      if (node.type === 'tabset' && Array.isArray(node.children)) {
+        const index = node.children.findIndex((child: any) => child.component === component)
+        if (index >= 0) {
+          existingTabset = node
+          existingIndex = index
+          return true
+        }
+      }
+      if (Array.isArray(node.children)) {
+        return node.children.some(findExistingPanel)
+      }
+      return false
+    }
+
+    findExistingPanel(json.layout)
+
+    if (existingTabset && existingIndex >= 0) {
+      // Pannello già aperto, selezionalo
+      console.log('[CREATE-DOCKABLE] Panel already exists, selecting it')
+      existingTabset.selected = existingIndex
+      const nextModel = Model.fromJson(json)
+      modelRef.current = nextModel
+      setModel(nextModel)
+      return
+    }
+
+    // Pannello non aperto, crealo
+    let targetTabset = findById(json.layout, 'dockableTabset')
+
+    if (!targetTabset) {
+      console.log('[CREATE-DOCKABLE] Creating new dockableTabset')
+      // Crea nuovo tabset per pannelli dockable
+      const newTabset = {
+        type: 'tabset',
+        id: 'dockableTabset',
+        enableTabStrip: true,
+        weight: 60,
+        children: []
+      }
+
+      // Posiziona il tabset in base alla preferenza
+      if (preferredPosition === 'left') {
+        // Posizione a sinistra (default)
+        json.layout.children.unshift(newTabset)
+      } else if (preferredPosition === 'right' && json.layout.children.length > 0) {
+        // Crea un row con il tabset a destra
+        const existingChildren = json.layout.children
+        json.layout.children = [
+          { type: 'tabset', id: 'leftArea', weight: 40, children: [] },
+          newTabset
+        ]
+      } else {
+        // Posizione di default (sinistra)
+        json.layout.children.push(newTabset)
+      }
+
+      targetTabset = newTabset
+    } else {
+      console.log('[CREATE-DOCKABLE] Using existing dockableTabset')
+    }
+
+    // Aggiungi il pannello con ID unico
+    targetTabset.children = targetTabset.children || []
+    const uniqueId = `${component}Docked${Date.now()}`
+    console.log('[CREATE-DOCKABLE] Adding tab with unique ID:', uniqueId)
+    targetTabset.children.push({
+      type: 'tab',
+      name: title,
+      component: component,
+      id: uniqueId
+    })
+    targetTabset.selected = targetTabset.children.length - 1
+
+    // ✅ Traccia il pannello dockable per il ripristino alla sidebar
+    const originalTabId = `${component}Tab`
+    dockablePanelsRef.current.set(uniqueId, {
+      component,
+      title,
+      originalTabId
+    })
+    console.log('[CREATE-DOCKABLE] Tracked dockable panel:', { uniqueId, component, title, originalTabId })
+
+    const nextModel = Model.fromJson(json)
+    modelRef.current = nextModel
+    setModel(nextModel)
+    console.log('[CREATE-DOCKABLE] ✅ Panel created successfully')
+  }
 
   const iconFactory = (node: TabNode) => {
     const comp = node.getComponent()
@@ -404,10 +812,163 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
     return undefined
   }
 
+  // ✅ Inserisce il pulsante fullscreen nell'header della Tab SOLO per pannelli docked (non sidebar)
+  const onRenderTab = useCallback((node: any, renderValues: any) => {
+    console.log('[ON-RENDER-TAB] Called for component:', node.getComponent?.(), 'tabId:', node.getId(), 'trigger:', fullscreenTrigger)
+
+    const comp = node.getComponent?.()
+    if (!['explorer', 'graph', 'cabinet'].includes(comp)) {
+      console.log('[ON-RENDER-TAB] Component not supported for fullscreen:', comp)
+      return
+    }
+
+    // ✅ PROBLEMA 1 FIX: Solo per pannelli docked, non per sidebar
+    // Verifica se il tab è in un tabset del canvas (non in border)
+    const parent = node.getParent()
+    if (!parent || parent.getType() !== 'tabset') {
+      console.log('[ON-RENDER-TAB] Parent is not tabset:', parent?.getType())
+      return
+    }
+
+    // Se il parent è un border (sidebar), non aggiungere il pulsante
+    const parentParent = parent.getParent()
+    if (parentParent && parentParent.getType() === 'border') {
+      console.log('[FULLSCREEN-BUTTON] ❌ Tab in sidebar, skipping fullscreen button for:', comp)
+      return
+    }
+
+    // ✅ Ottieni lo stato fullscreen dal state globale (reattivo)
+    const isFullscreen = fullscreenStates.get(node.getId()) || false
+    console.log('[FULLSCREEN-BUTTON] ✅ Tab in docked panel, adding fullscreen button for:', comp, 'isFullscreen:', isFullscreen, 'tabId:', node.getId())
+
+    renderValues.buttons = renderValues.buttons || []
+    renderValues.buttons.push(
+      <button
+        key="fs"
+        className="dockv2-tab-fullscreen"
+        title={isFullscreen ? "Riduci" : "Massimizza"}
+        onClick={(e: any) => {
+          e.stopPropagation()
+          console.log('[FULLSCREEN-BUTTON] Clicked for tab:', node.getId(), 'current state:', isFullscreen)
+          const toggleFn = fullscreenTogglesRef.current.get(node.getId())
+          console.log('[FULLSCREEN-BUTTON] Toggle function found:', !!toggleFn)
+          if (toggleFn) {
+            toggleFn()
+          } else {
+            console.error('[FULLSCREEN-BUTTON] No toggle function found for tabId:', node.getId())
+          }
+        }}
+      >
+        {isFullscreen ? '⛷' : '⛶'}
+      </button>
+    )
+  }, [fullscreenTrigger, fullscreenStates])
+
+  // ✅ Nascondi/mostra le tab nella sidebar usando CSS dinamico
+  useEffect(() => {
+    const dockedArray = Array.from(dockedComponents)
+    console.log('[CSS-EFFECT] Docked components:', dockedArray)
+
+    // Mappa componenti ai nomi delle tab
+    const componentToTabName: Record<string, string> = {
+      'explorer': 'Explorer',
+      'archive': 'Archivio',
+      'search': 'Search',
+      'persons': 'Schede Anagrafiche',
+      'contacts': 'Contatti',
+      'ids': 'Identificativi',
+      'events': 'Eventi',
+      'graph': 'Grafo',
+      'cabinet': 'Armadio'
+    }
+
+    // Funzione per nascondere/mostrare le tab
+    const updateTabVisibility = () => {
+      console.log('[CSS-EFFECT] Updating tab visibility...')
+
+      // Cerca le tab individuali nella sidebar
+      const tabContainer = document.querySelector('.dockv2-root .flexlayout__border_left .flexlayout__border_inner_tab_container')
+      if (!tabContainer) {
+        console.log('[CSS-EFFECT] Tab container not found')
+        return
+      }
+
+      // Cerca tutti gli elementi figli che potrebbero essere tab individuali
+      const possibleTabs = tabContainer.querySelectorAll('*')
+      console.log('[CSS-EFFECT] Found possible tab elements:', possibleTabs.length)
+
+      // Filtra solo quelli che contengono testo delle tab
+      const tabNames = ['Explorer', 'Archivio', 'Search', 'Schede Anagrafiche', 'Contatti', 'Identificativi', 'Eventi', 'Grafo', 'Armadio']
+      const individualTabs: Element[] = []
+
+      possibleTabs.forEach(element => {
+        const text = element.textContent?.trim()
+        if (text && tabNames.some(name => text.includes(name))) {
+          individualTabs.push(element)
+          console.log('[CSS-EFFECT] Found individual tab:', text, 'classes:', element.className)
+        }
+      })
+
+      if (individualTabs.length === 0) {
+        console.log('[CSS-EFFECT] No individual tabs found, trying to split container text')
+        // Se non trova tab individuali, prova a nascondere parti del container
+        const containerText = tabContainer.textContent || ''
+        console.log('[CSS-EFFECT] Container text:', containerText)
+        return
+      }
+
+      console.log('[CSS-EFFECT] Found individual tabs:', individualTabs.length)
+
+      // Debug: mostra tutti gli elementi con X nella sidebar
+      const allElements = tabContainer.querySelectorAll('*')
+      allElements.forEach((element, index) => {
+        const text = element.textContent?.trim()
+        if (text === '×' || text === '✕' || text === 'X' || element.innerHTML.includes('×') || element.innerHTML.includes('✕') || element.innerHTML.includes('close')) {
+          console.log(`[CSS-EFFECT] Found X button ${index}:`, text, 'classes:', element.className, 'innerHTML:', element.innerHTML)
+        }
+      })
+
+      // Nascondi le tab docked
+      dockedArray.forEach(component => {
+        const tabName = componentToTabName[component]
+        if (tabName) {
+          let found = false
+          individualTabs.forEach(tab => {
+            if (tab.textContent?.trim().includes(tabName)) {
+              tab.classList.add('dockv2-hidden-tab')
+              console.log('[CSS-EFFECT] Hidden tab for component:', component, 'tabName:', tabName)
+              found = true
+            }
+          })
+          if (!found) {
+            console.log('[CSS-EFFECT] Tab not found for component:', component, 'tabName:', tabName)
+          }
+        }
+      })
+
+      // Mostra le tab non più docked
+      Object.entries(componentToTabName).forEach(([component, tabName]) => {
+        if (!dockedComponents.has(component)) {
+          individualTabs.forEach(tab => {
+            if (tab.textContent?.trim().includes(tabName)) {
+              tab.classList.remove('dockv2-hidden-tab')
+              console.log('[CSS-EFFECT] Shown tab for component:', component, 'tabName:', tabName)
+            }
+          })
+        }
+      })
+    }
+
+    // Esegui immediatamente e anche dopo un delay per FlexLayout
+    updateTabVisibility()
+    setTimeout(updateTabVisibility, 100)
+    setTimeout(updateTabVisibility, 500)
+  }, [dockedComponents])
+
   return (
-    <div 
+    <div
       ref={layoutRootRef}
-      className={`dockv2-root ${isExplorerFullscreen ? 'is-explorer-fs' : ''}`}
+      className="dockv2-root"
       style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}
     >
       <LayoutAny
@@ -416,43 +977,15 @@ export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(function
         iconFactory={iconFactory}
         realtimeResize
         onModelChange={handleModelChange}
-        
-        // Nascondi il centerTabset quando Explorer è fullscreen
-        onRenderTabSet={(tabset: any, renderValues: any) => {
-          if (tabset.getId?.() === 'centerTabset' && isExplorerFullscreen) {
-            renderValues.style = { ...(renderValues.style ?? {}), display: 'none', width: 0, minWidth: 0 }
-          }
-        }}
+        onAction={handleAction}
+        onRenderTab={onRenderTab}
 
-        // Allarga visivamente il border sinistro quando in fullscreen
-        onRenderBorder={(border: any, renderValues: any) => {
-          if ((border.getId?.() === 'leftBorder' || border.getLocation?.() === 'left') && isExplorerFullscreen) {
-            renderValues.style = { ...(renderValues.style ?? {}), width: '100%' }
-          }
-        }}
-
-        // Classe per debug
-        className={isExplorerFullscreen ? 'flexlayout--explorer-fs' : undefined}
+      // ✅ STEP 4: Fullscreen gestito dal componente PanelWithFullscreenToggle
       />
 
-      {/* CSS minimo, stabile (niente selettori fragili) */}
-      <style>
-        {`
-          .dockv2-root.is-explorer-fs .flexlayout__row {
-            width: 100% !important;
-          }
-          /* Il border sinistro ha classe nota in FlexLayout */
-          .dockv2-root.is-explorer-fs .flexlayout__border_left {
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            left: 0 !important;
-            flex: 1 1 auto !important;
-          }
-        `}
-      </style>
+      {/* CSS gestito da DockWorkspaceV2.css */}
     </div>
   )
-})
+}
 
-
+export const DockWorkspaceV2 = forwardRef<DockWorkspaceV2Handle, Props>(DockWorkspaceV2Component)

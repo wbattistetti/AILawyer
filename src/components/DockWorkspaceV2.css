@@ -1,12 +1,124 @@
 .dockv2-root .flexlayout__tabset_header {
-  display: flex !important; /* ensure native tab strip is visible */
+  display: flex !important;
+  /* ensure native tab strip is visible */
 }
+
 .dockv2-root .flexlayout__border_top,
 .dockv2-root .flexlayout__border_bottom,
 .dockv2-root .flexlayout__border_right {
-  display: none !important; /* keep only left border (Archivio/Search) visible */
+  display: none !important;
+  /* keep only left border (Archivio/Search) visible */
 }
+
 .dockv2-root .flexlayout__layout {
   background: #fff;
 }
 
+/* ✅ STEP 1: Mostra sempre le tab nella sidebar, nascondi solo il contenuto quando nessun tab è selezionato */
+.dockv2-root .flexlayout__border_left .flexlayout__border_tabset_content {
+  display: none;
+}
+
+/* Mostra il contenuto solo quando c'è una tab selezionata */
+.dockv2-root .flexlayout__border_left .flexlayout__border_tabset_content:not(:empty) {
+  display: block;
+}
+
+/* Fix per tab "mangiate" in alto - aggiungi padding superiore alla sidebar */
+.dockv2-root .flexlayout__border_left {
+  padding-top: 4px !important;
+}
+
+/* Assicura che le tab abbiano spazio sufficiente */
+.dockv2-root .flexlayout__border_left .flexlayout__tab {
+  margin-top: 2px !important;
+  margin-bottom: 2px !important;
+}
+
+/* Nascondi le tab docked nella sidebar */
+.dockv2-root .dockv2-hidden-tab {
+  display: none !important;
+}
+
+/* Nascondi SOLO il pulsante X nelle tab della sidebar sinistra - approccio più aggressivo */
+.dockv2-root .flexlayout__border_left .flexlayout__border_button_trailing,
+.dockv2-root .flexlayout__border_left .flexlayout__tab_button_close,
+.dockv2-root .flexlayout__border_left [class*="close"],
+.dockv2-root .flexlayout__border_left [class*="button_trailing"],
+.dockv2-root .flexlayout__border_left svg[viewBox="0 0 24 24"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* ✅ STEP 3: Migliora UX drag & drop */
+.dockv2-root .flexlayout__tab {
+  cursor: grab;
+}
+
+/* Stile per il pulsante fullscreen */
+.dockv2-tab-fullscreen {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: 4px;
+  border-radius: 2px;
+  font-size: 12px;
+  color: #666;
+  transition: background-color 0.2s;
+}
+
+.dockv2-tab-fullscreen:hover {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.dockv2-root .flexlayout__tab:active {
+  cursor: grabbing;
+}
+
+/* Evidenzia zone di drop valide */
+.dockv2-root .flexlayout__tabset {
+  transition: background-color 0.2s ease;
+}
+
+.dockv2-root .flexlayout__tabset:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+/* Stile per pannelli dockable */
+.dockv2-root .flexlayout__tabset[id="dockableTabset"] {
+  border: 2px dashed rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+}
+
+.dockv2-root .flexlayout__tabset[id="dockableTabset"]:not(:empty) {
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* ✅ STEP 6: Pulsantino fullscreen nell'header - icona arancione, senza bordo */
+.dockv2-root .fullscreen-toggle-button {
+  display: none !important;
+  /* nascosto: ora usiamo il bottone nell'header */
+}
+
+.dockv2-root .fullscreen-toggle-button:hover {
+  background: rgba(255, 107, 53, 0.1) !important;
+  color: #e55a2b !important;
+}
+
+/* Bottone fullscreen nell'header della tab */
+.dockv2-root .dockv2-tab-fullscreen {
+  margin-left: 6px !important;
+  padding: 2px 4px !important;
+  background: transparent !important;
+  border: none !important;
+  color: #ff6b35 !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+}
+
+.dockv2-root .dockv2-tab-fullscreen:hover {
+  color: #e55a2b !important;
+}

@@ -6,13 +6,14 @@ import type { DrawerType } from '../../drawers/types'
 // Aggiungi import per API call
 import { api } from '@/lib/api'
 import { useState, useEffect } from 'react'
+import type { Comparto } from '@/types'
 
-export function CabinetView({ graph, onOpen, praticaId }: { 
-  graph: CaseGraph; 
+export function CabinetView({ graph, onOpen, praticaId }: {
+  graph: CaseGraph;
   onOpen: (nodeId: string) => void;
   praticaId: string;
 }) {
-  
+
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
 
@@ -67,7 +68,7 @@ export function CabinetView({ graph, onOpen, praticaId }: {
       isOpen: !!openMap[n.id],
       type: typeFor(n.label),
     }))
-    
+
     const clientItems = comparti?.filter(c => c.key.startsWith('cliente_')).map(c => ({
       id: c.key,
       label: c.nome,
@@ -76,7 +77,7 @@ export function CabinetView({ graph, onOpen, praticaId }: {
       isOpen: !!openMap[c.key],
       type: 'DocumentCollection' as const
     })) || []
-    
+
     return [...graphItems, ...clientItems]
   }, [graph, comparti, openMap])
 
