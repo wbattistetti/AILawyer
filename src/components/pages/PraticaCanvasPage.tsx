@@ -565,7 +565,7 @@ export function PraticaCanvasPage() {
         <DockWorkspaceV2
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v2_${id}`}
-          docs={documenti.map(d => ({ id: d.id, title: d.filename }))}
+          // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
           renderExplorer={() => <Explorer {...ExplorerProps} />}
           // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
           // onLeftBorderTabChange removed - fullscreen now handled by PanelWithFullscreenToggle

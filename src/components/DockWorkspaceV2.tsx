@@ -6,7 +6,7 @@ import { DrawerViewer } from '../features/drawers/DrawerViewer'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText } from 'lucide-react'
-import type { Comparto } from '@/types'
+// import type { Comparto } from '@/types' // Removed unused import
 import './DockWorkspaceV2.css'
 
 type DocTab = { id: string; title: string }
@@ -15,14 +15,12 @@ type DocTab = { id: string; title: string }
 const PanelWithFullscreenToggle: React.FC<{
   children: React.ReactNode
   component: string
-  title: string
   tabId: string
   registerToggle: (id: string, fn: () => void) => void
-  fullscreenStates: Map<string, boolean>
   setFullscreenStates: React.Dispatch<React.SetStateAction<Map<string, boolean>>>
   forceRerender: () => void
   forceTabUpdate: (tabId: string) => void
-}> = ({ children, component, title, tabId, registerToggle, fullscreenStates, setFullscreenStates, forceRerender, forceTabUpdate }) => {
+}> = ({ children, component, tabId, registerToggle, setFullscreenStates, forceRerender, forceTabUpdate }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Pannelli che supportano fullscreen toggle
@@ -98,7 +96,7 @@ const PANEL_BEHAVIORS: Record<string, PanelBehavior> = {
 }
 
 type Props = {
-  docs: DocTab[]
+  // docs: DocTab[] // Removed unused prop
   renderArchive: () => React.ReactNode
   renderSearch?: () => React.ReactNode
   renderPersons?: () => React.ReactNode
@@ -121,7 +119,7 @@ export type DockWorkspaceV2Handle = {
 
 function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Handle>) {
   const {
-    docs,
+    // docs, // Removed unused prop
     renderArchive,
     renderSearch,
     renderPersons,
@@ -204,7 +202,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   useEffect(() => {
     const json = model.toJson()
-    try { localStorage.setItem(storageKey, JSON.stringify(json)) } catch { }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(json))
+    } catch { }
   }, [model, storageKey])
 
   // Listener per aprire un cassetto in una nuova tab
@@ -249,8 +249,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return () => window.removeEventListener('app:open-drawer' as any, onOpenDrawer as any)
   }, [])
 
-  // ✅ STEP 1: Apri doc creando dinamicamente il tabset
+  // ✅ STEP 1: Apri doc come tab orizzontale nel canvas principale
   const openDoc = (doc: DocTab) => {
+    console.log('[OPEN-DOC] Opening document:', doc)
+
     // Assicura struttura base
     ensureBaseStructure()
 
@@ -264,22 +266,43 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       }
     })
 
-    if (exists) return // Documento già aperto
+    if (exists) {
+      console.log('[OPEN-DOC] Document already exists, skipping')
+      return // Documento già aperto
+    }
 
     const json = modelRef.current.toJson() as any
 
-    // ✅ STEP 1: Crea dinamicamente il tabset per documenti
+    // ✅ STEP 1: Crea dinamicamente il tabset per documenti nel canvas principale
     let docTabset = findById(json.layout, 'docTabset')
+    console.log('[OPEN-DOC] Existing docTabset:', docTabset)
+
     if (!docTabset) {
-      // Crea nuovo tabset per documenti
-      json.layout.children.push({
-        type: 'tabset',
-        id: 'docTabset',
-        enableTabStrip: true,
-        weight: 80,
-        children: []
-      })
+      console.log('[OPEN-DOC] Creating new docTabset')
+      // ✅ Sostituisci il placeholder con il tabset per documenti
+      const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
+      if (placeholderIndex >= 0) {
+        // Sostituisci il placeholder
+        json.layout.children[placeholderIndex] = {
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        }
+      } else {
+        // Fallback: aggiungi alla fine
+        json.layout.children.push({
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        })
+      }
       docTabset = findById(json.layout, 'docTabset')
+    } else {
+      console.log('[OPEN-DOC] Using existing docTabset with', docTabset.children?.length || 0, 'children')
     }
 
     // Aggiungi il documento
@@ -292,27 +315,42 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     })
     docTabset.selected = docTabset.children.length - 1
 
+    console.log('[OPEN-DOC] Final docTabset children count:', docTabset.children.length)
+
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
   }
 
-  // ✅ STEP 1: Apri tmpdoc creando dinamicamente il tabset
+  // ✅ STEP 1: Apri tmpdoc come tab orizzontale nel canvas principale
   const openTmpDoc = (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
     ensureBaseStructure()
     const json = modelRef.current.toJson() as any
 
-    // ✅ STEP 1: Crea dinamicamente il tabset per documenti temporanei
+    // ✅ STEP 1: Crea dinamicamente il tabset per documenti temporanei nel canvas principale
     let docTabset = findById(json.layout, 'docTabset')
     if (!docTabset) {
-      // Crea nuovo tabset per documenti
-      json.layout.children.push({
-        type: 'tabset',
-        id: 'docTabset',
-        enableTabStrip: true,
-        weight: 80,
-        children: []
-      })
+      // ✅ Sostituisci il placeholder con il tabset per documenti
+      const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
+      if (placeholderIndex >= 0) {
+        // Sostituisci il placeholder
+        json.layout.children[placeholderIndex] = {
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        }
+      } else {
+        // Fallback: aggiungi alla fine
+        json.layout.children.push({
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        })
+      }
       docTabset = findById(json.layout, 'docTabset')
     }
 
@@ -370,7 +408,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
-    const title = node.getName()
     const tabId = node.getId()
 
     // ✅ STEP 4: Pannelli con fullscreen toggle
@@ -378,10 +415,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       return (
         <PanelWithFullscreenToggle
           component={comp}
-          title={title}
           tabId={tabId}
           registerToggle={registerToggle}
-          fullscreenStates={fullscreenStates}
           setFullscreenStates={setFullscreenStates}
           forceRerender={forceRerender}
           forceTabUpdate={forceTabUpdate}
@@ -394,10 +429,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       return (
         <PanelWithFullscreenToggle
           component={comp}
-          title={title}
           tabId={tabId}
           registerToggle={registerToggle}
-          fullscreenStates={fullscreenStates}
           setFullscreenStates={setFullscreenStates}
           forceTabUpdate={forceTabUpdate}
           forceRerender={forceRerender}
@@ -414,10 +447,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       return (
         <PanelWithFullscreenToggle
           component={comp}
-          title={title}
           tabId={tabId}
           registerToggle={registerToggle}
-          fullscreenStates={fullscreenStates}
           setFullscreenStates={setFullscreenStates}
           forceTabUpdate={forceTabUpdate}
           forceRerender={forceRerender}
@@ -451,7 +482,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }
-      return <div className="w-full h-full overflow-hidden border-l bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">(Tavolo) Apri un documento dall'Archivio</div>}</div>
+      return <div className="w-full h-full overflow-hidden bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">Apri un documento dall'Archivio</div>}</div>
     }
     if (comp === 'tmpdoc') {
       const cfg = (node.getConfig() || {}) as { meta?: { id: string; title: string; content?: string; text?: string; source?: { docId?: string; page?: number; title?: string; x0Pct?: number; x1Pct?: number; y0Pct?: number; y1Pct?: number } } }
@@ -502,17 +533,42 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return undefined
   }
 
-  // ✅ STEP 1: Canvas vuoto che si riempie dinamicamente
+  // ✅ STEP 1: Canvas con placeholder invisibile per evitare creazione automatica di tabsets
   function getDefaultModelJson(): IJsonModel {
     return {
       global: {
-        tabSetEnableTabStrip: true,
         tabSetHeaderHeight: 28,
         borderBarSize: 28,
+        // ✅ Configurazioni per evitare creazione automatica di tabsets
+        tabSetEnableClose: false,
+        tabSetEnableDrag: false,
+        tabSetEnableDrop: false,
+        tabSetEnableMaximize: false,
+        tabSetEnableRestore: false,
+        tabSetEnableSplit: false,
+        tabSetEnableResize: false,
+        // ✅ Disabilita completamente la creazione automatica di tabsets
+        tabSetEnableTabStrip: false,
+        // ✅ Impedisce a FlexLayout di creare tabsets vuoti
+        tabSetAutoSelectTab: false,
+        tabSetEnableDeleteWhenEmpty: false
       },
       layout: {
         type: 'row',
-        children: [] // ← CANVAS VUOTO - si riempie dinamicamente quando si attivano i pannelli
+        children: [
+          // ✅ Placeholder invisibile per evitare che FlexLayout crei tabsets automaticamente
+          {
+            type: 'tabset',
+            id: 'placeholder',
+            weight: 100,
+            enableTabStrip: false, // Nascondi la barra delle tab
+            enableClose: false,    // Non chiudibile
+            enableDrag: false,     // Non trascinabile
+            enableDrop: false,     // Non droppabile
+            enableMaximize: false, // Non massimizzabile
+            children: [] // Vuoto ma presente per evitare creazione automatica
+          }
+        ]
       },
       borders: [
         { type: 'border', location: 'left', size: 320, selected: -1, children: [{ type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' }, { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }, { type: 'tab', name: 'Armadio', component: 'cabinet', id: 'cabinetTab' }] } as any
@@ -527,13 +583,31 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       json.global.tabSetEnableTabStrip = true
       json.global.tabSetHeaderHeight = json.global.tabSetHeaderHeight || 28
 
-      // ✅ STEP 1: Force row root with empty canvas
+      // ✅ STEP 1: Force row root with placeholder canvas
       if (!json.layout || json.layout.type !== 'row' || !Array.isArray(json.layout.children)) {
         json.layout = getDefaultModelJson().layout
       }
 
-      // ✅ STEP 1: Canvas vuoto - non forziamo centerTabset
-      // I pannelli verranno aggiunti dinamicamente quando necessario
+      // ✅ STEP 1: Preserva il docTabset esistente se presente
+      const existingDocTabset = json.layout.children.find((child: any) => child.id === 'docTabset')
+      const hasPlaceholder = json.layout.children.some((child: any) => child.id === 'placeholder')
+
+      if (!hasPlaceholder && !existingDocTabset) {
+        // Solo se non c'è né placeholder né docTabset, crea il placeholder
+        json.layout.children = [
+          {
+            type: 'tabset',
+            id: 'placeholder',
+            weight: 100,
+            enableTabStrip: false,
+            enableClose: false,
+            enableDrag: false,
+            enableDrop: false,
+            enableMaximize: false,
+            children: []
+          }
+        ]
+      }
 
       // ensure left border Archivio/Search
       if (!Array.isArray((json as any).borders)) (json as any).borders = []
@@ -549,10 +623,20 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       const hasSearch = left.children.some((t: any) => t.component === 'search')
       const hasPersons = left.children.some((t: any) => t.component === 'persons')
       const hasEvents = left.children.some((t: any) => t.component === 'events')
-      if (!hasArchive) left.children.push({ type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' })
-      if (!hasSearch) left.children.push({ type: 'tab', name: 'Search', component: 'search', id: 'searchTab' })
-      if (!hasPersons) left.children.push({ type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' })
-      if (!hasEvents) left.children.push({ type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' })
+
+      // ✅ Solo aggiungi le tab se non sono già docked
+      if (!hasArchive && !dockedComponentsRef.current.has('archive')) {
+        left.children.push({ type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' })
+      }
+      if (!hasSearch && !dockedComponentsRef.current.has('search')) {
+        left.children.push({ type: 'tab', name: 'Search', component: 'search', id: 'searchTab' })
+      }
+      if (!hasPersons && !dockedComponentsRef.current.has('persons')) {
+        left.children.push({ type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' })
+      }
+      if (!hasEvents && !dockedComponentsRef.current.has('events')) {
+        left.children.push({ type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' })
+      }
       // ✅ STEP 1: Nessuna selezione di default - canvas completamente vuoto
       if (typeof left.selected !== 'number') left.selected = -1
 
@@ -630,7 +714,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       // Se è un pannello dockable, gestisci il click
       if (behavior === 'dockable') {
         const title = tabNode.getName() || component
-        const tabId = tabNode.getId() || `${component}Tab`
 
         // ✅ STEP 5: PRIMA rimuovi la tab dalla sidebar
         const json = modelRef.current.toJson() as any
@@ -639,7 +722,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
           // ✅ NON rimuovere la tab, ma segnala che il componente è docked
           dockedComponentsRef.current.add(component)
           setDockedComponents(new Set(dockedComponentsRef.current))
-          console.log('[SELECT-TAB] Component docked:', component, 'Docked components:', Array.from(dockedComponentsRef.current))
 
           // Mantieni la sidebar non selezionata (strip-only)
           leftBorder.selected = -1
@@ -650,7 +732,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
         // ✅ STEP 5: POI crea il pannello dockable (con ID diverso)
         setTimeout(() => {
-          createDockablePanel(component, title, 'left')
+          // Archivio si apre sempre a sinistra con larghezza fissa per miniature
+          const position = component === 'archive' ? 'left' : 'left'
+          createDockablePanel(component, title, position)
         }, 100)
 
         return undefined // Blocca la selezione normale
@@ -692,7 +776,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ STEP 3: Crea pannello dockable nel canvas centrale con posizionamento intelligente
   const createDockablePanel = (component: string, title: string, preferredPosition?: 'left' | 'right' | 'top' | 'bottom') => {
-    console.log('[CREATE-DOCKABLE] Creating dockable panel:', { component, title, preferredPosition })
     const json = modelRef.current.toJson() as any
 
     // Verifica se il pannello è già aperto in qualche tabset
@@ -719,7 +802,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     if (existingTabset && existingIndex >= 0) {
       // Pannello già aperto, selezionalo
-      console.log('[CREATE-DOCKABLE] Panel already exists, selecting it')
       existingTabset.selected = existingIndex
       const nextModel = Model.fromJson(json)
       modelRef.current = nextModel
@@ -731,41 +813,62 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     let targetTabset = findById(json.layout, 'dockableTabset')
 
     if (!targetTabset) {
-      console.log('[CREATE-DOCKABLE] Creating new dockableTabset')
       // Crea nuovo tabset per pannelli dockable
       const newTabset = {
         type: 'tabset',
         id: 'dockableTabset',
         enableTabStrip: true,
-        weight: 60,
+        weight: component === 'archive' ? 20 : 60, // Archivio molto più stretto per le miniature
         children: []
       }
 
-      // Posiziona il tabset in base alla preferenza
-      if (preferredPosition === 'left') {
-        // Posizione a sinistra (default)
-        json.layout.children.unshift(newTabset)
+      // ✅ Gestisci il placeholder: sostituiscilo o posiziona il nuovo tabset
+      const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
+
+      if (preferredPosition === 'left' || component === 'archive') {
+        // Posizione a sinistra (default) - Archivio sempre a sinistra
+        if (placeholderIndex >= 0) {
+          // Sostituisci il placeholder con il nuovo tabset
+          json.layout.children[placeholderIndex] = newTabset
+        } else {
+          // Fallback: aggiungi all'inizio
+          json.layout.children.unshift(newTabset)
+        }
       } else if (preferredPosition === 'right' && json.layout.children.length > 0) {
         // Crea un row con il tabset a destra
-        const existingChildren = json.layout.children
-        json.layout.children = [
-          { type: 'tabset', id: 'leftArea', weight: 40, children: [] },
-          newTabset
-        ]
+        if (placeholderIndex >= 0) {
+          // Sostituisci il placeholder con un row che contiene il nuovo tabset
+          json.layout.children[placeholderIndex] = {
+            type: 'row',
+            children: [
+              { type: 'tabset', id: 'leftArea', weight: 40, children: [] },
+              newTabset
+            ]
+          }
+        } else {
+          // Fallback: crea un row
+          json.layout.children = [
+            { type: 'tabset', id: 'leftArea', weight: 40, children: [] },
+            newTabset
+          ]
+        }
       } else {
         // Posizione di default (sinistra)
-        json.layout.children.push(newTabset)
+        if (placeholderIndex >= 0) {
+          // Sostituisci il placeholder
+          json.layout.children[placeholderIndex] = newTabset
+        } else {
+          // Fallback: aggiungi alla fine
+          json.layout.children.push(newTabset)
+        }
       }
 
       targetTabset = newTabset
-    } else {
-      console.log('[CREATE-DOCKABLE] Using existing dockableTabset')
     }
 
     // Aggiungi il pannello con ID unico
     targetTabset.children = targetTabset.children || []
     const uniqueId = `${component}Docked${Date.now()}`
-    console.log('[CREATE-DOCKABLE] Adding tab with unique ID:', uniqueId)
     targetTabset.children.push({
       type: 'tab',
       name: title,
@@ -781,12 +884,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       title,
       originalTabId
     })
-    console.log('[CREATE-DOCKABLE] Tracked dockable panel:', { uniqueId, component, title, originalTabId })
 
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
-    console.log('[CREATE-DOCKABLE] ✅ Panel created successfully')
   }
 
   const iconFactory = (node: TabNode) => {
@@ -898,14 +999,13 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
       if (individualTabs.length === 0) {
         // Se non trova tab individuali, prova a nascondere parti del container
-        const containerText = tabContainer.textContent || ''
         return
       }
 
 
       // Debug: mostra tutti gli elementi con X nella sidebar
       const allElements = tabContainer.querySelectorAll('*')
-      allElements.forEach((element, index) => {
+      allElements.forEach((element) => {
         const text = element.textContent?.trim()
         if (text === '×' || text === '✕' || text === 'X' || element.innerHTML.includes('×') || element.innerHTML.includes('✕') || element.innerHTML.includes('close')) {
         }

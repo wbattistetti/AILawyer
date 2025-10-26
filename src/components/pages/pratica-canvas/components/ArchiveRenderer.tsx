@@ -61,8 +61,9 @@ export function ArchiveRenderer({
                 onOpen={(doc) => {
                     const trovato = documenti.find(x => x.id === doc.id);
                     if (trovato) {
+                        // Apri solo il documento nel canvas principale
                         dockV2Ref.current?.openDoc({ id: trovato.id, title: trovato.filename });
-                        toast({ title: 'Aperto nel Tavolo', description: trovato.filename });
+                        toast({ title: 'Documento aperto', description: trovato.filename });
                     }
                 }}
                 onDrop={(files) => { handleFileDrop(files, null, { type: 'archive' }) }}
