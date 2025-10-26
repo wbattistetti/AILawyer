@@ -8,23 +8,76 @@ async function seed() {
     await prisma.job.deleteMany()
     await prisma.documento.deleteMany()
     await prisma.comparto.deleteMany()
+    await prisma.estratto.deleteMany()
     await prisma.pratica.deleteMany()
+    await prisma.cliente.deleteMany()
+    await prisma.tipoDinamico.deleteMany()
 
     console.log('✅ Database cleaned')
+
+    // Create sample cliente
+    const cliente = await prisma.cliente.create({
+      data: {
+        nome: 'Mario',
+        cognome: 'Rossi',
+        codiceFiscale: 'RSSMRA80E15F205X',
+        dataNascita: new Date('1980-05-15'),
+        indirizzo: 'Via Roma 1, Milano',
+        metadati: JSON.stringify([
+          { type: 'testo', label: 'telefono', value: '3331234567' },
+          { type: 'testo', label: 'email', value: 'mario.rossi@email.com' },
+          { type: 'booleano', label: 'cliente_vip', value: 'true' }
+        ])
+      },
+    })
+
+    console.log('✅ Sample cliente created')
 
     // Create sample pratica
     const pratica = await prisma.pratica.create({
       data: {
-        nome: 'Procedimento penale vs. Mario Rossi',
-        cliente: 'Mario Rossi',
-        foro: 'Tribunale di Milano',
-        controparte: 'Procura della Repubblica',
-        pmGiudice: 'Dott. Giuseppe Verdi',
+        clienteId: cliente.id,
         numeroRuolo: '12345/2024',
+        foro: 'Tribunale di Milano',
+        pmGiudice: 'Dott. Giuseppe Verdi',
       },
     })
 
     console.log('✅ Sample pratica created')
+
+    // Create sample tipo dinamici
+    const tipiDinamici = await prisma.tipoDinamico.createMany({
+      data: [
+        {
+          label: 'telefono',
+          type: 'testo',
+          obbligatorio: false,
+          validazione: JSON.stringify({ pattern: '^[0-9+\\s-]+$' }),
+          ordine: 1
+        },
+        {
+          label: 'email',
+          type: 'testo',
+          obbligatorio: false,
+          validazione: JSON.stringify({ pattern: '^[\\w\\.-]+@[\\w\\.-]+\\.[a-zA-Z]{2,}$' }),
+          ordine: 2
+        },
+        {
+          label: 'cliente_vip',
+          type: 'booleano',
+          obbligatorio: false,
+          ordine: 3
+        },
+        {
+          label: 'note',
+          type: 'testo',
+          obbligatorio: false,
+          ordine: 4
+        }
+      ]
+    })
+
+    console.log('✅ Sample tipo dinamici created')
 
     // Create default comparti
     const COMPARTI_DEFAULT = [
@@ -50,7 +103,11 @@ async function seed() {
     })
 
     console.log('✅ Default comparti created')
-    console.log(`🎉 Seed completed! Sample pratica ID: ${pratica.id}`)
+    console.log(`🎉 Seed completed!`)
+    console.log(`   - Cliente ID: ${cliente.id}`)
+    console.log(`   - Pratica ID: ${pratica.id}`)
+    console.log(`   - Tipi dinamici: 4`)
+    console.log(`   - Comparti: ${COMPARTI_DEFAULT.length}`)
 
   } catch (error) {
     console.error('❌ Seed failed:', error)

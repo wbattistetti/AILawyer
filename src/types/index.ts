@@ -59,3 +59,107 @@ export interface UploadProgress {
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error'
   error?: string
 }
+
+// ===== NUOVI TIPI PER SISTEMA CLIENTI/ESTRATTI =====
+
+export interface Cliente {
+  id: string
+  nome: string
+  cognome: string
+  codiceFiscale?: string
+  dataNascita?: string
+  indirizzo?: string
+  metadati: ClienteMetadato[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ClienteMetadato {
+  type: 'testo' | 'numero' | 'data' | 'valuta' | 'booleano'
+  label: string
+  value: string
+}
+
+export interface TipoDinamico {
+  id: string
+  label: string
+  type: 'testo' | 'numero' | 'data' | 'valuta' | 'booleano'
+  obbligatorio: boolean
+  validazione?: TipoDinamicoValidazione
+  ordine: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TipoDinamicoValidazione {
+  pattern?: string
+  min?: number
+  max?: number
+  required?: boolean
+  message?: string
+}
+
+export interface Estratto {
+  id: string
+  praticaId: string
+  sourceDoc: string
+  page: number
+  start: number
+  end: number
+  type: 'reato' | 'motivazione' | 'contromotivazione'
+  parentReatoId?: string
+  parentMotivazioneId?: string
+  title?: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EstrattoWithRelations extends Estratto {
+  pratica?: {
+    id: string
+    numeroRuolo: string
+    foro: string
+  }
+  clienti?: Array<{
+    id: string
+    nome: string
+    cognome: string
+  }>
+  parentReato?: Estratto
+  parentMotivazione?: Estratto
+  motivazioni?: Estratto[]
+  contromotivazioni?: Estratto[]
+}
+
+export interface EstrattoHierarchy {
+  reati: EstrattoWithRelations[]
+  motivazioni: EstrattoWithRelations[]
+  contromotivazioni: EstrattoWithRelations[]
+}
+
+// ===== TIPI PER FORM DINAMICI =====
+
+export interface FormFieldConfig {
+  label: string
+  type: 'testo' | 'numero' | 'data' | 'valuta' | 'booleano'
+  obbligatorio: boolean
+  validazione?: TipoDinamicoValidazione
+  ordine: number
+}
+
+export interface FormFieldValue {
+  label: string
+  value: string
+}
+
+// ===== TIPI PER MEMORIA DIFENSIVA =====
+
+export interface MemoriaDifensiva {
+  clienteId: string
+  praticaId: string
+  estratti: EstrattoWithRelations[]
+  gerarchia: EstrattoHierarchy
+  createdAt: string
+  updatedAt: string
+}

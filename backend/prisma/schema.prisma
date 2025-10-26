@@ -10,18 +10,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Cliente {
+  id            String   @id @default(cuid())
+  nome          String
+  cognome       String
+  codiceFiscale String?  @unique
+  dataNascita   DateTime?
+  indirizzo     String?
+  metadati      String   // JSON string di array di {type, label, value}
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pratiche      Pratica[]
+  estratti      Estratto[] @relation("EstrattoCliente")
+
+  @@map("clienti")
+}
+
 model Pratica {
   id          String   @id @default(cuid())
-  numeroRuolo String   // OBBLIGATORIO invece di nome
-  cliente     String
+  clienteId   String   // FK a clienti.id
+  numeroRuolo String
   foro        String
-  pmGiudice   String?  // Solo questo opzionale
+  pmGiudice   String?
   status      String   @default("draft")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  comparti  Comparto[]
-  documenti Documento[]
+  cliente     Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  comparti    Comparto[]
+  documenti   Documento[]
+  estratti    Estratto[]
 
   @@map("pratiche")
 }
@@ -82,4 +101,44 @@ model Job {
   documento Documento @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("jobs")
+}
+
+model TipoDinamico {
+  id          String   @id @default(cuid())
+  label       String   @unique
+  type        String   // "testo", "numero", "data", "valuta", "booleano"
+  obbligatorio Boolean @default(false)
+  validazione String?  // JSON string delle regole di validazione
+  ordine      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tipo_dinamici")
+}
+
+model Estratto {
+  id          String   @id @default(cuid())
+  praticaId   String
+  sourceDoc   String   // Documento di origine
+  page        Int      // Pagina
+  start       Int      // Posizione inizio nel testo
+  end         Int      // Posizione fine nel testo
+  type        String   // 'reato' | 'motivazione' | 'contromotivazione'
+  parentReatoId String? // FK a estratto reato
+  parentMotivazioneId String? // FK a estratto motivazione
+  title       String?  // Titolo dell'estratto
+  content     String   // Contenuto testuale
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  clienti     Cliente[] @relation("EstrattoCliente")
+
+  parentReato Estratto? @relation("ReatoMotivazioni", fields: [parentReatoId], references: [id])
+  parentMotivazione Estratto? @relation("MotivazioneContromotivazioni", fields: [parentMotivazioneId], references: [id])
+
+  motivazioni Estratto[] @relation("ReatoMotivazioni")
+  contromotivazioni Estratto[] @relation("MotivazioneContromotivazioni")
+
+  @@map("estratti")
 }

@@ -25,6 +25,9 @@ const { jobsRoutes } = await import('./routes/jobs.js')
 const { searchRoutes } = await import('./routes/search.js')
 const { thumbsRoutes } = await import('./routes/thumbs.js')
 const { filesystemRoutes } = await import('./routes/filesystem.js')
+const { clientiRoutes } = await import('./routes/clienti.js')
+const { tipoDinamiciRoutes } = await import('./routes/tipo-dinamici.js')
+const { estrattiRoutes } = await import('./routes/estratti.js')
 
 // Body limit: if MAX_UPLOAD_MB <= 0 → effectively unlimited
 const limitMb = Number(config.MAX_UPLOAD_MB || 0)
@@ -55,19 +58,34 @@ fastify.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
 })
 
 // Register routes
+console.log('🔧 Registering routes...')
 await fastify.register(praticheRoutes)
+console.log('✅ praticheRoutes registered')
 await fastify.register(documentiRoutes)
+console.log('✅ documentiRoutes registered')
 await fastify.register(uploadRoutes)
+console.log('✅ uploadRoutes registered')
 await fastify.register(jobsRoutes)
+console.log('✅ jobsRoutes registered')
 await fastify.register(searchRoutes)
+console.log('✅ searchRoutes registered')
 await fastify.register(thumbsRoutes)
+console.log('✅ thumbsRoutes registered')
 await fastify.register(filesystemRoutes)
+console.log('✅ filesystemRoutes registered')
+await fastify.register(clientiRoutes, { prefix: '/api' })
+console.log('✅ clientiRoutes registered')
+await fastify.register(tipoDinamiciRoutes, { prefix: '/api' })
+console.log('✅ tipoDinamiciRoutes registered')
+await fastify.register(estrattiRoutes, { prefix: '/api' })
+console.log('✅ estrattiRoutes registered')
+console.log('🎉 All routes registered successfully!')
 
 // Start server
 try {
-  await fastify.listen({ 
-    port: config.PORT, 
-    host: '0.0.0.0' 
+  await fastify.listen({
+    port: config.PORT,
+    host: '0.0.0.0'
   })
   console.log(`🚀 Server running on http://localhost:${config.PORT}`)
 } catch (err) {
