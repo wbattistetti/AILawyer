@@ -21,34 +21,49 @@ export function CabinetView({ graph, onOpen, praticaId }: {
   useEffect(() => {
     if (praticaId) {
       api.getComparti(praticaId)
-        .then(setComparti)
+        .then(comparti => {
+          setComparti(comparti)
+        })
         .catch(console.error)
     }
   }, [praticaId])
 
   const colorFor = (label?: string) => {
     const s = (label || '').toLowerCase()
-    // Usa gli stessi colori del flowchart (GraphCanvas.colorFor)
-    if (s.includes('avvocati') || s.includes('elenco nomi') || s.includes('anagrafe ent')) return '#3b82f6' // blue
-    if (s.includes('atti ed eventi') || s.includes('incontri') || s.includes('intercett')) return '#ec4899' // pink
-    if (s.includes('verbale')) return '#f59e0b' // amber
-    if (s.includes('difens')) return '#10b981' // emerald
+
+    // Colori per i comparti dell'armadio
+    if (s.includes('da classificare')) return '#ef4444' // red
+    if (s.includes('admin') || s.includes('procure')) return '#8b5cf6' // violet
+    if (s.includes('parti') || s.includes('anagrafiche')) return '#3b82f6' // blue
+    if (s.includes('corrispondenza') || s.includes('pec')) return '#06b6d4' // cyan
+    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return '#dc2626' // red-600
+    if (s.includes('indagini') || s.includes('preliminari')) return '#f59e0b' // amber
+    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return '#10b981' // emerald
+    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return '#ec4899' // pink
+    if (s.includes('udienze') || s.includes('verbali')) return '#f59e0b' // amber
+    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return '#6366f1' // indigo
+    if (s.includes('cliente') || s === 'a') return '#84cc16' // lime (per i clienti)
+
     return '#64748b' // slate (default)
   }
 
   const iconFor = (label?: string) => {
     const s = (label || '').toLowerCase()
-    if (s.includes('verbale')) return <FileText className="w-4 h-4 text-amber-600" />
-    if (s.includes('difens')) return <Gavel className="w-4 h-4 text-emerald-600" />
-    if (s.includes('incontri') || s.includes('eventi')) return <Zap className="w-4 h-4 text-pink-600" />
-    if (s.includes('intercett')) return <Hash className="w-4 h-4 text-pink-600" />
-    if (s.includes('procura')) return <Landmark className="w-4 h-4 text-violet-600" />
-    if (s.includes('ufficio pg')) return <Shield className="w-4 h-4 text-slate-700" />
-    if (s.includes('contatti') || s.includes('telefon')) return <Phone className="w-4 h-4 text-blue-600" />
-    if (s.includes('timeline') || s.includes('termini')) return <Clock className="w-4 h-4 text-slate-600" />
-    if (s.includes('anagrafe') || s.includes('avvocati') || s.includes('elenco nomi')) return <Users className="w-4 h-4 text-blue-700" />
-    if (s.includes('reati')) return <Boxes className="w-4 h-4 text-slate-700" />
-    return <Boxes className="w-4 h-4 text-slate-600" />
+
+    // Icone per i comparti dell'armadio (più piccole)
+    if (s.includes('da classificare')) return <Boxes className="w-3 h-3 text-red-600" />
+    if (s.includes('admin') || s.includes('procure')) return <Landmark className="w-3 h-3 text-violet-600" />
+    if (s.includes('parti') || s.includes('anagrafiche')) return <Users className="w-3 h-3 text-blue-600" />
+    if (s.includes('corrispondenza') || s.includes('pec')) return <FileText className="w-3 h-3 text-cyan-600" />
+    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return <Gavel className="w-3 h-3 text-red-600" />
+    if (s.includes('indagini') || s.includes('preliminari')) return <Shield className="w-3 h-3 text-amber-600" />
+    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return <FileText className="w-3 h-3 text-emerald-600" />
+    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return <Boxes className="w-3 h-3 text-pink-600" />
+    if (s.includes('udienze') || s.includes('verbali')) return <Clock className="w-3 h-3 text-amber-600" />
+    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return <Gavel className="w-3 h-3 text-indigo-600" />
+    if (s.includes('cliente') || s === 'a') return <Users className="w-3 h-3 text-lime-600" />
+
+    return <Boxes className="w-3 h-3 text-slate-600" />
   }
 
   function typeFor(label?: string): DrawerType | undefined {
@@ -58,28 +73,26 @@ export function CabinetView({ graph, onOpen, praticaId }: {
     return undefined
   }
 
-  // Combina nodi del grafo + comparti clienti
+  // Usa tutti i comparti per i cassetti dell'armadio
   const allItems = useMemo(() => {
-    const graphItems = graph.nodes.map(n => ({
-      id: n.id,
-      color: colorFor(n.label),
-      label: n.label,
-      icon: iconFor(n.label),
-      isOpen: !!openMap[n.id],
-      type: typeFor(n.label),
-    }))
+    // ✅ TUTTI i comparti/documenti per i cassetti dell'armadio
+    const allCompartiItems = comparti?.map(c => {
+      const color = colorFor(c.nome)
+      const icon = iconFor(c.nome)
+      console.log('[CABINET] Processing comparto:', c.nome, 'color:', color, 'icon:', icon)
+      return {
+        id: c.key,
+        label: c.nome,
+        color: color, // usa la funzione colorFor per i colori
+        icon: icon, // usa la funzione iconFor per le icone
+        isOpen: !!openMap[c.key],
+        type: typeFor(c.nome) as const
+      }
+    }) || []
 
-    const clientItems = comparti?.filter(c => c.key.startsWith('cliente_')).map(c => ({
-      id: c.key,
-      label: c.nome,
-      color: '#3b82f6', // blue per clienti
-      icon: <Users className="w-4 h-4" />,
-      isOpen: !!openMap[c.key],
-      type: 'DocumentCollection' as const
-    })) || []
-
-    return [...graphItems, ...clientItems]
-  }, [graph, comparti, openMap])
+    console.log('[CABINET] Creating drawers:', allCompartiItems.length, 'items:', allCompartiItems)
+    return allCompartiItems
+  }, [comparti, openMap])
 
   const handleToggle = (id: string) => {
     setOpenMap(m => ({ ...m, [id]: !m[id] }))

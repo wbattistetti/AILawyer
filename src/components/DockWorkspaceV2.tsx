@@ -814,11 +814,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ Inserisce il pulsante fullscreen nell'header della Tab SOLO per pannelli docked (non sidebar)
   const onRenderTab = useCallback((node: any, renderValues: any) => {
-    console.log('[ON-RENDER-TAB] Called for component:', node.getComponent?.(), 'tabId:', node.getId(), 'trigger:', fullscreenTrigger)
 
     const comp = node.getComponent?.()
     if (!['explorer', 'graph', 'cabinet'].includes(comp)) {
-      console.log('[ON-RENDER-TAB] Component not supported for fullscreen:', comp)
       return
     }
 
@@ -826,20 +824,17 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     // Verifica se il tab è in un tabset del canvas (non in border)
     const parent = node.getParent()
     if (!parent || parent.getType() !== 'tabset') {
-      console.log('[ON-RENDER-TAB] Parent is not tabset:', parent?.getType())
       return
     }
 
     // Se il parent è un border (sidebar), non aggiungere il pulsante
     const parentParent = parent.getParent()
     if (parentParent && parentParent.getType() === 'border') {
-      console.log('[FULLSCREEN-BUTTON] ❌ Tab in sidebar, skipping fullscreen button for:', comp)
       return
     }
 
     // ✅ Ottieni lo stato fullscreen dal state globale (reattivo)
     const isFullscreen = fullscreenStates.get(node.getId()) || false
-    console.log('[FULLSCREEN-BUTTON] ✅ Tab in docked panel, adding fullscreen button for:', comp, 'isFullscreen:', isFullscreen, 'tabId:', node.getId())
 
     renderValues.buttons = renderValues.buttons || []
     renderValues.buttons.push(
@@ -849,13 +844,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         title={isFullscreen ? "Riduci" : "Massimizza"}
         onClick={(e: any) => {
           e.stopPropagation()
-          console.log('[FULLSCREEN-BUTTON] Clicked for tab:', node.getId(), 'current state:', isFullscreen)
           const toggleFn = fullscreenTogglesRef.current.get(node.getId())
-          console.log('[FULLSCREEN-BUTTON] Toggle function found:', !!toggleFn)
           if (toggleFn) {
             toggleFn()
-          } else {
-            console.error('[FULLSCREEN-BUTTON] No toggle function found for tabId:', node.getId())
           }
         }}
       >
@@ -884,18 +875,15 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     // Funzione per nascondere/mostrare le tab
     const updateTabVisibility = () => {
-      console.log('[CSS-EFFECT] Updating tab visibility...')
 
       // Cerca le tab individuali nella sidebar
       const tabContainer = document.querySelector('.dockv2-root .flexlayout__border_left .flexlayout__border_inner_tab_container')
       if (!tabContainer) {
-        console.log('[CSS-EFFECT] Tab container not found')
         return
       }
 
       // Cerca tutti gli elementi figli che potrebbero essere tab individuali
       const possibleTabs = tabContainer.querySelectorAll('*')
-      console.log('[CSS-EFFECT] Found possible tab elements:', possibleTabs.length)
 
       // Filtra solo quelli che contengono testo delle tab
       const tabNames = ['Explorer', 'Archivio', 'Search', 'Schede Anagrafiche', 'Contatti', 'Identificativi', 'Eventi', 'Grafo', 'Armadio']
@@ -905,26 +893,21 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         const text = element.textContent?.trim()
         if (text && tabNames.some(name => text.includes(name))) {
           individualTabs.push(element)
-          console.log('[CSS-EFFECT] Found individual tab:', text, 'classes:', element.className)
         }
       })
 
       if (individualTabs.length === 0) {
-        console.log('[CSS-EFFECT] No individual tabs found, trying to split container text')
         // Se non trova tab individuali, prova a nascondere parti del container
         const containerText = tabContainer.textContent || ''
-        console.log('[CSS-EFFECT] Container text:', containerText)
         return
       }
 
-      console.log('[CSS-EFFECT] Found individual tabs:', individualTabs.length)
 
       // Debug: mostra tutti gli elementi con X nella sidebar
       const allElements = tabContainer.querySelectorAll('*')
       allElements.forEach((element, index) => {
         const text = element.textContent?.trim()
         if (text === '×' || text === '✕' || text === 'X' || element.innerHTML.includes('×') || element.innerHTML.includes('✕') || element.innerHTML.includes('close')) {
-          console.log(`[CSS-EFFECT] Found X button ${index}:`, text, 'classes:', element.className, 'innerHTML:', element.innerHTML)
         }
       })
 
@@ -936,12 +919,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
           individualTabs.forEach(tab => {
             if (tab.textContent?.trim().includes(tabName)) {
               tab.classList.add('dockv2-hidden-tab')
-              console.log('[CSS-EFFECT] Hidden tab for component:', component, 'tabName:', tabName)
               found = true
             }
           })
           if (!found) {
-            console.log('[CSS-EFFECT] Tab not found for component:', component, 'tabName:', tabName)
           }
         }
       })
@@ -952,7 +933,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
           individualTabs.forEach(tab => {
             if (tab.textContent?.trim().includes(tabName)) {
               tab.classList.remove('dockv2-hidden-tab')
-              console.log('[CSS-EFFECT] Shown tab for component:', component, 'tabName:', tabName)
             }
           })
         }

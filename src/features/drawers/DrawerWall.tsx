@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Drawer, DrawerProps } from "./Drawer";
+import { Drawer, DrawerProps, DrawerRef } from "./Drawer";
 import type { DrawerType } from './types'
 import { useMeasure } from "./useMeasure";
 
@@ -22,29 +22,71 @@ type Props = {
 
 export function DrawerWall({ items, onToggle, gap = 5, padding = 16, className }: Props) {
   const { ref, rect } = useMeasure<HTMLDivElement>();
+  const drawerRefs = React.useRef<Array<DrawerRef | null>>([]);
 
   const n = Math.max(items.length, 1);
-  // Fill vertical space, keep exact 5px gaps; center the whole wall horizontally
   const innerW = Math.max(rect.width - padding * 2, 0);
   const innerH = Math.max(rect.height - padding * 2, 0);
-  const DESIRED_RATIO = 1.8; // wider than tall
 
-  // Fix a 4xN grid: cassetti più larghi
-  const cols = Math.max(1, Math.min(4, n));
-  const rows = Math.ceil(n / cols);
+  // Calcola le dimensioni minime da tutti i cassetti
+  const minDimensions = React.useMemo(() => {
+    const dimensions = drawerRefs.current
+      .map(ref => ref?.getMinDimensions())
+      .filter(Boolean) as Array<{ minWidth: number; minHeight: number }>;
 
-  let cellH = (innerH - gap * (rows - 1)) / rows; // fit height exactly
-  let cellW = cellH * DESIRED_RATIO;
-  let gridW = cellW * cols + gap * (cols - 1);
-  // if too wide, clamp to fit width and recompute height accordingly
-  if (gridW > innerW) {
-    cellW = (innerW - gap * (cols - 1)) / cols;
-    cellH = cellW / DESIRED_RATIO;
-    gridW = innerW;
-  }
+    if (dimensions.length === 0) {
+      return { minWidth: 120, minHeight: 80 }; // Fallback
+    }
+
+    // Trova il cassetto più "esigente"
+    const maxMinWidth = Math.max(...dimensions.map(d => d.minWidth));
+    const maxMinHeight = Math.max(...dimensions.map(d => d.minHeight));
+
+    return { minWidth: maxMinWidth, minHeight: maxMinHeight };
+  }, [items]);
+
+  // Calcola matrice ottimale basata sulle dimensioni uniformi
+  const { cols, rows, cellW, cellH } = React.useMemo(() => {
+    const { minWidth, minHeight } = minDimensions;
+
+    // 1. GRANDEZZA FISSA: tutti i cassetti uguali al più grande
+    const fixedWidth = minWidth;  // già calcolato come max tra tutti i cassetti
+    const fixedHeight = minHeight; // già calcolato come max tra tutti i cassetti
+
+    // 2. ALGORITMO CORRETTO: calcola cassetti per riga
+    const cassettiPerRiga = Math.floor(innerW / fixedWidth);
+
+    // 3. ALGORITMO CORRETTO: calcola numero righe
+    const numeroRighe = Math.ceil(n / cassettiPerRiga);
+
+    // I cassetti mantengono SEMPRE la grandezza fissa
+    const cellW = fixedWidth;
+    const cellH = fixedHeight;
+
+    // Usa le dimensioni fisse
+    const finalWidth = cellW;
+    const finalHeight = cellH;
+
+    console.log('[DRAWER-WALL] Layout calculation (CORRECT ALGORITHM):', {
+      items: n,
+      minDimensions,
+      availableSpace: { innerW, innerH },
+      algorithm: {
+        step1: `fixedWidth = ${fixedWidth} (max of all drawers)`,
+        step2: `cassettiPerRiga = Math.floor(${innerW} / ${fixedWidth}) = ${cassettiPerRiga}`,
+        step3: `numeroRighe = Math.ceil(${n} / ${cassettiPerRiga}) = ${numeroRighe}`
+      },
+      result: { cols: cassettiPerRiga, rows: numeroRighe, cellW: finalWidth, cellH: finalHeight },
+      behavior: 'FIXED SIZE - matrix changes, drawers stay same size'
+    });
+
+    return { cols: cassettiPerRiga, rows: numeroRighe, cellW: finalWidth, cellH: finalHeight };
+  }, [minDimensions, innerW, innerH, n, gap]);
+
+  const gridW = cellW * cols + gap * (cols - 1);
   const gridH = cellH * rows + gap * (rows - 1);
   const offsetX = (innerW - gridW) / 2;
-  const offsetY = (innerH - gridH) / 2;
+  const offsetY = padding; // Position from top
 
   return (
     <div ref={ref} className={className ?? "w-full h-full relative"}>
@@ -73,7 +115,10 @@ export function DrawerWall({ items, onToggle, gap = 5, padding = 16, className }
 
           return (
             <div key={it.id} className="absolute" style={{ left: x, top: y, width: cellW, height: cellH }}>
-              <Drawer {...drawerProps} />
+              <Drawer
+                ref={el => drawerRefs.current[i] = el}
+                {...drawerProps}
+              />
             </div>
           );
         })}

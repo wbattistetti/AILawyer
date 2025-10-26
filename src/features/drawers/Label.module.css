@@ -2,19 +2,21 @@
   padding: 0 !important;
   gap: 5px !important;
 }
+
 .iconBox {
-  width: 48px !important;
-  height: 48px !important;
+  width: 32px !important;
+  height: 32px !important;
   flex: 0 0 auto !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   margin: 0 !important;
 }
+
 .iconInner {
   display: block !important;
-  width: 48px !important;
-  height: 48px !important;
+  width: 32px !important;
+  height: 32px !important;
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -27,9 +29,8 @@
   white-space: normal !important;
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
-  /* Font fisso richiesto */
-  font-size: 14px !important;
+  /* Font più piccolo */
+  font-size: 12px !important;
   flex: 1 1 auto !important;
   text-align: left !important;
 }
-
