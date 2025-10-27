@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,7 +10,24 @@ import { Pratica } from '@/types'
 
 const praticaSchema = z.object({
   numeroRuolo: z.string().min(1, 'Numero RGN/NR è obbligatorio'),
-  cliente: z.string().min(1, 'Cliente/i è obbligatorio'),
+  cliente: z.string()
+    .min(1, 'Cliente/i è obbligatorio')
+    .refine((value) => {
+      // Dividi per virgola e pulisci
+      const names = value.split(',')
+        .map(name => name.trim())
+        .filter(name => name.length > 0)
+
+      // Controlla che ogni nome abbia almeno nome e cognome
+      const validNames = names.filter(name => {
+        const parts = name.trim().split(/\s+/).filter(Boolean)
+        return parts.length >= 2 // Richiede almeno nome e cognome
+      })
+
+      return validNames.length > 0
+    }, {
+      message: 'Ogni cliente deve avere nome e cognome separati da spazio (es. "Mario Rossi")'
+    }),
   foro: z.string().optional(),
   pmGiudice: z.string().optional(),
 })
@@ -28,13 +45,30 @@ interface NuovaPraticaFormProps {
 }
 
 export function NuovaPraticaForm({ onSubmit, isLoading }: NuovaPraticaFormProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
   const {
     register,
     handleSubmit,
     formState: { errors },
+    setValue,
+    watch,
   } = useForm<PraticaFormData>({
     resolver: zodResolver(praticaSchema),
   })
+
+  const clienteValue = watch('cliente')
+
+  const handleClienteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setValue('cliente', value)
+
+    // Auto-resize
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px'
+    }
+  }
 
   return (
     <Card className="w-full max-w-2xl mx-auto">
@@ -87,17 +121,21 @@ export function NuovaPraticaForm({ onSubmit, isLoading }: NuovaPraticaFormProps)
           {/* SECONDA RIGA: Cliente/i a larghezza completa (obbligatorio) */}
           <div className="space-y-2">
             <Label htmlFor="cliente">Cliente/i *</Label>
-            <Input
+            <textarea
+              ref={textareaRef}
               id="cliente"
-              {...register('cliente')}
+              value={clienteValue || ''}
               placeholder="es. Mario Rossi, Anna Bianchi, Luca Verdi"
-              className={errors.cliente ? 'border-red-500' : ''}
+              className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none overflow-hidden ${errors.cliente ? 'border-red-500' : ''
+                }`}
+              style={{ minHeight: '40px', maxHeight: '200px' }}
+              onChange={handleClienteChange}
             />
             {errors.cliente && (
               <p className="text-sm text-red-500">{errors.cliente.message}</p>
             )}
             <p className="text-xs text-muted-foreground">
-              Inserisci uno o più nomi separati da virgola
+              Inserisci uno o più clienti separati da virgola. Ogni cliente deve avere nome e cognome (es. "Mario Rossi, Anna Bianchi")
             </p>
           </div>
 

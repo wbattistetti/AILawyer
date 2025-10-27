@@ -266,7 +266,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 				style={{
 					left: dialogPosition.left,
 					top: dialogPosition.top,
-					width: 520,
+					width: 620,
 					minHeight: 400,
 					maxHeight: Math.min(700, (window.innerHeight || 800) - 32)
 				}}
@@ -288,7 +288,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 					) : (
 						<div className="space-y-4">
 							{/* RIGA 1: Tipo estratto + Data + Clienti */}
-							<div className="grid grid-cols-[2.5fr_0.8fr_1.7fr] gap-4">
+							<div className="grid grid-cols-[2.5fr_0.7fr_3fr] gap-4">
 								{/* Tipo estratto */}
 								<div>
 									<select

@@ -25,10 +25,22 @@ const COMPARTI_DEFAULT = [
 
 // Funzione helper per processare i nomi clienti
 function parseClientNames(clienteString: string): string[] {
-  return clienteString
+  console.log(`🔧 PARSING CLIENTI:`)
+  console.log(`   Input: "${clienteString}"`)
+
+  // Dividi per virgola e pulisci
+  const names = clienteString
     .split(',')
     .map(name => name.trim())
-    .filter(name => name.length > 0);
+    .filter(name => name.length > 0)
+
+  console.log(`   Dopo split per virgola:`, names)
+
+  // Rimuovi duplicati mantenendo l'ordine
+  const uniqueNames = [...new Set(names)]
+  console.log(`   Dopo rimozione duplicati:`, uniqueNames)
+
+  return uniqueNames
 }
 
 export async function praticheRoutes(fastify: FastifyInstance) {
@@ -49,15 +61,21 @@ export async function praticheRoutes(fastify: FastifyInstance) {
       const parsed = praticaCreateSchema.parse(request.body)
 
       // Processa i nomi dei clienti
+      console.log(`🔍 INPUT ORIGINALE: "${parsed.cliente}"`)
       const clientNames = parseClientNames(parsed.cliente)
-      console.log(`Nomi clienti parsati:`, clientNames)
+      console.log(`📋 NOMI PARSATI (${clientNames.length}):`, clientNames)
 
       // Trova o crea i clienti
       const clientiIds: string[] = []
-      for (const name of clientNames) {
+      for (let i = 0; i < clientNames.length; i++) {
+        const name = clientNames[i]
+        console.log(`\n👤 PROCESSANDO CLIENTE ${i + 1}/${clientNames.length}: "${name}"`)
+
         const parts = name.trim().split(/\s+/).filter(Boolean)
+        console.log(`   📝 Parti dopo split:`, parts)
+
         if (parts.length < 2) {
-          console.warn(`Nome cliente non valido (mancano nome o cognome): "${name}"`)
+          console.warn(`   ❌ Nome cliente non valido (mancano nome o cognome): "${name}"`)
           continue
         }
 
@@ -65,7 +83,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         const nome = parts[0]
         const cognome = parts.slice(1).join(' ')
 
-        console.log(`Cercando cliente: nome="${nome}", cognome="${cognome}"`)
+        console.log(`   🔍 Cercando cliente: nome="${nome}", cognome="${cognome}"`)
 
         // Cerca cliente esistente
         let cliente = await prisma.cliente.findFirst({
@@ -77,24 +95,35 @@ export async function praticheRoutes(fastify: FastifyInstance) {
 
         // Se non esiste, crealo
         if (!cliente) {
-          console.log(`Creando nuovo cliente: ${nome} ${cognome}`)
-          cliente = await prisma.cliente.create({
-            data: {
-              nome,
-              cognome,
-              metadati: JSON.stringify([])
-            }
-          })
+          console.log(`   ➕ Creando nuovo cliente: ${nome} ${cognome}`)
+          try {
+            cliente = await prisma.cliente.create({
+              data: {
+                nome,
+                cognome,
+                metadati: JSON.stringify([])
+              }
+            })
+            console.log(`   ✅ Cliente creato con ID: ${cliente.id}`)
+          } catch (error) {
+            console.error(`   ❌ Errore nella creazione cliente:`, error)
+            continue
+          }
         } else {
-          console.log(`Cliente esistente trovato: ${cliente.id}`)
+          console.log(`   🔄 Cliente esistente trovato: ${cliente.id}`)
         }
 
         clientiIds.push(cliente.id)
+        console.log(`   ✅ Cliente aggiunto alla lista. Totale: ${clientiIds.length}`)
       }
 
-      console.log(`Clienti processati: ${clientiIds.length}`)
+      console.log(`\n📊 RISULTATO FINALE:`)
+      console.log(`   - Clienti processati: ${clientiIds.length}`)
+      console.log(`   - Clienti validi: ${clientiIds.length}`)
+      console.log(`   - IDs finali:`, clientiIds)
 
       if (clientiIds.length === 0) {
+        console.log(`❌ ERRORE: Nessun cliente valido trovato!`)
         return reply.status(400).send({ error: 'Nessun cliente valido trovato' })
       }
 
