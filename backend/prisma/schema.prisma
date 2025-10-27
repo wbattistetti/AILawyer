@@ -40,6 +40,7 @@ model Pratica {
   comparti    Comparto[]
   documenti   Documento[]
   estratti    Estratto[]
+  memorieDifensive MemoriaDifensiva[]
 
   @@map("pratiche")
 }
@@ -131,16 +132,35 @@ model Estratto {
   id          String   @id @default(cuid())
   praticaId   String
   sourceDoc   String   // Documento di origine
-  page        Int      // Pagina
+  page        Int      // Pagina (1-based)
   start       Int      // Posizione inizio nel testo
   end         Int      // Posizione fine nel testo
-  type        String   // 'reato' | 'motivazione' | 'contromotivazione'
+  type        String   // 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
   parentReatoId String? // FK a estratto reato
   parentMotivazioneId String? // FK a estratto motivazione
   title       String?  // Titolo dell'estratto
-  content     String   // Contenuto testuale
+  content     String   // Contenuto testuale (IMMUTABILE)
+
+  // Tracciabilità documento sorgente
+  sourceDocId String?  // ID documento sorgente
+  sourceDocTitle String? // Titolo documento sorgente
+
+  // Posizione nel documento (bbox)
+  bbox        String?  // JSON: {x, y, width, height}
+
+  // Data dell'estratto (per cronologia)
+  extractDate DateTime @default(now())
+
+  // Note editabili dall'analista
+  notesAnalyst    String? // Note analista (EDITABILI)
+  notesDescription String? // Descrizione (EDITABILI)
+  notesStrategy   String? // Commenti strategici (EDITABILI)
+  notesDefense    String? // Osservazioni difesa (EDITABILI)
+
+  // Metadati
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  analystId   String   // ID analista che ha creato l'estratto
 
   pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
   clienti     Cliente[] @relation("EstrattoCliente")
@@ -152,4 +172,17 @@ model Estratto {
   contromotivazioni Estratto[] @relation("MotivazioneContromotivazioni")
 
   @@map("estratti")
+}
+
+model MemoriaDifensiva {
+  id          String   @id @default(cuid())
+  title       String
+  praticaId   String
+  structure   String?  // JSON: Struttura documento finale
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+
+  @@map("memorie_difensive")
 }

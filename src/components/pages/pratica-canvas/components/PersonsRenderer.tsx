@@ -13,12 +13,12 @@ interface PersonsRendererProps {
 export function PersonsRenderer({ documenti, dockV2Ref, toast }: PersonsRendererProps) {
   return (
     <PersonCardsPanel
-      getAllDocsMeta={async () => documenti.map(d => ({ 
-        praticaId: d.praticaId, 
-        hash: d.hash, 
-        docId: d.id, 
-        title: d.filename, 
-        pages: 0 
+      getAllDocsMeta={async () => documenti.map(d => ({
+        praticaId: d.praticaId,
+        hash: d.hash,
+        docId: d.id,
+        title: d.filename,
+        pages: 0
       }))}
       buildAdapters={async (docs) => {
         const map = new Map(docs.map(m => [m.docId, m]));
@@ -33,25 +33,25 @@ export function PersonsRenderer({ documenti, dockV2Ref, toast }: PersonsRenderer
           toast({ title: 'Aperto nel Tavolo', description: d.filename });
         }
         try {
-          window.dispatchEvent(new CustomEvent('app:goto-match', { 
-            detail: { 
-              docId: o.docId, 
-              q: '', 
-              match: { 
-                id: o.id, 
-                docId: o.docId, 
-                docTitle: o.docTitle, 
-                kind: 'pdf', 
-                page: o.page, 
-                q: '', 
-                x0Pct: o.box.x0Pct, 
-                x1Pct: o.box.x1Pct, 
-                y0Pct: o.box.y0Pct, 
-                y1Pct: o.box.y1Pct, 
-                snippet: o.snippet, 
-                score: 1 
-              } 
-            } 
+          window.dispatchEvent(new CustomEvent('app:goto-match', {
+            detail: {
+              docId: o.docId,
+              q: '',
+              match: {
+                id: o.id,
+                docId: o.docId,
+                docTitle: o.docTitle,
+                kind: 'pdf',
+                page: o.page,
+                q: '',
+                x0Pct: o.box.x0Pct,
+                x1Pct: o.box.x1Pct,
+                y0Pct: o.box.y0Pct,
+                y1Pct: o.box.y1Pct,
+                snippet: o.snippet,
+                score: 1
+              }
+            }
           }));
         } catch { }
       }}
