@@ -28,6 +28,7 @@ const { filesystemRoutes } = await import('./routes/filesystem.js')
 const { clientiRoutes } = await import('./routes/clienti.js')
 const { tipoDinamiciRoutes } = await import('./routes/tipo-dinamici.js')
 const { estrattiRoutes } = await import('./routes/estratti.js')
+const { memoriaDifensivaRoutes } = await import('./routes/memoria-difensiva.js')
 
 // Body limit: if MAX_UPLOAD_MB <= 0 → effectively unlimited
 const limitMb = Number(config.MAX_UPLOAD_MB || 0)
@@ -82,6 +83,8 @@ await fastify.register(tipoDinamiciRoutes, { prefix: '/api' })
 console.log('✅ tipoDinamiciRoutes registered')
 await fastify.register(estrattiRoutes, { prefix: '/api' })
 console.log('✅ estrattiRoutes registered')
+await fastify.register(memoriaDifensivaRoutes, { prefix: '/api' })
+console.log('✅ memoriaDifensivaRoutes registered')
 console.log('🎉 All routes registered successfully!')
 
 // Start server

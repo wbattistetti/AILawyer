@@ -9,11 +9,35 @@ const estrattoCreateSchema = z.object({
     page: z.number().int().min(1),
     start: z.number().int().min(0),
     end: z.number().int().min(0),
-    type: z.enum(['reato', 'motivazione', 'contromotivazione']),
+    type: z.enum(['reato', 'motivazione', 'contromotivazione', 'prova', 'testimonianza', 'altro']),
     parentReatoId: z.string().optional(),
     parentMotivazioneId: z.string().optional(),
     title: z.string().optional(),
     content: z.string().min(1),
+
+    // Tracciabilità documento sorgente
+    sourceDocId: z.string().optional(),
+    sourceDocTitle: z.string().optional(),
+
+    // Posizione nel documento (bbox)
+    bbox: z.object({
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number()
+    }).optional(),
+
+    // Data dell'estratto (per cronologia)
+    extractDate: z.date().optional(),
+
+    // Note editabili dall'analista
+    notesAnalyst: z.string().optional(),
+    notesDescription: z.string().optional(),
+    notesStrategy: z.string().optional(),
+    notesDefense: z.string().optional(),
+
+    // Metadati
+    analystId: z.string(),
     clientiIds: z.array(z.string()).optional()
 })
 
@@ -22,11 +46,33 @@ const estrattoUpdateSchema = z.object({
     page: z.number().int().min(1).optional(),
     start: z.number().int().min(0).optional(),
     end: z.number().int().min(0).optional(),
-    type: z.enum(['reato', 'motivazione', 'contromotivazione']).optional(),
+    type: z.enum(['reato', 'motivazione', 'contromotivazione', 'prova', 'testimonianza', 'altro']).optional(),
     parentReatoId: z.string().optional(),
     parentMotivazioneId: z.string().optional(),
     title: z.string().optional(),
     content: z.string().min(1).optional(),
+
+    // Tracciabilità documento sorgente
+    sourceDocId: z.string().optional(),
+    sourceDocTitle: z.string().optional(),
+
+    // Posizione nel documento (bbox)
+    bbox: z.object({
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number()
+    }).optional(),
+
+    // Data dell'estratto (per cronologia)
+    extractDate: z.date().optional(),
+
+    // Note editabili dall'analista
+    notesAnalyst: z.string().optional(),
+    notesDescription: z.string().optional(),
+    notesStrategy: z.string().optional(),
+    notesDefense: z.string().optional(),
+
     clientiIds: z.array(z.string()).optional()
 })
 
@@ -146,6 +192,26 @@ export async function estrattiRoutes(fastify: FastifyInstance) {
                     parentMotivazioneId: data.parentMotivazioneId,
                     title: data.title,
                     content: data.content,
+
+                    // Tracciabilità documento sorgente
+                    sourceDocId: data.sourceDocId,
+                    sourceDocTitle: data.sourceDocTitle,
+
+                    // Posizione nel documento (bbox)
+                    bbox: data.bbox ? JSON.stringify(data.bbox) : null,
+
+                    // Data dell'estratto (per cronologia)
+                    extractDate: data.extractDate || new Date(),
+
+                    // Note editabili dall'analista
+                    notesAnalyst: data.notesAnalyst,
+                    notesDescription: data.notesDescription,
+                    notesStrategy: data.notesStrategy,
+                    notesDefense: data.notesDefense,
+
+                    // Metadati
+                    analystId: data.analystId,
+
                     clienti: data.clientiIds ? {
                         connect: data.clientiIds.map(id => ({ id }))
                     } : undefined
@@ -200,6 +266,7 @@ export async function estrattiRoutes(fastify: FastifyInstance) {
                 where: { id },
                 data: {
                     ...data,
+                    bbox: data.bbox ? JSON.stringify(data.bbox) : undefined,
                     clienti: data.clientiIds ? {
                         set: data.clientiIds.map(id => ({ id }))
                     } : undefined

@@ -201,4 +201,52 @@ export const api = {
   async getEstrattiByPratica(praticaId: string): Promise<{ estratti: Estratto[] }> {
     return fetchApi(`/estratti/pratica/${praticaId}`)
   },
+
+  async updateEstratto(id: string, data: any): Promise<Estratto> {
+    return fetchApi(`/estratti/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async deleteEstratto(id: string): Promise<{ success: boolean }> {
+    return fetchApi(`/estratti/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  // Memoria Difensiva
+  async createMemoriaDifensiva(data: any): Promise<any> {
+    return fetchApi('/memoria-difensiva', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async getMemorieDifensiveByPratica(praticaId: string): Promise<{ memorie: any[] }> {
+    return fetchApi(`/memoria-difensiva/pratica/${praticaId}`)
+  },
+
+  async getMemoriaDifensiva(id: string): Promise<any> {
+    return fetchApi(`/memoria-difensiva/${id}`)
+  },
+
+  async updateMemoriaDifensiva(id: string, data: any): Promise<any> {
+    return fetchApi(`/memoria-difensiva/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async deleteMemoriaDifensiva(id: string): Promise<{ success: boolean }> {
+    return fetchApi(`/memoria-difensiva/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async generateMemoriaDifensiva(id: string): Promise<any> {
+    return fetchApi(`/memoria-difensiva/${id}/generate`, {
+      method: 'POST',
+    })
+  },
 }
