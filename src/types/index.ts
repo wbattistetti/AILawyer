@@ -8,6 +8,7 @@ export interface Pratica {
   numeroRuolo?: string
   status: 'draft' | 'committed'
   createdAt: string
+  memorieDifensive?: MemoriaDifensiva[]
 }
 
 export interface Comparto {
@@ -106,13 +107,37 @@ export interface Estratto {
   page: number
   start: number
   end: number
-  type: 'reato' | 'motivazione' | 'contromotivazione'
+  type: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
   parentReatoId?: string
   parentMotivazioneId?: string
   title?: string
   content: string
+
+  // Tracciabilità documento sorgente
+  sourceDocId?: string
+  sourceDocTitle?: string
+
+  // Posizione nel documento (bbox)
+  bbox?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+
+  // Data dell'estratto (per cronologia)
+  extractDate: string
+
+  // Note editabili dall'analista
+  notesAnalyst?: string
+  notesDescription?: string
+  notesStrategy?: string
+  notesDefense?: string
+
+  // Metadati
   createdAt: string
   updatedAt: string
+  analystId: string
 }
 
 export interface EstrattoWithRelations extends Estratto {
@@ -156,10 +181,31 @@ export interface FormFieldValue {
 // ===== TIPI PER MEMORIA DIFENSIVA =====
 
 export interface MemoriaDifensiva {
-  clienteId: string
+  id: string
+  title: string
   praticaId: string
-  estratti: EstrattoWithRelations[]
-  gerarchia: EstrattoHierarchy
+  structure?: DefenseDocumentStructure
   createdAt: string
   updatedAt: string
+}
+
+export interface DefenseDocumentStructure {
+  sections: DefenseDocumentSection[]
+  metadata: {
+    title: string
+    clientName: string
+    caseNumber: string
+    createdAt: string
+    analystName: string
+  }
+}
+
+export interface DefenseDocumentSection {
+  id: string
+  type: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
+  title: string
+  content: string
+  extracts: EstrattoWithRelations[]
+  subsections?: DefenseDocumentSection[]
+  order: number
 }

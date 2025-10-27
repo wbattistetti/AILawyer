@@ -96,11 +96,35 @@ export interface EstrattoCreateInput {
   page: number
   start: number
   end: number
-  type: 'reato' | 'motivazione' | 'contromotivazione'
+  type: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
   parentReatoId?: string
   parentMotivazioneId?: string
   title?: string
   content: string
+
+  // Tracciabilità documento sorgente
+  sourceDocId?: string
+  sourceDocTitle?: string
+
+  // Posizione nel documento (bbox)
+  bbox?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+
+  // Data dell'estratto (per cronologia)
+  extractDate?: Date
+
+  // Note editabili dall'analista
+  notesAnalyst?: string
+  notesDescription?: string
+  notesStrategy?: string
+  notesDefense?: string
+
+  // Metadati
+  analystId: string
   clientiIds?: string[] // Array di ID clienti
 }
 
@@ -109,11 +133,33 @@ export interface EstrattoUpdateInput {
   page?: number
   start?: number
   end?: number
-  type?: 'reato' | 'motivazione' | 'contromotivazione'
+  type?: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
   parentReatoId?: string
   parentMotivazioneId?: string
   title?: string
   content?: string
+
+  // Tracciabilità documento sorgente
+  sourceDocId?: string
+  sourceDocTitle?: string
+
+  // Posizione nel documento (bbox)
+  bbox?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+
+  // Data dell'estratto (per cronologia)
+  extractDate?: Date
+
+  // Note editabili dall'analista
+  notesAnalyst?: string
+  notesDescription?: string
+  notesStrategy?: string
+  notesDefense?: string
+
   clientiIds?: string[]
 }
 
@@ -130,13 +176,38 @@ export interface EstrattoWithRelations {
   page: number
   start: number
   end: number
-  type: 'reato' | 'motivazione' | 'contromotivazione'
+  type: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
   parentReatoId?: string
   parentMotivazioneId?: string
   title?: string
   content: string
+
+  // Tracciabilità documento sorgente
+  sourceDocId?: string
+  sourceDocTitle?: string
+
+  // Posizione nel documento (bbox)
+  bbox?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+
+  // Data dell'estratto (per cronologia)
+  extractDate: Date
+
+  // Note editabili dall'analista
+  notesAnalyst?: string
+  notesDescription?: string
+  notesStrategy?: string
+  notesDefense?: string
+
+  // Metadati
   createdAt: Date
   updatedAt: Date
+  analystId: string
+
   pratica?: {
     id: string
     numeroRuolo: string
@@ -151,4 +222,38 @@ export interface EstrattoWithRelations {
   parentMotivazione?: EstrattoWithRelations
   motivazioni?: EstrattoWithRelations[]
   contromotivazioni?: EstrattoWithRelations[]
+}
+
+// ===== TIPI PER MEMORIA DIFENSIVA =====
+
+export interface MemoriaDifensivaCreateInput {
+  title: string
+  praticaId: string
+  structure?: DefenseDocumentStructure
+}
+
+export interface MemoriaDifensivaUpdateInput {
+  title?: string
+  structure?: DefenseDocumentStructure
+}
+
+export interface DefenseDocumentStructure {
+  sections: DefenseDocumentSection[]
+  metadata: {
+    title: string
+    clientName: string
+    caseNumber: string
+    createdAt: string
+    analystName: string
+  }
+}
+
+export interface DefenseDocumentSection {
+  id: string
+  type: 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
+  title: string
+  content: string
+  extracts: EstrattoWithRelations[]
+  subsections?: DefenseDocumentSection[]
+  order: number
 }
