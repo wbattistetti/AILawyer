@@ -1,0 +1,27 @@
+<!-- Template per sezione note strategiche -->
+<div class="section notes-section" data-section-id="{{section.id}}">
+    <h2 class="section-title">{{section.title}}</h2>
+
+    <div class="notes-container">
+        <div class="notes-item">
+            <h3 class="notes-subtitle">Note Analitiche Generali</h3>
+            <div class="notes-content editable" contenteditable="true" data-field="generalNotes">
+                {{#if generalNotes}}{{generalNotes}}{{else}}Inserisci le note analitiche generali...{{/if}}
+            </div>
+        </div>
+
+        <div class="notes-item">
+            <h3 class="notes-subtitle">Strategia Difensiva</h3>
+            <div class="notes-content editable" contenteditable="true" data-field="defenseStrategy">
+                {{#if defenseStrategy}}{{defenseStrategy}}{{else}}Inserisci la strategia difensiva...{{/if}}
+            </div>
+        </div>
+
+        <div class="notes-item">
+            <h3 class="notes-subtitle">Osservazioni Finali</h3>
+            <div class="notes-content editable" contenteditable="true" data-field="finalObservations">
+                {{#if finalObservations}}{{finalObservations}}{{else}}Inserisci le osservazioni finali...{{/if}}
+            </div>
+        </div>
+    </div>
+</div>

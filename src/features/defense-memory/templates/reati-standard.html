@@ -1,0 +1,90 @@
+<!-- Template per sezione reati -->
+<div class="section reati-section" data-section-id="{{section.id}}">
+    <h2 class="section-title">{{section.title}}</h2>
+
+    {{#if reati.length}}
+    <div class="reati-container">
+        {{#each reati}}
+        <div class="reato-item" data-estratto-id="{{id}}">
+            <div class="reato-header">
+                <h3 class="reato-title">{{title}}</h3>
+                <div class="reato-meta">
+                    <span class="source-info">Fonte: {{sourceDocTitle}} - Pag. {{page}}</span>
+                    <span class="extract-date">{{formatDate extractDate}}</span>
+                </div>
+            </div>
+
+            <div class="reato-content">
+                <div class="extract-text">{{content}}</div>
+
+                {{#if motivazioni.length}}
+                <div class="motivazioni-container">
+                    <h4 class="sub-section-title">Motivazioni</h4>
+                    {{#each motivazioni}}
+                    <div class="motivazione-item" data-estratto-id="{{id}}">
+                        <div class="motivazione-header">
+                            <h5 class="motivazione-title">{{title}}</h5>
+                            <div class="motivazione-meta">
+                                <span class="source-info">Fonte: {{sourceDocTitle}} - Pag. {{page}}</span>
+                            </div>
+                        </div>
+                        <div class="motivazione-content">
+                            <div class="extract-text">{{content}}</div>
+
+                            {{#if contromotivazioni.length}}
+                            <div class="contromotivazioni-container">
+                                <h6 class="sub-section-title">Contro-motivazioni</h6>
+                                {{#each contromotivazioni}}
+                                <div class="contromotivazione-item" data-estratto-id="{{id}}">
+                                    <div class="contromotivazione-header">
+                                        <h6 class="contromotivazione-title">{{title}}</h6>
+                                        <div class="contromotivazione-meta">
+                                            <span class="source-info">Fonte: {{sourceDocTitle}} - Pag. {{page}}</span>
+                                        </div>
+                                    </div>
+                                    <div class="contromotivazione-content">
+                                        <div class="extract-text">{{content}}</div>
+
+                                        {{#if notesAnalyst}}
+                                        <div class="notes-section">
+                                            <h6 class="notes-title">Note Analista</h6>
+                                            <div class="notes-content editable" contenteditable="true"
+                                                data-field="notesAnalyst">{{notesAnalyst}}</div>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if notesStrategy}}
+                                        <div class="notes-section">
+                                            <h6 class="notes-title">Commenti Strategici</h6>
+                                            <div class="notes-content editable" contenteditable="true"
+                                                data-field="notesStrategy">{{notesStrategy}}</div>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if notesDefense}}
+                                        <div class="notes-section">
+                                            <h6 class="notes-title">Osservazioni Difesa</h6>
+                                            <div class="notes-content editable" contenteditable="true"
+                                                data-field="notesDefense">{{notesDefense}}</div>
+                                        </div>
+                                        {{/if}}
+                                    </div>
+                                </div>
+                                {{/each}}
+                            </div>
+                            {{/if}}
+                        </div>
+                    </div>
+                    {{/each}}
+                </div>
+                {{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="empty-section">
+        <p>Nessun reato classificato</p>
+    </div>
+    {{/if}}
+</div>

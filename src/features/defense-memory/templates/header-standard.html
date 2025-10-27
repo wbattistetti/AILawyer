@@ -1,0 +1,28 @@
+<!-- Template per header documento -->
+<div class="document-header">
+    <div class="header-content">
+        <h1 class="document-title">{{metadata.title}}</h1>
+        <div class="document-metadata">
+            {{#if metadata.showClientName}}
+            <div class="metadata-item">
+                <strong>Cliente:</strong> {{metadata.clientName}}
+            </div>
+            {{/if}}
+            {{#if metadata.showCaseNumber}}
+            <div class="metadata-item">
+                <strong>Caso:</strong> {{metadata.caseNumber}}
+            </div>
+            {{/if}}
+            {{#if metadata.showDate}}
+            <div class="metadata-item">
+                <strong>Data:</strong> {{metadata.date}}
+            </div>
+            {{/if}}
+            {{#if metadata.showAnalyst}}
+            <div class="metadata-item">
+                <strong>Analista:</strong> {{metadata.analystName}}
+            </div>
+            {{/if}}
+        </div>
+    </div>
+</div>

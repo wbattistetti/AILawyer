@@ -1,0 +1,52 @@
+<!-- Template per sezione prove -->
+<div class="section prove-section" data-section-id="{{section.id}}">
+    <h2 class="section-title">{{section.title}}</h2>
+
+    {{#if prove.length}}
+    <div class="prove-container">
+        {{#each prove}}
+        <div class="prova-item" data-estratto-id="{{id}}">
+            <div class="prova-header">
+                <h3 class="prova-title">{{title}}</h3>
+                <div class="prova-meta">
+                    <span class="source-info">Fonte: {{sourceDocTitle}} - Pag. {{page}}</span>
+                    <span class="extract-date">{{formatDate extractDate}}</span>
+                </div>
+            </div>
+
+            <div class="prova-content">
+                <div class="extract-text">{{content}}</div>
+
+                {{#if notesAnalyst}}
+                <div class="notes-section">
+                    <h4 class="notes-title">Note Analista</h4>
+                    <div class="notes-content editable" contenteditable="true" data-field="notesAnalyst">
+                        {{notesAnalyst}}</div>
+                </div>
+                {{/if}}
+
+                {{#if notesStrategy}}
+                <div class="notes-section">
+                    <h4 class="notes-title">Commenti Strategici</h4>
+                    <div class="notes-content editable" contenteditable="true" data-field="notesStrategy">
+                        {{notesStrategy}}</div>
+                </div>
+                {{/if}}
+
+                {{#if notesDefense}}
+                <div class="notes-section">
+                    <h4 class="notes-title">Osservazioni Difesa</h4>
+                    <div class="notes-content editable" contenteditable="true" data-field="notesDefense">
+                        {{notesDefense}}</div>
+                </div>
+                {{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="empty-section">
+        <p>Nessuna prova classificata</p>
+    </div>
+    {{/if}}
+</div>
