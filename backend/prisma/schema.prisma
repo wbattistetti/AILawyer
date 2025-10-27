@@ -21,7 +21,7 @@ model Cliente {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  pratiche      Pratica[]
+  pratiche      PraticaCliente[]
   estratti      Estratto[] @relation("EstrattoCliente")
 
   @@map("clienti")
@@ -29,7 +29,6 @@ model Cliente {
 
 model Pratica {
   id          String   @id @default(cuid())
-  clienteId   String   // FK a clienti.id
   numeroRuolo String
   foro        String
   pmGiudice   String?
@@ -37,12 +36,24 @@ model Pratica {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  cliente     Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  clienti     PraticaCliente[] // Relazione molti-a-molti con clienti
   comparti    Comparto[]
   documenti   Documento[]
   estratti    Estratto[]
 
   @@map("pratiche")
+}
+
+model PraticaCliente {
+  id        String @id @default(cuid())
+  praticaId String
+  clienteId String
+
+  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@unique([praticaId, clienteId])
+  @@map("pratica_clienti")
 }
 
 model Comparto {

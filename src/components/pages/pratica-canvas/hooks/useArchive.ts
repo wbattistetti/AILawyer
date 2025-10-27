@@ -7,14 +7,15 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 export function useArchive(praticaId: string | undefined, comparti: any[]) {
   const { toast } = useToast()
-  
+
   const [documenti, setDocumenti] = useState<Documento[]>([])
   const [uploads, setUploads] = useState<UploadProgress[]>([])
   const [clientThumbByS3, setClientThumbByS3] = useState<Record<string, string>>({})
+  const [openDocumentIds, setOpenDocumentIds] = useState<Set<string>>(new Set())
 
   const handleFileDrop = useCallback(async (
-    files: File[], 
-    _compartoId?: string | null, 
+    files: File[],
+    _compartoId?: string | null,
     target?: { type?: string; id?: string; title?: string; tags?: string[] } | null
   ) => {
     if (!praticaId) return
@@ -79,7 +80,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
     }))
 
     setUploads(prev => [...prev, ...newUploads])
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch {}
+    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch { }
 
     // Helper: generate client-side PDF first-page thumb
     const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
@@ -110,15 +111,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       const uploadIndex = uploads.length + i
 
       try {
-        setUploads(prev => prev.map((upload, idx) => 
+        setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, status: 'uploading', progress: 10 } : upload
         ))
-        try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch {}
+        try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch { }
 
         const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
 
         if (existingKeys.has(s3Key)) {
-          setUploads(prev => prev.map((upload, idx) => 
+          setUploads(prev => prev.map((upload, idx) =>
             idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
           ))
           continue
@@ -128,16 +129,16 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         if (isPdf) {
           generateClientPdfThumb(file, 320).then((dataUrl) => {
             if (dataUrl) setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
-          }).catch(() => {})
+          }).catch(() => { })
         }
-        
-        setUploads(prev => prev.map((upload, idx) => 
+
+        setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, progress: 30 } : upload
         ))
 
         await api.uploadFile(uploadUrl, file)
-        
-        setUploads(prev => prev.map((upload, idx) => 
+
+        setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, progress: 60 } : upload
         ))
 
@@ -145,8 +146,8 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         if (target?.type === 'drawer') {
           const key = (target.title || '').toLowerCase()
           if (tags.length === 0) {
-            if (key.includes('sequestro')) tags.push('verbale_sequestro','verbale')
-            else if (key.includes('arresto')) tags.push('verbale_arresto','verbale')
+            if (key.includes('sequestro')) tags.push('verbale_sequestro', 'verbale')
+            else if (key.includes('arresto')) tags.push('verbale_arresto', 'verbale')
             else if (key.includes('verbali') || key.includes('verbale')) tags.push('verbale')
             else if (key.includes('intercett')) tags.push('intercettazioni')
             else if (key.includes('reati')) tags.push('reati')
@@ -167,11 +168,11 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
         existingKeys.add(s3Key)
 
-        setUploads(prev => prev.map((upload, idx) => 
+        setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, progress: 80, status: 'processing' } : upload
         ))
 
-        setUploads(prev => prev.map((upload, idx) => 
+        setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
         ))
 
@@ -184,15 +185,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           }
           return [documento, ...prev]
         })
-        try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch {}
+        try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
 
       } catch (error) {
         console.error('Errore nell\'upload:', error)
-        setUploads(prev => prev.map((upload, idx) => 
-          idx === uploadIndex ? { 
-            ...upload, 
-            status: 'error', 
-            error: 'Errore durante il caricamento' 
+        setUploads(prev => prev.map((upload, idx) =>
+          idx === uploadIndex ? {
+            ...upload,
+            status: 'error',
+            error: 'Errore durante il caricamento'
           } : upload
         ))
       }
@@ -202,14 +203,14 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       title: 'Upload completato',
       description: `${files.length} file caricati con successo.`,
     })
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch {}
+    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch { }
 
   }, [praticaId, documenti, comparti, toast, uploads.length])
 
   const handleRemoveThumb = useCallback(async (documentId: string) => {
     const docToRemove = documenti.find(d => d.id === documentId)
     setDocumenti(prev => prev.filter(d => d.id !== documentId))
-    
+
     try {
       await api.deleteDocumento(documentId)
       toast({
@@ -227,7 +228,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         try {
           const documentiData = await api.getDocumentiByPratica(praticaId)
           setDocumenti(documentiData)
-        } catch {}
+        } catch { }
       }
     }
   }, [documenti, toast, praticaId])

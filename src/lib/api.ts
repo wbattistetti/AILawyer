@@ -1,6 +1,6 @@
-import { Pratica, Comparto, Documento, Job } from '@/types'
+import { Pratica, Comparto, Documento, Job, Cliente, Estratto } from '@/types'
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -32,7 +32,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
         const extra = data.details ? `: ${data.details}` : ''
         detail = `${msg}${extra}`
       }
-    } catch {}
+    } catch { }
     throw new ApiError(response.status, `API Error: ${detail}`)
   }
 
@@ -174,5 +174,31 @@ export const api = {
   },
   async cancelJob(id: string): Promise<{ ok: boolean }> {
     return fetchApi(`/jobs/${id}/cancel`, { method: 'POST' })
+  },
+
+  // Clienti
+  async getCliente(id: string): Promise<Cliente> {
+    return fetchApi(`/clienti/${id}`)
+  },
+
+  async getAllClienti(): Promise<Cliente[]> {
+    const response = await fetchApi('/clienti')
+    return Array.isArray(response) ? response : response.clienti || []
+  },
+
+  async getClientiByPratica(praticaId: string): Promise<{ clienti: Cliente[] }> {
+    return fetchApi(`/pratiche/${praticaId}/clienti`)
+  },
+
+  // Estratti
+  async createEstratto(data: any): Promise<Estratto> {
+    return fetchApi('/estratti', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async getEstrattiByPratica(praticaId: string): Promise<{ estratti: Estratto[] }> {
+    return fetchApi(`/estratti/pratica/${praticaId}`)
   },
 }

@@ -90,7 +90,7 @@ export function useAutoThumbnail(
     if (fileUrl && enabled && !thumbnail && !loading) {
       generate()
     }
-  }, [fileUrl, enabled, thumbnail, loading, generate])
+  }, [fileUrl, enabled, thumbnail, generate]) // RIMOSSO loading dalle dependencies
 
   // Pulisce quando cambia fileUrl
   useEffect(() => {
@@ -144,7 +144,7 @@ export function useMultipleThumbnails(
 
   const generateAll = useCallback(async () => {
     const validUrls = fileUrls.filter((url): url is string => Boolean(url))
-    
+
     // Genera in batch per evitare sovraccarico
     const batchSize = 3
     for (let i = 0; i < validUrls.length; i += batchSize) {

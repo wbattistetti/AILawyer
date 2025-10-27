@@ -30,7 +30,7 @@ export class StorageService {
   async getPresignedUploadUrl(filename: string, _contentType: string): Promise<{ uploadUrl: string; s3Key: string }> {
     const s3Key = `${Date.now()}-${crypto.randomUUID()}-${filename}`
     if (config.STORAGE_MODE === 'local') {
-      const uploadUrl = `/api/upload/local/${encodeURIComponent(s3Key)}`
+      const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
       return { uploadUrl, s3Key }
     }
     await this.ensureBucket()

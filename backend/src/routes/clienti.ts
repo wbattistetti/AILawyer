@@ -36,11 +36,15 @@ export async function clientiRoutes(fastify: FastifyInstance) {
             const clienti = await prisma.cliente.findMany({
                 include: {
                     pratiche: {
-                        select: {
-                            id: true,
-                            numeroRuolo: true,
-                            foro: true,
-                            status: true
+                        include: {
+                            pratica: {
+                                select: {
+                                    id: true,
+                                    numeroRuolo: true,
+                                    foro: true,
+                                    status: true
+                                }
+                            }
                         }
                     },
                     _count: {
@@ -57,6 +61,7 @@ export async function clientiRoutes(fastify: FastifyInstance) {
             const clientiWithMetadati = clienti.map(cliente => ({
                 ...cliente,
                 metadati: JSON.parse(cliente.metadati || '[]'),
+                pratiche: cliente.pratiche.map(pc => pc.pratica),
                 dataNascita: cliente.dataNascita?.toISOString(),
                 createdAt: cliente.createdAt.toISOString(),
                 updatedAt: cliente.updatedAt.toISOString()

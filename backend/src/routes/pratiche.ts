@@ -47,30 +47,71 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: PraticaCreateInput }>('/pratiche', async (request, reply) => {
     try {
       const parsed = praticaCreateSchema.parse(request.body)
-      const data = {
-        numeroRuolo: parsed.numeroRuolo,
-        cliente: parsed.cliente,
-        foro: parsed.foro ?? '',
-        pmGiudice: parsed.pmGiudice ?? null,
+
+      // Processa i nomi dei clienti
+      const clientNames = parseClientNames(parsed.cliente)
+      console.log(`Nomi clienti parsati:`, clientNames)
+
+      // Trova o crea i clienti
+      const clientiIds: string[] = []
+      for (const name of clientNames) {
+        const parts = name.trim().split(/\s+/).filter(Boolean)
+        if (parts.length < 2) {
+          console.warn(`Nome cliente non valido (mancano nome o cognome): "${name}"`)
+          continue
+        }
+
+        // Prende il primo elemento come nome, il resto come cognome
+        const nome = parts[0]
+        const cognome = parts.slice(1).join(' ')
+
+        console.log(`Cercando cliente: nome="${nome}", cognome="${cognome}"`)
+
+        // Cerca cliente esistente
+        let cliente = await prisma.cliente.findFirst({
+          where: {
+            nome: nome,
+            cognome: cognome
+          }
+        })
+
+        // Se non esiste, crealo
+        if (!cliente) {
+          console.log(`Creando nuovo cliente: ${nome} ${cognome}`)
+          cliente = await prisma.cliente.create({
+            data: {
+              nome,
+              cognome,
+              metadati: JSON.stringify([])
+            }
+          })
+        } else {
+          console.log(`Cliente esistente trovato: ${cliente.id}`)
+        }
+
+        clientiIds.push(cliente.id)
       }
+
+      console.log(`Clienti processati: ${clientiIds.length}`)
+
+      if (clientiIds.length === 0) {
+        return reply.status(400).send({ error: 'Nessun cliente valido trovato' })
+      }
+
       const pratica = await prisma.pratica.create({
-        data,
+        data: {
+          numeroRuolo: parsed.numeroRuolo,
+          foro: parsed.foro ?? '',
+          pmGiudice: parsed.pmGiudice ?? null,
+          clienti: {
+            create: clientiIds.map(clienteId => ({ clienteId }))
+          }
+        },
       })
 
-      // Parse client names from comma-separated string
-      const clientNames = parseClientNames(parsed.cliente);
-      
-      // Create client compartments with specific order after default ones
-      const clientComparti = clientNames.map((clientName, index) => ({
-        key: `cliente_${clientName.toLowerCase().replace(/\s+/g, '_')}`,
-        nome: clientName,
-        ordine: COMPARTI_DEFAULT.length + index, // Place after default compartments
-      }));
+      // Per ora creiamo solo i comparti di default
+      const clientComparti = [];
 
-      // DEBUG LOGS
-      console.log('Cliente input:', parsed.cliente);
-      console.log('Client names parsed:', clientNames);
-      console.log('Client comparti to create:', clientComparti);
 
       // Combine default and client compartments
       const allComparti = [...COMPARTI_DEFAULT, ...clientComparti];
@@ -95,6 +136,32 @@ export async function praticheRoutes(fastify: FastifyInstance) {
     } catch (error) {
       fastify.log.error(error)
       return reply.status(500).send({ error: 'Errore nella creazione della pratica' })
+    }
+  })
+
+  // Get clienti di una pratica
+  fastify.get<{ Params: { id: string } }>('/pratiche/:id/clienti', async (request, reply) => {
+    try {
+      const pratica = await prisma.pratica.findUnique({
+        where: { id: request.params.id },
+        include: {
+          clienti: {
+            include: {
+              cliente: true
+            }
+          }
+        }
+      })
+
+      if (!pratica) {
+        return reply.status(404).send({ error: 'Pratica non trovata' })
+      }
+
+      const clienti = pratica.clienti.map(pc => pc.cliente)
+      return { clienti }
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nel recupero dei clienti' })
     }
   })
 
@@ -248,7 +315,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   fastify.delete<{ Params: { id: string } }>('/pratiche/:id', async (request, reply) => {
     const praticaId = request.params.id
     console.log('🗑️ [API][DELETE][START] Richiesta eliminazione pratica:', praticaId)
-    
+
     try {
       console.log('🔍 [API][DELETE] Cerco pratica nel DB...')
       const pratica = await prisma.pratica.findUnique({
@@ -295,10 +362,10 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         where: { status: 'draft' }
       })
 
-      return { 
-        ok: true, 
+      return {
+        ok: true,
         count: result.count,
-        message: `${result.count} bozze eliminate con successo` 
+        message: `${result.count} bozze eliminate con successo`
       }
     } catch (error) {
       fastify.log.error(error)

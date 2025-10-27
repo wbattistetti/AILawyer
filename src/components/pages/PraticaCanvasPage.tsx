@@ -150,6 +150,7 @@ export function PraticaCanvasPage() {
   const renderDocViewer = (doc: Documento) => (
     <PdfViewerManager
       doc={doc}
+      praticaId={id}
       syncPage={syncPage}
       setSyncPage={(page) => {
         console.log('[CANVAS] setSyncPage called with:', page);

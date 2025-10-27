@@ -551,7 +551,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         tabSetEnableTabStrip: false,
         // ✅ Impedisce a FlexLayout di creare tabsets vuoti
         tabSetAutoSelectTab: false,
-        tabSetEnableDeleteWhenEmpty: false
+        tabSetEnableDeleteWhenEmpty: true
       },
       layout: {
         type: 'row',

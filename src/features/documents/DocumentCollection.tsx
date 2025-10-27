@@ -53,7 +53,7 @@ export function DocumentCollection({
   const [searchQuerySubmitted, setSearchQuerySubmitted] = useState<string>('')
   const [searchHeight, setSearchHeight] = useState<number>(300)
   const [isSearching, setIsSearching] = useState<boolean>(false)
-  
+
   const onDropCb = useCallback((accepted: File[]) => {
     onDrop?.(accepted)
   }, [onDrop])
@@ -119,7 +119,7 @@ export function DocumentCollection({
           <button
             type="button"
             className="px-3 py-1 text-xs rounded border bg-blue-600 text-white hover:bg-blue-700"
-            onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); open() }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); open() }}
           >Carica documento</button>
         </div>
       )}
@@ -128,55 +128,55 @@ export function DocumentCollection({
         {searchOpen && (
           <>
             <div className="border-b bg-white" style={{ height: searchHeight, minHeight: 150, maxHeight: 600 }}>
-              <SearchProvider 
-                defaultScope={'archive'} 
-                initialQuery={searchQuerySubmitted} 
+              <SearchProvider
+                defaultScope={'archive'}
+                initialQuery={searchQuerySubmitted}
                 autoSearch={true}
-                onSearch={async(q, scope) => {
+                onSearch={async (q, scope) => {
                   setIsSearching(true)  // Avvia spinner
                   console.log('[SEARCH][archive] Backend search start', { q, scope })
-                  
+
                   try {
                     // ✅ Chiamata API backend per ricerca globale
                     const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
                     const response = await fetch(`${apiUrl}/search/archive?q=${encodeURIComponent(q)}&limit=50`)
-                    
+
                     if (!response.ok) {
                       console.error('[SEARCH][archive] API error', response.status)
                       return null
                     }
-                    
+
                     const data = await response.json()
                     console.log('[SEARCH][archive] API response', { total: data.total, matches: data.matches?.length })
-                    
+
                     // Raggruppa i risultati per documento
                     const matchesByDoc = new Map<string, any[]>()
                     const docInfo = new Map<string, { id: string; filename: string }>()
-                    
-                    ;(data.matches || []).forEach((match, index) => {
-                      if (!matchesByDoc.has(match.docId)) {
-                        matchesByDoc.set(match.docId, [])
-                        docInfo.set(match.docId, { id: match.docId, filename: match.filename })
-                      }
-                      
-                      matchesByDoc.get(match.docId)!.push({
-                        id: `${match.docId}-${match.page}-${match.charIdx || 0}-${index}`,
-                        docId: match.docId,
-                        docTitle: match.filename,
-                        kind: 'pdf' as const,
-                        page: match.page,
-                        q: q,
-                        x0Pct: match.x0Pct,
-                        x1Pct: match.x1Pct,
-                        y0Pct: match.y0Pct,
-                        y1Pct: match.y1Pct,
-                        charIdx: match.charIdx,
-                        qLength: match.qLen,
-                        snippet: match.snippet,
-                        score: 1
+
+                      ; (data.matches || []).forEach((match, index) => {
+                        if (!matchesByDoc.has(match.docId)) {
+                          matchesByDoc.set(match.docId, [])
+                          docInfo.set(match.docId, { id: match.docId, filename: match.filename })
+                        }
+
+                        matchesByDoc.get(match.docId)!.push({
+                          id: `${match.docId}-${match.page}-${match.charIdx || 0}-${index}`,
+                          docId: match.docId,
+                          docTitle: match.filename,
+                          kind: 'pdf' as const,
+                          page: match.page,
+                          q: q,
+                          x0Pct: match.x0Pct,
+                          x1Pct: match.x1Pct,
+                          y0Pct: match.y0Pct,
+                          y1Pct: match.y1Pct,
+                          charIdx: match.charIdx,
+                          qLength: match.qLen,
+                          snippet: match.snippet,
+                          score: 1
+                        })
                       })
-                    })
-                    
+
                     const groups = Array.from(matchesByDoc.entries()).map(([docId, matches]) => {
                       const info = docInfo.get(docId)!
                       return {
@@ -190,7 +190,7 @@ export function DocumentCollection({
                         matches
                       }
                     })
-                    
+
                     return {
                       id: `archive-${Date.now()}`,
                       query: q,
@@ -233,55 +233,55 @@ export function DocumentCollection({
             />
           </>
         )}
-        
+
         {/* Miniature documenti */}
         <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
-      {items.map(doc => {
-          const meta = (doc as any).meta || {}
-          const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
-          const headerIcon = isExtract ? <ScanText className="w-4 h-4" /> : <FileText className="w-4 h-4" />
-          const titleText = meta.title || (doc.filename||'').replace(/\.json$/,'')
-          const excerpt = (meta.text || meta.content || '').toString().slice(0, 220)
-          const src = meta.source || {}
-          const isPdf = !isExtract && ((doc.mime||'').startsWith('application/pdf') || (doc.filename||'').toLowerCase().endsWith('.pdf'))
-          const computedFileUrl = !isExtract && (
-            doc.localUrl || (doc.s3Key ? `${(import.meta as any).env?.VITE_API_URL || '/api'}/files/${encodeURIComponent(doc.s3Key)}` : '')
-          ) || undefined
-          return (
-            <ThumbCard
-              key={doc.id}
-              title={isExtract ? titleText : doc.filename}
-              imgSrc={isExtract ? '' : (doc.thumb || '')}
-              // genera sempre lato client per i PDF
-              fileUrl={computedFileUrl}
-              autoGenerateThumbnail={isPdf}
-              headerIcon={isExtract ? headerIcon : undefined}
-              headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
-              excerpt={isExtract ? excerpt : undefined}
-              metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
-              metaPage={isExtract ? (src.page || undefined) : undefined}
-              onShow={isExtract ? (()=>{ try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct!=null? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct }: undefined) } })) } catch {} }) : undefined}
-              selected={selectedId === doc.id}
-              onSelect={() => setSelectedId(doc.id)}
-              onPreview={() => onOpen(doc)}
-              onTable={() => onOpen(doc)}
-              onRemove={() => onRemove?.(doc)}
-              onOcr={() => onOcr?.(doc)}
-              onOcrCancel={() => onOcrCancel?.(doc)}
-              
-              ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
-              ocrEtaText={etaById?.[doc.id] ?? null}
-              ocrStatusText={statusById?.[doc.id] ?? null}
-              ocrCancelling={cancellingById?.[doc.id] as any}
-              transcribedPct={transcribedPctById?.[doc.id] as any}
-              ocrStatus={doc.ocrStatus ?? null}
-              hasNativeText={doc.hasNativeText ?? false}
-            />
-          )
-        })}
-        </div>
+            {items.map(doc => {
+              const meta = (doc as any).meta || {}
+              const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
+              const headerIcon = isExtract ? <ScanText className="w-4 h-4" /> : <FileText className="w-4 h-4" />
+              const titleText = meta.title || (doc.filename || '').replace(/\.json$/, '')
+              const excerpt = (meta.text || meta.content || '').toString().slice(0, 220)
+              const src = meta.source || {}
+              const isPdf = !isExtract && ((doc.mime || '').startsWith('application/pdf') || (doc.filename || '').toLowerCase().endsWith('.pdf'))
+              const computedFileUrl = !isExtract && (
+                doc.localUrl || (doc.s3Key ? `http://localhost:3001/files/${encodeURIComponent(doc.s3Key)}` : '')
+              ) || undefined
+              return (
+                <ThumbCard
+                  key={doc.id}
+                  title={isExtract ? titleText : doc.filename}
+                  imgSrc={isExtract ? '' : (doc.thumb || '')}
+                  // genera sempre lato client per i PDF
+                  fileUrl={computedFileUrl}
+                  autoGenerateThumbnail={isPdf}
+                  headerIcon={isExtract ? headerIcon : undefined}
+                  headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
+                  excerpt={isExtract ? excerpt : undefined}
+                  metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
+                  metaPage={isExtract ? (src.page || undefined) : undefined}
+                  onShow={isExtract ? (() => { try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct != null ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined) } })) } catch { } }) : undefined}
+                  selected={selectedId === doc.id}
+                  onSelect={() => setSelectedId(doc.id)}
+                  onPreview={() => onOpen(doc)}
+                  onTable={() => onOpen(doc)}
+                  onRemove={() => onRemove?.(doc)}
+                  onOcr={() => onOcr?.(doc)}
+                  onOcrCancel={() => onOcrCancel?.(doc)}
+
+                  ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
+                  ocrEtaText={etaById?.[doc.id] ?? null}
+                  ocrStatusText={statusById?.[doc.id] ?? null}
+                  ocrCancelling={cancellingById?.[doc.id] as any}
+                  transcribedPct={transcribedPctById?.[doc.id] as any}
+                  ocrStatus={doc.ocrStatus ?? null}
+                  hasNativeText={doc.hasNativeText ?? false}
+                />
+              )
+            })}
+          </div>
         </div>
       </div>
       {typeof uploadingCount === 'number' && uploadingCount > 0 && (

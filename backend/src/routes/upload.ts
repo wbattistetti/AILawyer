@@ -16,9 +16,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: { filename: string; contentType: string } }>('/upload/sign', async (request, reply) => {
     try {
       const { filename, contentType } = uploadSignSchema.parse(request.body)
-      
+
       const result = await storageService.getPresignedUploadUrl(filename, contentType)
-      
+
       return result
     } catch (error) {
       fastify.log.error(error)
@@ -66,6 +66,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   fastify.get<{ Params: { key: string } }>('/files/:key', async (request, reply) => {
     try {
       const filePath = path.resolve(process.cwd(), '..', 'uploads', request.params.key)
+      console.log('🔍 Server cerca file in:', filePath)
+      console.log('🔍 process.cwd():', process.cwd())
+      console.log('🔍 File esiste?', fs.existsSync(filePath))
       if (!fs.existsSync(filePath)) {
         return reply.status(404).send({ error: 'File non trovato' })
       }

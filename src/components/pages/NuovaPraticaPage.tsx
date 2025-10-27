@@ -12,13 +12,18 @@ export function NuovaPraticaPage() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
-  const handleSubmit = async (data: Omit<Pratica, 'id' | 'createdAt'>) => {
+  const handleSubmit = async (data: {
+    numeroRuolo: string
+    cliente: string
+    foro?: string
+    pmGiudice?: string
+  }) => {
     setIsLoading(true)
     try {
       const pratica = await api.createPratica(data)
       toast({
         title: 'Pratica creata con successo',
-        description: `La pratica "${pratica.nome}" è stata creata e i comparti sono stati inizializzati.`,
+        description: `La pratica "${pratica.numeroRuolo}" è stata creata e i comparti sono stati inizializzati.`,
       })
       navigate(`/pratica/${pratica.id}`)
     } catch (error) {
@@ -46,7 +51,7 @@ export function NuovaPraticaPage() {
             Torna alla Home
           </Button>
         </div>
-        
+
         <NuovaPraticaForm onSubmit={handleSubmit} isLoading={isLoading} />
       </div>
     </div>

@@ -22,6 +22,7 @@ interface PdfViewerShellProps {
   onPageChange?: (page: number) => void
   hideToolbar?: boolean
   docId?: string
+  praticaId?: string
 }
 
 export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
@@ -30,7 +31,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   lines: _lines,
   onPageChange,
   hideToolbar: _hideToolbar,
-  docId
+  docId,
+  praticaId
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
@@ -158,7 +160,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             extractOpen={shell.extractOpen}
             extractPos={shell.extractPos}
             extractTitle={shell.extractTitle}
-
             extractDate={shell.extractDate}
             extractNotes={shell.extractNotes}
             extractPage={shell.extractPage}
@@ -166,6 +167,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             selectKind={shell.selectKind}
             lastSelection={shell.lastSelection}
             docId={docId}
+            praticaId={praticaId}
             fileUrl={fileUrl}
             hostRef={hostRef}
             suppressClearRef={shell.suppressClearRef}

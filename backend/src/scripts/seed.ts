@@ -33,13 +33,35 @@ async function seed() {
 
     console.log('✅ Sample cliente created')
 
+    // Create second cliente for multi-client testing
+    const cliente2 = await prisma.cliente.create({
+      data: {
+        nome: 'Maria',
+        cognome: 'Rossi',
+        codiceFiscale: 'RSSMRA80A01H501U',
+        dataNascita: new Date('1980-01-01'),
+        indirizzo: 'Via Roma 123, Milano',
+        metadati: JSON.stringify([
+          { type: 'testo', label: 'Professione', value: 'Avvocato' },
+          { type: 'booleano', label: 'VIP', value: 'true' }
+        ]),
+      },
+    })
+
+    console.log('✅ Second cliente created')
+
     // Create sample pratica
     const pratica = await prisma.pratica.create({
       data: {
-        clienteId: cliente.id,
         numeroRuolo: '12345/2024',
         foro: 'Tribunale di Milano',
         pmGiudice: 'Dott. Giuseppe Verdi',
+        clienti: {
+          create: [
+            { clienteId: cliente.id },
+            { clienteId: cliente2.id }
+          ]
+        }
       },
     })
 

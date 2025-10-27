@@ -5,6 +5,7 @@ import { PdfViewerShell } from '../../../viewers/pdf-viewer/PdfViewerShell'
 
 export interface PdfViewerManagerProps {
   doc: Documento
+  praticaId: string
   syncPage: number | null
   setSyncPage: (page: number) => void
   verifyEnabled: boolean
@@ -14,6 +15,7 @@ export interface PdfViewerManagerProps {
 
 export function PdfViewerManager({
   doc,
+  praticaId,
   syncPage,
   setSyncPage,
   verifyEnabled,
@@ -39,6 +41,7 @@ export function PdfViewerManager({
           page={syncPage || 1}
           lines={verifyLinesByPage[syncPage || 1] as any}
           docId={doc.id}
+          praticaId={praticaId}
           onPageChange={setSyncPage}
         />
       </div>
