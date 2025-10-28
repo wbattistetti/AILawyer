@@ -19,8 +19,10 @@ function iconFor(title?: string) {
 }
 
 function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
-  const [items, setItems] = useState<Array<{ id:string; filename:string; s3Key:string; mime?:string; thumb?:string; tags?: string[] }>>([])
+  const [items, setItems] = useState<Array<{ id: string; filename: string; s3Key: string; mime?: string; thumb?: string; tags?: string[] }>>([])
   const [uploadingCount, setUploadingCount] = useState<number>(0)
+  const [memorieDifensive, setMemorieDifensive] = useState<Array<any>>([])
+
   useEffect(() => {
     const onDocs = (e: any) => {
       try {
@@ -33,31 +35,110 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
         else if (key.includes('verbali') || key.includes('verbale')) filtered = arr.filter(x => (x.tags || []).includes('verbale'))
         else if (key.includes('intercett')) filtered = arr.filter(x => (x.tags || []).includes('intercettazioni'))
         else if (key.includes('reati')) filtered = arr.filter(x => (x.tags || []).includes('reati'))
+        else if (key.includes('memoria difensiva')) {
+          // Per memoria difensiva, carica le memorie invece dei documenti normali
+          loadMemorieDifensive()
+          return
+        }
         // default: nessun filtro
         setItems(filtered)
-      } catch {}
+      } catch { }
     }
+
     const onUploading = (e: any) => {
       try {
         const t = e?.detail?.target
         if (t?.type === 'drawer' && t?.id === id) setUploadingCount(e?.detail?.count || 0)
-      } catch {}
+      } catch { }
     }
+
     window.addEventListener('app:documents' as any, onDocs as any)
     window.addEventListener('app:uploading' as any, onUploading as any)
-    try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch {}
+    try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
+
     return () => {
       window.removeEventListener('app:documents' as any, onDocs as any)
       window.removeEventListener('app:uploading' as any, onUploading as any)
     }
-  }, [])
+  }, [title, id])
+
+  // Carica memorie difensive solo se ci sono estratti
+  const loadMemorieDifensive = async () => {
+    try {
+      // TODO: Ottenere praticaId dal contesto
+      const praticaId = 'current-pratica' // Per ora hardcoded
+
+      // Carica estratti per verificare se ce ne sono
+      const { api } = await import('../../lib/api')
+      const estrattiResponse = await api.getEstrattiByPratica(praticaId)
+
+      if (estrattiResponse.estratti.length > 0) {
+        // Carica memorie difensive
+        const memorieResponse = await api.getMemorieDifensiveByPratica(praticaId)
+
+        // Trasforma in formato compatibile con DocumentCollection
+        const memorieAsDocuments = memorieResponse.memorie.map((memoria: any) => ({
+          id: memoria.id,
+          filename: memoria.title,
+          s3Key: `memoria-${memoria.id}`,
+          mime: 'application/memoria-difensiva',
+          thumb: generateMemoriaThumbnail(memoria),
+          tags: ['memoria_difensiva'],
+          type: 'memoria-difensiva',
+          memoria: memoria
+        }))
+
+        setMemorieDifensive(memorieAsDocuments)
+      } else {
+        setMemorieDifensive([])
+      }
+    } catch (error) {
+      console.error('Errore nel caricamento memorie difensive:', error)
+      setMemorieDifensive([])
+    }
+  }
+
+  // Genera thumbnail per memoria difensiva
+  const generateMemoriaThumbnail = (memoria: any) => {
+    // Crea un SVG semplice per la miniatura
+    const svg = `
+      <svg width="200" height="280" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="280" fill="#3b82f6" rx="8"/>
+        <text x="100" y="50" text-anchor="middle" fill="white" font-family="Arial" font-size="24">🛡️</text>
+        <text x="100" y="100" text-anchor="middle" fill="white" font-family="Arial" font-size="16" font-weight="bold">Memoria Difensiva</text>
+        <text x="100" y="130" text-anchor="middle" fill="white" font-family="Arial" font-size="12">${memoria.title}</text>
+        <rect x="20" y="160" width="160" height="100" fill="white" fill-opacity="0.2" rx="4"/>
+        <text x="100" y="200" text-anchor="middle" fill="white" font-family="Arial" font-size="10">Documento strutturato</text>
+        <text x="100" y="220" text-anchor="middle" fill="white" font-family="Arial" font-size="10">per la difesa</text>
+      </svg>
+    `
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  }
+
+  // Determina se mostrare memorie difensive o documenti normali
+  const displayItems = (title || '').toLowerCase().includes('memoria difensiva')
+    ? memorieDifensive
+    : items
+
   return (
     <DocumentCollection
       title={title}
-      items={items}
+      items={displayItems}
       uploadingCount={uploadingCount}
       onOpen={(doc) => {
         try {
+          // Se è una memoria difensiva, apri il compositore
+          if (doc.type === 'memoria-difensiva') {
+            window.dispatchEvent(new CustomEvent('app:open-memoria-difensiva', {
+              detail: {
+                memoriaId: doc.id,
+                memoria: doc.memoria,
+                praticaId: 'current-pratica' // TODO: ottenere dal contesto
+              }
+            }))
+            return
+          }
+
           // Se è un pending (tmp:) apriamo una vista JSON semplice; se è persistito, apriamo il documento
           if (doc.id && String(doc.id).startsWith('tmp:')) {
             const data = { id: doc.id, title: ((doc as any)?.meta?.title || doc.filename), text: (doc as any)?.meta?.text || '', content: (doc as any)?.meta?.content || '', source: (doc as any)?.meta?.source }
@@ -65,22 +146,30 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
           } else {
             window.dispatchEvent(new CustomEvent('app:open-doc', { detail: { docId: doc.id } }))
           }
-        } catch {}
+        } catch { }
       }}
-      onRemove={async (doc)=>{
+      onRemove={async (doc) => {
         try {
+          // Se è una memoria difensiva
+          if (doc.type === 'memoria-difensiva') {
+            const { api } = await import('../../lib/api')
+            await api.deleteMemoriaDifensiva(doc.id)
+            setMemorieDifensive(prev => prev.filter(d => d.id !== doc.id))
+            return
+          }
+
           // Se è un estratto pending in memoria (id tmp:), rimuovilo dalla lista globale in-memory
           if (doc.id && String(doc.id).startsWith('tmp:')) {
             const pendingRaw = (window as any).__pendingExtracts as Array<any> | undefined
             const pending = Array.isArray(pendingRaw) ? pendingRaw : []
             const next = pending.filter(d => d.id !== doc.id)
-            ;(window as any).__pendingExtracts = next
-            try { window.dispatchEvent(new CustomEvent('app:documents', { detail: { items: next } })) } catch {}
+              ; (window as any).__pendingExtracts = next
+            try { window.dispatchEvent(new CustomEvent('app:documents', { detail: { items: next } })) } catch { }
           } else {
             // Persistito: prova a chiamare API delete (se disponibile)
-            try { await (await import('../../lib/api')).api.deleteDocumento?.(doc.id as any) } catch {}
+            try { await (await import('../../lib/api')).api.deleteDocumento?.(doc.id as any) } catch { }
           }
-        } catch {}
+        } catch { }
         // Aggiorna subito la vista del cassetto
         setItems(prev => prev.filter(d => d.id !== doc.id))
       }}
@@ -88,7 +177,7 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
         try {
           const ev = new CustomEvent('app:upload-files', { detail: { files, target: { type: 'drawer', id, title } } })
           window.dispatchEvent(ev)
-        } catch {}
+        } catch { }
       }}
     />
   )

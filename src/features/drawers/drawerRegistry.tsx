@@ -18,6 +18,7 @@ export const drawerRegistry: DrawerDef[] = [
   { id: 'timeline', label: 'Termini processuali', icon: <Clock size={16} /> },
   { id: 'anagrafe', label: 'Anagrafe entità', icon: <Users size={16} /> },
   { id: 'incontri', label: 'Incontri documentati', icon: <Zap size={16} /> },
+  { id: 'memoria_difensiva', label: 'Memoria Difensiva', icon: <Shield size={16} /> },
 ]
 
 export function getDrawerOptionsSorted() {

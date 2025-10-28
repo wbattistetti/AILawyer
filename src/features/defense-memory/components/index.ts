@@ -1,3 +1,5 @@
 export { ExtractClassifier } from './ExtractClassifier'
+export { ExtractClassifierDialog } from './ExtractClassifierDialog'
 export { ExtractTreeView } from './ExtractTreeView'
 export { DefenseDocumentBuilder } from './DefenseDocumentBuilder'
+export { DefenseMemoryViewer } from './DefenseMemoryViewer'

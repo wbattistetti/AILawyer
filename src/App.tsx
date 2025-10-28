@@ -4,6 +4,7 @@ import { Layout } from '@/components/layout/Layout'
 import { SplashPage } from '@/components/splash/SplashPage'
 import { NuovaPraticaPage } from '@/components/pages/NuovaPraticaPage'
 import { PraticaCanvasPage } from '@/components/pages/PraticaCanvasPage'
+import { DefenseMemoryTestPage } from '@/components/pages/DefenseMemoryTestPage'
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
           <Route index element={<SplashPage />} />
           <Route path="nuova-pratica" element={<NuovaPraticaPage />} />
           <Route path="pratica/:id" element={<PraticaCanvasPage />} />
+          <Route path="test-memoria-difensiva" element={<DefenseMemoryTestPage />} />
         </Route>
       </Routes>
     </Router>

@@ -26,14 +26,14 @@ const PanelWithFullscreenToggle: React.FC<{
   // Pannelli che supportano fullscreen toggle
   const supportsFullscreen = ['explorer', 'graph', 'cabinet'].includes(component)
 
-  console.log('[FULLSCREEN-TOGGLE] Rendering component:', component, 'supportsFullscreen:', supportsFullscreen)
+  // console.log('[FULLSCREEN-TOGGLE] Rendering component:', component, 'supportsFullscreen:', supportsFullscreen)
 
   if (!supportsFullscreen) {
-    console.log('[FULLSCREEN-TOGGLE] ❌ Component does not support fullscreen')
+    // console.log('[FULLSCREEN-TOGGLE] ❌ Component does not support fullscreen')
     return <>{children}</>
   }
 
-  console.log('[FULLSCREEN-TOGGLE] ✅ Rendering fullscreen button for component:', component)
+  // console.log('[FULLSCREEN-TOGGLE] ✅ Rendering fullscreen button for component:', component)
 
   // ✅ Sincronizza lo stato fullscreen con lo state globale per aggiornare l'icona del pulsante
   useEffect(() => {
@@ -42,7 +42,7 @@ const PanelWithFullscreenToggle: React.FC<{
       newMap.set(tabId, isFullscreen)
       return newMap
     })
-    console.log('[FULLSCREEN-TOGGLE] State updated for tabId:', tabId, 'isFullscreen:', isFullscreen)
+    // console.log('[FULLSCREEN-TOGGLE] State updated for tabId:', tabId, 'isFullscreen:', isFullscreen)
     // Forza re-render del layout per aggiornare l'icona del pulsante
     forceRerender()
     // Forza aggiornamento della tab specifica
@@ -52,7 +52,7 @@ const PanelWithFullscreenToggle: React.FC<{
   // Registra un toggle imperativo per il bottone nell'header
   useEffect(() => {
     const toggle = () => {
-      console.log('[FULLSCREEN-TOGGLE] Toggle called for tabId:', tabId, 'current state:', isFullscreen)
+      // console.log('[FULLSCREEN-TOGGLE] Toggle called for tabId:', tabId, 'current state:', isFullscreen)
       setIsFullscreen((prev) => !prev)
     }
     registerToggle(tabId, toggle)
@@ -158,7 +158,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   // ✅ Imperative handle per esporre metodi al parent
   useImperativeHandle(ref, () => ({
     openDoc: (doc: DocTab) => {
-      console.log('[IMPERATIVE] openDoc called:', doc)
+      // console.log('[IMPERATIVE] openDoc called:', doc)
       // Implementazione per aprire documento
     },
     openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {

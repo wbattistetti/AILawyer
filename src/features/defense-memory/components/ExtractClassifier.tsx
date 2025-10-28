@@ -11,7 +11,6 @@ import {
     ExtractClassificationData,
     DefenseMemoryState
 } from '../types'
-import { api } from '@/lib/api'
 import { Estratto } from '@/types'
 
 interface ExtractClassifierProps {
@@ -34,6 +33,10 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
     onSuccess,
     onCancel
 }) => {
+    console.log('🎬 [ExtractClassifier] Componente montato!')
+    console.log('🎬 [ExtractClassifier] praticaId:', praticaId)
+    console.log('🎬 [ExtractClassifier] extractContent length:', extractContent?.length)
+
     const [state, setState] = useState<DefenseMemoryState>({
         selectedExtractType: null,
         availableReati: [],
@@ -49,39 +52,80 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
 
     // Carica dati iniziali
     useEffect(() => {
+        console.log('🔄 [ExtractClassifier] useEffect loadExistingExtracts trigger')
         loadExistingExtracts()
     }, [praticaId])
 
+    // Ascolta eventi per aggiornamenti real-time
+    useEffect(() => {
+        const handleExtractUpdate = () => {
+            loadExistingExtracts()
+        }
+
+        window.addEventListener('app:extract-added', handleExtractUpdate)
+        window.addEventListener('app:extract-updated', handleExtractUpdate)
+
+        return () => {
+            window.removeEventListener('app:extract-added', handleExtractUpdate)
+            window.removeEventListener('app:extract-updated', handleExtractUpdate)
+        }
+    }, [])
+
     const loadExistingExtracts = async () => {
         try {
+            console.log('🔍 [ExtractClassifier] Caricamento estratti per pratica:', praticaId)
+
+            // Carica da memoria globale (estratti temporanei + mock)
+            const pendingExtracts = (window as any).__pendingExtracts as Array<any> || []
+            console.log('📝 [ExtractClassifier] Estratti in memoria:', pendingExtracts.length)
+
+            // Carica da database (estratti persistenti) - per ora vuoto
+            const { api } = await import('@/lib/api')
             const response = await api.getEstrattiByPratica(praticaId)
-            const estratti = response.estratti
+            const dbExtracts = response.estratti
+            console.log('💾 [ExtractClassifier] Estratti da database:', dbExtracts.length)
 
-            // Filtra reati esistenti
-            const reati = estratti
+            // Combina estratti temporanei e persistenti
+            const allExtracts = [...pendingExtracts, ...dbExtracts]
+            console.log('🔄 [ExtractClassifier] Tutti gli estratti combinati:', allExtracts)
+            console.log('🔄 [ExtractClassifier] Numero totale estratti:', allExtracts.length)
+
+            // Organizza per tipo
+            const reati = allExtracts
                 .filter(e => e.type === 'reato')
-                .map(e => ({ id: e.id, title: e.title || e.content.slice(0, 50) + '...' }))
+                .map(e => ({
+                    id: e.id,
+                    title: e.title || e.content?.slice(0, 50) + '...' || 'Reato senza titolo'
+                }))
+            console.log('⚖️ [ExtractClassifier] Reati trovati:', reati)
 
-            // Filtra motivazioni esistenti
-            const motivazioni = estratti
+            const motivazioni = allExtracts
                 .filter(e => e.type === 'motivazione')
                 .map(e => ({
                     id: e.id,
-                    title: e.title || e.content.slice(0, 50) + '...',
+                    title: e.title || e.content?.slice(0, 50) + '...' || 'Motivazione senza titolo',
                     parentReatoId: e.parentReatoId!
                 }))
+            console.log('🎯 [ExtractClassifier] Motivazioni trovate:', motivazioni)
 
             setState(prev => ({
                 ...prev,
                 availableReati: reati,
                 availableMotivazioni: motivazioni
             }))
+
+            console.log('✅ [ExtractClassifier] Stato aggiornato - Reati disponibili:', reati.length, 'Motivazioni disponibili:', motivazioni.length)
         } catch (error) {
-            console.error('Errore nel caricamento estratti esistenti:', error)
+            console.error('❌ [ExtractClassifier] Errore nel caricamento estratti:', error)
+            setState(prev => ({ ...prev, error: 'Errore nel caricamento degli estratti' }))
         }
     }
 
     const handleTypeSelect = (type: ExtractType) => {
+        console.log('🎯 [ExtractClassifier] Tipo estratto selezionato:', type)
+        console.log('🎯 [ExtractClassifier] Reati disponibili al momento della selezione:', state.availableReati)
+        console.log('🎯 [ExtractClassifier] Motivazioni disponibili al momento della selezione:', state.availableMotivazioni)
+
         setState(prev => ({
             ...prev,
             selectedExtractType: type,
@@ -124,12 +168,22 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
         setState(prev => ({ ...prev, isSubmitting: true, error: null }))
 
         try {
-            const estrattoData = {
+            console.log('💾 [ExtractClassifier] Inizio salvataggio estratto...')
+            console.log('💾 [ExtractClassifier] Tipo estratto:', state.selectedExtractType)
+            console.log('💾 [ExtractClassifier] Dati classificazione:', state.classificationData)
+
+            // Genera ID temporaneo
+            const tempId = `tmp:${state.selectedExtractType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            console.log('🆔 [ExtractClassifier] ID temporaneo generato:', tempId)
+
+            // Crea estratto temporaneo in memoria
+            const tempEstratto = {
+                id: tempId,
                 praticaId,
-                sourceDoc: sourceDoc.id,
+                sourceDocId: sourceDoc.id,
                 sourceDocTitle: sourceDoc.title,
                 page: sourceDoc.page,
-                start: 0, // TODO: calcolare dalla selezione
+                start: 0,
                 end: extractContent.length,
                 type: state.selectedExtractType,
                 parentReatoId: state.classificationData.parentReatoId,
@@ -139,14 +193,48 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                 bbox: sourceDoc.bbox,
                 extractDate: state.classificationData.extractDate,
                 notesAnalyst: state.classificationData.notesAnalyst,
-                notesDescription: state.classificationData.notesDescription,
+                notesDescription: state.classificationData.description,
                 notesStrategy: state.classificationData.notesStrategy,
                 notesDefense: state.classificationData.notesDefense,
-                analystId: 'current-user' // TODO: ottenere dal contesto utente
+                analystId: 'current-user',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                // Metadati per compatibilità con sistema esistente
+                meta: {
+                    title: state.classificationData.title,
+                    text: extractContent,
+                    content: extractContent,
+                    source: {
+                        docId: sourceDoc.id,
+                        title: sourceDoc.title,
+                        page: sourceDoc.page,
+                        bbox: sourceDoc.bbox
+                    },
+                    kind: 'EXTRACT'
+                }
             }
+            console.log('📝 [ExtractClassifier] Estratto temporaneo creato:', tempEstratto)
 
-            const newEstratto = await api.createEstratto(estrattoData)
-            onSuccess(newEstratto)
+            // Aggiungi alla memoria globale
+            const pendingExtracts = (window as any).__pendingExtracts as Array<any> || []
+            console.log('📝 [ExtractClassifier] Estratti esistenti in memoria:', pendingExtracts.length)
+                ; (window as any).__pendingExtracts = [tempEstratto, ...pendingExtracts]
+            console.log('📝 [ExtractClassifier] Estratti aggiornati in memoria:', (window as any).__pendingExtracts.length)
+
+            // Emetti evento per aggiornare altri componenti
+            window.dispatchEvent(new CustomEvent('app:extract-added', {
+                detail: { estratto: tempEstratto }
+            }))
+            console.log('📡 [ExtractClassifier] Evento app:extract-added emesso')
+
+            // Aggiorna lista locale immediatamente
+            await loadExistingExtracts()
+
+            // Chiama callback di successo
+            onSuccess(tempEstratto as any)
+            console.log('✅ [ExtractClassifier] Salvataggio completato con successo')
+
+            setState(prev => ({ ...prev, isSubmitting: false }))
         } catch (error) {
             console.error('Errore nel salvataggio estratto:', error)
             setState(prev => ({
@@ -169,8 +257,8 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                     <Card
                         key={config.type}
                         className={`cursor-pointer transition-all hover:shadow-md ${state.selectedExtractType === config.type
-                                ? 'ring-2 ring-blue-500 bg-blue-50'
-                                : 'hover:bg-gray-50'
+                            ? 'ring-2 ring-blue-500 bg-blue-50'
+                            : 'hover:bg-gray-50'
                             }`}
                         onClick={() => handleTypeSelect(config.type)}
                     >
@@ -237,13 +325,15 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                 {state.selectedExtractType === 'motivazione' && (
                     <div>
                         <Label htmlFor="parentReato">Reato di Riferimento *</Label>
+                        {console.log('🎨 [RENDER] Dropdown Reati - availableReati:', state.availableReati)}
+                        {console.log('🎨 [RENDER] Dropdown Reati - Numero reati:', state.availableReati.length)}
                         <select
                             id="parentReato"
                             value={state.classificationData.parentReatoId || ''}
                             onChange={(e) => handleInputChange('parentReatoId', e.target.value)}
                             className="mt-1 w-full p-2 border border-gray-300 rounded-md"
                         >
-                            <option value="">Seleziona un reato...</option>
+                            <option value="">Seleziona un reato... ({state.availableReati.length} disponibili)</option>
                             {state.availableReati.map(reato => (
                                 <option key={reato.id} value={reato.id}>
                                     {reato.title}

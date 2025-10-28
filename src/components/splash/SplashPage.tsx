@@ -26,14 +26,14 @@ export function SplashPage() {
     try {
       const raw = localStorage.getItem('recent_pratiche')
       if (raw) setRecent(JSON.parse(raw))
-    } catch {}
-    
+    } catch { }
+
     // Carica tutte le pratiche e conteggio bozze
     api.getPratiche().then(pratiche => {
       setAll(pratiche)
       const drafts = pratiche.filter(p => p.status === 'draft')
       setDraftCount(drafts.length)
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   // Cleanup timer quando il componente viene smontato
@@ -65,13 +65,13 @@ export function SplashPage() {
     .map(pratica => ({
       ...pratica,
     }))
-    .sort((a, b) => 
+    .sort((a, b) =>
       (a.numeroRuolo || '').localeCompare(b.numeroRuolo || '')
     );
 
   const handleDeletePratica = (pratica: Pratica) => {
     console.log('🗑️ [DELETE][START] Click cestino su pratica:', { id: pratica.id, nome: pratica.nome, status: pratica.status })
-    
+
     // Cancella timer precedente se esiste
     if (undoTimer) {
       console.log('⏱️ [DELETE][TIMER] Cancello timer precedente')
@@ -89,12 +89,12 @@ export function SplashPage() {
     setAll(prev => prev.filter(p => p.id !== pratica.id))
     const newDrafts = all.filter(p => p.id !== pratica.id && p.status === 'draft')
     setDraftCount(newDrafts.length)
-    
+
     // Salva per possibile undo
     setDeletedPratica(pratica)
     setSecondsLeft(10)
     console.log('💾 [DELETE] Pratica salvata per undo. Timer 10s parte...')
-    
+
     // Countdown ogni secondo
     let seconds = 10
     const interval = setInterval(() => {
@@ -106,7 +106,7 @@ export function SplashPage() {
       }
     }, 1000)
     setCountdownInterval(interval)
-    
+
     // Timer per eliminazione definitiva dopo 10 secondi
     const timer = setTimeout(async () => {
       console.log('⏰ [DELETE][TIMEOUT] Timer scaduto! Elimino pratica automaticamente...')
@@ -130,7 +130,7 @@ export function SplashPage() {
         alert('Errore nell\'eliminazione della pratica')
       }
     }, 10000)
-    
+
     setUndoTimer(timer)
   }
 
@@ -146,7 +146,7 @@ export function SplashPage() {
       clearInterval(countdownInterval)
       setCountdownInterval(null)
     }
-    
+
     if (deletedPratica) {
       console.log('✅ [UNDO] Ripristino pratica nell\'UI:', deletedPratica.nome)
       // Ripristina la pratica nella lista
@@ -162,7 +162,7 @@ export function SplashPage() {
 
   const handleDismissToast = async () => {
     console.log('👆 [DISMISS] Click FUORI dal toast - Conferma eliminazione immediata')
-    
+
     // Cancella timer
     if (undoTimer) {
       console.log('⏱️ [DISMISS] Cancello timer countdown (non più necessario)')
@@ -174,13 +174,13 @@ export function SplashPage() {
       clearInterval(countdownInterval)
       setCountdownInterval(null)
     }
-    
+
     if (deletedPratica) {
       const praticaToDelete = deletedPratica
       console.log('🚀 [DISMISS] Eliminazione IMMEDIATA di:', { id: praticaToDelete.id, nome: praticaToDelete.nome })
       setDeletedPratica(null)
       setSecondsLeft(10)
-      
+
       // ESEGUI SUBITO la cancellazione
       try {
         console.log('🌐 [DISMISS][API] Chiamo api.deletePratica:', praticaToDelete.id)
@@ -214,14 +214,14 @@ export function SplashPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
       {/* Background Image with Overlay */}
-      <div 
+      <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
         style={{
           backgroundImage: 'url(https://images.pexels.com/photos/5668858/pexels-photo-5668858.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&dpr=2)'
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900/90 via-slate-800/95 to-slate-900/90" />
-      
+
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8">
         <div className="max-w-4xl mx-auto text-center space-y-8">
@@ -280,154 +280,163 @@ export function SplashPage() {
           </div>
 
           {/* CTA / Open */}
-          <div className={`grid gap-3 max-w-xl mx-auto ${all.length > 0 ? 'md:grid-cols-2' : 'md:grid-cols-1'}`}>
-            <Button 
-              size="lg" 
+          <div className={`grid gap-3 max-w-xl mx-auto ${all.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+            <Button
+              size="lg"
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 text-lg font-semibold"
               onClick={() => navigate('/nuova-pratica')}
             >
               <Upload className="w-5 h-5 mr-2" /> Nuova pratica
             </Button>
+
+            <Button
+              size="lg"
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-4 text-lg font-semibold"
+              onClick={() => navigate('/test-memoria-difensiva')}
+            >
+              <Scale className="w-5 h-5 mr-2" /> Test Memoria Difensiva
+            </Button>
+
             {all.length > 0 && (
               <div className="relative">
-                <Button 
-                  size="lg" 
+                <Button
+                  size="lg"
                   variant="outline"
                   className="w-full px-6 py-4 text-lg"
                   onClick={() => setIsOpen(!isOpen)}
                 >
-                  <FolderOpen className="w-5 h-5 mr-2" /> 
+                  <FolderOpen className="w-5 h-5 mr-2" />
                   Apri pratica {draftCount > 0 && `(${draftCount} ${draftCount === 1 ? 'bozza' : 'bozze'})`}
                   {isOpen ? <ChevronUp className="w-5 h-5 ml-2" /> : <ChevronDown className="w-5 h-5 ml-2" />}
                 </Button>
-              
-              {/* Dropdown Panel */}
-              {isOpen && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-300 rounded-lg shadow-xl z-50 overflow-hidden">
-                  {/* Search Bar */}
-                  <div className="p-3 border-b bg-slate-50">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Cerca pratica..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+
+                {/* Dropdown Panel */}
+                {isOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-300 rounded-lg shadow-xl z-50 overflow-hidden">
+                    {/* Search Bar */}
+                    <div className="p-3 border-b bg-slate-50">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Cerca pratica..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  
-                  {/* Delete All Drafts Button */}
-                  {draftCount > 0 && (
-                    <div className="p-2 border-b bg-amber-50">
-                      {!showDeleteAllConfirm ? (
-                        <button
-                          onClick={() => setShowDeleteAllConfirm(true)}
-                          className="w-full px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 rounded flex items-center justify-center gap-2"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Cancella {draftCount === 1 ? 'la bozza' : `tutte le ${draftCount} bozze`}
-                        </button>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="text-sm text-center text-slate-700">
-                            Eliminare {draftCount} {draftCount === 1 ? 'bozza' : 'bozze'}?
+
+                    {/* Delete All Drafts Button */}
+                    {draftCount > 0 && (
+                      <div className="p-2 border-b bg-amber-50">
+                        {!showDeleteAllConfirm ? (
+                          <button
+                            onClick={() => setShowDeleteAllConfirm(true)}
+                            className="w-full px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 rounded flex items-center justify-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Cancella {draftCount === 1 ? 'la bozza' : `tutte le ${draftCount} bozze`}
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="text-sm text-center text-slate-700">
+                              Eliminare {draftCount} {draftCount === 1 ? 'bozza' : 'bozze'}?
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setShowDeleteAllConfirm(false)}
+                                className="flex-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded font-medium"
+                              >
+                                Annulla
+                              </button>
+                              <button
+                                onClick={handleDeleteAllDrafts}
+                                className="flex-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded font-medium"
+                              >
+                                Conferma
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setShowDeleteAllConfirm(false)}
-                              className="flex-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded font-medium"
-                            >
-                              Annulla
-                            </button>
-                            <button
-                              onClick={handleDeleteAllDrafts}
-                              className="flex-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded font-medium"
-                            >
-                              Conferma
-                            </button>
-                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pratiche List */}
+                    <div className="max-h-96 overflow-y-auto list-none">
+                      {sortedPratiche.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500">
+                          {searchQuery ? 'Nessuna pratica trovata' : 'Nessuna pratica disponibile'}
                         </div>
+                      ) : (
+                        sortedPratiche.map(p => (
+                          <div
+                            key={p.id}
+                            className="group relative border-b last:border-b-0 hover:bg-slate-50 transition"
+                            onMouseEnter={() => setHoveredId(p.id)}
+                            onMouseLeave={() => setHoveredId(null)}
+                          >
+                            <button
+                              onClick={() => {
+                                setIsOpen(false)
+                                navigate(`/pratica/${p.id}`)
+                              }}
+                              className="w-full text-left p-3 pr-12"
+                            >
+                              <div className="font-medium flex items-center gap-2">
+                                {p.status === 'draft' && (
+                                  <FileEdit className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                                )}
+                                <span className="truncate">{p.nome}</span>
+                              </div>
+                              <div className="text-xs text-slate-500 truncate mt-0.5">
+                                {p.cliente} · {p.foro}
+                              </div>
+                            </button>
+
+                            {/* Delete Button (visible on hover) */}
+                            {hoveredId === p.id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeletePratica(p)
+                                }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-red-100 rounded text-red-600"
+                                title="Elimina pratica"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))
                       )}
                     </div>
-                  )}
-                  
-                  {/* Pratiche List */}
-                  <div className="max-h-96 overflow-y-auto list-none">
-                    {sortedPratiche.length === 0 ? (
-                      <div className="p-8 text-center text-slate-500">
-                        {searchQuery ? 'Nessuna pratica trovata' : 'Nessuna pratica disponibile'}
-                      </div>
-                    ) : (
-                      sortedPratiche.map(p => (
-                        <div
-                          key={p.id}
-                          className="group relative border-b last:border-b-0 hover:bg-slate-50 transition"
-                          onMouseEnter={() => setHoveredId(p.id)}
-                          onMouseLeave={() => setHoveredId(null)}
-                        >
-                          <button
-                            onClick={() => {
-                              setIsOpen(false)
-                              navigate(`/pratica/${p.id}`)
-                            }}
-                            className="w-full text-left p-3 pr-12"
-                          >
-                            <div className="font-medium flex items-center gap-2">
-                              {p.status === 'draft' && (
-                                <FileEdit className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                              )}
-                              <span className="truncate">{p.nome}</span>
-                            </div>
-                            <div className="text-xs text-slate-500 truncate mt-0.5">
-                              {p.cliente} · {p.foro}
-                            </div>
-                          </button>
-                          
-                          {/* Delete Button (visible on hover) */}
-                          {hoveredId === p.id && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDeletePratica(p)
-                              }}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-red-100 rounded text-red-600"
-                              title="Elimina pratica"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))
-                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Toast Undo - sovrapposto alla search bar */}
-              {deletedPratica && (
-                <>
-                  {/* Backdrop per click fuori */}
-                  <div 
-                    className="fixed inset-0 z-[9998]" 
-                    onClick={handleDismissToast}
-                  />
-                  <div className="absolute top-0 left-0 right-0 p-3 border-b bg-slate-800 z-[9999]">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={handleUndo}
-                        className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition text-white"
-                      >
-                        Annulla eliminazione
-                      </button>
-                      <span className="text-xs text-slate-300 ml-3 min-w-[30px] text-right">
-                        {secondsLeft}s
-                      </span>
+                {/* Toast Undo - sovrapposto alla search bar */}
+                {deletedPratica && (
+                  <>
+                    {/* Backdrop per click fuori */}
+                    <div
+                      className="fixed inset-0 z-[9998]"
+                      onClick={handleDismissToast}
+                    />
+                    <div className="absolute top-0 left-0 right-0 p-3 border-b bg-slate-800 z-[9999]">
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={handleUndo}
+                          className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition text-white"
+                        >
+                          Annulla eliminazione
+                        </button>
+                        <span className="text-xs text-slate-300 ml-3 min-w-[30px] text-right">
+                          {secondsLeft}s
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -442,7 +451,7 @@ export function SplashPage() {
               <div className="text-slate-400 text-sm">Nessuna pratica recente.</div>
             ) : (
               <div className="grid sm:grid-cols-2 gap-3">
-                {recent.slice(0,4).map(p => (
+                {recent.slice(0, 4).map(p => (
                   <button key={p.id} onClick={() => navigate(`/pratica/${p.id}`)} className="text-left p-3 rounded bg-white/10 hover:bg-white/15 transition">
                     <div className="text-white font-medium truncate">{p.nome}</div>
                     <div className="text-slate-300 text-xs truncate">{p.cliente} · {p.foro}</div>
