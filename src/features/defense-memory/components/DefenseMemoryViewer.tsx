@@ -488,23 +488,12 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                   <div class="toolbar-buttons">
                     <button class="toggle-button" id="toggleButton" onclick="toggleStampaMode()" title="Cambia modalità stampa">Tutti</button>
                     <span class="stampa-text">in</span>
-                    <button class="print-button" onclick="stampaPDF()" title="Stampa PDF">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="2" fill="#E53E3E"/>
-                        <rect x="5" y="5" width="14" height="10" fill="white"/>
-                        <rect x="6" y="6" width="12" height="8" fill="#F7FAFC"/>
-                        <rect x="7" y="7" width="10" height="6" fill="#E53E3E"/>
-                        <text x="12" y="11" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="8" font-weight="bold">PDF</text>
-                      </svg>
-                    </button>
-                    <button class="print-button" onclick="stampaWord()" title="Stampa Word">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="2" fill="#2B6CB0"/>
-                        <rect x="5" y="5" width="14" height="10" fill="white"/>
-                        <rect x="6" y="6" width="12" height="8" fill="#F7FAFC"/>
-                        <text x="12" y="11" text-anchor="middle" fill="#2B6CB0" font-family="Arial, sans-serif" font-size="10" font-weight="bold">W</text>
-                      </svg>
-                    </button>
+                      <button class="print-button" onclick="stampaPDF()" title="Stampa PDF">
+                        <img src="/src/assets/icons/pdf.png" alt="PDF" width="32" height="32" />
+                      </button>
+                      <button class="print-button" onclick="stampaWord()" title="Stampa Word">
+                        <img src="/src/assets/icons/word.png" alt="Word" width="32" height="32" />
+                      </button>
                   </div>
                 </div>
               </div>

@@ -52,13 +52,26 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       } catch { }
     }
 
+    const onExtractAdded = (e: any) => {
+      try {
+        // Se siamo nel drawer "memoria difensiva", ricarica le memorie
+        const key = (title || '').toLowerCase()
+        if (key.includes('memoria difensiva')) {
+          console.log('📝 [MEMORY] Estratto aggiunto, ricarico memorie difensive')
+          loadMemorieDifensive()
+        }
+      } catch { }
+    }
+
     window.addEventListener('app:documents' as any, onDocs as any)
     window.addEventListener('app:uploading' as any, onUploading as any)
+    window.addEventListener('app:extract-added' as any, onExtractAdded as any)
     try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
 
     return () => {
       window.removeEventListener('app:documents' as any, onDocs as any)
       window.removeEventListener('app:uploading' as any, onUploading as any)
+      window.removeEventListener('app:extract-added' as any, onExtractAdded as any)
     }
   }, [title, id])
 
@@ -72,7 +85,15 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       const { api } = await import('../../lib/api')
       const estrattiResponse = await api.getEstrattiByPratica(praticaId)
 
-      if (estrattiResponse.estratti.length > 0) {
+      // Controlla anche estratti temporanei in memoria
+      const pendingExtracts = (window as any).__pendingExtracts || []
+      const totalExtracts = estrattiResponse.estratti.length + pendingExtracts.length
+
+      console.log('📊 [MEMORY] Estratti DB:', estrattiResponse.estratti.length)
+      console.log('📊 [MEMORY] Estratti temporanei:', pendingExtracts.length)
+      console.log('📊 [MEMORY] Totale estratti:', totalExtracts)
+
+      if (totalExtracts > 0) {
         // Carica memorie difensive
         const memorieResponse = await api.getMemorieDifensiveByPratica(praticaId)
 
