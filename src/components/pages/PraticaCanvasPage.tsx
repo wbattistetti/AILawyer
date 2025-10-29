@@ -7,7 +7,7 @@ import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
 import { useToast } from '../../hooks/use-toast'
-import { Pratica, Comparto, Documento } from '../../types'
+import { Pratica, Comparto, Documento, Cliente } from '../../types'
 import { ArrowLeft, Upload, RefreshCw, X, FileText, Play, Pause, Square, ChevronDown, ChevronRight } from 'lucide-react'
 import { DocumentCollection } from '../../features/documents/DocumentCollection'
 import { AnalysisPanel } from './pratica-canvas/components/AnalysisPanel'
@@ -33,6 +33,7 @@ import { ArchiveRenderer } from './pratica-canvas/components/ArchiveRenderer';
 import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
 import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
+import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemoriaRenderer';
 
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
@@ -42,6 +43,7 @@ export function PraticaCanvasPage() {
 
   const [pratica, setPratica] = useState<Pratica | null>(null)
   const [comparti, setComparti] = useState<Comparto[]>([])
+  const [clienti, setClienti] = useState<Cliente[]>([])
   // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
   const [syncPage, setSyncPage] = useState<number | null>(null)
 
@@ -115,9 +117,15 @@ export function PraticaCanvasPage() {
     const load = async () => {
       try {
         setIsLoading(true)
-        const [p, c] = await Promise.all([api.getPratica(id!), api.getComparti(id!)])
+        const [p, c, clientiData] = await Promise.all([
+          api.getPratica(id!),
+          api.getComparti(id!),
+          api.getClientiByPratica(id!)
+        ])
         setPratica(p)
         setComparti(c)
+        setClienti(clientiData.clienti)
+        console.log('🎭 [PraticaCanvasPage] Clienti caricati:', clientiData.clienti.length)
       } catch (error) {
         console.error('Failed to load pratica:', error)
         toast({ title: 'Errore', description: 'Impossibile caricare la pratica', variant: 'destructive' })
@@ -610,6 +618,20 @@ export function PraticaCanvasPage() {
           renderEvents={() => <EventsTab />}
           renderContacts={() => <ThingCardsPanel kind="contact" />}
           renderIds={() => <ThingCardsPanel kind="id" />}
+          clienti={clienti}
+          renderClienteMemoria={(clienteId: string) => {
+            const cliente = clienti.find(c => c.id === clienteId)
+            if (!cliente) return <div className="p-4 text-sm text-muted-foreground">Cliente non trovato</div>
+            return (
+              <ClienteMemoriaRenderer
+                praticaId={id!}
+                cliente={cliente}
+                onTableSave={(clienteId, data) => {
+                  console.log(`💾 [PraticaCanvasPage] Tabella salvata per cliente ${clienteId}:`, data)
+                }}
+              />
+            )
+          }}
         />
 
         {/* Divider resizer removed - preview panel disabled */}

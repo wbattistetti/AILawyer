@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { DefenseDocumentBuilder } from './DefenseDocumentBuilder'
+import { DefenseMemoryTableEditor } from './table-editor/DefenseMemoryTableEditor'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FileText, Download, Eye } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FileText, Download, Eye, Table } from 'lucide-react'
+import { DefenseMemoryTableData } from './table-editor/types/table.types'
 
 interface DefenseMemoryViewerProps {
     praticaId: string
@@ -18,13 +21,28 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
     const [extracts, setExtracts] = useState<any[]>([])
     const [isGenerating, setIsGenerating] = useState(false)
     const [generatedDocument, setGeneratedDocument] = useState<string | null>(null)
+    const [activeTab, setActiveTab] = useState<'builder' | 'table'>('builder')
+    const [tableData, setTableData] = useState<DefenseMemoryTableData | null>(null)
 
     useEffect(() => {
         // Carica estratti dalla memoria globale
         const pendingExtracts = (window as any).__pendingExtracts as Array<any> || []
         console.log('🎭 [DefenseMemoryViewer] Estratti caricati:', pendingExtracts.length)
         setExtracts(pendingExtracts)
+
+        // Carica dati tabella dalla memoria globale
+        const savedTableData = (window as any).__defenseMemoryTable as DefenseMemoryTableData
+        if (savedTableData) {
+            setTableData(savedTableData)
+        }
     }, [])
+
+    const handleTableSave = (data: DefenseMemoryTableData) => {
+        setTableData(data)
+            // Salva in memoria globale
+            (window as any).__defenseMemoryTable = data
+        console.log('💾 [DefenseMemoryViewer] Tabella salvata:', data)
+    }
 
     const handleGenerateDocument = async () => {
         setIsGenerating(true)
@@ -837,7 +855,19 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-4">
+                    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'builder' | 'table')}>
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="builder" className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4" />
+                                <span>Builder Documento</span>
+                            </TabsTrigger>
+                            <TabsTrigger value="table" className="flex items-center space-x-2">
+                                <Table className="h-4 w-4" />
+                                <span>Tabella Strutturata</span>
+                            </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="builder" className="space-y-4">
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                             <div className="bg-red-50 p-3 rounded">
                                 <div className="font-semibold text-red-700">Reati</div>
@@ -915,6 +945,19 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                     </CardContent>
                 </Card>
             )}
-        </div>
+                        </TabsContent>
+
+                        <TabsContent value="table" className="space-y-4">
+                            <DefenseMemoryTableEditor
+                                praticaId={praticaId}
+                                initialData={tableData || undefined}
+                                onSave={handleTableSave}
+                                className="h-[800px]"
+                            />
+                        </TabsContent>
+                    </Tabs >
+                </CardContent >
+            </Card >
+        </div >
     )
 }

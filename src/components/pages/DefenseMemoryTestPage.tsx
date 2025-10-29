@@ -1,5 +1,5 @@
 import React from 'react'
-import { DefenseMemoryViewer } from '../../features/defense-memory/components/DefenseMemoryViewer'
+// import { DefenseMemoryViewer } from '../../features/defense-memory/components/DefenseMemoryViewer'
 
 export const DefenseMemoryTestPage: React.FC = () => {
     return (
@@ -14,11 +14,15 @@ export const DefenseMemoryTestPage: React.FC = () => {
                     </p>
                 </div>
 
-                <DefenseMemoryViewer
+                {/* <DefenseMemoryViewer
                     praticaId="test-pratica"
                     clienteId="test-cliente"
                     clienteNome="Mario Rossi"
-                />
+                /> */}
+                <div className="p-8 text-center text-gray-500">
+                    <p>DefenseMemoryViewer temporaneamente in quarantena</p>
+                    <p className="text-sm mt-2">Usa le tab dinamiche per cliente nella pratica</p>
+                </div>
             </div>
         </div>
     )

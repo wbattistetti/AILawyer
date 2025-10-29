@@ -109,6 +109,9 @@ type Props = {
   // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
   onLeftBorderTabChange?: (component: string) => void
   praticaId?: string // Aggiungi questa prop
+  // Props per tab cliente
+  clienti?: Array<{ id: string; nome: string; cognome: string }>
+  renderClienteMemoria?: (clienteId: string) => React.ReactNode
 }
 
 export type DockWorkspaceV2Handle = {
@@ -130,7 +133,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     renderEvents,
     renderExplorer,
     onLeftBorderTabChange,
-    praticaId
+    praticaId,
+    clienti = [],
+    renderClienteMemoria
   } = props
   const LayoutAny = Layout as any
   const layoutRootRef = useRef<HTMLDivElement>(null)
@@ -195,7 +200,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       localStorage.removeItem(storageKey)
     } catch { }
     return getDefaultModelJson()
-  }, [storageKey])
+  }, [storageKey, clienti])
 
   const [model, setModel] = useState(() => Model.fromJson(initial))
   modelRef.current = model
@@ -471,6 +476,21 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     if (comp === 'contacts') return <div className="w-full h-full overflow-auto bg-white">{renderContacts ? renderContacts() : null}</div>
     if (comp === 'ids') return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
     if (comp === 'events') return <div className="w-full h-full overflow-auto bg-white">{renderEvents ? renderEvents() : null}</div>
+
+    // ✅ Tab dinamiche per clienti
+    if (comp === 'cliente-memoria') {
+      const clienteId = tabId.replace('cliente-', '').replace('-tab', '')
+      return (
+        <div className="w-full h-full overflow-hidden bg-white">
+          {renderClienteMemoria ? renderClienteMemoria(clienteId) : (
+            <div className="p-4 text-sm text-muted-foreground">
+              Memoria difensiva per cliente {clienteId}
+            </div>
+          )}
+        </div>
+      )
+    }
+
     if (comp === 'overview') {
       return (
         <div className="w-full h-full overflow-hidden bg-white">
@@ -535,6 +555,30 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ STEP 1: Canvas con placeholder invisibile per evitare creazione automatica di tabsets
   function getDefaultModelJson(): IJsonModel {
+    // Tab statiche esistenti
+    const staticTabs = [
+      { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' },
+      { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' },
+      { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' },
+      { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' },
+      { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' },
+      { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' },
+      { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' },
+      { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' },
+      { type: 'tab', name: 'Armadio', component: 'cabinet', id: 'cabinetTab' }
+    ]
+
+    // Tab dinamiche per clienti
+    const clienteTabs = clienti.map(cliente => ({
+      type: 'tab',
+      name: `${cliente.nome} ${cliente.cognome}`,
+      component: 'cliente-memoria',
+      id: `cliente-${cliente.id}-tab`
+    }))
+
+    // Combina tab statiche e dinamiche
+    const allTabs = [...staticTabs, ...clienteTabs]
+
     return {
       global: {
         tabSetHeaderHeight: 28,
@@ -571,7 +615,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         ]
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: -1, children: [{ type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' }, { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' }, { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' }, { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' }, { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' }, { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' }, { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' }, { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }, { type: 'tab', name: 'Armadio', component: 'cabinet', id: 'cabinetTab' }] } as any
+        { type: 'border', location: 'left', size: 320, selected: -1, children: allTabs } as any
       ]
     } as IJsonModel
   }
