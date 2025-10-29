@@ -22,18 +22,10 @@ export const TableRow: React.FC<TableRowProps> = ({
     onMoveDown,
     readOnly = false,
     errors = [],
-    columnWidths = DEFAULT_WIDTHS,
-    onCellRefChange,
-    onCellWidthChange
+    columnWidths = DEFAULT_WIDTHS
 }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
-
-    useEffect(() => {
-        if (cellRef.current && onCellRefChange) {
-            onCellRefChange(row.id, cellRef.current)
-        }
-    }, [row.id, onCellRefChange])
 
     const handleUpdate = (data: Partial<{ cellType: any; description: string; contestationDate?: string; eventDate?: string; observations?: string; extract?: any }>) => {
         onUpdate(row.id, data)
@@ -71,10 +63,6 @@ export const TableRow: React.FC<TableRowProps> = ({
                 className="border-r border-gray-300 flex-shrink-0 relative"
                 style={{ width: columnWidths.typeDescription }}
             >
-                {/* Marcatore visibile per debug */}
-                <div className="absolute top-0 right-0 bg-red-500 text-white text-xs px-1 z-50">
-                    TD: {columnWidths.typeDescription}px
-                </div>
                 <TypeDescriptionCell
                     cellType={row.cellType}
                     description={row.description}
@@ -83,7 +71,6 @@ export const TableRow: React.FC<TableRowProps> = ({
                     errors={errors}
                     onUpdate={handleUpdate}
                     readOnly={readOnly}
-                    onWidthChange={onCellWidthChange}
                 />
             </div>
 
@@ -92,11 +79,6 @@ export const TableRow: React.FC<TableRowProps> = ({
                 className="border-r border-gray-300 flex-shrink-0 relative"
                 style={{ width: columnWidths.observations }}
             >
-                {/* Marcatore visibile per debug */}
-                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 z-50">
-                    OBS: {columnWidths.observations}px
-                </div>
-
                 {/* Pulsante Azioni - appare solo su hover, posizionato in alto a destra */}
                 {isHovered && !readOnly && (
                     <div className="absolute top-2 right-2 z-50">

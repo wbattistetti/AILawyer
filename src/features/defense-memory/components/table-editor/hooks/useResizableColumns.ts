@@ -7,9 +7,41 @@ export interface ColumnWidths {
     actions: number
 }
 
+// Calcola la larghezza minima necessaria per gli elementi più lunghi delle combo
+const calculateMinWidthForCombos = (): number => {
+    // Elementi più lunghi da considerare:
+    // - "Reato contestato" (tipo select)
+    // - Elementi da REATI_PENALI (verranno caricati dinamicamente)
+    // - "atto di disapplicazione sostanziale, formale e procedurale" (più lungo di ATTI_COMUNI)
+
+    // Stima approssimativa basata su caratteri
+    // Font size: text-xs (12px)
+    // Carattere medio: ~7px
+    // Padding: 16px (px-2 = 8px * 2)
+    // Gap tra elementi: 8px (gap-2)
+    // Select trigger min-width: 140px
+
+    const longestText = 'atto di disapplicazione sostanziale, formale e procedurale'
+    const typeSelectLabel = 'Reato contestato'
+
+    // Calcola larghezza testo (approssimativa)
+    const textWidth = longestText.length * 7 // ~7px per carattere
+    const typeLabelWidth = typeSelectLabel.length * 7
+
+    // Larghezza minima: Select (140px) + gap (8px) + combobox più lunga + padding cella (16px) + margine sicurezza (20px)
+    const minWidth = Math.max(
+        140 + 8 + textWidth + 40 + 16 + 20, // Select + gap + combobox + padding + sicurezza
+        140 + 8 + typeLabelWidth + 16 + 20   // Select + gap + label tipo + padding + sicurezza
+    )
+
+    return Math.ceil(minWidth)
+}
+
+const MIN_TYPE_DESCRIPTION_WIDTH = calculateMinWidthForCombos()
+
 const DEFAULT_WIDTHS: ColumnWidths = {
     number: 60,
-    typeDescription: 450, // Larghezza maggiore per ospitare due combobox affiancate
+    typeDescription: Math.max(450, MIN_TYPE_DESCRIPTION_WIDTH), // Assicura che sia almeno il minimo
     observations: 400,
     actions: 80
 }
@@ -17,106 +49,6 @@ const DEFAULT_WIDTHS: ColumnWidths = {
 export function useResizableColumns() {
     const [widths, setWidths] = useState<ColumnWidths>(DEFAULT_WIDTHS)
     const resizingRef = useRef<{ column: keyof ColumnWidths; startX: number; startWidth: number } | null>(null)
-    const columnRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-    const resizeObserverRef = useRef<ResizeObserver | null>(null)
-    const cellWidths = useRef<Map<string, number>>(new Map())
-
-    // Registra la larghezza misurata da una cella
-    const registerCellWidth = useCallback((width: number) => {
-        console.log('🔵 [useResizableColumns] registerCellWidth chiamato con width:', width)
-
-        // Limita la larghezza massima per evitare loop infiniti
-        const MAX_WIDTH = 1000 // Larghezza massima ragionevole
-        const clampedWidth = Math.min(width, MAX_WIDTH)
-
-        // Usa un ref per evitare dipendenze cicliche
-        setWidths(prev => {
-            // Controlla se la nuova larghezza è significativamente maggiore della corrente
-            // Solo aggiorna se la differenza è > 10px per evitare loop infiniti
-            if (clampedWidth > prev.typeDescription + 10 && clampedWidth <= MAX_WIDTH) {
-                console.log('🔵 [useResizableColumns] Aggiornando da', prev.typeDescription, 'a', clampedWidth)
-                return {
-                    ...prev,
-                    typeDescription: clampedWidth
-                }
-            }
-            console.log('🔵 [useResizableColumns] Nessun aggiornamento necessario (diff:', clampedWidth - prev.typeDescription, 'px, clamped:', width, '->', clampedWidth, ')')
-            return prev
-        })
-    }, [])
-
-    // Funzione per calcolare la larghezza massima
-    const calculateMaxWidth = useCallback(() => {
-        let maxWidth = DEFAULT_WIDTHS.typeDescription
-
-        // Prendi il massimo tra le larghezze misurate dalle celle
-        cellWidths.current.forEach((cellWidth) => {
-            if (cellWidth > maxWidth) {
-                maxWidth = cellWidth
-            }
-        })
-
-        // Oppure usa scrollWidth come fallback
-        columnRefs.current.forEach((element) => {
-            const scrollWidth = element.scrollWidth
-            if (scrollWidth > maxWidth) {
-                maxWidth = scrollWidth + 20
-            }
-        })
-
-        // Aggiorna solo se la larghezza calcolata è maggiore della corrente
-        setWidths(prev => {
-            if (maxWidth > prev.typeDescription) {
-                return {
-                    ...prev,
-                    typeDescription: maxWidth
-                }
-            }
-            return prev
-        })
-    }, [])
-
-    // Funzione per registrare un ref di una cella
-    const registerCellRef = useCallback((rowId: string, element: HTMLDivElement | null) => {
-        if (element) {
-            columnRefs.current.set(rowId, element)
-
-            // Crea ResizeObserver se non esiste
-            if (!resizeObserverRef.current) {
-                resizeObserverRef.current = new ResizeObserver(() => {
-                    calculateMaxWidth()
-                })
-            }
-
-            // Osserva la cella per cambiamenti di dimensioni
-            resizeObserverRef.current.observe(element)
-        } else {
-            const oldElement = columnRefs.current.get(rowId)
-            if (oldElement && resizeObserverRef.current) {
-                resizeObserverRef.current.unobserve(oldElement)
-            }
-            columnRefs.current.delete(rowId)
-        }
-    }, [calculateMaxWidth])
-
-    // Calcola la larghezza iniziale dopo il mount
-    useEffect(() => {
-        // Delay per permettere al DOM di renderizzare
-        const timeoutId = setTimeout(() => {
-            calculateMaxWidth()
-        }, 100)
-
-        return () => clearTimeout(timeoutId)
-    }, [calculateMaxWidth])
-
-    // Cleanup ResizeObserver
-    useEffect(() => {
-        return () => {
-            if (resizeObserverRef.current) {
-                resizeObserverRef.current.disconnect()
-            }
-        }
-    }, [])
 
     const handleResizeStart = useCallback((column: keyof ColumnWidths, e: React.MouseEvent) => {
         e.preventDefault()
@@ -137,7 +69,21 @@ export function useResizableColumns() {
 
             const { column: currentColumn, startX, startWidth: startW } = resizingRef.current
             const delta = moveEvent.clientX - startX
-            const minWidth = currentColumn === 'number' ? 50 : currentColumn === 'actions' ? 60 : 200
+
+            // Calcola minimo width in base alla colonna
+            let minWidth: number
+            if (currentColumn === 'number') {
+                minWidth = 50
+            } else if (currentColumn === 'actions') {
+                minWidth = 60
+            } else if (currentColumn === 'typeDescription') {
+                // Per typeDescription, permette la riduzione ma con un minimo ragionevole (250px)
+                minWidth = 250
+            } else {
+                minWidth = 200
+            }
+
+            // Per tutte le colonne, permette riduzione fino al minimo
             const newWidth = Math.max(minWidth, startW + delta)
 
             setWidths(prev => ({
@@ -161,9 +107,7 @@ export function useResizableColumns() {
     return {
         widths,
         handleResizeStart,
-        isResizing: resizingRef.current !== null,
-        registerCellRef,
-        registerCellWidth
+        isResizing: resizingRef.current !== null
     }
 }
 

@@ -58,14 +58,14 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         validateOnBlur: true
     })
 
-    const { widths, handleResizeStart, registerCellRef, registerCellWidth } = useResizableColumns()
+    const { widths, handleResizeStart } = useResizableColumns()
 
-    // Log per debug
-    useEffect(() => {
-        console.log('🟡 [DefenseMemoryTableEditor] widths:', widths)
-        console.log('🟡 [DefenseMemoryTableEditor] Larghezza totale colonne:',
-            widths.number + widths.typeDescription + widths.observations + widths.actions)
-    }, [widths])
+    // Log per debug - rimuovere in produzione
+    // useEffect(() => {
+    //     console.log('🟡 [DefenseMemoryTableEditor] widths:', widths)
+    //     console.log('🟡 [DefenseMemoryTableEditor] Larghezza totale colonne:',
+    //         widths.number + widths.typeDescription + widths.observations + widths.actions)
+    // }, [widths])
 
     // Carica dati iniziali
     useEffect(() => {
@@ -192,21 +192,17 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                 className="p-4 border-r border-gray-300 flex-shrink-0 relative"
                                 style={{ width: widths.typeDescription }}
                             >
-                                {/* Marcatore visibile per debug */}
-                                <div className="absolute top-0 right-0 bg-red-500 text-white text-xs px-1 z-50">
-                                    TD: {widths.typeDescription}px
-                                </div>
                                 Tipo e Descrizione
-                                {/* Rimossa la handle di resize - solo auto-size */}
+                                {/* Handle di resize solo verso destra */}
+                                <div
+                                    className="absolute right-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize"
+                                    onMouseDown={(e) => handleResizeStart('typeDescription', e)}
+                                />
                             </div>
                             <div
                                 className="p-4 border-r border-gray-300 flex-shrink-0 relative"
                                 style={{ width: widths.observations }}
                             >
-                                {/* Marcatore visibile per debug */}
-                                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 z-50">
-                                    OBS: {widths.observations}px
-                                </div>
                                 Osservazioni
                                 <div
                                     className="absolute right-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize"
@@ -228,8 +224,6 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                 readOnly={readOnly}
                                 errors={getRowErrors(row.id)}
                                 columnWidths={widths}
-                                onCellRefChange={registerCellRef}
-                                onCellWidthChange={registerCellWidth}
                             />
                         ))}
                     </div>

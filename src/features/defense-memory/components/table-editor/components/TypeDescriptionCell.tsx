@@ -140,7 +140,6 @@ interface TypeDescriptionCellProps {
     onUpdate: (data: Partial<{ cellType: CellType; description: string; contestationDate?: string; eventDate?: string }>) => void
     readOnly?: boolean
     className?: string
-    onWidthChange?: (width: number) => void
 }
 
 export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
@@ -151,8 +150,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     errors = [],
     onUpdate,
     readOnly = false,
-    className = '',
-    onWidthChange
+    className = ''
 }) => {
     const [contestationDateOpen, setContestationDateOpen] = useState(false)
     const [eventDateOpen, setEventDateOpen] = useState(false)
@@ -166,13 +164,6 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     const [isEventDateEditing, setIsEventDateEditing] = useState(!eventDate)
     const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
     const comboboxRowRef = useRef<HTMLDivElement>(null)
-    const onWidthChangeRef = useRef(onWidthChange)
-    const lastMeasuredWidthRef = useRef<number>(0)
-
-    // Aggiorna il ref quando cambia la funzione
-    useEffect(() => {
-        onWidthChangeRef.current = onWidthChange
-    }, [onWidthChange])
 
     // Sincronizza stati edit/view con i props
     useEffect(() => {
@@ -216,77 +207,6 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
             }, 0)
         }
     }, [isDescriptionEditing, cellType])
-
-    // Misura la larghezza della riga con le combobox e notifica il cambiamento
-    useEffect(() => {
-        if (comboboxRowRef.current && cellType) {
-            const measureWidth = () => {
-                if (!comboboxRowRef.current) return
-
-                // Salva la larghezza originale della cella per ripristinarla dopo
-                const originalWidth = comboboxRowRef.current.parentElement?.style.width
-
-                // Temporaneamente rimuovi la larghezza fissa per permettere al contenuto di espandersi
-                if (comboboxRowRef.current.parentElement) {
-                    comboboxRowRef.current.parentElement.style.width = 'auto'
-                    comboboxRowRef.current.parentElement.style.maxWidth = 'none'
-                }
-
-                // Forza il layout per ottenere le dimensioni corrette
-                comboboxRowRef.current.getBoundingClientRect()
-
-                // Misura la larghezza naturale del contenuto usando scrollWidth
-                const width = comboboxRowRef.current.scrollWidth || comboboxRowRef.current.offsetWidth || 0
-
-                // Ripristina la larghezza originale
-                if (comboboxRowRef.current.parentElement && originalWidth) {
-                    comboboxRowRef.current.parentElement.style.width = originalWidth
-                }
-
-                // Aggiungi solo 10px di margine + padding della cella (16px totale)
-                const totalWidth = width + 10 + 16
-
-                // Limite massimo ragionevole
-                const MAX_WIDTH = 1000
-                const clampedWidth = Math.min(totalWidth, MAX_WIDTH)
-
-                // Solo notifica se la larghezza è cambiata significativamente (> 5px)
-                if (Math.abs(clampedWidth - lastMeasuredWidthRef.current) > 5) {
-                    console.log('🟢 [TypeDescriptionCell] Misurando larghezza:', {
-                        scrollWidth: width,
-                        totalWidth,
-                        clampedWidth,
-                        cellType,
-                        description,
-                        differenza: clampedWidth - lastMeasuredWidthRef.current
-                    })
-                    lastMeasuredWidthRef.current = clampedWidth
-                    onWidthChangeRef.current?.(clampedWidth)
-                }
-            }
-
-            // Misura dopo un breve delay per permettere al DOM di renderizzare
-            const timeoutId = setTimeout(measureWidth, 100)
-
-            // Usa ResizeObserver per monitorare cambiamenti, ma con debounce
-            let resizeTimeout: NodeJS.Timeout | null = null
-            const resizeObserver = new ResizeObserver(() => {
-                if (resizeTimeout) clearTimeout(resizeTimeout)
-                resizeTimeout = setTimeout(() => {
-                    console.log('🟢 [TypeDescriptionCell] ResizeObserver triggered')
-                    measureWidth()
-                }, 200) // Debounce di 200ms
-            })
-
-            resizeObserver.observe(comboboxRowRef.current)
-
-            return () => {
-                clearTimeout(timeoutId)
-                if (resizeTimeout) clearTimeout(resizeTimeout)
-                resizeObserver.disconnect()
-            }
-        }
-    }, [cellType, description]) // Rimuovo onWidthChange dalla dependency array
 
     const getFieldError = (field: string) => {
         return errors.find(error => error.field === field)?.message
@@ -382,15 +302,10 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
         }
     }
 
-    // Helper per ottenere il label descrizione con tipo
+    // Helper per ottenere il label descrizione (solo il valore, senza ripetere il tipo)
     const getDescriptionLabel = () => {
         if (!description) return 'Clicca per inserire descrizione...'
-        const typeLabels: Record<CellType, string> = {
-            'reato-contestato': 'Reato contestato',
-            'fatto': 'Fatto',
-            'atto': 'Atto'
-        }
-        return `${typeLabels[cellType]}: ${description}`
+        return description
     }
 
     // Se non c'è ancora un tipo, mostra solo il dropdown
@@ -418,7 +333,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     return (
         <div className={cn("p-2 space-y-1", className)}>
             {/* Tipo e Descrizione - stessa riga */}
-            <div ref={comboboxRowRef} className="flex items-start gap-2 flex-nowrap">
+            <div ref={comboboxRowRef} className="flex items-start gap-3 flex-nowrap">
                 {/* Tipo: Label o Select in base a isTypeEditing */}
                 {isTypeEditing ? (
                     <Select
@@ -445,12 +360,13 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         onClick={handleTypeLabelClick}
                         disabled={readOnly}
                         className={cn(
-                            "px-2 py-1 text-xs font-medium rounded border border-transparent",
-                            "hover:bg-gray-100 hover:border-gray-300 transition-colors flex-shrink-0",
+                            "text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0 border border-transparent rounded px-1",
+                            "hover:bg-gray-100 hover:border-gray-300 transition-colors",
                             readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
                         )}
+                        style={{ width: '120px' }}
                     >
-                        {getTypeLabel(cellType)}
+                        {getTypeLabel(cellType)}:
                     </button>
                 )}
 
@@ -538,9 +454,11 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
             {/* Date - solo per Reato e Fatto */}
             {cellType === 'reato-contestato' && (
                 <>
-                    {/* Data contestazione - label e picker attaccati */}
-                    <div className="flex items-center gap-1">
-                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data contestazione</span>
+                    {/* Data contestazione - label allineata a destra con gap uniforme */}
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                            Data Contestazione:
+                        </span>
                         {isContestationDateEditing ? (
                             <Popover open={contestationDateOpen} onOpenChange={(open) => {
                                 setContestationDateOpen(open)
@@ -596,9 +514,11 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         )}
                     </div>
 
-                    {/* Data evento - label e picker attaccati */}
-                    <div className="flex items-center gap-1">
-                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</span>
+                    {/* Data evento - label allineata a destra con gap uniforme */}
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                            Data Fatto:
+                        </span>
                         {isEventDateEditing ? (
                             <Popover open={eventDateOpen} onOpenChange={(open) => {
                                 setEventDateOpen(open)
@@ -657,8 +577,10 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
             )}
 
             {cellType === 'fatto' && (
-                <div className="flex items-center gap-1">
-                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</span>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                        Data Fatto:
+                    </span>
                     {isContestationDateEditing ? (
                         <Popover open={contestationDateOpen} onOpenChange={(open) => {
                             setContestationDateOpen(open)
