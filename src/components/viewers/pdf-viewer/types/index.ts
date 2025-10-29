@@ -91,3 +91,15 @@ export interface DrawerOption {
 	id: string
 	label: string
 }
+
+export interface PersistentSelection {
+	id: string
+	page: number
+	x0Pct: number
+	y0Pct: number
+	x1Pct: number
+	y1Pct: number
+	text: string
+	viewportBox: { x: number; y: number; w: number; h: number }
+	source?: string // nome documento
+}

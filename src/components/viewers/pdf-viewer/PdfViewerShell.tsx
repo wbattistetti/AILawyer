@@ -155,6 +155,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             selectedAnnot={shell.selectedAnnot}
             annots={shell.annots}
             draft={shell.draft}
+            persistentSelections={shell.persistentSelections}
+            setPersistentSelections={shell.setPersistentSelections}
             overlayRootsRef={shell.overlayRootsRef}
           />
 
@@ -204,6 +206,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       <ContextMenu
         contextMenu={shell.contextMenu}
         lastSelection={shell.lastSelection}
+        persistentSelections={shell.persistentSelections}
         pageElsRef={shell.pageElsRef}
         onContextMenuChange={shell.setContextMenu}
         onOcrInspectOpenChange={shell.setOcrInspectOpen}

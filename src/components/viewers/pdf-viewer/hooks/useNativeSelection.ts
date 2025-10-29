@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { getSelectedTextInRect } from '../utils/textExtraction'
+import { cryptoRandom } from '../../../../utils/misc'
+import type { PersistentSelection } from '../types'
 
 // ✅ Helper functions per trans-page selection (da esperto)
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -36,6 +38,8 @@ export interface NativeSelectionHookProps {
 	setLastSelection: (selection: any) => void
 	setContextMenu: (menu: { x: number; y: number; visible: boolean }) => void
 	selectionHandledRef: React.MutableRefObject<boolean>
+	setPersistentSelections: (selections: any[]) => void
+	docId?: string
 }
 
 export const useNativeSelection = ({
@@ -52,7 +56,9 @@ export const useNativeSelection = ({
 	setExtractPage,
 	setLastSelection,
 	setContextMenu,
-	selectionHandledRef
+	selectionHandledRef,
+	setPersistentSelections,
+	docId
 }: NativeSelectionHookProps) => {
 
 	// Selection blocker function to prevent native text selection during custom drag
@@ -342,6 +348,25 @@ export const useNativeSelection = ({
 							setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
 						}
 
+						// ✅ CREA SELEZIONE PERSISTENTE invece di cancellare il draft
+						const persistentSelection: PersistentSelection = {
+							id: cryptoRandom(),
+							page: pageNum,
+							x0Pct: firstDraftBox.x0Pct,
+							y0Pct: firstDraftBox.y0Pct,
+							x1Pct: firstDraftBox.x1Pct,
+							y1Pct: firstDraftBox.y1Pct,
+							text: text || '',
+							viewportBox: viewportBox,
+							source: docId ? `Documento ${docId}` : undefined
+						}
+
+						setPersistentSelections((prev) => [...prev, persistentSelection])
+
+						// Mantieni il draft visibile come selezione persistente
+						// Non chiamare setDraft(null) qui - il rettangolo rimane visibile
+						// Il draft verrà rimosso dopo che la selezione persistente è stata renderizzata
+
 						// Apri il context menu invece del dialog
 						selectionHandledRef.current = true
 						setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
@@ -349,11 +374,11 @@ export const useNativeSelection = ({
 					} catch (error) {
 						console.error('[DRAG][EXTRACT][ERROR]', error)
 					} finally {
-						// ✅ NATIVE: rimuovi il rettangolo SOLO per single-page
-						if (!lastDraftBoxRef.current || lastDraftBoxRef.current.length <= 1) {
+						// ✅ PULISCI IL DRAFT dopo aver creato la selezione persistente
+						// Usa un piccolo delay per permettere al render della selezione persistente
+						setTimeout(() => {
 							try { setDraft(null) } catch { }
-						} else {
-						}
+						}, 100)
 
 						// Pulisci sempre i refs
 						lastDraftBoxRef.current = null
@@ -640,7 +665,7 @@ export const useNativeSelection = ({
 			document.removeEventListener('mousemove', onDragMove, true)
 			document.removeEventListener('keydown', onKey, true)
 		}
-	}, [selectMode, selectKind, extractOpen, setDraft, setExtractPos, setExtractPage, setLastSelection, setContextMenu, handleSelection])
+	}, [selectMode, selectKind, extractOpen, setDraft, setExtractPos, setExtractPage, setLastSelection, setContextMenu, handleSelection, setPersistentSelections, docId])
 
 	return {
 		isSelectingRef,

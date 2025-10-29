@@ -97,7 +97,9 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     setExtractPage: viewerState.setExtractPage,
     setLastSelection: viewerState.setLastSelection,
     setContextMenu: viewerState.setContextMenu,
-    selectionHandledRef
+    selectionHandledRef,
+    setPersistentSelections: viewerState.setPersistentSelections,
+    docId
   })
 
   // Public interface
@@ -192,6 +194,10 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     isSelectingRef,
     lastNativeRangeRef,
     lastDraftBoxRef,
-    suppressClearRef
+    suppressClearRef,
+
+    // Persistent selections
+    persistentSelections: viewerState.persistentSelections,
+    setPersistentSelections: viewerState.setPersistentSelections
   }
 }

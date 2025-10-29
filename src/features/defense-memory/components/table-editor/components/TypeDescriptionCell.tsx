@@ -12,6 +12,124 @@ import { Calendar as CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 
+// Lista di atti comuni nel sistema giudiziario
+const ATTI_COMUNI = [
+    'decreto di archiviazione',
+    'decreto di citazione',
+    'decreto di rinvio a giudizio',
+    'mandato di comparizione',
+    'mandato di cattura',
+    'mandato di perquisizione',
+    'mandato di sequestro',
+    'ordinanza di custodia cautelare',
+    'ordinanza di applicazione della misura cautelare',
+    'ordinanza di proroga della misura cautelare',
+    'ordinanza di revoca della misura cautelare',
+    'ordinanza di scarcerazione',
+    'ordinanza di controllo',
+    'ordinanza di sorveglianza speciale',
+    'ordinanza di allontanamento dalla casa familiare',
+    'ordinanza di divieto di avvicinamento',
+    'ordinanza di divieto di comunicazione',
+    'ordinanza di obbligo di dimora',
+    'ordinanza di obbligo di presentazione',
+    'sentenza',
+    'sentenza di primo grado',
+    'sentenza di secondo grado',
+    'sentenza di condanna',
+    'sentenza di assoluzione',
+    'sentenza di non luogo a procedere',
+    'sentenza di estinzione del reato',
+    'sentenza di archiviazione',
+    'verbale di interrogatorio',
+    'verbale di audizione',
+    'verbale di perquisizione',
+    'verbale di sequestro',
+    'verbale di arresto',
+    'verbale di fermo',
+    'verbale di identificazione',
+    'verbale di accertamento',
+    'verbale di constatazione',
+    'verbale di consegna',
+    'verbale di notifica',
+    'verbale di garanzia',
+    'verbale di contestazione',
+    'notifica di avviso di garanzia',
+    'notifica di avviso di conclusione delle indagini',
+    'notifica di avviso di udienza',
+    'notifica di avviso di sentenza',
+    'procura',
+    'procura generale',
+    'procura speciale',
+    'procura a procedere',
+    'procura a querelare',
+    'ricorso',
+    'ricorso per cassazione',
+    'ricorso per revisione',
+    'ricorso per impugnazione',
+    'atto di citazione',
+    'atto di opposizione',
+    'atto di costituzione di parte civile',
+    'atto di querela',
+    'atto di denuncia',
+    'atto di precisazione',
+    'atto di integrazione',
+    'atto di deposito',
+    'atto di notifica',
+    'atto di cancellazione',
+    'atto di archiviazione',
+    'atto di rinvio',
+    'atto di stralcio',
+    'atto di separazione',
+    'atto di riunione',
+    'atto di rimessione',
+    'atto di remissione',
+    'atto di rinuncia',
+    'atto di transazione',
+    'atto di composizione',
+    'atto di conciliazione',
+    'atto di mediazione',
+    'atto di arbitrato',
+    'atto di compromesso',
+    'atto di lodo',
+    'atto di esecuzione',
+    'atto di pignoramento',
+    'atto di sequestro',
+    'atto di vendita',
+    'atto di assegnazione',
+    'atto di divisione',
+    'atto di unione',
+    'atto di fusione',
+    'atto di scissione',
+    'atto di trasformazione',
+    'atto di modifica',
+    'atto di variazione',
+    'atto di integrazione',
+    'atto di rettifica',
+    'atto di correzione',
+    'atto di annullamento',
+    'atto di revoca',
+    'atto di risoluzione',
+    'atto di rescissione',
+    'atto di nullità',
+    'atto di inesistenza',
+    'atto di inefficacia',
+    'atto di invalidità',
+    'atto di illegittimità',
+    'atto di incostituzionalità',
+    'atto di disapplicazione',
+    'atto di disapplicazione parziale',
+    'atto di disapplicazione totale',
+    'atto di disapplicazione integrale',
+    'atto di disapplicazione sostanziale',
+    'atto di disapplicazione formale',
+    'atto di disapplicazione procedurale',
+    'atto di disapplicazione sostanziale e formale',
+    'atto di disapplicazione sostanziale e procedurale',
+    'atto di disapplicazione formale e procedurale',
+    'atto di disapplicazione sostanziale, formale e procedurale'
+]
+
 interface TypeDescriptionCellProps {
     cellType: CellType
     description: string
@@ -183,7 +301,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                     <Combobox
                         value={description}
                         onChange={handleDescriptionChange}
-                        suggestions={reatoSuggestions}
+                        suggestions={REATI_PENALI}
                         placeholder="Digita il nome del reato..."
                         readOnly={readOnly}
                     />
@@ -192,7 +310,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                     <Combobox
                         value={description}
                         onChange={handleDescriptionChange}
-                        suggestions={attiSuggestions}
+                        suggestions={ATTI_COMUNI}
                         placeholder="Digita il nome dell'atto..."
                         readOnly={readOnly}
                     />

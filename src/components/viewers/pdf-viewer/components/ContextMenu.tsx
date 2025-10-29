@@ -1,9 +1,12 @@
 import React from 'react'
 import { ContextMenuState } from '../types'
+import type { PersistentSelection } from '../types'
+import { extractClipboardManager } from '../../../../utils/extractClipboard'
 
 interface ContextMenuProps {
 	contextMenu: ContextMenuState
 	lastSelection: any
+	persistentSelections: PersistentSelection[]
 	pageElsRef: React.MutableRefObject<Map<number, HTMLElement>>
 	onContextMenuChange: (menu: ContextMenuState) => void
 	onOcrInspectOpenChange: (open: boolean) => void
@@ -15,6 +18,7 @@ interface ContextMenuProps {
 export const ContextMenu: React.FC<ContextMenuProps> = ({
 	contextMenu,
 	lastSelection,
+	persistentSelections,
 	pageElsRef,
 	onContextMenuChange,
 	onOcrInspectOpenChange,
@@ -22,69 +26,59 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 	onExtractPageChange,
 	onExtractOpenChange
 }) => {
-	const handleCreateExtract = () => {
-		console.log('🎬🎬🎬 [ContextMenu] CLICK CREA ESTRATTO! 🎬🎬🎬')
-		console.log('🎬 [ContextMenu] lastSelection:', !!lastSelection)
-
+	const handleCreateTask = () => {
+		console.log('🎬 [ContextMenu] Create task clicked')
 		onContextMenuChange({ x: 0, y: 0, visible: false })
-		onOcrInspectOpenChange(false) // Mantieni nascosto durante creazione estratto
+		// TODO: Implementare logica per creare task
+	}
 
-		// ✅ POSIZIONAMENTO INTELLIGENTE: evita di coprire il testo selezionato
-		const vb = lastSelection?.viewportBox
-		if (vb && pageElsRef.current.has(lastSelection.pdfPageNumber)) {
-			const pageLayer = pageElsRef.current.get(lastSelection.pdfPageNumber)!
-			const pr = pageLayer.getBoundingClientRect()
+	const handleCopyExtract = () => {
+		console.log('🎬 [ContextMenu] Copia estratto clicked')
 
-			const panelW = 480, panelH = 300
-			const windowW = window.innerWidth || 1200
-			const windowH = window.innerHeight || 800
-
-			// Coordinate della selezione nel viewport
-			const selectionLeft = pr.left + vb.x
-			const selectionTop = pr.top + vb.y
-			const selectionRight = selectionLeft + vb.w
-			const selectionBottom = selectionTop + vb.h
-
-			// Calcola posizione X (centrata sulla selezione)
-			let px = selectionLeft + (vb.w - panelW) / 2
-			px = Math.max(8, Math.min(px, windowW - panelW - 8))
-
-			// ✅ LOGICA POSIZIONAMENTO Y INTELLIGENTE
-			let py: number
-			const spaceBelow = windowH - (selectionBottom + 20) // 20px di margine
-			const spaceAbove = selectionTop - 20 // 20px di margine
-
-			if (spaceBelow >= panelH) {
-				// ✅ SOTTO la selezione (preferenza)
-				py = Math.min(selectionBottom + 20, windowH - panelH - 20) // ← LIMITE INFERIORE
-			} else if (spaceAbove >= panelH) {
-				// ✅ SOPRA la selezione
-				py = Math.max(8, selectionTop - panelH - 20) // ← LIMITE SUPERIORE
-			} else {
-				// ✅ SOPRA la selezione (anche se copre parzialmente)
-				py = Math.max(8, selectionTop - panelH - 20)
-			}
-
-			// Assicura che il form rimanga nel viewport
-			py = Math.max(8, Math.min(py, windowH - panelH - 8))
-
-			// DEBUG: Log dettagliato coordinate per identificare problema posizionamento
-			console.log('[CONTEXT-MENU-POSITION]', {
-				selectionTop, selectionBottom,
-				windowH, panelH,
-				spaceBelow, spaceAbove,
-				finalPosition: { x: px, y: py },
-				viewportBox: vb,
-				pageRect: { top: pr.top, bottom: pr.bottom }
-			})
-
-			onExtractPosChange({ x: px, y: py })
-			onExtractPageChange(lastSelection.pdfPageNumber)
+		if (!lastSelection) {
+			console.warn('[ContextMenu] Nessuna selezione disponibile')
+			onContextMenuChange({ x: 0, y: 0, visible: false })
+			return
 		}
 
-		console.log('🎬 [ContextMenu] Chiamando onExtractOpenChange(true)')
-		onExtractOpenChange(true)
-		console.log('🎬 [ContextMenu] onExtractOpenChange chiamato!')
+		const pageNum = lastSelection.pdfPageNumber || 1
+		const pageLayer = pageElsRef.current.get(pageNum)
+
+		// Calcola le coordinate percentuali dal viewportBox se disponibile
+		let bbox = { x0Pct: 0, y0Pct: 0, x1Pct: 0, y1Pct: 0 }
+
+		if (lastSelection.viewportBox && pageLayer) {
+			const pr = pageLayer.getBoundingClientRect()
+			const vb = lastSelection.viewportBox
+			bbox = {
+				x0Pct: vb.x / pr.width,
+				y0Pct: vb.y / pr.height,
+				x1Pct: (vb.x + vb.w) / pr.width,
+				y1Pct: (vb.y + vb.h) / pr.height
+			}
+		} else if (persistentSelections.length > 0) {
+			// Usa l'ultima selezione persistente se disponibile
+			const lastPersistent = persistentSelections[persistentSelections.length - 1]
+			if (lastPersistent.page === pageNum) {
+				bbox = {
+					x0Pct: lastPersistent.x0Pct,
+					y0Pct: lastPersistent.y0Pct,
+					x1Pct: lastPersistent.x1Pct,
+					y1Pct: lastPersistent.y1Pct
+				}
+			}
+		}
+
+		// Copia l'estratto nella clipboard globale
+		const extractData = {
+			content: lastSelection.text || '',
+			source: lastSelection.source || 'Documento',
+			page: pageNum,
+			bbox
+		}
+
+		extractClipboardManager.copy(extractData)
+		onContextMenuChange({ x: 0, y: 0, visible: false })
 	}
 
 	if (!contextMenu.visible) return null
@@ -104,9 +98,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 				<div className="bg-white border border-gray-200 rounded-lg shadow-2xl p-3 min-w-[200px] pointer-events-auto">
 					<button
 						className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
-						onClick={handleCreateExtract}
+						onClick={handleCreateTask}
 					>
-						📄 Crea estratto
+						📋 Create task
+					</button>
+					<button
+						className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
+						onClick={handleCopyExtract}
+					>
+						📄 Copia estratto
 					</button>
 				</div>
 			</div>

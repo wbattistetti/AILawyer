@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import type { PersistentSelection } from '../types'
 
 interface UsePdfViewerStateReturn {
 	totalPages: number
@@ -69,6 +70,8 @@ interface UsePdfViewerStateReturn {
 	lastDraftBoxRef: React.MutableRefObject<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number } | null>
 	suppressClearRef: React.MutableRefObject<boolean>
 	resizingRef: React.MutableRefObject<boolean>
+	persistentSelections: PersistentSelection[]
+	setPersistentSelections: (selections: PersistentSelection[]) => void
 }
 
 export const usePdfViewerState = (): UsePdfViewerStateReturn => {
@@ -115,6 +118,7 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 	const lastDraftBoxRef = useRef<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number } | null>(null)
 	const suppressClearRef = useRef<boolean>(false)
 	const resizingRef = useRef<boolean>(false)
+	const [persistentSelections, setPersistentSelections] = useState<PersistentSelection[]>([])
 
 	return {
 		totalPages,
@@ -184,6 +188,8 @@ export const usePdfViewerState = (): UsePdfViewerStateReturn => {
 		searchQ,
 		setSearchQ,
 		matches,
-		setMatches
+		setMatches,
+		persistentSelections,
+		setPersistentSelections
 	}
 }
