@@ -56,6 +56,10 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	onSelectedAnnotChange,
 	onSelectionHandledChange
 }) => {
+	console.log('🎬🎬🎬 [ExtractDialog] DIALOG MONTATO! 🎬🎬🎬')
+	console.log('🎬 [ExtractDialog] extractOpen:', extractOpen)
+	console.log('🎬 [ExtractDialog] praticaId:', praticaId)
+	console.log('🎬 [ExtractDialog] lastSelection:', !!lastSelection)
 	// Stati per il nuovo layout
 	const [extractType, setExtractType] = useState<'reato' | 'motivazione' | 'contromotivazione'>('reato')
 	const [selectedParentId, setSelectedParentId] = useState<string | null>(null)
@@ -74,6 +78,23 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 		}
 	}, [extractOpen, praticaId])
 
+	// ✅ CORRETTO: Ascolta eventi per aggiornamenti real-time
+	useEffect(() => {
+		const handleExtractUpdate = () => {
+			if (extractOpen && praticaId) {
+				loadData()
+			}
+		}
+
+		window.addEventListener('app:extract-added', handleExtractUpdate)
+		window.addEventListener('app:extract-updated', handleExtractUpdate)
+
+		return () => {
+			window.removeEventListener('app:extract-added', handleExtractUpdate)
+			window.removeEventListener('app:extract-updated', handleExtractUpdate)
+		}
+	}, [extractOpen, praticaId])
+
 	const loadData = async () => {
 		if (!praticaId) return
 
@@ -83,9 +104,9 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 			const clientiResponse = await api.getClientiByPratica(praticaId)
 			setClienti(clientiResponse.clienti)
 
-			// Carica estratti esistenti
-			const estrattiResponse = await api.getEstrattiByPratica(praticaId)
-			setEstratti(estrattiResponse.estratti)
+			// ✅ CORRETTO: Carica SOLO da memoria globale (pratica non salvata)
+			const pendingExtracts = (window as any).__pendingExtracts as Array<any> || []
+			setEstratti(pendingExtracts)
 
 			// Se c'è un solo cliente, selezionalo automaticamente
 			if (clientiResponse.clienti.length === 1) {
@@ -224,19 +245,27 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 				clientiIds: selectedClientIds
 			}
 
-			// Salva nel database
-			await api.createEstratto(estrattoData)
-
-			// Aggiorna la lista locale
+			// ✅ CORRETTO: Salva SOLO in memoria globale (non nel DB)
 			const newEstratto = {
 				id: `tmp:${Date.now()}`,
 				...estrattoData,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString()
 			}
+
+			// Inizializza array se non esiste
+			if (!(window as any).__pendingExtracts) {
+				(window as any).__pendingExtracts = []
+			}
+
+			// Aggiungi alla memoria globale
+			(window as any).__pendingExtracts.push(newEstratto)
+
+			// Aggiorna la lista locale
 			setEstratti(prev => [newEstratto, ...prev])
 
-			console.log('Estratto salvato con successo:', estrattoData)
+			console.log('Estratto salvato in memoria:', estrattoData)
+			console.log('Estratti in memoria globale:', (window as any).__pendingExtracts)
 
 		} catch (error) {
 			console.error('Errore nel salvataggio estratto:', error)

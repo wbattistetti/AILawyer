@@ -54,7 +54,7 @@ export const useNativeSelection = ({
 	setContextMenu,
 	selectionHandledRef
 }: NativeSelectionHookProps) => {
-	
+
 	// Selection blocker function to prevent native text selection during custom drag
 	const selectionBlocker = useCallback(() => {
 		if (!isSelectingRef.current) return;
@@ -77,7 +77,7 @@ export const useNativeSelection = ({
 		// Logica per gestire la selezione nativa
 		try {
 			console.log('[NATIVE][event] selectionchange handler')
-		} catch {}
+		} catch { }
 	}, [])
 
 	useEffect(() => {
@@ -90,11 +90,11 @@ export const useNativeSelection = ({
 
 		const onMouseDown = (ev: MouseEvent) => {
 			if (extractOpen) return
-			
+
 			const x = ev.clientX
 			const y = ev.clientY
 			const hostR = host.getBoundingClientRect()
-			
+
 			if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) return
 
 			// Activate native selection suppression
@@ -109,18 +109,18 @@ export const useNativeSelection = ({
 			// Trova la pagina del mouse down
 			let pn = 0
 			const holders = Array.from((host.querySelectorAll('[data-page-number]') as NodeListOf<HTMLElement>))
-			
+
 			for (const h of holders) {
 				const layer = h.querySelector('.rpv-core__page-layer') as HTMLElement | null
 				if (!layer) continue
 				const r = layer.getBoundingClientRect()
 				const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
-				if (inside) { 
+				if (inside) {
 					const parsed = parseInt(h.getAttribute('data-page-number') || '', 10)
-					if (Number.isFinite(parsed) && parsed > 0) { 
+					if (Number.isFinite(parsed) && parsed > 0) {
 						pn = parsed
-						break 
-					} 
+						break
+					}
 				}
 			}
 
@@ -138,12 +138,12 @@ export const useNativeSelection = ({
 					if (!layer) continue
 					const r = layer.getBoundingClientRect()
 					const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
-					if (inside) { 
+					if (inside) {
 						const parsed = parseInt(h.getAttribute('data-page-number') || '', 10)
-						if (Number.isFinite(parsed) && parsed > 0) { 
+						if (Number.isFinite(parsed) && parsed > 0) {
 							pn = parsed
-							break 
-						} 
+							break
+						}
 					}
 				}
 			}
@@ -159,92 +159,75 @@ export const useNativeSelection = ({
 					const ay = (y - r.top) / r.height
 					mouseDownPosRef.current = { xPct: ax, yPct: ay }
 				}
-			} catch {}
+			} catch { }
 
-			try { 
-				console.log('[NATIVE][event] mousedown start selecting', { mouseDownPage: mouseDownPageRef.current }) 
-			} catch {}
+			try {
+				console.log('[NATIVE][event] mousedown start selecting', { mouseDownPage: mouseDownPageRef.current })
+			} catch { }
 		}
 
 		const onMouseUp = async (ev: MouseEvent) => {
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
 			if (ev.clientX < hostR.left || ev.clientX > hostR.right || ev.clientY < hostR.top || ev.clientY > hostR.bottom) return
-			if (extractOpen) { 
-				try { console.log('[NATIVE][mouseup] ignored: extractOpen') } catch {}
-				return 
+			if (extractOpen) {
+				try { console.log('[NATIVE][mouseup] ignored: extractOpen') } catch { }
+				return
 			}
 			if (timer) window.clearTimeout(timer)
-			
+
 			console.log('[NATIVE][DEBUG] MouseUp - isSelecting:', isSelectingRef.current, 'removing is-dragging class')
-			
+
 			// Deactivate native selection suppression
 			document.removeEventListener('selectionchange', selectionBlocker, true)
 			host.classList.remove('rpv--suppress-native-select')
-			
+
 			// Rimuovi classe dragging
 			if (hostRef.current) {
 				hostRef.current.classList.remove('is-dragging')
 			}
-			
+
 			// Log posizione mouse
-			console.log('[NATIVE][event] mouseup within viewer', { 
-				x: ev.clientX, y: ev.clientY, 
-				wasSelecting: isSelectingRef.current 
+			console.log('[NATIVE][event] mouseup within viewer', {
+				x: ev.clientX, y: ev.clientY,
+				wasSelecting: isSelectingRef.current
 			})
-			
+
 			// Se stava selezionando, gestisci fine drag
 			if (isSelectingRef.current) {
-				console.log('[DRAG][END]', { 
-					hasDraftBox: !!lastDraftBoxRef.current, 
-					draftBoxes: lastDraftBoxRef.current 
-				})
-				
 				if (lastDraftBoxRef.current && lastDraftBoxRef.current.length > 0) {
-					console.log('[DRAG][END] Processing draft boxes:', lastDraftBoxRef.current)
-					
 					// Per MVP: usa solo il primo box (pagina originale)
 					const firstBox = lastDraftBoxRef.current[0]
-					console.log('[DRAG][EXTRACT][START]', { 
-						pageNum: firstBox.page, 
-						viewportBox: firstBox, 
-						draftBox: firstBox 
-					})
-					
+
 					// ✅ NUOVA LOGICA: Usa le coordinate del draft box invece di window.getSelection()
 					const draftBoxes = lastDraftBoxRef.current
-					console.log('[DRAG][END]', { 
-						hasDraftBox: !!draftBoxes,
-						draftBoxes
-					})
-					
+
 					if (!draftBoxes || draftBoxes.length === 0) {
-						console.warn('[DRAG][END] No draft box saved, skipping extraction')
-						try { setDraft(null) } catch {}
+						try { setDraft(null) } catch { }
 						return
 					}
-					
+
 					try {
 						// Per compatibilità, prendi la prima pagina (MVP per trans-pagina verrà dopo)
 						const firstDraftBox = draftBoxes[0]
 						const pageNum = firstDraftBox.page
 						const pageLayer = pageElsRef.current.get(pageNum)
-						
+
 						if (!pageLayer) {
 							console.warn('[DRAG][END] No page layer found for page', pageNum)
-							try { setDraft(null) } catch {}
+							try { setDraft(null) } catch { }
 							return
 						}
-						
+
 						const textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
 						if (!textLayer) {
 							console.warn('[DRAG][END] No text layer found for page', pageNum)
-							try { setDraft(null) } catch {}
+							try { setDraft(null) } catch { }
 							return
 						}
-						
+
 						const pr = pageLayer.getBoundingClientRect()
-						
+
 						// Converti percentuali in coordinate pixel
 						const viewportBox = {
 							x: firstDraftBox.x0Pct * pr.width,
@@ -252,22 +235,17 @@ export const useNativeSelection = ({
 							w: (firstDraftBox.x1Pct - firstDraftBox.x0Pct) * pr.width,
 							h: (firstDraftBox.y1Pct - firstDraftBox.y0Pct) * pr.height
 						}
-						
-						console.log('[DRAG][EXTRACT][START]', { pageNum, viewportBox, draftBox: firstDraftBox })
-						
+
+
 						// Estrai il testo usando le coordinate del rettangolo
 						const { text } = await getSelectedTextInRect(textLayer, viewportBox)
-						
-						console.log('[DRAG][EXTRACT][TEXT]', { 
-							textLength: text.length, 
-							textPreview: text.substring(0, 100)
-						})
-						
+
+
 						// ✅ NUOVO: Crea selezione nativa programmaticamente dalle coordinate del rettangolo
 						try {
 							const textLayerRect = textLayer.getBoundingClientRect()
 							const spans = Array.from(textLayer.querySelectorAll<HTMLElement>('span'))
-							
+
 							const spansInBox: HTMLElement[] = []
 							for (const span of spans) {
 								const r = span.getBoundingClientRect()
@@ -275,19 +253,19 @@ export const useNativeSelection = ({
 								const yBot = r.bottom - textLayerRect.top
 								const xLeft = r.left - textLayerRect.left
 								const xRight = r.right - textLayerRect.left
-								
+
 								// Controlla se lo span interseca il rettangolo
-								const overlap = !(xRight < viewportBox.x || xLeft > (viewportBox.x + viewportBox.w) || 
-												 yBot < viewportBox.y || yTop > (viewportBox.y + viewportBox.h))
-								
+								const overlap = !(xRight < viewportBox.x || xLeft > (viewportBox.x + viewportBox.w) ||
+									yBot < viewportBox.y || yTop > (viewportBox.y + viewportBox.h))
+
 								if (overlap) spansInBox.push(span)
 							}
-							
-							console.log('[NATIVE-SEL][CREATE]', { 
+
+							console.log('[NATIVE-SEL][CREATE]', {
 								spansFound: spansInBox.length,
 								boxCoords: viewportBox
 							})
-							
+
 							if (spansInBox.length > 0) {
 								// Ordina gli span per posizione (top -> bottom, left -> right)
 								spansInBox.sort((a, b) => {
@@ -297,25 +275,25 @@ export const useNativeSelection = ({
 									if (Math.abs(diffY) > 5) return diffY // Diversa riga
 									return (ra.left - textLayerRect.left) - (rb.left - textLayerRect.left) // Stessa riga, ordina per x
 								})
-								
+
 								// Crea Range dal primo all'ultimo span
 								const range = document.createRange()
 								const firstSpan = spansInBox[0]
 								const lastSpan = spansInBox[spansInBox.length - 1]
-								
+
 								// Seleziona dall'inizio del primo span alla fine dell'ultimo
 								const firstNode = firstSpan.firstChild || firstSpan
 								const lastNode = lastSpan.lastChild || lastSpan
-								
+
 								range.setStart(firstNode, 0)
 								range.setEnd(lastNode, lastNode.textContent?.length || 0)
-								
+
 								// Applica la selezione
 								const sel = window.getSelection()
 								if (sel) {
 									sel.removeAllRanges()
 									sel.addRange(range)
-									console.log('[NATIVE-SEL][APPLIED]', { 
+									console.log('[NATIVE-SEL][APPLIED]', {
 										selectedText: sel.toString().substring(0, 80),
 										rangeText: range.toString().substring(0, 80)
 									})
@@ -326,17 +304,17 @@ export const useNativeSelection = ({
 						} catch (err) {
 							console.error('[NATIVE-SEL][ERROR]', err)
 						}
-						
+
 						// Calcola posizione pannello
 						const panelW = 460, panelH = 260
 						let px = pr.left + viewportBox.x + (viewportBox.w - panelW) / 2
 						let py = pr.top + viewportBox.y + (viewportBox.h - panelH) / 2
-						px = Math.max(8, Math.min(px, (window.innerWidth||1200) - panelW - 8))
-						py = Math.max(8, Math.min(py, (window.innerHeight||800) - panelH - 8))
-						
+						px = Math.max(8, Math.min(px, (window.innerWidth || 1200) - panelW - 8))
+						py = Math.max(8, Math.min(py, (window.innerHeight || 800) - panelH - 8))
+
 						setExtractPos({ x: px, y: py })
 						setExtractPage(pageNum)
-						
+
 						// Calcola PDF coordinates
 						try {
 							if (pdfDocRef.current) {
@@ -347,15 +325,14 @@ export const useNativeSelection = ({
 								const vp = page.getViewport({ scale })
 								const [x0, y0] = vp.convertToPdfPoint(viewportBox.x, viewportBox.y + viewportBox.h)
 								const [x1, y1] = vp.convertToPdfPoint(viewportBox.x + viewportBox.w, viewportBox.y)
-								
-								const selection = { 
-									pdfPageNumber: pageNum, 
-									bboxPdf: { x0, y0, x1, y1 }, 
-									viewportBox, 
-									text 
+
+								const selection = {
+									pdfPageNumber: pageNum,
+									bboxPdf: { x0, y0, x1, y1 },
+									viewportBox,
+									text
 								}
-								
-								console.log('[DRAG][EXTRACT][SET-SELECTION]', { hasText: !!text, textLen: text.length })
+
 								setLastSelection(selection)
 							} else {
 								setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
@@ -364,31 +341,28 @@ export const useNativeSelection = ({
 							console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
 							setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
 						}
-						
+
 						// Apri il context menu invece del dialog
 						selectionHandledRef.current = true
 						setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
-						
+
 					} catch (error) {
 						console.error('[DRAG][EXTRACT][ERROR]', error)
 					} finally {
 						// ✅ NATIVE: rimuovi il rettangolo SOLO per single-page
 						if (!lastDraftBoxRef.current || lastDraftBoxRef.current.length <= 1) {
-							try { setDraft(null) } catch {}
-							console.log('[DRAG][EXTRACT][NATIVE] Rimosso rettangolo single-page')
+							try { setDraft(null) } catch { }
 						} else {
-							console.log('[DRAG][EXTRACT][MULTI] Mantenendo draft multi-page visibile')
 						}
-						
+
 						// Pulisci sempre i refs
 						lastDraftBoxRef.current = null
 						mouseDownPageRef.current = null
 						mouseDownPosRef.current = null
 					}
 				} else {
-					console.log('[DRAG][END] No draft box saved, skipping extraction')
 				}
-				
+
 				// Reset flag
 				isSelectingRef.current = false
 			}
@@ -398,10 +372,10 @@ export const useNativeSelection = ({
 			if (timer) window.clearTimeout(timer)
 			// ignora gli update mentre si trascina, apri solo su mouseup
 			if (!isSelectingRef.current) {
-				try { console.log('[NATIVE][event] selectionchange (idle)') } catch {}
+				try { console.log('[NATIVE][event] selectionchange (idle)') } catch { }
 				timer = window.setTimeout(handleSelection, 30)
 			} else {
-				try { console.log('[NATIVE][event] selectionchange (drag)') } catch {}
+				try { console.log('[NATIVE][event] selectionchange (drag)') } catch { }
 				// Ignore while dragging to avoid flicker; we'll handle on mouseup
 			}
 		}
@@ -411,27 +385,27 @@ export const useNativeSelection = ({
 			if (!isSelectingRef.current || !mouseDownPageRef.current || !mouseDownPosRef.current) {
 				return
 			}
-			
+
 			try {
 				const layer = pageElsRef.current.get(mouseDownPageRef.current)
 				if (!layer) {
 					console.warn('[DRAG][MOVE][NO-LAYER]', { page: mouseDownPageRef.current })
 					return
 				}
-				
+
 				const r = layer.getBoundingClientRect()
 				const x = Math.max(0, Math.min((ev.clientX - r.left) / r.width, 1))
 				const y = Math.max(0, Math.min((ev.clientY - r.top) / r.height, 1))
-				
+
 				// ✅ DETECT CROSS-PAGE: Controlla se il mouse ha superato i bordi della pagina
 				const crossedRightBoundary = x >= 0.95 && ev.clientX > r.right
 				const crossedLeftBoundary = x <= 0.05 && ev.clientX < r.left
 				const crossedBottomBoundary = y >= 0.95 && ev.clientY > r.bottom
 				const crossedTopBoundary = y <= 0.05 && ev.clientY < r.top
-				
+
 				const draftBox = {
-					id: 'draft', 
-					page: mouseDownPageRef.current, 
+					id: 'draft',
+					page: mouseDownPageRef.current,
 					type: 'highlight' as const,
 					color: 'rgba(59,130,246,0.3)',
 					x0Pct: Math.min(mouseDownPosRef.current.xPct, x),
@@ -439,61 +413,61 @@ export const useNativeSelection = ({
 					x1Pct: Math.max(mouseDownPosRef.current.xPct, x),
 					y1Pct: Math.max(mouseDownPosRef.current.yPct, y)
 				}
-				
+
 				// Se crossa un bordo, inizia la logica trans-pagina
 				if (crossedRightBoundary || crossedLeftBoundary || crossedBottomBoundary || crossedTopBoundary) {
-					console.log('[TRANS-PAGE][START] Mouse crossed boundary', { 
+					console.log('[TRANS-PAGE][START] Mouse crossed boundary', {
 						crossedRightBoundary, crossedLeftBoundary, crossedBottomBoundary, crossedTopBoundary
 					})
-					
+
 					// 1. DETERMINA DIREZIONE
-					const direction = crossedRightBoundary ? 'right' : 
-									 crossedLeftBoundary ? 'left' :
-									 crossedBottomBoundary ? 'down' : 'up'
-					
+					const direction = crossedRightBoundary ? 'right' :
+						crossedLeftBoundary ? 'left' :
+							crossedBottomBoundary ? 'down' : 'up'
+
 					// 2. TROVA PAGINA ADIACENTE (funzione helper)
 					const findAdjacentPage = (currentPage: number, dir: string): number | null => {
 						// Ottieni totalPages dal PDF document invece di parametro
 						const pdfDoc = pdfDocRef.current
 						const totalPages = pdfDoc?.numPages || 0
-						
+
 						if (dir === 'right' || dir === 'down') return currentPage + 1 <= totalPages ? currentPage + 1 : null
 						if (dir === 'left' || dir === 'up') return currentPage - 1 >= 1 ? currentPage - 1 : null
 						return null
 					}
-					
+
 					const adjacentPage = findAdjacentPage(mouseDownPageRef.current!, direction)
-					console.log('[TRANS-PAGE][ADJACENT] Found page', { 
-						from: mouseDownPageRef.current, 
+					console.log('[TRANS-PAGE][ADJACENT] Found page', {
+						from: mouseDownPageRef.current,
 						to: adjacentPage,
-						direction 
+						direction
 					})
-					
+
 					if (adjacentPage) {
-						console.log('[TRANS-PAGE][ADJACENT] Found adjacent page', { 
-							from: mouseDownPageRef.current, 
+						console.log('[TRANS-PAGE][ADJACENT] Found adjacent page', {
+							from: mouseDownPageRef.current,
 							to: adjacentPage,
-							direction 
+							direction
 						})
-						
+
 						// ✅ SOLUZIONE ESPERTO: Usa helper per calcolare coordinate intelligenti
 						const { xPct: mx, yPct: my, ok } = getMousePctOnPage(hostRef.current!, adjacentPage, ev.clientX, ev.clientY);
 						if (!ok) {
 							console.log('[TRANS-PAGE][NO-PAGE-LAYER] Cannot get mouse position on adjacent page');
 							return;
 						}
-						
+
 						// ✅ CORRETTO: y0Pct=0 quando scendi, y1Pct=1 quando sali
 						const base = (direction === 'down')
 							? { y0Pct: 0, y1Pct: my }    // Dall'INIZIO fino al mouse
 							: (direction === 'up')
-							? { y0Pct: my, y1Pct: 1 }   // Dal mouse fino alla FINE
-							: (direction === 'right')
-							? { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: 0, x1Pct: mx }
-							: { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: mx, x1Pct: 1 };
-						
+								? { y0Pct: my, y1Pct: 1 }   // Dal mouse fino alla FINE
+								: (direction === 'right')
+									? { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: 0, x1Pct: mx }
+									: { y0Pct: draftBox.y0Pct, y1Pct: draftBox.y1Pct, x0Pct: mx, x1Pct: 1 };
+
 						const newDraftBox = normBoxY({
-							id: `draft-${adjacentPage}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+							id: `draft-${adjacentPage}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
 							page: adjacentPage,
 							type: 'highlight',
 							color: 'rgba(59,130,246,0.3)',
@@ -502,7 +476,7 @@ export const useNativeSelection = ({
 							...base
 						} as any);
 						console.log('[TRANS-PAGE][NEW-BOX] Created', newDraftBox)
-						
+
 						// ✅ FORZA CREAZIONE OVERLAY ROOT PER PAGINA ADIACENTE (HOT-FIX ESPERTO)
 						const adjacentRoot = overlayRootsRef.current.get(adjacentPage);
 						if (!adjacentRoot && hostRef.current) {
@@ -513,17 +487,17 @@ export const useNativeSelection = ({
 							if (pageEl) {
 								// ✅ Append nel layer giusto: .rpv-core__page-layer
 								const pageLayer = pageEl.querySelector('.rpv-core__page-layer') as HTMLElement;
-								
+
 								// LOG 1: Verifica se trova il page layer
 								console.log('[OVERLAY][DEBUG] Looking for page layer:', adjacentPage)
 								console.log('[OVERLAY][DEBUG] Page layer found:', !!pageLayer, pageLayer)
-								
+
 								if (!pageLayer) {
 									console.log('[OVERLAY][DEBUG] No page layer found, checking page element:', pageEl)
 									return;
 								}
 
-								// LOG 2: Verifica dimensioni PRIMA di creare root  
+								// LOG 2: Verifica dimensioni PRIMA di creare root
 								const prBefore = pageLayer.getBoundingClientRect()
 								console.log('[OVERLAY][DEBUG] Page layer rect before:', {
 									width: prBefore.width,
@@ -560,7 +534,7 @@ export const useNativeSelection = ({
 								console.log('[OVERLAY][DEBUG] Root computed z-index:', window.getComputedStyle(newRoot).zIndex)
 							}
 						}
-						
+
 						// 4. AGGIUNGI AL ARRAY (supporto 2 pagine max per MVP)
 						lastDraftBoxRef.current = [draftBox, newDraftBox]
 						console.log('[TRANS-PAGE][SAVED] Draft boxes:', lastDraftBoxRef.current)
@@ -568,12 +542,12 @@ export const useNativeSelection = ({
 						console.log('[TRANS-PAGE][NO-ADJACENT] No adjacent page found')
 					}
 				}
-				
+
 				// ✅ NUOVO: Se copre più righe, estendi fino alla fine del testo (non fino al bordo pagina)
 				const boxHeightPx = (draftBox.y1Pct - draftBox.y0Pct) * r.height
 				const typicalLineHeight = 20 // pixel (altezza tipica di una riga)
 				const isMultiLine = boxHeightPx > (typicalLineHeight * 1.5)
-				
+
 				if (isMultiLine) {
 					// Trova gli span nelle righe coperte per calcolare bounds reali del testo
 					try {
@@ -581,20 +555,20 @@ export const useNativeSelection = ({
 						if (textLayer) {
 							const textLayerRect = textLayer.getBoundingClientRect()
 							const spans = Array.from(textLayer.querySelectorAll<HTMLElement>('span'))
-							
+
 							let minX = Infinity
 							let maxX = -Infinity
-							
+
 							const y0Px = draftBox.y0Pct * r.height
 							const y1Px = draftBox.y1Pct * r.height
-							
+
 							for (const span of spans) {
 								const spanRect = span.getBoundingClientRect()
 								const spanY = spanRect.top - textLayerRect.top
-								
+
 								// Controlla se lo span è nelle righe coperte (solo Y, ignora X)
 								const inYRange = spanY >= (y0Px - 5) && spanY <= (y1Px + 5)
-								
+
 								if (inYRange && span.textContent?.trim()) {
 									const spanLeft = spanRect.left - textLayerRect.left
 									const spanRight = spanRect.right - textLayerRect.left
@@ -602,22 +576,15 @@ export const useNativeSelection = ({
 									maxX = Math.max(maxX, spanRight)
 								}
 							}
-							
+
 							// Se abbiamo trovato span, usa i loro bounds
 							if (minX !== Infinity && maxX !== -Infinity) {
 								draftBox.x0Pct = Math.max(0, minX / r.width)
 								draftBox.x1Pct = Math.min(1, maxX / r.width)
-								console.log('[DRAG][MULTI-LINE] Extended to text bounds', { 
-									minX: minX.toFixed(1), 
-									maxX: maxX.toFixed(1), 
-									x0Pct: draftBox.x0Pct.toFixed(3), 
-									x1Pct: draftBox.x1Pct.toFixed(3) 
-								})
 							} else {
 								// Fallback: estendi a tutta la larghezza
 								draftBox.x0Pct = 0
 								draftBox.x1Pct = 1
-								console.log('[DRAG][MULTI-LINE] No spans found, using full width')
 							}
 						}
 					} catch (err) {
@@ -627,37 +594,19 @@ export const useNativeSelection = ({
 						draftBox.x1Pct = 1
 					}
 				}
-				
-				console.log('[DRAG][MOVE][SET-DRAFT]', {
-					page: draftBox.page,
-					box: { x0: draftBox.x0Pct.toFixed(3), y0: draftBox.y0Pct.toFixed(3), x1: draftBox.x1Pct.toFixed(3), y1: draftBox.y1Pct.toFixed(3) },
-					hasRoot: !!overlayRootsRef.current.get(draftBox.page),
-					boxHeightPx: boxHeightPx.toFixed(1),
-					isMultiLine
-				})
-				
+
+
 				// ✅ Aggiorna solo se non è già una selezione multi-pagina
 				if (!lastDraftBoxRef.current || lastDraftBoxRef.current.length <= 1) {
 					lastDraftBoxRef.current = [draftBox]
 				} else {
-					console.log('[DRAG][MOVE] Preserving multi-page selection:', lastDraftBoxRef.current.length, 'pages')
 				}
-				
+
 				// Mostra box stabile durante drag
-				console.log('[DRAG][MOVE][BEFORE-SET-DRAFT]', {
-					hasMultiPage: !!(lastDraftBoxRef.current && lastDraftBoxRef.current.length > 1),
-					multiPageCount: lastDraftBoxRef.current?.length || 0,
-					currentDraftBox: draftBox
-				})
-				
+
 				if (lastDraftBoxRef.current && lastDraftBoxRef.current.length > 1) {
-					console.log('[DRAG][MOVE][SET-DRAFT-MULTI]', {
-						pages: lastDraftBoxRef.current.length,
-						boxes: lastDraftBoxRef.current.map(b => ({ page: b.page, x0: b.x0Pct, y0: b.y0Pct }))
-					})
 					setDraft(lastDraftBoxRef.current)  // ✅ Array completo per multi-page
 				} else {
-					console.log('[DRAG][MOVE][SET-DRAFT-SINGLE]', { page: draftBox.page })
 					setDraft(draftBox)  // ✅ Singolo box
 				}
 			} catch (err) {
@@ -665,14 +614,14 @@ export const useNativeSelection = ({
 			}
 		}
 
-		const onKey = (e: KeyboardEvent) => { 
-			if (e.key === 'Escape') { 
-				try { 
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				try {
 					const s = window.getSelection()
-					s && s.removeAllRanges() 
-				} catch {}
+					s && s.removeAllRanges()
+				} catch { }
 				// setSelectMode(false) - questo sarà gestito dal componente padre
-			} 
+			}
 		}
 
 		document.addEventListener('mousedown', onMouseDown, true)
@@ -680,10 +629,10 @@ export const useNativeSelection = ({
 		document.addEventListener('selectionchange', onSelChange, true)
 		document.addEventListener('mousemove', onDragMove, true)
 		document.addEventListener('keydown', onKey, true)
-		
-		try { console.log('[NATIVE][bind] listeners attached') } catch {}
-		
-		return () => { 
+
+		try { console.log('[NATIVE][bind] listeners attached') } catch { }
+
+		return () => {
 			if (timer) window.clearTimeout(timer)
 			document.removeEventListener('mousedown', onMouseDown, true)
 			document.removeEventListener('mouseup', onMouseUp, true)

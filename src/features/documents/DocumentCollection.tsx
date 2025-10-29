@@ -4,6 +4,8 @@ import { ThumbCard } from '../../components/viewers/ThumbCard'
 import { FileText, ScanText, Search, X, Loader2 } from 'lucide-react'
 import { SearchProvider } from '../../components/search/SearchProvider'
 import { SearchPanelTree } from '../../components/search/SearchPanelTree'
+import * as pdfjsLib from 'pdfjs-dist'
+import { api } from '../../lib/api'
 
 type DocItem = {
   id: string
@@ -16,6 +18,212 @@ type DocItem = {
   meta?: any
   ocrStatus?: string
   hasNativeText?: boolean
+}
+
+// ✅ CORREZIONE: Funzione per generare snippet contestuali
+function generateContextualSnippet(text: string, foundPos: number, queryLength: number): string {
+  // Trova l'inizio e la fine della riga contenente la match
+  let lineStart = foundPos;
+  let lineEnd = foundPos + queryLength;
+
+  // Trova l'inizio della riga (prima newline o inizio testo)
+  while (lineStart > 0 && text[lineStart - 1] !== '\n') {
+    lineStart--;
+  }
+
+  // Trova la fine della riga (dopo newline o fine testo)
+  while (lineEnd < text.length && text[lineEnd] !== '\n') {
+    lineEnd++;
+  }
+
+  // Estrai la riga completa
+  const fullLine = text.substring(lineStart, lineEnd).trim();
+
+  // Se la riga è troppo lunga, mostra solo il contesto intorno alla match
+  if (fullLine.length > 100) {
+    const contextStart = Math.max(0, foundPos - lineStart - 30);
+    const contextEnd = Math.min(fullLine.length, foundPos - lineStart + queryLength + 30);
+    return fullLine.substring(contextStart, contextEnd);
+  }
+
+  return fullLine;
+}
+
+// Funzione per ricerca client-side sui PDF con testo nativo
+async function searchInPdfDocuments(items: DocItem[], query: string): Promise<any> {
+  try {
+    // Configura PDF.js worker
+    const anyPdf: any = pdfjsLib as any;
+    if (anyPdf && anyPdf.GlobalWorkerOptions && !anyPdf.GlobalWorkerOptions.workerSrc) {
+      anyPdf.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js';
+    }
+
+    // Filtra solo PDF con testo nativo
+    const pdfTargets = items.filter(d =>
+      (d.mime?.includes('pdf') || d.filename.toLowerCase().endsWith('.pdf')) &&
+      d.hasNativeText
+    );
+
+
+    const groups: any[] = [];
+    const normalizedQuery = query.toLowerCase();
+
+    for (const doc of pdfTargets) {
+      try {
+        const fileUrl = api.getLocalFileUrl(doc.s3Key);
+
+        // Fetch PDF come ArrayBuffer
+        const res = await fetch(fileUrl);
+        const buf = await res.arrayBuffer();
+        const pdfDoc = await (pdfjsLib as any).getDocument({
+          data: new Uint8Array(buf),
+          disableWorker: false
+        }).promise;
+
+        const matches: any[] = [];
+        const totalPages = pdfDoc.numPages || 0;
+
+        // Cerca in ogni pagina
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          const page = await pdfDoc.getPage(pageNum);
+          const content = await page.getTextContent();
+          const items = content.items as any[];
+
+          // ✅ CORREZIONE: Ricostruisci le righe seguendo l'ordine visivo
+          const textItems: Array<{
+            str: string;
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+            charBoxes: Array<{ x: number; y: number; w: number; h: number }>;
+          }> = [];
+
+          // Estrai tutti gli elementi di testo con le loro coordinate
+          for (const item of items) {
+            const str = (item.str || '') as string;
+            if (!str.trim()) continue; // Salta elementi vuoti
+
+            const transform = item.transform;
+            const x = transform[4] as number;
+            const y = transform[5] as number;
+            const width = (item.width as number) || 0;
+            const height = (item.height as number) || Math.abs(transform[5] - (transform[5] - (item.height as number))) || 0;
+
+            // Calcola le bounding box per ogni carattere
+            const charBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
+            const charWidth = width / Math.max(1, str.length);
+
+            for (let i = 0; i < str.length; i++) {
+              charBoxes.push({
+                x: x + (charWidth * i),
+                y: y - height,
+                w: charWidth,
+                h: height
+              });
+            }
+
+            textItems.push({
+              str,
+              x,
+              y,
+              width,
+              height,
+              charBoxes
+            });
+          }
+
+          // ✅ CORREZIONE: Ordina per righe (Y) e poi per posizione orizzontale (X)
+          textItems.sort((a, b) => {
+            // Prima ordina per Y (righe), con una tolleranza per elementi sulla stessa riga
+            const yDiff = Math.abs(a.y - b.y);
+            if (yDiff > Math.max(a.height, b.height) * 0.5) {
+              return b.y - a.y; // Y decrescente (dall'alto verso il basso)
+            }
+            // Se sono sulla stessa riga, ordina per X (da sinistra a destra)
+            return a.x - b.x;
+          });
+
+          // ✅ CORREZIONE: Ricostruisci il testo seguendo l'ordine visivo
+          let textBuffer = '';
+          const boxes: { x: number; y: number; w: number; h: number }[] = [];
+
+          for (const item of textItems) {
+            textBuffer += item.str + ' ';
+            boxes.push(...item.charBoxes);
+          }
+
+          // Cerca la query nel testo
+          const normalizedText = textBuffer.toLowerCase();
+          let searchPos = 0;
+
+          while (true) {
+            const foundPos = normalizedText.indexOf(normalizedQuery, searchPos);
+            if (foundPos === -1) break;
+
+            // Calcola le coordinate della match
+            const charStart = foundPos;
+            const charEnd = foundPos + normalizedQuery.length;
+
+            if (charStart < boxes.length && charEnd <= boxes.length) {
+              const startBox = boxes[charStart];
+              const endBox = boxes[charEnd - 1];
+
+              matches.push({
+                id: `${doc.id}-${pageNum}-${foundPos}`,
+                docId: doc.id,
+                docTitle: doc.filename,
+                kind: 'pdf' as const,
+                page: pageNum,
+                q: query,
+                x0Pct: Math.max(0, Math.min(1, startBox.x / page.view[2])),
+                x1Pct: Math.max(0, Math.min(1, (endBox.x + endBox.w) / page.view[2])),
+                y0Pct: Math.max(0, Math.min(1, startBox.y / page.view[3])),
+                y1Pct: Math.max(0, Math.min(1, (endBox.y + endBox.h) / page.view[3])),
+                charIdx: foundPos,
+                qLength: normalizedQuery.length,
+                snippet: generateContextualSnippet(textBuffer, foundPos, normalizedQuery.length),
+                score: 1
+              });
+            }
+
+            searchPos = foundPos + 1;
+          }
+        }
+
+        if (matches.length > 0) {
+          groups.push({
+            doc: {
+              id: doc.id,
+              title: doc.filename,
+              hash: '',
+              pages: totalPages,
+              kind: 'pdf' as const
+            },
+            matches
+          });
+        }
+
+
+      } catch (error) {
+        console.error('[CLIENT-SEARCH] Error processing document', { filename: doc.filename, error });
+      }
+    }
+
+    const totalMatches = groups.reduce((sum, group) => sum + group.matches.length, 0);
+
+    return {
+      id: `client-search-${Date.now()}`,
+      query,
+      scope: 'archive',
+      total: totalMatches,
+      groups
+    };
+
+  } catch (error) {
+    console.error('[CLIENT-SEARCH] Search failed', error);
+    return null;
+  }
 }
 
 export function DocumentCollection({
@@ -134,20 +342,25 @@ export function DocumentCollection({
                 autoSearch={true}
                 onSearch={async (q, scope) => {
                   setIsSearching(true)  // Avvia spinner
-                  console.log('[SEARCH][archive] Backend search start', { q, scope })
 
                   try {
-                    // ✅ Chiamata API backend per ricerca globale
+                    // ✅ PRIMA: Prova ricerca client-side sui PDF con testo nativo
+                    const clientResult = await searchInPdfDocuments(items, q)
+
+                    if (clientResult && clientResult.total > 0) {
+                      return clientResult
+                    }
+
+                    // ✅ SECONDO: Se nessun risultato client-side, prova backend per documenti salvati
+
                     const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
-                    const response = await fetch(`${apiUrl}/search/archive?q=${encodeURIComponent(q)}&limit=50`)
+                    const response = await fetch(`${apiUrl}/api/search/archive?q=${encodeURIComponent(q)}&limit=50`)
 
                     if (!response.ok) {
-                      console.error('[SEARCH][archive] API error', response.status)
-                      return null
+                      return clientResult || null
                     }
 
                     const data = await response.json()
-                    console.log('[SEARCH][archive] API response', { total: data.total, matches: data.matches?.length })
 
                     // Raggruppa i risultati per documento
                     const matchesByDoc = new Map<string, any[]>()
@@ -199,7 +412,6 @@ export function DocumentCollection({
                       groups
                     }
                   } catch (error) {
-                    console.error('[SEARCH][archive] Error', error)
                     return null
                   } finally {
                     setIsSearching(false)  // Ferma spinner

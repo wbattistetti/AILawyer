@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,7 +33,7 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
     onSuccess,
     onCancel
 }) => {
-    console.log('🎬 [ExtractClassifier] Componente montato!')
+    console.log('🎬🎬🎬 [ExtractClassifier] COMPONENTE MONTATO! 🎬🎬🎬')
     console.log('🎬 [ExtractClassifier] praticaId:', praticaId)
     console.log('🎬 [ExtractClassifier] extractContent length:', extractContent?.length)
 
@@ -50,11 +50,11 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
         error: null
     })
 
-    // Carica dati iniziali
+    // Carica dati iniziali - RICARICA SEMPRE quando il componente viene montato
     useEffect(() => {
-        console.log('🔄 [ExtractClassifier] useEffect loadExistingExtracts trigger')
+        console.log('🔄🔄🔄 [ExtractClassifier] USEEFFECT TRIGGER! CARICAMENTO ESTRATTI... 🔄🔄🔄')
         loadExistingExtracts()
-    }, [praticaId])
+    }, []) // ✅ RIMOSSO praticaId dalla dipendenza per ricaricare sempre
 
     // Ascolta eventi per aggiornamenti real-time
     useEffect(() => {
@@ -71,7 +71,7 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
         }
     }, [])
 
-    const loadExistingExtracts = async () => {
+    const loadExistingExtracts = useCallback(async () => {
         try {
             console.log('🔍 [ExtractClassifier] Caricamento estratti per pratica:', praticaId)
 
@@ -87,8 +87,7 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
 
             // Combina estratti temporanei e persistenti
             const allExtracts = [...pendingExtracts, ...dbExtracts]
-            console.log('🔄 [ExtractClassifier] Tutti gli estratti combinati:', allExtracts)
-            console.log('🔄 [ExtractClassifier] Numero totale estratti:', allExtracts.length)
+            console.log('🔄 [ExtractClassifier] Totale estratti:', allExtracts.length)
 
             // Organizza per tipo
             const reati = allExtracts
@@ -97,7 +96,7 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                     id: e.id,
                     title: e.title || e.content?.slice(0, 50) + '...' || 'Reato senza titolo'
                 }))
-            console.log('⚖️ [ExtractClassifier] Reati trovati:', reati)
+            console.log('⚖️ [ExtractClassifier] Reati trovati:', reati.length, reati)
 
             const motivazioni = allExtracts
                 .filter(e => e.type === 'motivazione')
@@ -106,7 +105,7 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                     title: e.title || e.content?.slice(0, 50) + '...' || 'Motivazione senza titolo',
                     parentReatoId: e.parentReatoId!
                 }))
-            console.log('🎯 [ExtractClassifier] Motivazioni trovate:', motivazioni)
+            console.log('🎯 [ExtractClassifier] Motivazioni trovate:', motivazioni.length)
 
             setState(prev => ({
                 ...prev,
@@ -114,17 +113,15 @@ export const ExtractClassifier: React.FC<ExtractClassifierProps> = ({
                 availableMotivazioni: motivazioni
             }))
 
-            console.log('✅ [ExtractClassifier] Stato aggiornato - Reati disponibili:', reati.length, 'Motivazioni disponibili:', motivazioni.length)
+            console.log('✅ [ExtractClassifier] Stato aggiornato - Reati:', reati.length, 'Motivazioni:', motivazioni.length)
         } catch (error) {
             console.error('❌ [ExtractClassifier] Errore nel caricamento estratti:', error)
             setState(prev => ({ ...prev, error: 'Errore nel caricamento degli estratti' }))
         }
-    }
+    }, [praticaId]) // ✅ Dipendenze del useCallback
 
     const handleTypeSelect = (type: ExtractType) => {
-        console.log('🎯 [ExtractClassifier] Tipo estratto selezionato:', type)
-        console.log('🎯 [ExtractClassifier] Reati disponibili al momento della selezione:', state.availableReati)
-        console.log('🎯 [ExtractClassifier] Motivazioni disponibili al momento della selezione:', state.availableMotivazioni)
+        console.log('🎯 [ExtractClassifier] Tipo selezionato:', type, 'Reati disponibili:', state.availableReati.length)
 
         setState(prev => ({
             ...prev,

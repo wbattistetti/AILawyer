@@ -34,10 +34,13 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   docId,
   praticaId
 }) => {
+  console.log('🎬🎬🎬 [PdfViewerShell] SHELL MONTATO! 🎬🎬🎬')
+  console.log('🎬 [PdfViewerShell] fileUrl:', fileUrl)
+  console.log('🎬 [PdfViewerShell] docId:', docId)
+  console.log('🎬 [PdfViewerShell] praticaId:', praticaId)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
 
-  console.log('[PdfViewerShell] Rendering with props:', { fileUrl, page, docId })
 
   // Zoom hook integration
   const { containerRef: zoomContainerRef } = useCleanPdfZoom({
@@ -70,7 +73,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     viewerRef
   })
 
-  console.log('[PdfViewerShell] Shell state:', shell)
 
   return (
     <React.Fragment>

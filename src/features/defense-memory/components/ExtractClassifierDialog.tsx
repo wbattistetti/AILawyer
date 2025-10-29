@@ -25,6 +25,11 @@ export const ExtractClassifierDialog: React.FC<ExtractClassifierDialogProps> = (
     onSuccess,
     onCancel
 }) => {
+    console.log('🎬🎬🎬 [ExtractClassifierDialog] DIALOG MONTATO! 🎬🎬🎬')
+    console.log('🎬 [ExtractClassifierDialog] open:', open)
+    console.log('🎬 [ExtractClassifierDialog] praticaId:', praticaId)
+    console.log('🎬 [ExtractClassifierDialog] extractContent length:', extractContent?.length)
+
     return (
         <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">

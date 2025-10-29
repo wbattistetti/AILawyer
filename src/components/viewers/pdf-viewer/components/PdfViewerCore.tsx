@@ -119,15 +119,12 @@ export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(fun
 				initialPage={Math.max(0, (page || 1) - 1)}
 				onPageChange={(e) => {
 					const cp = e.currentPage + 1;
-					console.log('[CORE] onPageChange from viewer, page:', cp);
 					setPageInput(String(cp));
 					onPageChange?.(cp);
 				}}
 				onDocumentLoad={(e) => {
-					console.log('[VIEWER][DOCUMENT-LOAD] Event fired!', e)
 					const doc = (e as any).doc || (e as any).document
 					const total = doc?.numPages || 0
-					console.log('[VIEWER][DOCUMENT-LOAD] Document loaded:', { total, docId })
 					if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
 					if (total) { setTotalPages(total); setPageInput('1') }
 					const container = hostRef.current as HTMLElement | null
@@ -135,22 +132,8 @@ export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(fun
 					const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 					if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1))
 
-					// ✅ DEBUG: Controlla la struttura del DOM per lo scroll
-					setTimeout(() => {
-						const pagesContainer = container?.querySelector('.rpv-core__pages') as HTMLElement | undefined
-						const pageLayers = container?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
-						console.log('[VIEWER][SCROLL-DEBUG]', {
-							totalPages: total,
-							pagesContainer: !!pagesContainer,
-							pageLayersCount: pageLayers?.length || 0,
-							containerHeight: container?.clientHeight,
-							containerScrollHeight: container?.scrollHeight,
-							scrollMode: 'Vertical'
-						})
-					}, 500)
 
 					try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch { }
-					try { console.log('[VIEWER][ready]', { docId: docId || 'current', total }) } catch { }
 					setReady(true);
 				}}
 				onZoom={(e: any) => {

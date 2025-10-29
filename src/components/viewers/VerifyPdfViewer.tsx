@@ -384,6 +384,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 
 
 					{/* Extract Classifier Dialog */}
+					{extractOpen && console.log('🎬🎬🎬 [VerifyPdfViewer] APERTURA DIALOG ESTRATTO! 🎬🎬🎬')}
 					<ExtractClassifierDialog
 						open={extractOpen}
 						praticaId="current-pratica" // TODO: Ottenere dal contesto
