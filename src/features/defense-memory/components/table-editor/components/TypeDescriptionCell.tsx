@@ -321,9 +321,11 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         <SelectValue placeholder="Seleziona tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="reato-contestato">Reato contestato</SelectItem>
-                        <SelectItem value="fatto">Fatto</SelectItem>
-                        <SelectItem value="atto">Atto</SelectItem>
+                        {['atto', 'fatto', 'reato-contestato'].sort().map(type => (
+                            <SelectItem key={type} value={type}>
+                                {getTypeLabel(type as CellType)}
+                            </SelectItem>
+                        ))}
                     </SelectContent>
                 </Select>
             </div>
@@ -333,7 +335,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     return (
         <div className={cn("p-2 space-y-1", className)}>
             {/* Tipo e Descrizione - stessa riga */}
-            <div ref={comboboxRowRef} className="flex items-start gap-3 flex-nowrap">
+            <div ref={comboboxRowRef} className="flex items-center gap-3 flex-nowrap">
                 {/* Tipo: Label o Select in base a isTypeEditing */}
                 {isTypeEditing ? (
                     <Select
@@ -350,9 +352,11 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="reato-contestato">Reato contestato</SelectItem>
-                            <SelectItem value="fatto">Fatto</SelectItem>
-                            <SelectItem value="atto">Atto</SelectItem>
+                            {['atto', 'fatto', 'reato-contestato'].sort().map(type => (
+                                <SelectItem key={type} value={type}>
+                                    {getTypeLabel(type as CellType)}
+                                </SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                 ) : (
@@ -377,10 +381,16 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <Combobox
                                 value={description}
                                 onChange={handleDescriptionChange}
-                                suggestions={REATI_PENALI}
+                                suggestions={[...REATI_PENALI].sort()}
                                 placeholder="Digita il nome del reato..."
                                 readOnly={readOnly}
+                                aria-label="Seleziona reato contestato"
+                                autoOpen={isDescriptionEditing}
                                 onBlur={handleDescriptionBlur}
+                                onSelection={() => {
+                                    // Chiude la modalità editing quando viene selezionato un reato
+                                    setIsDescriptionEditing(false)
+                                }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         e.preventDefault()
@@ -393,10 +403,16 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <Combobox
                                 value={description}
                                 onChange={handleDescriptionChange}
-                                suggestions={ATTI_COMUNI}
+                                suggestions={[...ATTI_COMUNI].sort()}
                                 placeholder="Digita il nome dell'atto..."
                                 readOnly={readOnly}
+                                aria-label="Seleziona atto"
+                                autoOpen={isDescriptionEditing}
                                 onBlur={handleDescriptionBlur}
+                                onSelection={() => {
+                                    // Chiude la modalità editing quando viene selezionato un atto
+                                    setIsDescriptionEditing(false)
+                                }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         e.preventDefault()
@@ -435,7 +451,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         onClick={handleDescriptionLabelClick}
                         disabled={readOnly}
                         className={cn(
-                            "px-2 py-1 text-xs rounded border border-transparent text-left",
+                            "px-2 py-1 text-base font-normal rounded border border-transparent text-left",
                             "hover:bg-gray-100 hover:border-gray-300 transition-colors",
                             "whitespace-pre-wrap break-words",
                             "flex-1 min-w-0",

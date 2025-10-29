@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { DefenseMemoryTableEditorProps } from './types/table.types'
 import { useTableData } from './hooks/useTableData'
 import { useRowValidation } from './hooks/useRowValidation'
@@ -59,6 +59,69 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     })
 
     const { widths, handleResizeStart } = useResizableColumns()
+
+    // Stato per zoom locale (Ctrl + rotella)
+    const [zoomLevel, setZoomLevel] = useState(1.0) // 1.0 = 100%, 1.2 = 120%, etc.
+    const containerRef = useRef<HTMLDivElement>(null)
+    const scrollableRef = useRef<HTMLDivElement>(null)
+    const zoomLevelRef = useRef(1.0) // Ref per accedere al valore corrente senza causare re-render
+
+    // Sincronizza ref con state
+    useEffect(() => {
+        zoomLevelRef.current = zoomLevel
+    }, [zoomLevel])
+
+    // Handler per zoom con Ctrl + rotella
+    const handleWheelZoom = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+        // Controlla se Ctrl (Windows/Linux) o Meta (Mac) è premuto
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault() // Previene zoom della pagina
+            e.stopPropagation() // Previene la propagazione
+
+            // Calcola nuovo zoom level usando il ref per evitare dependency loop
+            const currentZoom = zoomLevelRef.current
+            // Scroll down (deltaY > 0) = zoom out, scroll up (deltaY < 0) = zoom in
+            const delta = e.deltaY > 0 ? -0.05 : 0.05
+            const newZoom = Math.max(0.5, Math.min(2.0, currentZoom + delta)) // Limite tra 50% e 200%
+
+            setZoomLevel(newZoom)
+        }
+    }, [])
+
+    // Handler per zoom con Ctrl + rotella (versione DOM per compatibilità)
+    useEffect(() => {
+        const container = containerRef.current
+        const scrollable = scrollableRef.current
+        if (!container) return
+
+        const handleWheel = (e: WheelEvent) => {
+            // Controlla se Ctrl (Windows/Linux) o Meta (Mac) è premuto
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault() // Previene zoom della pagina
+                e.stopPropagation() // Previene la propagazione
+
+                // Calcola nuovo zoom level usando il ref per evitare dependency loop
+                const currentZoom = zoomLevelRef.current
+                // Scroll down (deltaY > 0) = zoom out, scroll up (deltaY < 0) = zoom in
+                const delta = e.deltaY > 0 ? -0.05 : 0.05
+                const newZoom = Math.max(0.5, Math.min(2.0, currentZoom + delta)) // Limite tra 50% e 200%
+
+                setZoomLevel(newZoom)
+            }
+        }
+
+        container.addEventListener('wheel', handleWheel, { passive: false })
+        if (scrollable) {
+            scrollable.addEventListener('wheel', handleWheel, { passive: false })
+        }
+
+        return () => {
+            container.removeEventListener('wheel', handleWheel)
+            if (scrollable) {
+                scrollable.removeEventListener('wheel', handleWheel)
+            }
+        }
+    }, []) // Nessuna dipendenza per evitare re-registrazione
 
     // Log per debug - rimuovere in produzione
     // useEffect(() => {
@@ -143,10 +206,17 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const sortedRows = [...rows].sort((a, b) => a.order - b.order)
 
     return (
-        <div className={cn(
-            "flex flex-col h-full bg-white border border-gray-200 rounded-lg overflow-hidden",
-            className
-        )}>
+        <div
+            ref={containerRef}
+            className={cn(
+                "flex flex-col h-full bg-white border border-gray-200 rounded-lg overflow-hidden",
+                className
+            )}
+            style={{
+                fontSize: `${zoomLevel * 100}%` // Applica zoom al font-size
+            }}
+            onWheel={handleWheelZoom}
+        >
             {/* Header */}
             <TableHeader
                 onAddRow={handleAddRow}
@@ -158,7 +228,11 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             />
 
             {/* Tabella */}
-            <div className="flex-1 overflow-x-auto overflow-y-auto">
+            <div
+                ref={scrollableRef}
+                className="flex-1 overflow-x-auto overflow-y-auto"
+                onWheel={handleWheelZoom}
+            >
                 {sortedRows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-gray-500">
                         <div className="text-center">
