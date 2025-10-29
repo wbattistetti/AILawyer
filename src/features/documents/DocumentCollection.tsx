@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useState, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
 import { FileText, ScanText, Search, X, Loader2 } from 'lucide-react'
@@ -262,6 +262,15 @@ export function DocumentCollection({
   const [searchHeight, setSearchHeight] = useState<number>(300)
   const [isSearching, setIsSearching] = useState<boolean>(false)
 
+  useEffect(() => {
+    console.log('📚 [DocumentCollection] Componente montato', {
+      title,
+      itemsCount: items.length,
+      itemsIds: items.map(i => i.id),
+      timestamp: new Date().toISOString()
+    });
+  }, [title, items]);
+
   const onDropCb = useCallback((accepted: File[]) => {
     onDrop?.(accepted)
   }, [onDrop])
@@ -276,7 +285,7 @@ export function DocumentCollection({
   })
 
   return (
-    <div className="w-full h-full flex flex-col relative">
+    <div className="w-full h-full flex flex-col relative" data-component="document-collection">
       {title && (
         <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center gap-2">
           {isSearching ? (
@@ -447,7 +456,7 @@ export function DocumentCollection({
         )}
 
         {/* Miniature documenti */}
-        <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
+        <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })} data-component="document-collection-thumbnails">
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
             {items.map(doc => {

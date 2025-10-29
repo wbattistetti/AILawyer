@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react'
 import { DefenseMemoryTableEditorProps } from './types/table.types'
 import { useTableData } from './hooks/useTableData'
 import { useRowValidation } from './hooks/useRowValidation'
+import { useResizableColumns } from './hooks/useResizableColumns'
 import { TableHeader } from './components/TableHeader'
 import { TableRow } from './components/TableRow'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
@@ -56,6 +57,15 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         validateOnChange: true,
         validateOnBlur: true
     })
+
+    const { widths, handleResizeStart, registerCellRef, registerCellWidth } = useResizableColumns()
+
+    // Log per debug
+    useEffect(() => {
+        console.log('🟡 [DefenseMemoryTableEditor] widths:', widths)
+        console.log('🟡 [DefenseMemoryTableEditor] Larghezza totale colonne:',
+            widths.number + widths.typeDescription + widths.observations + widths.actions)
+    }, [widths])
 
     // Carica dati iniziali
     useEffect(() => {
@@ -148,7 +158,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             />
 
             {/* Tabella */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-x-auto overflow-y-auto">
                 {sortedRows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-gray-500">
                         <div className="text-center">
@@ -169,13 +179,40 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         </div>
                     </div>
                 ) : (
-                    <div className="min-w-full">
+                    <div className="min-w-max" style={{ minWidth: `${widths.number + widths.typeDescription + widths.observations}px` }}>
                         {/* Header colonne */}
-                        <div className="grid grid-cols-12 bg-gray-100 border-b border-gray-200 text-sm font-medium text-gray-700">
-                            <div className="col-span-1 p-4 text-center">#</div>
-                            <div className="col-span-5 p-4">Tipo e Descrizione</div>
-                            <div className="col-span-5 p-4">Osservazioni</div>
-                            <div className="col-span-1 p-4 text-center">Azioni</div>
+                        <div className="flex bg-gray-100 border-b border-gray-200 text-sm font-medium text-gray-700">
+                            <div
+                                className="p-4 text-center border-r border-gray-300 flex-shrink-0"
+                                style={{ width: widths.number }}
+                            >
+                                #
+                            </div>
+                            <div
+                                className="p-4 border-r border-gray-300 flex-shrink-0 relative"
+                                style={{ width: widths.typeDescription }}
+                            >
+                                {/* Marcatore visibile per debug */}
+                                <div className="absolute top-0 right-0 bg-red-500 text-white text-xs px-1 z-50">
+                                    TD: {widths.typeDescription}px
+                                </div>
+                                Tipo e Descrizione
+                                {/* Rimossa la handle di resize - solo auto-size */}
+                            </div>
+                            <div
+                                className="p-4 border-r border-gray-300 flex-shrink-0 relative"
+                                style={{ width: widths.observations }}
+                            >
+                                {/* Marcatore visibile per debug */}
+                                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 z-50">
+                                    OBS: {widths.observations}px
+                                </div>
+                                Osservazioni
+                                <div
+                                    className="absolute right-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize"
+                                    onMouseDown={(e) => handleResizeStart('observations', e)}
+                                />
+                            </div>
                         </div>
 
                         {/* Righe */}
@@ -190,6 +227,9 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                 onMoveDown={canMoveDown(row.id) ? () => handleMoveRowDown(row.id) : undefined}
                                 readOnly={readOnly}
                                 errors={getRowErrors(row.id)}
+                                columnWidths={widths}
+                                onCellRefChange={registerCellRef}
+                                onCellWidthChange={registerCellWidth}
                             />
                         ))}
                     </div>

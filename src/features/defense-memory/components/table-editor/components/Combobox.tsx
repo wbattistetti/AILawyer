@@ -23,8 +23,10 @@ export const Combobox: React.FC<ComboboxProps> = ({
     const [isOpen, setIsOpen] = useState(false)
     const [inputValue, setInputValue] = useState(value)
     const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([])
+    const [computedWidth, setComputedWidth] = useState<string>('120px')
     const inputRef = useRef<HTMLInputElement>(null)
     const dropdownRef = useRef<HTMLDivElement>(null)
+    const measureRef = useRef<HTMLSpanElement>(null)
 
     useEffect(() => {
         setInputValue(value)
@@ -40,6 +42,32 @@ export const Combobox: React.FC<ComboboxProps> = ({
             setFilteredSuggestions(filtered)
         }
     }, [inputValue, suggestions])
+
+    // Calcola larghezza dinamica basata sul contenuto reale
+    useEffect(() => {
+        if (measureRef.current && inputRef.current) {
+            const text = inputValue || placeholder
+            measureRef.current.textContent = text
+
+            // Replica lo stile dell'input per una misurazione precisa
+            const inputStyle = window.getComputedStyle(inputRef.current)
+            measureRef.current.style.font = inputStyle.font
+            measureRef.current.style.fontSize = inputStyle.fontSize
+            measureRef.current.style.fontWeight = inputStyle.fontWeight
+            measureRef.current.style.fontFamily = inputStyle.fontFamily
+            measureRef.current.style.letterSpacing = inputStyle.letterSpacing
+
+            // Usa getBoundingClientRect per ottenere la larghezza precisa
+            const width = measureRef.current.getBoundingClientRect().width
+            // Aggiungi spazio per padding laterale (circa 16px totale) e icona (24px) = 40px totale
+            const newWidth = Math.max(width + 40, 120)
+            setComputedWidth(`${newWidth}px`)
+        } else {
+            // Fallback iniziale
+            const contentLength = (inputValue || placeholder || '').length
+            setComputedWidth(`${Math.max(contentLength * 7 + 40, 120)}px`)
+        }
+    }, [inputValue, placeholder])
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -77,7 +105,20 @@ export const Combobox: React.FC<ComboboxProps> = ({
 
     return (
         <div className={cn("relative inline-block", className)}>
-            <div className="relative">
+            {/* Elemento nascosto per misurare la larghezza del testo */}
+            <span
+                ref={measureRef}
+                className="absolute invisible whitespace-pre text-xs"
+                style={{
+                    font: 'inherit',
+                    padding: '0',
+                    visibility: 'hidden',
+                    position: 'absolute',
+                    top: '-9999px',
+                    left: '-9999px'
+                }}
+            />
+            <div className="relative inline-block" style={{ width: computedWidth }}>
                 <Input
                     ref={inputRef}
                     value={inputValue}
@@ -85,7 +126,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     onFocus={handleFocus}
                     placeholder={placeholder}
                     readOnly={readOnly}
-                    className="pr-8 h-8 text-xs w-auto min-w-[200px]"
+                    className="pr-8 h-8 text-xs w-full"
                 />
                 <ChevronsUpDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400 pointer-events-none" />
             </div>
@@ -93,7 +134,8 @@ export const Combobox: React.FC<ComboboxProps> = ({
             {isOpen && !readOnly && filteredSuggestions.length > 0 && (
                 <div
                     ref={dropdownRef}
-                    className="absolute z-50 w-full mt-0.5 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-auto text-xs"
+                    className="absolute z-50 min-w-full mt-0.5 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-auto text-xs"
+                    style={{ width: computedWidth }}
                 >
                     {filteredSuggestions.map((suggestion, index) => (
                         <div

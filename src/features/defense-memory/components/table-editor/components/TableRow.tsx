@@ -1,10 +1,17 @@
-import React from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { TableRowProps } from '../../types/table.types'
 import { RowNumberCell } from './RowNumberCell'
 import { TypeDescriptionCell } from './TypeDescriptionCell'
 import { ObservationsCell } from './ObservationsCell'
 import { RowActions } from './RowActions'
 import { cn } from '@/lib/utils'
+
+const DEFAULT_WIDTHS = {
+    number: 60,
+    typeDescription: 450,
+    observations: 400,
+    actions: 80
+}
 
 export const TableRow: React.FC<TableRowProps> = ({
     row,
@@ -14,8 +21,20 @@ export const TableRow: React.FC<TableRowProps> = ({
     onMoveUp,
     onMoveDown,
     readOnly = false,
-    errors = []
+    errors = [],
+    columnWidths = DEFAULT_WIDTHS,
+    onCellRefChange,
+    onCellWidthChange
 }) => {
+    const cellRef = useRef<HTMLDivElement>(null)
+    const [isHovered, setIsHovered] = useState(false)
+
+    useEffect(() => {
+        if (cellRef.current && onCellRefChange) {
+            onCellRefChange(row.id, cellRef.current)
+        }
+    }, [row.id, onCellRefChange])
+
     const handleUpdate = (data: Partial<{ cellType: any; description: string; contestationDate?: string; eventDate?: string; observations?: string; extract?: any }>) => {
         onUpdate(row.id, data)
     }
@@ -29,18 +48,33 @@ export const TableRow: React.FC<TableRowProps> = ({
     const hasErrors = errors.length > 0
 
     return (
-        <div className={cn(
-            "grid grid-cols-12 border-b border-gray-200 hover:bg-gray-50 transition-colors",
-            hasErrors && "bg-red-50 border-red-200",
-            readOnly && "bg-gray-50"
-        )}>
+        <div
+            className={cn(
+                "flex border-b border-gray-200 hover:bg-gray-50 transition-colors relative",
+                hasErrors && "bg-red-50 border-red-200",
+                readOnly && "bg-gray-50"
+            )}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
             {/* Numero d'ordine */}
-            <div className="col-span-1">
+            <div
+                className="border-r border-gray-300 flex-shrink-0"
+                style={{ width: columnWidths.number }}
+            >
                 <RowNumberCell order={order} />
             </div>
 
-            {/* Tipo e Descrizione - Editabile in-place */}
-            <div className="col-span-5">
+            {/* Tipo e Descrizione - Editabile in-place - solo auto-size, no resize */}
+            <div
+                ref={cellRef}
+                className="border-r border-gray-300 flex-shrink-0 relative"
+                style={{ width: columnWidths.typeDescription }}
+            >
+                {/* Marcatore visibile per debug */}
+                <div className="absolute top-0 right-0 bg-red-500 text-white text-xs px-1 z-50">
+                    TD: {columnWidths.typeDescription}px
+                </div>
                 <TypeDescriptionCell
                     cellType={row.cellType}
                     description={row.description}
@@ -49,28 +83,39 @@ export const TableRow: React.FC<TableRowProps> = ({
                     errors={errors}
                     onUpdate={handleUpdate}
                     readOnly={readOnly}
+                    onWidthChange={onCellWidthChange}
                 />
             </div>
 
             {/* Osservazioni - Editabile in-place */}
-            <div className="col-span-5">
+            <div
+                className="border-r border-gray-300 flex-shrink-0 relative"
+                style={{ width: columnWidths.observations }}
+            >
+                {/* Marcatore visibile per debug */}
+                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 z-50">
+                    OBS: {columnWidths.observations}px
+                </div>
+
+                {/* Pulsante Azioni - appare solo su hover, posizionato in alto a destra */}
+                {isHovered && !readOnly && (
+                    <div className="absolute top-2 right-2 z-50">
+                        <RowActions
+                            onDelete={handleDelete}
+                            onMoveUp={onMoveUp}
+                            onMoveDown={onMoveDown}
+                            canMoveUp={onMoveUp ? true : false}
+                            canMoveDown={onMoveDown ? true : false}
+                            readOnly={readOnly}
+                        />
+                    </div>
+                )}
+
                 <ObservationsCell
                     row={row}
                     onUpdate={handleUpdate}
                     readOnly={readOnly}
                     errors={errors}
-                />
-            </div>
-
-            {/* Azioni */}
-            <div className="col-span-1">
-                <RowActions
-                    onDelete={handleDelete}
-                    onMoveUp={onMoveUp}
-                    onMoveDown={onMoveDown}
-                    canMoveUp={onMoveUp ? true : false}
-                    canMoveDown={onMoveDown ? true : false}
-                    readOnly={readOnly}
                 />
             </div>
         </div>

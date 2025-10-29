@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Documento } from '../../../../types';
 import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
 import { DocumentCollection } from '../../../../features/documents/DocumentCollection';
@@ -38,8 +38,16 @@ export function ArchiveRenderer({
 }: ArchiveRendererProps) {
     const showOverlay = false;
 
+    useEffect(() => {
+        console.log('🎯 [ArchiveRenderer] Componente montato', {
+            documentiCount: documenti.length,
+            documentiIds: documenti.map(d => d.id),
+            timestamp: new Date().toISOString()
+        });
+    }, [documenti]);
+
     return (
-        <div className="relative w-full h-full">
+        <div className="relative w-full h-full" data-component="archive-renderer">
             <DocumentCollection
                 title="Archivio"
                 items={documenti.map(d => {

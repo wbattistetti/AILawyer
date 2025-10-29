@@ -64,6 +64,14 @@ export interface TableRowProps {
     onMoveDown?: (rowId: string) => void
     readOnly?: boolean
     errors?: ValidationError[]
+    columnWidths?: {
+        number: number
+        typeDescription: number
+        observations: number
+        actions: number
+    }
+    onCellRefChange?: (rowId: string, element: HTMLDivElement | null) => void
+    onCellWidthChange?: (width: number) => void
 }
 
 export interface RowEditFormProps {

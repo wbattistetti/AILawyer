@@ -130,15 +130,9 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                     ) : (
                         <div className="p-1 bg-gray-50 rounded-md border border-dashed border-gray-300">
                             {!readOnly ? (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleAddExtract}
-                                    className="w-full h-7 text-xs"
-                                >
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    Aggiungi estratto
-                                </Button>
+                                <div className="text-xs text-gray-500 text-center py-2">
+                                    Aggiungi qui l'estratto o trascina l'estratto
+                                </div>
                             ) : (
                                 <p className="text-xs text-gray-500 italic text-center">
                                     Nessun estratto disponibile
