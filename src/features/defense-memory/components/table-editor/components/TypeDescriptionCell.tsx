@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { CellType, ValidationError } from '../../types/table.types'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -155,6 +156,15 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 }) => {
     const [contestationDateOpen, setContestationDateOpen] = useState(false)
     const [eventDateOpen, setEventDateOpen] = useState(false)
+    // Stati per modalità edit/view
+    // Tipo: parte in editing se non c'è tipo, altrimenti in view
+    const [isTypeEditing, setIsTypeEditing] = useState(!cellType)
+    // Descrizione: parte in editing se vuota, altrimenti in view
+    const [isDescriptionEditing, setIsDescriptionEditing] = useState(!description)
+    // Date: parte in editing se vuota, altrimenti in view
+    const [isContestationDateEditing, setIsContestationDateEditing] = useState(!contestationDate)
+    const [isEventDateEditing, setIsEventDateEditing] = useState(!eventDate)
+    const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
     const comboboxRowRef = useRef<HTMLDivElement>(null)
     const onWidthChangeRef = useRef(onWidthChange)
     const lastMeasuredWidthRef = useRef<number>(0)
@@ -163,6 +173,49 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     useEffect(() => {
         onWidthChangeRef.current = onWidthChange
     }, [onWidthChange])
+
+    // Sincronizza stati edit/view con i props
+    useEffect(() => {
+        if (!cellType) {
+            setIsTypeEditing(true)
+        }
+    }, [cellType])
+
+    useEffect(() => {
+        if (!description) {
+            setIsDescriptionEditing(true)
+        }
+    }, [description])
+
+    useEffect(() => {
+        if (!contestationDate) {
+            setIsContestationDateEditing(true)
+        }
+    }, [contestationDate])
+
+    useEffect(() => {
+        if (!eventDate) {
+            setIsEventDateEditing(true)
+        }
+    }, [eventDate])
+
+    // Auto-espansione textarea descrizione
+    useEffect(() => {
+        if (descriptionTextareaRef.current && isDescriptionEditing && cellType === 'fatto') {
+            descriptionTextareaRef.current.style.height = 'auto'
+            descriptionTextareaRef.current.style.height = `${descriptionTextareaRef.current.scrollHeight}px`
+        }
+    }, [description, isDescriptionEditing, cellType])
+
+    // Focus sul textarea quando entra in editing
+    useEffect(() => {
+        if (isDescriptionEditing && descriptionTextareaRef.current && cellType === 'fatto') {
+            // Delay per permettere al DOM di renderizzare
+            setTimeout(() => {
+                descriptionTextareaRef.current?.focus()
+            }, 0)
+        }
+    }, [isDescriptionEditing, cellType])
 
     // Misura la larghezza della riga con le combobox e notifica il cambiamento
     useEffect(() => {
@@ -240,6 +293,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     }
 
     const handleTypeChange = (newType: CellType) => {
+        setIsTypeEditing(false) // Esce dalla modalità editing dopo selezione
         onUpdate({ cellType: newType, description: '', contestationDate: undefined, eventDate: undefined })
     }
 
@@ -247,12 +301,96 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
         onUpdate({ description: newDescription })
     }
 
+    // Handler per Enter nel textarea
+    const handleDescriptionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            setIsDescriptionEditing(false)
+        }
+    }
+
+    // Handler per blur
+    const handleDescriptionBlur = () => {
+        if (description.trim()) {
+            setIsDescriptionEditing(false)
+        }
+    }
+
+    // Handler per blur date
+    const handleContestationDateBlur = () => {
+        if (contestationDate) {
+            setIsContestationDateEditing(false)
+        }
+    }
+
+    const handleEventDateBlur = () => {
+        if (eventDate) {
+            setIsEventDateEditing(false)
+        }
+    }
+
+    // Handler per click sulla label tipo
+    const handleTypeLabelClick = () => {
+        if (!readOnly) {
+            setIsTypeEditing(true)
+        }
+    }
+
+    // Handler per click sulla label descrizione
+    const handleDescriptionLabelClick = () => {
+        if (!readOnly) {
+            setIsDescriptionEditing(true)
+        }
+    }
+
+    // Converter per mostrare label tipo
+    const getTypeLabel = (type: CellType) => {
+        const labels: Record<CellType, string> = {
+            'reato-contestato': 'Reato contestato',
+            'fatto': 'Fatto',
+            'atto': 'Atto'
+        }
+        return labels[type] || type
+    }
+
     const handleDateChange = (field: 'contestationDate' | 'eventDate', date: Date | undefined) => {
         if (date) {
             onUpdate({ [field]: date.toISOString().split('T')[0] })
+            // Esce dalla modalità editing dopo selezione
+            if (field === 'contestationDate') {
+                setIsContestationDateEditing(false)
+            } else {
+                setIsEventDateEditing(false)
+            }
         } else {
             onUpdate({ [field]: undefined })
         }
+    }
+
+    // Handler per click sulle label date
+    const handleContestationDateLabelClick = () => {
+        if (!readOnly) {
+            setIsContestationDateEditing(true)
+            setContestationDateOpen(true)
+        }
+    }
+
+    const handleEventDateLabelClick = () => {
+        if (!readOnly) {
+            setIsEventDateEditing(true)
+            setEventDateOpen(true)
+        }
+    }
+
+    // Helper per ottenere il label descrizione con tipo
+    const getDescriptionLabel = () => {
+        if (!description) return 'Clicca per inserire descrizione...'
+        const typeLabels: Record<CellType, string> = {
+            'reato-contestato': 'Reato contestato',
+            'fatto': 'Fatto',
+            'atto': 'Atto'
+        }
+        return `${typeLabels[cellType]}: ${description}`
     }
 
     // Se non c'è ancora un tipo, mostra solo il dropdown
@@ -280,50 +418,117 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     return (
         <div className={cn("p-2 space-y-1", className)}>
             {/* Tipo e Descrizione - stessa riga */}
-            <div ref={comboboxRowRef} className="flex items-center gap-2 flex-nowrap">
-                <Select
-                    value={cellType}
-                    onValueChange={(value) => handleTypeChange(value as CellType)}
-                    disabled={readOnly}
-                >
-                    <SelectTrigger className="h-8 text-xs w-auto min-w-[140px] flex-shrink-0">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="reato-contestato">Reato contestato</SelectItem>
-                        <SelectItem value="fatto">Fatto</SelectItem>
-                        <SelectItem value="atto">Atto</SelectItem>
-                    </SelectContent>
-                </Select>
+            <div ref={comboboxRowRef} className="flex items-start gap-2 flex-nowrap">
+                {/* Tipo: Label o Select in base a isTypeEditing */}
+                {isTypeEditing ? (
+                    <Select
+                        value={cellType}
+                        onValueChange={(value) => handleTypeChange(value as CellType)}
+                        disabled={readOnly}
+                        onOpenChange={(open) => {
+                            if (!open) {
+                                setIsTypeEditing(false)
+                            }
+                        }}
+                    >
+                        <SelectTrigger className="h-8 text-xs w-auto min-w-[140px] flex-shrink-0">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="reato-contestato">Reato contestato</SelectItem>
+                            <SelectItem value="fatto">Fatto</SelectItem>
+                            <SelectItem value="atto">Atto</SelectItem>
+                        </SelectContent>
+                    </Select>
+                ) : (
+                    <button
+                        onClick={handleTypeLabelClick}
+                        disabled={readOnly}
+                        className={cn(
+                            "px-2 py-1 text-xs font-medium rounded border border-transparent",
+                            "hover:bg-gray-100 hover:border-gray-300 transition-colors flex-shrink-0",
+                            readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                        )}
+                    >
+                        {getTypeLabel(cellType)}
+                    </button>
+                )}
 
-                {/* Campo descrizione - subito a destra, auto-size */}
-                {cellType === 'reato-contestato' && (
-                    <Combobox
-                        value={description}
-                        onChange={handleDescriptionChange}
-                        suggestions={REATI_PENALI}
-                        placeholder="Digita il nome del reato..."
-                        readOnly={readOnly}
-                    />
-                )}
-                {cellType === 'atto' && (
-                    <Combobox
-                        value={description}
-                        onChange={handleDescriptionChange}
-                        suggestions={ATTI_COMUNI}
-                        placeholder="Digita il nome dell'atto..."
-                        readOnly={readOnly}
-                    />
-                )}
-                {cellType === 'fatto' && (
-                    <Input
-                        value={description}
-                        onChange={(e) => handleDescriptionChange(e.target.value)}
-                        placeholder="Inserisci descrizione..."
-                        readOnly={readOnly}
-                        className="h-8 text-xs w-auto"
-                        style={{ width: `${Math.max(description.length || 20, 15)}ch` }}
-                    />
+                {/* Campo descrizione: Label o campo editabile */}
+                {isDescriptionEditing ? (
+                    <>
+                        {cellType === 'reato-contestato' && (
+                            <Combobox
+                                value={description}
+                                onChange={handleDescriptionChange}
+                                suggestions={REATI_PENALI}
+                                placeholder="Digita il nome del reato..."
+                                readOnly={readOnly}
+                                onBlur={handleDescriptionBlur}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault()
+                                        handleDescriptionBlur()
+                                    }
+                                }}
+                            />
+                        )}
+                        {cellType === 'atto' && (
+                            <Combobox
+                                value={description}
+                                onChange={handleDescriptionChange}
+                                suggestions={ATTI_COMUNI}
+                                placeholder="Digita il nome dell'atto..."
+                                readOnly={readOnly}
+                                onBlur={handleDescriptionBlur}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault()
+                                        handleDescriptionBlur()
+                                    }
+                                }}
+                            />
+                        )}
+                        {cellType === 'fatto' && (
+                            <Textarea
+                                ref={descriptionTextareaRef}
+                                value={description}
+                                onChange={(e) => handleDescriptionChange(e.target.value)}
+                                onBlur={handleDescriptionBlur}
+                                onKeyDown={handleDescriptionKeyDown}
+                                placeholder="Inserisci descrizione..."
+                                readOnly={readOnly}
+                                className={cn(
+                                    "text-xs resize-none overflow-hidden",
+                                    "whitespace-pre-wrap break-words",
+                                    "flex-1 min-w-0"
+                                )}
+                                style={{
+                                    minHeight: '32px'
+                                }}
+                                onInput={(e) => {
+                                    const target = e.target as HTMLTextAreaElement
+                                    target.style.height = 'auto'
+                                    target.style.height = `${target.scrollHeight}px`
+                                }}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <button
+                        onClick={handleDescriptionLabelClick}
+                        disabled={readOnly}
+                        className={cn(
+                            "px-2 py-1 text-xs rounded border border-transparent text-left",
+                            "hover:bg-gray-100 hover:border-gray-300 transition-colors",
+                            "whitespace-pre-wrap break-words",
+                            "flex-1 min-w-0",
+                            !description && "text-gray-400 italic",
+                            readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                        )}
+                    >
+                        {getDescriptionLabel()}
+                    </button>
                 )}
                 {getFieldError('description') && (
                     <p className="text-xs text-red-500 w-full">{getFieldError('description')}</p>
@@ -335,8 +540,132 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                 <>
                     {/* Data contestazione - label e picker attaccati */}
                     <div className="flex items-center gap-1">
-                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap">data contestazione</label>
-                        <Popover open={contestationDateOpen} onOpenChange={setContestationDateOpen}>
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data contestazione</span>
+                        {isContestationDateEditing ? (
+                            <Popover open={contestationDateOpen} onOpenChange={(open) => {
+                                setContestationDateOpen(open)
+                                if (!open) {
+                                    handleContestationDateBlur()
+                                }
+                            }}>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        type="button"
+                                        disabled={readOnly}
+                                        className={cn(
+                                            "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
+                                            !contestationDate && "text-muted-foreground"
+                                        )}
+                                    >
+                                        <CalendarIcon className="mr-1 h-3 w-3" />
+                                        {contestationDate ? (
+                                            format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })
+                                        ) : (
+                                            <span>Seleziona data</span>
+                                        )}
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        mode="single"
+                                        selected={contestationDate ? new Date(contestationDate) : undefined}
+                                        onSelect={(date) => {
+                                            handleDateChange('contestationDate', date)
+                                            setContestationDateOpen(false)
+                                        }}
+                                        disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                        initialFocus
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        ) : (
+                            <button
+                                onClick={handleContestationDateLabelClick}
+                                disabled={readOnly}
+                                className={cn(
+                                    "px-2 py-1 text-xs rounded border border-transparent",
+                                    "hover:bg-gray-100 hover:border-gray-300 transition-colors",
+                                    readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                )}
+                            >
+                                {contestationDate ? format(new Date(contestationDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
+                            </button>
+                        )}
+                        {getFieldError('contestationDate') && (
+                            <span className="text-xs text-red-500">{getFieldError('contestationDate')}</span>
+                        )}
+                    </div>
+
+                    {/* Data evento - label e picker attaccati */}
+                    <div className="flex items-center gap-1">
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</span>
+                        {isEventDateEditing ? (
+                            <Popover open={eventDateOpen} onOpenChange={(open) => {
+                                setEventDateOpen(open)
+                                if (!open) {
+                                    handleEventDateBlur()
+                                }
+                            }}>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        type="button"
+                                        disabled={readOnly}
+                                        className={cn(
+                                            "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
+                                            !eventDate && "text-muted-foreground"
+                                        )}
+                                    >
+                                        <CalendarIcon className="mr-1 h-3 w-3" />
+                                        {eventDate ? (
+                                            format(new Date(eventDate), "dd/MM/yyyy", { locale: it })
+                                        ) : (
+                                            <span>Seleziona data</span>
+                                        )}
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        mode="single"
+                                        selected={eventDate ? new Date(eventDate) : undefined}
+                                        onSelect={(date) => {
+                                            handleDateChange('eventDate', date)
+                                            setEventDateOpen(false)
+                                        }}
+                                        disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                        initialFocus
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        ) : (
+                            <button
+                                onClick={handleEventDateLabelClick}
+                                disabled={readOnly}
+                                className={cn(
+                                    "px-2 py-1 text-xs rounded border border-transparent",
+                                    "hover:bg-gray-100 hover:border-gray-300 transition-colors",
+                                    readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                )}
+                            >
+                                {eventDate ? format(new Date(eventDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
+                            </button>
+                        )}
+                        {getFieldError('eventDate') && (
+                            <span className="text-xs text-red-500">{getFieldError('eventDate')}</span>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {cellType === 'fatto' && (
+                <div className="flex items-center gap-1">
+                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</span>
+                    {isContestationDateEditing ? (
+                        <Popover open={contestationDateOpen} onOpenChange={(open) => {
+                            setContestationDateOpen(open)
+                            if (!open) {
+                                handleContestationDateBlur()
+                            }
+                        }}>
                             <PopoverTrigger asChild>
                                 <button
                                     type="button"
@@ -367,86 +696,19 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                 />
                             </PopoverContent>
                         </Popover>
-                        {getFieldError('contestationDate') && (
-                            <span className="text-xs text-red-500">{getFieldError('contestationDate')}</span>
-                        )}
-                    </div>
-
-                    {/* Data evento - label e picker attaccati */}
-                    <div className="flex items-center gap-1">
-                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</label>
-                        <Popover open={eventDateOpen} onOpenChange={setEventDateOpen}>
-                            <PopoverTrigger asChild>
-                                <button
-                                    type="button"
-                                    disabled={readOnly}
-                                    className={cn(
-                                        "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
-                                        !eventDate && "text-muted-foreground"
-                                    )}
-                                >
-                                    <CalendarIcon className="mr-1 h-3 w-3" />
-                                    {eventDate ? (
-                                        format(new Date(eventDate), "dd/MM/yyyy", { locale: it })
-                                    ) : (
-                                        <span>Seleziona data</span>
-                                    )}
-                                </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                    mode="single"
-                                    selected={eventDate ? new Date(eventDate) : undefined}
-                                    onSelect={(date) => {
-                                        handleDateChange('eventDate', date)
-                                        setEventDateOpen(false)
-                                    }}
-                                    disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                                    initialFocus
-                                />
-                            </PopoverContent>
-                        </Popover>
-                        {getFieldError('eventDate') && (
-                            <span className="text-xs text-red-500">{getFieldError('eventDate')}</span>
-                        )}
-                    </div>
-                </>
-            )}
-
-            {cellType === 'fatto' && (
-                <div className="flex items-center gap-1">
-                    <label className="text-xs font-medium text-gray-700 whitespace-nowrap">data fatto:</label>
-                    <Popover open={contestationDateOpen} onOpenChange={setContestationDateOpen}>
-                        <PopoverTrigger asChild>
-                            <button
-                                type="button"
-                                disabled={readOnly}
-                                className={cn(
-                                    "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
-                                    !contestationDate && "text-muted-foreground"
-                                )}
-                            >
-                                <CalendarIcon className="mr-1 h-3 w-3" />
-                                {contestationDate ? (
-                                    format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })
-                                ) : (
-                                    <span>Seleziona data</span>
-                                )}
-                            </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                                mode="single"
-                                selected={contestationDate ? new Date(contestationDate) : undefined}
-                                onSelect={(date) => {
-                                    handleDateChange('contestationDate', date)
-                                    setContestationDateOpen(false)
-                                }}
-                                disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                                initialFocus
-                            />
-                        </PopoverContent>
-                    </Popover>
+                    ) : (
+                        <button
+                            onClick={handleContestationDateLabelClick}
+                            disabled={readOnly}
+                            className={cn(
+                                "px-2 py-1 text-xs rounded border border-transparent",
+                                "hover:bg-gray-100 hover:border-gray-300 transition-colors",
+                                readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                            )}
+                        >
+                            {contestationDate ? format(new Date(contestationDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
+                        </button>
+                    )}
                 </div>
             )}
         </div>

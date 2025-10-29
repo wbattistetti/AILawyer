@@ -10,6 +10,8 @@ interface ComboboxProps {
     placeholder?: string
     className?: string
     readOnly?: boolean
+    onBlur?: () => void
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }
 
 export const Combobox: React.FC<ComboboxProps> = ({
@@ -18,7 +20,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
     suggestions,
     placeholder = 'Digita o seleziona...',
     className = '',
-    readOnly = false
+    readOnly = false,
+    onBlur,
+    onKeyDown
 }) => {
     const [isOpen, setIsOpen] = useState(false)
     const [inputValue, setInputValue] = useState(value)
@@ -92,11 +96,17 @@ export const Combobox: React.FC<ComboboxProps> = ({
         setIsOpen(true)
     }
 
+    const handleBlur = () => {
+        setIsOpen(false)
+        onBlur?.()
+    }
+
     const handleSelectSuggestion = (suggestion: string) => {
         setInputValue(suggestion)
         onChange(suggestion)
         setIsOpen(false)
         inputRef.current?.blur()
+        onBlur?.()
     }
 
     const handleFocus = () => {
@@ -124,6 +134,8 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     value={inputValue}
                     onChange={handleInputChange}
                     onFocus={handleFocus}
+                    onBlur={handleBlur}
+                    onKeyDown={onKeyDown}
                     placeholder={placeholder}
                     readOnly={readOnly}
                     className="pr-8 h-8 text-xs w-full"
