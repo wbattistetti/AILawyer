@@ -132,7 +132,7 @@ export const DefenseMemoryDemo: React.FC<DefenseMemoryDemoProps> = ({ praticaId 
                     <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center space-x-2">
                             <span>🛡️</span>
-                            <span>Sistema Memoria Difensiva</span>
+                            <span>Sistema Analisi atti</span>
                             <Badge variant="outline">{extracts.length} estratti</Badge>
                         </CardTitle>
 

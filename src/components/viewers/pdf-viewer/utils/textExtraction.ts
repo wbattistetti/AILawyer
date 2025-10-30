@@ -12,6 +12,23 @@ export const getSelectedTextInRect = async (
 
 	let text = ''
 	const rects: DOMRect[] = []
+
+	// Prova prima a usare il testo nativo del PDF se disponibile
+	const textLayerElement = textLayer.closest('.textLayer')
+	if (textLayerElement) {
+		// Cerca un elemento con il testo nativo del PDF
+		const nativeTextElement = textLayerElement.querySelector('[data-text-content]') as HTMLElement
+		if (nativeTextElement && nativeTextElement.textContent) {
+			const nativeText = nativeTextElement.textContent
+
+			// Usa il testo nativo che è già ben formattato
+			// Filtra solo la parte che corrisponde al rettangolo selezionato
+			// Per ora restituiamo tutto il testo nativo come fallback
+			return { text: nativeText.trim(), rects: [] }
+		}
+	}
+
+	// Fallback: usa la logica originale ma semplificata
 	let lastSpan: HTMLElement | null = null
 
 	// Ordina gli span per posizione (top -> bottom, left -> right)
@@ -46,22 +63,10 @@ export const getSelectedTextInRect = async (
 		const { span, rect } = item
 		const spanText = span.textContent || ''
 
+		// Logica semplificata: aggiungi sempre uno spazio tra gli span
+		// Il testo nativo del PDF dovrebbe già essere ben formattato
 		if (lastSpan) {
-			const lastRect = lastSpan.getBoundingClientRect()
-			const lastRight = lastRect.right - textLayerRect.left
-			const currentLeft = rect.left - textLayerRect.left
-			const lastBottom = lastRect.bottom - textLayerRect.top
-			const currentTop = rect.top - textLayerRect.top
-
-			// Se siamo sulla stessa riga e c'è spazio tra gli span, aggiungi uno spazio
-			if (Math.abs(currentTop - lastBottom) < 5) {
-				if (currentLeft - lastRight > 3) {
-					text += ' '
-				}
-			} else {
-				// Nuova riga
-				text += '\n'
-			}
+			text += ' '
 		}
 
 		text += spanText

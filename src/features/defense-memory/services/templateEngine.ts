@@ -196,7 +196,7 @@ export class DocumentRenderer {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>${metadata.title || 'Memoria Difensiva'}</title>
+          <title>${metadata.title || 'Analisi atti'}</title>
           <style>
             ${this.getDocumentStyles(template.styles)}
           </style>

@@ -127,7 +127,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     // useEffect(() => {
     //     console.log('🟡 [DefenseMemoryTableEditor] widths:', widths)
     //     console.log('🟡 [DefenseMemoryTableEditor] Larghezza totale colonne:',
-    //         widths.number + widths.typeDescription + widths.observations + widths.actions)
+    //         widths.number + widths.typeDescription + widths.observations)
     // }, [widths])
 
     // Carica dati iniziali
@@ -255,9 +255,9 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 ) : (
                     <div className="min-w-max" style={{ minWidth: `${widths.number + widths.typeDescription + widths.observations}px` }}>
                         {/* Header colonne */}
-                        <div className="flex bg-gray-100 border-b border-gray-200 text-sm font-medium text-gray-700">
+                        <div className="flex border-b border-gray-200 text-sm font-medium text-gray-900" style={{ backgroundColor: '#e6f2ff' }}>
                             <div
-                                className="p-4 text-center border-r border-gray-300 flex-shrink-0"
+                                className="p-4 text-center flex-shrink-0"
                                 style={{ width: widths.number }}
                             >
                                 #
@@ -274,7 +274,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                 />
                             </div>
                             <div
-                                className="p-4 border-r border-gray-300 flex-shrink-0 relative"
+                                className="p-4 flex-shrink-0 relative"
                                 style={{ width: widths.observations }}
                             >
                                 Osservazioni

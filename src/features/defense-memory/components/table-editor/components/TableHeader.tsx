@@ -27,7 +27,7 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
         <div className={`flex items-center justify-between p-4 border-b bg-gray-50 ${className}`}>
             <div className="flex items-center space-x-4">
                 <h3 className="text-lg font-semibold text-gray-900">
-                    {clienteNome ? `Memoria Difensiva - ${clienteNome}` : 'Tabella Memoria Difensiva'}
+                    {clienteNome ? `Analisi atti - ${clienteNome}` : 'Tabella Analisi atti'}
                 </h3>
                 <span className="text-sm text-gray-500">
                     {rowCount} {rowCount === 1 ? 'riga' : 'righe'}

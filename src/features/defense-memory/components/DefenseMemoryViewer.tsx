@@ -53,7 +53,7 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
             const htmlContent = `
         <html>
           <head>
-            <title>Memoria Difensiva - ${clienteNome}</title>
+            <title>Analisi atti - ${clienteNome}</title>
             <style>
               body {
                 font-family: Arial, sans-serif;
@@ -466,7 +466,7 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
               }
               .collapsible {
                 cursor: pointer;
-                user-select: none;
+                user-select: none;git a
               }
               .collapsible:hover {
                 opacity: 0.8;
@@ -725,7 +725,7 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                   <!DOCTYPE html>
                   <html>
                     <head>
-                      <title>Memoria Difensiva Parziale</title>
+                      <title>Analisi atti Parziale</title>
                       <style>
                         body { font-family: Arial, sans-serif; margin: 40px; }
                         .header { text-align: center; margin-bottom: 30px; }
@@ -851,7 +851,7 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                 <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
                         <span className="text-2xl">🛡️</span>
-                        <span>Memoria Difensiva - {clienteNome}</span>
+                        <span>Analisi atti - {clienteNome}</span>
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -939,7 +939,7 @@ export const DefenseMemoryViewer: React.FC<DefenseMemoryViewerProps> = ({
                             <iframe
                                 srcDoc={generatedDocument}
                                 className="w-full h-[1200px]"
-                                title="Anteprima Memoria Difensiva"
+                                title="Anteprima Analisi atti"
                             />
                         </div>
                     </CardContent>

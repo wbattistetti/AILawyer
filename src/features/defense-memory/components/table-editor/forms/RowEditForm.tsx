@@ -127,7 +127,7 @@ export const RowEditForm: React.FC<RowEditFormProps> = ({
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>
-                        {row ? 'Modifica riga' : 'Aggiungi riga'} - Memoria Difensiva
+                        {row ? 'Modifica riga' : 'Aggiungi riga'} - Analisi atti
                     </DialogTitle>
                 </DialogHeader>
 

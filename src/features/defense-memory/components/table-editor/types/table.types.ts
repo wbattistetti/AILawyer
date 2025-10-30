@@ -7,6 +7,15 @@ export interface ExtractData {
     isHidden: boolean
 }
 
+export interface Motivation {
+    id: string
+    text: string
+    source?: string
+    page?: number
+    isHidden: boolean
+    observation: string
+}
+
 export interface TableRow {
     id: string
     order: number
@@ -15,6 +24,7 @@ export interface TableRow {
     contestationDate?: string
     eventDate?: string
     extract?: ExtractData
+    motivations?: Motivation[]
     observations: string
 }
 
@@ -30,6 +40,7 @@ export interface TableRowFormData {
     contestationDate?: string
     eventDate?: string
     extract?: ExtractData
+    motivations?: Motivation[]
     observations: string
 }
 

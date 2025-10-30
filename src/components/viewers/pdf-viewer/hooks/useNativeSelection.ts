@@ -361,7 +361,23 @@ export const useNativeSelection = ({
 							source: docId ? `Documento ${docId}` : undefined
 						}
 
-						setPersistentSelections((prev) => [...prev, persistentSelection])
+						setPersistentSelections((prev) => {
+							// Limita a massimo 3 rettangoli persistenti, rimuovi i più vecchi
+							const newSelections = [...prev, persistentSelection]
+							console.log('🔵 [NATIVE-SEL] Creando rettangolo persistente:', {
+								id: persistentSelection.id,
+								page: persistentSelection.page,
+								totalePrima: prev.length,
+								totaleDopo: newSelections.length
+							})
+							if (newSelections.length > 3) {
+								// Rimuovi i più vecchi (primi nell'array)
+								const filtered = newSelections.slice(-3)
+								console.log('🔵 [NATIVE-SEL] Rimosso rettangoli vecchi, rimangono:', filtered.length)
+								return filtered
+							}
+							return newSelections
+						})
 
 						// Mantieni il draft visibile come selezione persistente
 						// Non chiamare setDraft(null) qui - il rettangolo rimane visibile

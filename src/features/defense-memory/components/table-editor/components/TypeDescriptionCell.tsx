@@ -193,8 +193,9 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     // Auto-espansione textarea descrizione
     useEffect(() => {
         if (descriptionTextareaRef.current && isDescriptionEditing && cellType === 'fatto') {
-            descriptionTextareaRef.current.style.height = 'auto'
-            descriptionTextareaRef.current.style.height = `${descriptionTextareaRef.current.scrollHeight}px`
+            const textarea = descriptionTextareaRef.current
+            textarea.style.height = '24px' // Start with single line
+            textarea.style.height = `${Math.max(24, textarea.scrollHeight)}px` // Expand as needed
         }
     }, [description, isDescriptionEditing, cellType])
 
@@ -436,12 +437,13 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                     "flex-1 min-w-0"
                                 )}
                                 style={{
-                                    minHeight: '32px'
+                                    minHeight: '24px',
+                                    height: '24px'
                                 }}
                                 onInput={(e) => {
                                     const target = e.target as HTMLTextAreaElement
-                                    target.style.height = 'auto'
-                                    target.style.height = `${target.scrollHeight}px`
+                                    target.style.height = '24px' // Reset to single line
+                                    target.style.height = `${Math.max(24, target.scrollHeight)}px` // Expand as needed
                                 }}
                             />
                         )}

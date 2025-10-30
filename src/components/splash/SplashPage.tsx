@@ -2,7 +2,7 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Scale, FileSearch, Upload, Zap, FolderOpen, Clock, FileEdit, ChevronDown, ChevronUp, Search, Trash2 } from 'lucide-react'
+import { FileSearch, Upload, Zap, FolderOpen, Clock, FileEdit, ChevronDown, ChevronUp, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { Pratica } from '@/types'
@@ -229,7 +229,7 @@ export function SplashPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-center space-x-3 mb-6">
               <div className="p-3 bg-blue-600 rounded-xl shadow-lg">
-                <Scale className="w-8 h-8 text-white" />
+                <FileSearch className="w-8 h-8 text-white" />
               </div>
               <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight">
                 LegalFlow
@@ -289,13 +289,7 @@ export function SplashPage() {
               <Upload className="w-5 h-5 mr-2" /> Nuova pratica
             </Button>
 
-            <Button
-              size="lg"
-              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-4 text-lg font-semibold"
-              onClick={() => navigate('/test-memoria-difensiva')}
-            >
-              <Scale className="w-5 h-5 mr-2" /> Test Memoria Difensiva
-            </Button>
+
 
             {all.length > 0 && (
               <div className="relative">
@@ -306,7 +300,9 @@ export function SplashPage() {
                   onClick={() => setIsOpen(!isOpen)}
                 >
                   <FolderOpen className="w-5 h-5 mr-2" />
-                  Apri pratica {draftCount > 0 && `(${draftCount} ${draftCount === 1 ? 'bozza' : 'bozze'})`}
+                  Apri pratica {draftCount > 0 && (
+                    <span className="ml-2 text-sm opacity-90">({draftCount} {draftCount === 1 ? 'bozza' : 'bozze'})</span>
+                  )}
                   {isOpen ? <ChevronUp className="w-5 h-5 ml-2" /> : <ChevronDown className="w-5 h-5 ml-2" />}
                 </Button>
 

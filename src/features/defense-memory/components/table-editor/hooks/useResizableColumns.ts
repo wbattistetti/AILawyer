@@ -4,7 +4,6 @@ export interface ColumnWidths {
     number: number
     typeDescription: number
     observations: number
-    actions: number
 }
 
 // Calcola la larghezza minima necessaria per gli elementi più lunghi delle combo
@@ -40,10 +39,9 @@ const calculateMinWidthForCombos = (): number => {
 const MIN_TYPE_DESCRIPTION_WIDTH = calculateMinWidthForCombos()
 
 const DEFAULT_WIDTHS: ColumnWidths = {
-    number: 60,
+    number: 40,
     typeDescription: Math.max(450, MIN_TYPE_DESCRIPTION_WIDTH), // Assicura che sia almeno il minimo
-    observations: 400,
-    actions: 80
+    observations: 400
 }
 
 export function useResizableColumns() {
@@ -73,13 +71,11 @@ export function useResizableColumns() {
             // Calcola minimo width in base alla colonna
             let minWidth: number
             if (currentColumn === 'number') {
-                minWidth = 50
-            } else if (currentColumn === 'actions') {
-                minWidth = 60
+                minWidth = 30
             } else if (currentColumn === 'typeDescription') {
                 // Per typeDescription, permette la riduzione ma con un minimo ragionevole (250px)
                 minWidth = 250
-            } else {
+            } else { // For 'observations'
                 minWidth = 200
             }
 

@@ -34,7 +34,7 @@ export const ExtractClassifierDialog: React.FC<ExtractClassifierDialogProps> = (
         <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Classifica Estratto - Memoria Difensiva</DialogTitle>
+                    <DialogTitle>Classifica Estratto - Analisi atti</DialogTitle>
                 </DialogHeader>
                 <ExtractClassifier
                     praticaId={praticaId}

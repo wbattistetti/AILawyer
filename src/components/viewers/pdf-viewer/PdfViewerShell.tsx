@@ -23,6 +23,7 @@ interface PdfViewerShellProps {
   hideToolbar?: boolean
   docId?: string
   praticaId?: string
+  docName?: string
 }
 
 export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
@@ -32,7 +33,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   onPageChange,
   hideToolbar: _hideToolbar,
   docId,
-  praticaId
+  praticaId,
+  docName
 }) => {
   console.log('🎬🎬🎬 [PdfViewerShell] SHELL MONTATO! 🎬🎬🎬')
   console.log('🎬 [PdfViewerShell] fileUrl:', fileUrl)
@@ -207,12 +209,14 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         contextMenu={shell.contextMenu}
         lastSelection={shell.lastSelection}
         persistentSelections={shell.persistentSelections}
+        setPersistentSelections={shell.setPersistentSelections}
         pageElsRef={shell.pageElsRef}
         onContextMenuChange={shell.setContextMenu}
         onOcrInspectOpenChange={shell.setOcrInspectOpen}
         onExtractPosChange={shell.setExtractPos}
         onExtractPageChange={shell.setExtractPage}
         onExtractOpenChange={shell.setExtractOpen}
+        docName={docName}
       />
 
       <OcrInspector

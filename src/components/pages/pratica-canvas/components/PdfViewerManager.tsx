@@ -47,6 +47,7 @@ export function PdfViewerManager({
           docId={doc.id}
           praticaId={praticaId}
           onPageChange={setSyncPage}
+          docName={doc.filename}
         />
       </div>
     </div>

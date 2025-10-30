@@ -7,10 +7,9 @@ import { RowActions } from './RowActions'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_WIDTHS = {
-    number: 60,
+    number: 40,
     typeDescription: 450,
-    observations: 400,
-    actions: 80
+    observations: 400
 }
 
 export const TableRow: React.FC<TableRowProps> = ({
@@ -51,7 +50,7 @@ export const TableRow: React.FC<TableRowProps> = ({
         >
             {/* Numero d'ordine */}
             <div
-                className="border-r border-gray-300 flex-shrink-0"
+                className="flex-shrink-0 px-2"
                 style={{ width: columnWidths.number }}
             >
                 <RowNumberCell order={order} />
@@ -76,7 +75,7 @@ export const TableRow: React.FC<TableRowProps> = ({
 
             {/* Osservazioni - Editabile in-place */}
             <div
-                className="border-r border-gray-300 flex-shrink-0 relative"
+                className="flex-shrink-0 relative"
                 style={{ width: columnWidths.observations }}
             >
                 {/* Pulsante Azioni - appare solo su hover, posizionato in alto a destra */}

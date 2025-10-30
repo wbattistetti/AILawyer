@@ -1,4 +1,4 @@
-import { DefenseMemoryTableData, TableRow } from '../types/table.types'
+import { DefenseMemoryTableData, TableRow, Motivation } from '../types/table.types'
 
 export const createEmptyTable = (): DefenseMemoryTableData => ({
     rows: [],
@@ -27,10 +27,30 @@ export const deserializeTable = (json: string): DefenseMemoryTableData | null =>
             return null
         }
 
+        // Migrazione legacy: extract -> motivations (se assente)
+        const migratedRows: TableRow[] = parsed.rows.map((row: TableRow) => {
+            if (!row.motivations && row.extract) {
+                const motivation: Motivation = {
+                    id: `mot_${Math.random().toString(36).slice(2)}`,
+                    text: row.extract.content,
+                    source: row.extract.source,
+                    page: row.extract.page,
+                    isHidden: !!row.extract.isHidden,
+                    observation: ''
+                }
+                return {
+                    ...row,
+                    motivations: [motivation]
+                }
+            }
+            return row
+        })
+
         return {
             ...parsed,
+            rows: migratedRows,
             lastUpdated: parsed.lastUpdated || new Date().toISOString(),
-            version: parsed.version || 1
+            version: parsed.version ? Math.max(parsed.version, 2) : 2
         }
     } catch {
         return null

@@ -20,6 +20,22 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	setPersistentSelections,
 	overlayRootsRef
 }) => {
+	// Log quando cambiano le selezioni persistenti
+	useEffect(() => {
+		console.log('🟡 [AnnotationOverlays] persistentSelections aggiornate:', {
+			count: persistentSelections.length,
+			selections: persistentSelections.map(s => ({ id: s.id, page: s.page }))
+		})
+	}, [persistentSelections])
+
+	// Wrapper per setPersistentSelections con logging
+	const setPersistentSelectionsWithLog = (selections: PersistentSelection[] | ((prev: PersistentSelection[]) => PersistentSelection[])) => {
+		console.log('🟡 [AnnotationOverlays] setPersistentSelections chiamato:', {
+			isFunction: typeof selections === 'function',
+			currentCount: persistentSelections.length
+		})
+		setPersistentSelections(selections)
+	}
 	const [hoveredSelectionId, setHoveredSelectionId] = useState<string | null>(null)
 	const [draggingSelectionId, setDraggingSelectionId] = useState<string | null>(null)
 	const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null)
@@ -97,7 +113,11 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 			{/* Render persistent selections with interactivity */}
 			{persistentSelections.map(selection => {
 				const root = overlayRootsRef.current.get(selection.page)
-				if (!root) return null
+				if (!root) {
+					console.log('🟡 [AnnotationOverlays] Nessun root trovato per pagina:', selection.page)
+					return null
+				}
+				console.log('🟡 [AnnotationOverlays] Rendering rettangolo persistente:', selection.id, 'su pagina:', selection.page)
 
 				const left = `${selection.x0Pct * 100}%`
 				const top = `${selection.y0Pct * 100}%`
