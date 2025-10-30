@@ -240,6 +240,8 @@ export function DocumentCollection({
   progressById,
   etaById,
   statusById,
+  draggableItems,
+  onDragStartItem,
 }: {
   title?: string
   items: DocItem[]
@@ -254,6 +256,8 @@ export function DocumentCollection({
   progressById?: Record<string, number>
   etaById?: Record<string, string>
   statusById?: Record<string, string>
+  draggableItems?: boolean
+  onDragStartItem?: (docId: string, e: React.DragEvent) => void
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState<boolean>(false)
@@ -262,20 +266,18 @@ export function DocumentCollection({
   const [searchHeight, setSearchHeight] = useState<number>(300)
   const [isSearching, setIsSearching] = useState<boolean>(false)
 
-  useEffect(() => {
-    console.log('📚 [DocumentCollection] Componente montato', {
-      title,
-      itemsCount: items.length,
-      itemsIds: items.map(i => i.id),
-      timestamp: new Date().toISOString()
-    });
-  }, [title, items]);
+  // Quiet: rimuovi log rumorosi, mantieni solo diagnostica su drop
 
   const onDropCb = useCallback((accepted: File[]) => {
+    try {
+      console.info('📥 [DC] onDrop', { files: accepted?.length || 0, names: accepted.map(f => f.name) })
+    } catch { }
     onDrop?.(accepted)
   }, [onDrop])
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop: onDropCb,
+    onDragEnter: () => { try { console.info('🟦 [DC] drag enter') } catch { } },
+    onDragLeave: () => { try { console.info('⬜ [DC] drag leave') } catch { } },
     noClick: true,
     multiple: true,
     accept: {
@@ -285,7 +287,7 @@ export function DocumentCollection({
   })
 
   return (
-    <div className="w-full h-full flex flex-col relative" data-component="document-collection">
+    <div className="w-full h-full flex flex-col relative" data-component="document-collection" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
       {title && (
         <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center gap-2">
           {isSearching ? (
@@ -456,7 +458,7 @@ export function DocumentCollection({
         )}
 
         {/* Miniature documenti */}
-        <div className="flex-1 overflow-auto" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })} data-component="document-collection-thumbnails">
+        <div className="flex-1 overflow-auto" data-component="document-collection-thumbnails">
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
             {items.map(doc => {
@@ -471,35 +473,40 @@ export function DocumentCollection({
                 doc.localUrl || (doc.s3Key ? `http://localhost:3001/files/${encodeURIComponent(doc.s3Key)}` : '')
               ) || undefined
               return (
-                <ThumbCard
+                <div
                   key={doc.id}
-                  title={isExtract ? titleText : doc.filename}
-                  imgSrc={isExtract ? '' : (doc.thumb || '')}
-                  // genera sempre lato client per i PDF
-                  fileUrl={computedFileUrl}
-                  autoGenerateThumbnail={isPdf}
-                  headerIcon={isExtract ? headerIcon : undefined}
-                  headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
-                  excerpt={isExtract ? excerpt : undefined}
-                  metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
-                  metaPage={isExtract ? (src.page || undefined) : undefined}
-                  onShow={isExtract ? (() => { try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct != null ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined) } })) } catch { } }) : undefined}
-                  selected={selectedId === doc.id}
-                  onSelect={() => setSelectedId(doc.id)}
-                  onPreview={() => onOpen(doc)}
-                  onTable={() => onOpen(doc)}
-                  onRemove={() => onRemove?.(doc)}
-                  onOcr={() => onOcr?.(doc)}
-                  onOcrCancel={() => onOcrCancel?.(doc)}
+                  draggable={!!draggableItems}
+                  onDragStart={(e) => onDragStartItem?.(doc.id, e)}
+                >
+                  <ThumbCard
+                    title={isExtract ? titleText : doc.filename}
+                    imgSrc={isExtract ? '' : (doc.thumb || '')}
+                    // genera sempre lato client per i PDF
+                    fileUrl={computedFileUrl}
+                    autoGenerateThumbnail={isPdf}
+                    headerIcon={isExtract ? headerIcon : undefined}
+                    headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
+                    excerpt={isExtract ? excerpt : undefined}
+                    metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
+                    metaPage={isExtract ? (src.page || undefined) : undefined}
+                    onShow={isExtract ? (() => { try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct != null ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined) } })) } catch { } }) : undefined}
+                    selected={selectedId === doc.id}
+                    onSelect={() => setSelectedId(doc.id)}
+                    onPreview={() => onOpen(doc)}
+                    onTable={() => onOpen(doc)}
+                    onRemove={() => onRemove?.(doc)}
+                    onOcr={() => onOcr?.(doc)}
+                    onOcrCancel={() => onOcrCancel?.(doc)}
 
-                  ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
-                  ocrEtaText={etaById?.[doc.id] ?? null}
-                  ocrStatusText={statusById?.[doc.id] ?? null}
-                  ocrCancelling={cancellingById?.[doc.id] as any}
-                  transcribedPct={transcribedPctById?.[doc.id] as any}
-                  ocrStatus={doc.ocrStatus ?? null}
-                  hasNativeText={doc.hasNativeText ?? false}
-                />
+                    ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
+                    ocrEtaText={etaById?.[doc.id] ?? null}
+                    ocrStatusText={statusById?.[doc.id] ?? null}
+                    ocrCancelling={cancellingById?.[doc.id] as any}
+                    transcribedPct={transcribedPctById?.[doc.id] as any}
+                    ocrStatus={doc.ocrStatus ?? null}
+                    hasNativeText={doc.hasNativeText ?? false}
+                  />
+                </div>
               )
             })}
           </div>

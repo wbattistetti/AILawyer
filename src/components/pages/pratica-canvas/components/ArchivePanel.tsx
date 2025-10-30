@@ -5,6 +5,7 @@ import { api } from '../../../../lib/api'
 import { useArchive } from '../hooks/useArchive'
 import { useOcr } from '../hooks/useOcr'
 import { ArchivePanelProps } from '../types'
+import { ArchiveRenderer } from './ArchiveRenderer'
 
 export function ArchivePanel({
   praticaId,
@@ -16,20 +17,20 @@ export function ArchivePanel({
   onOcr,
   onOcrCancel
 }: ArchivePanelProps) {
-  
+
   // Usa l'hook useArchive per la gestione documenti
   const { documenti, uploads, clientThumbByS3, handleFileDrop, handleRemoveThumb } = useArchive(praticaId, comparti)
-  
+
   // Usa l'hook useOcr per la gestione OCR
-  const { 
-    ocrProgressByDoc, 
-    ocrEtaByDoc, 
-    ocrStatusByDoc, 
-    ocrCancellingByDoc, 
+  const {
+    ocrProgressByDoc,
+    ocrEtaByDoc,
+    ocrStatusByDoc,
+    ocrCancellingByDoc,
     transcribedPctByDoc,
     ocrJobByDoc,
     handleOcr,
-    handleOcrCancel 
+    handleOcrCancel
   } = useOcr(praticaId)
 
   // Dropzone: applicata alla colonna sinistra
@@ -46,9 +47,8 @@ export function ArchivePanel({
   return (
     <div
       {...getRootProps()}
-      className={`w-full h-full min-h-full flex flex-col border-2 border-dashed rounded-md transition ${
-        isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300'
-      }`}
+      className={`w-full h-full min-h-full flex flex-col border-2 border-dashed rounded-md transition ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300'
+        }`}
       style={{ padding: '12px' }}
       onClick={() => { if (documenti.length === 0) open() }}>
       <input {...getInputProps()} />
@@ -57,8 +57,8 @@ export function ArchivePanel({
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-neutral-600">Archivio</div>
         <div className="flex items-center gap-2">
-          <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); setShowAnalysis(!showAnalysis) }}>Analizza</button>
-          <button className="px-2 py-1 border rounded" onClick={(e)=>{ e.stopPropagation(); open() }}>Carica…</button>
+          <button className="px-2 py-1 border rounded" onClick={(e) => { e.stopPropagation(); setShowAnalysis(!showAnalysis) }}>Analizza</button>
+          <button className="px-2 py-1 border rounded" onClick={(e) => { e.stopPropagation(); open() }}>Carica…</button>
         </div>
       </div>
 
@@ -84,35 +84,24 @@ export function ArchivePanel({
       )}
 
       {!showAnalysis && (
-        <div className="grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start overflow-auto flex-1 p-2">
-        {documenti.map(doc => {
-          const isPdf = doc.mime?.startsWith('application/pdf') || doc.filename.toLowerCase().endsWith('.pdf')
-          const ver = (doc as any)?.updatedAt ? `?v=${encodeURIComponent((doc as any).updatedAt as any)}` : ''
-          const serverThumb = isPdf && doc.hash ? `${api.getThumbUrl(doc.hash)}${ver}` : ''
-          const clientThumb = clientThumbByS3[doc.s3Key]
-          const thumb = clientThumb || serverThumb || ''
-          return (
-            <ThumbCard
-              key={doc.id}
-              title={doc.filename}
-              imgSrc={thumb}
-              selected={selectedDocId === doc.id}
-              onSelect={() => setSelectedDocId(doc.id)}
-              onPreview={() => { setSelectedDocId(doc.id); /* onOpenInTable sarà gestito separatamente */ }}
-              onPreviewOcr={() => { if (doc.ocrPdfKey) window.open(api.getLocalFileUrl(doc.ocrPdfKey), '_blank') }}
-              onTable={() => { setSelectedDocId(doc.id); /* onOpenInTable sarà gestito separatamente */ }}
-              onRemove={() => handleRemoveThumb(doc.id)}
-              onOcr={() => handleOcr(doc)}
-              onOcrCancel={() => handleOcrCancel(doc)}
-              ocrProgressPct={ocrProgressByDoc[doc.id] ?? null}
-              ocrEtaText={ocrEtaByDoc[doc.id] ?? null}
-              ocrStatusText={ocrStatusByDoc[doc.id] ?? null}
-              hasOcr={!!doc.ocrPdfKey}
-              ocrCancelling={!!ocrCancellingByDoc[doc.id]}
-              transcribedPct={typeof transcribedPctByDoc[doc.id] === 'number' ? transcribedPctByDoc[doc.id] : null}
-            />
-          )
-        })}
+        <div className="flex-1 min-h-0">
+          <ArchiveRenderer
+            documenti={documenti}
+            clientThumbByS3={clientThumbByS3}
+            // dockV2Ref non è disponibile qui; il renderer gestirà l'apertura con evento globale o API locale
+            dockV2Ref={{ current: null }} as any
+            handleFileDrop={handleFileDrop as any}
+            handleRemoveThumb={handleRemoveThumb}
+            handleOcr={(doc) => handleOcr(doc)}
+            handleOcrCancel={(doc) => handleOcrCancel(doc)}
+            ocrProgressByDoc={ocrProgressByDoc}
+            ocrEtaByDoc={ocrEtaByDoc as any}
+            ocrStatusByDoc={ocrStatusByDoc}
+            ocrCancellingByDoc={ocrCancellingByDoc}
+            transcribedPctByDoc={transcribedPctByDoc as any}
+            comparti={comparti}
+            toast={() => { }}
+          />
         </div>
       )}
 

@@ -6,7 +6,7 @@ interface UseEventListenersProps {
     documenti: Documento[];
     clientThumbByS3: Record<string, string>;
     dockV2Ref: RefObject<DockWorkspaceV2Handle | null>;
-    handleFileDrop: (files: File[], compartmentId: string | null, target: string | null) => Promise<void>;
+    handleFileDrop: (files: File[], compartoId?: string | null, target?: any) => Promise<void>;
 }
 
 export function useEventListeners({

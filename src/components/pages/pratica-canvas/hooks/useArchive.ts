@@ -22,6 +22,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
     // Validazione
     if (files.length > MAX_FILES_PER_BATCH) {
+      try { console.warn('⚠️ [ARCH] batch too large', { count: files.length, max: MAX_FILES_PER_BATCH }) } catch { }
       toast({
         title: 'Troppi file',
         description: `Puoi caricare massimo ${MAX_FILES_PER_BATCH} file alla volta.`,
@@ -32,6 +33,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
     const oversizedFiles = files.filter(file => file.size > MAX_UPLOAD_SIZE)
     if (oversizedFiles.length > 0) {
+      try { console.warn('⚠️ [ARCH] oversized files', { count: oversizedFiles.length, max: MAX_UPLOAD_SIZE, names: oversizedFiles.map(f => f.name) }) } catch { }
       toast({
         title: 'File troppo grandi',
         description: `Alcuni file superano il limite di ${MAX_UPLOAD_SIZE / 1024 / 1024}MB.`,
@@ -39,6 +41,8 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       })
       return
     }
+
+    try { console.info('📥 [ARCH] handleFileDrop', { praticaId, files: files?.length || 0, _compartoId, target }) } catch { }
 
     // Pre-dedupe
     const existingHashes = new Set((documenti.map(d => (d as any).hash).filter(Boolean) as string[]))
@@ -64,13 +68,36 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         const existsByNameSize = documenti.some(d => d.filename === f.name && (d as any).size === f.size)
         if (existsByNameSize) dup = true
       }
-      if (dup) { skipped++; continue }
+      if (dup) {
+        skipped++
+        // Se è un duplicato e sto droppando su un comparto specifico, prova a spostare l'esistente lì
+        if (_compartoId) {
+          try {
+            const found = (h
+              ? documenti.find(d => (d as any).hash === h)
+              : documenti.find(d => d.filename === f.name && (d as any).size === f.size))
+            const targetComparto = comparti.find(c => c.id === _compartoId)
+            if (found && targetComparto && found.compartoId !== targetComparto.id) {
+              console.info('↪️ [ARCH] duplicate found, moving existing document to target comparto', { docId: found.id, from: found.compartoId, to: targetComparto.id })
+              await api.updateDocumento(found.id, { compartoId: targetComparto.id })
+              setDocumenti(prev => prev.map(d => d.id === found.id ? { ...d, compartoId: targetComparto.id } as any : d))
+              try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
+              toast({ title: 'Documento già presente', description: `Spostato in "${targetComparto.nome}"` })
+            }
+          } catch (e) {
+            console.warn('⚠️ [ARCH] move on duplicate failed (soft)', e)
+          }
+        }
+        continue
+      }
       toProcess.push(f)
     }
 
     if (skipped > 0) {
+      try { console.info('ℹ️ [ARCH] duplicates skipped', { skipped, toProcess: toProcess.length }) } catch { }
       toast({ title: 'Duplicati ignorati', description: `${skipped} file già presenti non sono stati aggiunti.` })
     }
+    try { console.info('🧮 [ARCH] toProcess', { count: toProcess.length, names: toProcess.map(f => f.name) }) } catch { }
 
     // Initialize upload progress
     const newUploads: UploadProgress[] = toProcess.map(file => ({
@@ -116,7 +143,17 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         ))
         try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch { }
 
-        const { uploadUrl, s3Key } = await api.getUploadUrl(file.name, file.type)
+        let uploadUrl: string
+        let s3Key: string
+        try {
+          const res = await api.getUploadUrl(file.name, file.type)
+          uploadUrl = res.uploadUrl
+          s3Key = res.s3Key
+        } catch (e) {
+          console.error('❌ [ARCH] getUploadUrl failed', { name: file.name, type: file.type, error: (e as any)?.message || e })
+          throw e
+        }
+        try { console.info('🔑 [ARCH] got upload url', { name: file.name, s3Key }) } catch { }
 
         if (existingKeys.has(s3Key)) {
           setUploads(prev => prev.map((upload, idx) =>
@@ -136,7 +173,13 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           idx === uploadIndex ? { ...upload, progress: 30 } : upload
         ))
 
-        await api.uploadFile(uploadUrl, file)
+        try {
+          await api.uploadFile(uploadUrl, file)
+        } catch (e) {
+          console.error('❌ [ARCH] upload failed', { name: file.name, s3Key, error: (e as any)?.message || e })
+          throw e
+        }
+        try { console.info('⬆️ [ARCH] uploaded file', { name: file.name, s3Key }) } catch { }
 
         setUploads(prev => prev.map((upload, idx) =>
           idx === uploadIndex ? { ...upload, progress: 60 } : upload
@@ -154,17 +197,26 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           }
         }
 
-        const documento = await api.createDocumento({
-          praticaId,
-          compartoId: comparti.find(c => c.key === 'da_classificare')?.id || (comparti[0]?.id ?? ''),
-          filename: file.name,
-          mime: file.type,
-          size: file.size,
-          s3Key,
-          hash: '',
-          ocrStatus: 'pending',
-          tags,
-        })
+        let documento
+        try {
+          documento = await api.createDocumento({
+            praticaId,
+            compartoId: (_compartoId && comparti.find(c => c.id === _compartoId)?.id)
+              || comparti.find(c => c.key === 'da_classificare')?.id
+              || (comparti[0]?.id ?? ''),
+            filename: file.name,
+            mime: file.type,
+            size: file.size,
+            s3Key,
+            hash: '',
+            ocrStatus: 'pending',
+            tags,
+          })
+        } catch (e) {
+          console.error('❌ [ARCH] createDocumento failed', { name: file.name, s3Key, error: (e as any)?.message || e })
+          throw e
+        }
+        try { console.info('🆔 [ARCH] documento creato', { id: documento.id, filename: documento.filename, compartoId: documento.compartoId }) } catch { }
 
         existingKeys.add(s3Key)
 
