@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Comparto, Documento } from '../../../../types';
+import { Comparto, Documento, UploadProgress } from '../../../../types';
 import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
 import { DocumentCollection } from '../../../../features/documents/DocumentCollection';
 import { api } from '../../../../lib/api';
@@ -29,6 +29,7 @@ interface ArchiveRendererProps {
     ocrCancellingByDoc: Record<string, boolean>;
     transcribedPctByDoc: Record<string, number>;
     comparti: Comparto[];
+    uploads?: UploadProgress[];
     toast: any;
 }
 
@@ -46,6 +47,7 @@ export function ArchiveRenderer({
     ocrCancellingByDoc,
     transcribedPctByDoc,
     comparti,
+    uploads,
     toast
 }: ArchiveRendererProps) {
     const showOverlay = false;
@@ -109,13 +111,22 @@ export function ArchiveRenderer({
     return (
         <div className="relative w-full h-full overflow-auto space-y-2 p-2" data-component="archive-renderer">
             {(comparti || []).sort((a, b) => a.ordine - b.ordine).map(comparto => {
-                const docs = documenti.filter(d => d.compartoId === comparto.id)
+                // Filtra documenti del comparto e deduplica per s3Key per evitare doppioni temporanei
+                const rawDocs = documenti.filter(d => d.compartoId === comparto.id)
+                const seen = new Set<string>()
+                const docs = rawDocs.filter(d => {
+                    const key = d.s3Key || d.id
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                })
+                try { console.info('[AR] render comparto', { nome: comparto.nome, docs: docs.map(d => ({ id: d.id, s3Key: d.s3Key, localUrl: (d as any).localUrl ? true : false })) }) } catch { }
                 return (
                     <div key={comparto.id} className="border rounded-md overflow-hidden">
                         <div {...headerProps(comparto)}>
                             <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-sm" style={{ background: colorFor(comparto.nome), color: '#fff' }}>
-                                    {(() => { const I: any = iconFor(comparto.nome); return <I size={16} /> })()}
+                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-sm" style={{ background: colorFor(comparto.nome), color: '#fff' }}>
+                                    {(() => { const I: any = iconFor(comparto.nome); return <I size={32} /> })()}
                                 </span>
                                 <div className="font-medium text-[1.05rem]">{comparto.nome} ({docs.length})</div>
                             </div>
@@ -138,18 +149,47 @@ export function ArchiveRenderer({
                                 }}
                             >
                                 <DocumentCollection
+                                    extraNodesTop={(() => {
+                                        const ups = (uploads || []).filter(u => {
+                                            if (!u || u.compartoId !== comparto.id) return false
+                                            if (u.status === 'error' || u.status === 'completed') return false
+                                            if (u.hasTempDoc) return false
+                                            if (u.s3Key && documenti.some(d => d.s3Key === u.s3Key)) return false
+                                            return true
+                                        })
+                                        if (ups.length === 0) return null
+                                        return ups.map((u, idx) => {
+                                            const color = colorFor(comparto.nome)
+                                            const dashedStyle = { borderColor: color }
+                                            const name = (u.filenameBase || u.file?.name || '').replace(/\.[^.]+$/, '')
+                                            return (
+                                                <div key={`upload-ph-${comparto.id}-${idx}`} className="relative w-full min-w-[12rem] aspect-[3/4] border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden" style={dashedStyle}>
+                                                    {u.preview ? (
+                                                        <img src={u.preview} alt={name} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                                                    ) : null}
+                                                    <div className="relative z-10 flex flex-col items-center gap-2 p-2 text-center">
+                                                        <span className="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                        <div className="text-xs font-medium">Carico…</div>
+                                                        <div className="text-[11px] text-neutral-600 line-clamp-2">{name}</div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        })
+                                    })()}
                                     items={docs.map(d => {
                                         const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf');
                                         const ver = (d as any)?.updatedAt ? `?v=${encodeURIComponent((d as any).updatedAt as any)}` : '';
                                         const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : '';
                                         const clientThumb = clientThumbByS3[d.s3Key];
                                         const thumb = clientThumb || serverThumb || '';
+                                        const localUrl = (d as any).localUrl || undefined
                                         return {
                                             id: d.id,
                                             filename: d.filename,
                                             s3Key: d.s3Key,
                                             mime: d.mime,
                                             thumb,
+                                            localUrl,
                                             hasNativeText: d.hasNativeText ?? false,
                                             ocrStatus: d.ocrStatus
                                         };
@@ -161,7 +201,7 @@ export function ArchiveRenderer({
                                             toast({ title: 'Documento aperto', description: trovato.filename });
                                         }
                                     }}
-                                    onDrop={(files) => { onDropFilesToComparto(files, comparto.id) }}
+                                    // onDrop gestito dal body dell'accordion per evitare doppi eventi
                                     onRemove={(doc) => { handleRemoveThumb(doc.id) }}
                                     onOcr={(doc) => {
                                         const d = documenti.find(x => x.id === doc.id);

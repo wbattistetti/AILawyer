@@ -22,12 +22,12 @@ interface DocumentModalProps {
   onMoveToComparto: (documentId: string, compartoId: string) => void
 }
 
-export function DocumentModal({ 
-  documento, 
-  comparti, 
-  isOpen, 
-  onClose, 
-  onMoveToComparto 
+export function DocumentModal({
+  documento,
+  comparti,
+  isOpen,
+  onClose,
+  onMoveToComparto
 }: DocumentModalProps) {
   if (!documento) return null
 
@@ -196,7 +196,7 @@ export function DocumentModal({
                 ))}
             </div>
             <div className="mt-4 flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => window.open(api.getLocalFileUrl(documento.s3Key), '_blank')}>
+              <Button variant="outline" size="sm" onClick={() => window.open((documento as any).localUrl || api.getLocalFileUrl(documento.s3Key), '_blank')}>
                 Apri file originale
               </Button>
             </div>

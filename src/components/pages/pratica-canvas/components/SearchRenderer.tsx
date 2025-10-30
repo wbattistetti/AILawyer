@@ -47,7 +47,7 @@ export function SearchRenderer({ documenti, dockV2Ref, toast }: SearchRendererPr
                 console.log('[ARCHIVE SEARCH] start', { q, targets: targets.length });
 
                 for (const d of targets) {
-                    const fileUrl = api.getLocalFileUrl(d.ocrPdfKey || d.s3Key);
+                    const fileUrl = (d as any).localUrl || api.getLocalFileUrl(d.ocrPdfKey || d.s3Key);
                     try {
                         // Fetch as ArrayBuffer to avoid CORS/URL issues
                         const res = await fetch(fileUrl);

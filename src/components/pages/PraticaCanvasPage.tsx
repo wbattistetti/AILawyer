@@ -51,6 +51,7 @@ export function PraticaCanvasPage() {
   const {
     documenti,
     clientThumbByS3,
+    uploads,
     handleFileDrop,
     handleRemoveThumb
   } = useArchive(id, comparti)
@@ -594,6 +595,7 @@ export function PraticaCanvasPage() {
               ocrCancellingByDoc={ocrCancellingByDoc}
               transcribedPctByDoc={transcribedPctByDoc}
               comparti={comparti}
+              uploads={uploads}
               toast={toast}
             />
           )}

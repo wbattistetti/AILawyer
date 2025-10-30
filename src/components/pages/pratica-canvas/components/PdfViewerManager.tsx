@@ -41,7 +41,7 @@ export function PdfViewerManager({
       {/* Panel content - Nuovo viewer sempre attivo */}
       <div className="flex-1 overflow-hidden">
         <PdfViewerShell
-          fileUrl={api.getLocalFileUrl(doc.s3Key)}
+          fileUrl={(doc as any).localUrl || api.getLocalFileUrl(doc.s3Key)}
           page={syncPage || 1}
           lines={verifyLinesByPage[syncPage || 1] as any}
           docId={doc.id}

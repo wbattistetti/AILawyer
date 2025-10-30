@@ -59,6 +59,11 @@ export interface UploadProgress {
   progress: number
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error'
   error?: string
+  compartoId?: string
+  filenameBase?: string
+  preview?: string
+  s3Key?: string
+  hasTempDoc?: boolean
 }
 
 // ===== NUOVI TIPI PER SISTEMA CLIENTI/ESTRATTI =====

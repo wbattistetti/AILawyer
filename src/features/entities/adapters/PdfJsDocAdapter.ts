@@ -1,7 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist'
 // @ts-ignore - Vite will turn this into a URL string (UMD worker path)
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url'
-;(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
+  ; (pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
 
 import { api } from '../../../lib/api'
 import type { Documento } from '../../../types'
@@ -78,7 +78,7 @@ export class PdfJsDocAdapter implements DocAdapter {
 
 export async function buildPdfJsAdaptersFromDocs(docs: Documento[], preferOcrPdf = true): Promise<PdfJsDocAdapter[]> {
   return docs.map(d => {
-    const url = preferOcrPdf && d.ocrPdfKey ? api.getLocalFileUrl(d.ocrPdfKey) : api.getLocalFileUrl(d.s3Key)
+    const url = (d as any).localUrl || (preferOcrPdf && d.ocrPdfKey ? api.getLocalFileUrl(d.ocrPdfKey) : api.getLocalFileUrl(d.s3Key))
     return new PdfJsDocAdapter({ praticaId: d.praticaId, docId: d.id, title: d.filename, hash: d.hash, url })
   })
 }

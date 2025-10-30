@@ -39,29 +39,29 @@ interface ThumbCardProps {
   }
 }
 
-export function ThumbCard({ 
-  title, 
-  imgSrc, 
-  headerIcon, 
-  headerColorClass, 
-  excerpt, 
-  metaDocLabel, 
-  metaPage, 
-  onShow, 
-  selected, 
-  onSelect, 
-  onPreview, 
-  onPreviewOcr, 
-  onTable, 
-  onRemove, 
-  onOcr, 
+export function ThumbCard({
+  title,
+  imgSrc,
+  headerIcon,
+  headerColorClass,
+  excerpt,
+  metaDocLabel,
+  metaPage,
+  onShow,
+  selected,
+  onSelect,
+  onPreview,
+  onPreviewOcr,
+  onTable,
+  onRemove,
+  onOcr,
   onOcrCancel,
   onOcrResume,
-  ocrProgressPct, 
+  ocrProgressPct,
   ocrCancelling,
   transcribedPct,
-  hasOcr, 
-  ocrEtaText, 
+  hasOcr,
+  ocrEtaText,
   ocrStatusText,
   ocrStatus,
   hasNativeText,
@@ -72,20 +72,23 @@ export function ThumbCard({
   const [imgError, setImgError] = useState(false)
   // resetta errori immagine quando cambia la sorgente
   useEffect(() => { setImgError(false) }, [imgSrc])
-  
+
   // Log per debug OCR status
   useEffect(() => {
-    const isPdf = title?.toLowerCase().endsWith('.pdf')
-    console.log('[THUMBCARD][render]', {
-      filename: title,
-      isPdf,
-      hasNativeText,
-      ocrStatus,
-      transcribedPct,
-      ocrProgressPct,
-      shouldShowDaTrascrivere: isPdf && !hasNativeText && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct
-    })
-  }, [title, hasNativeText, ocrStatus, transcribedPct, ocrProgressPct])
+    try {
+      const isPdf = title?.toLowerCase().endsWith('.pdf')
+      console.info('[THUMBCARD][render]', {
+        filename: title,
+        isPdf,
+        hasNativeText,
+        ocrStatus,
+        transcribedPct,
+        ocrProgressPct,
+        autoGenerateThumbnail,
+        hasImgSrc: !!imgSrc,
+      })
+    } catch { }
+  }, [title, hasNativeText, ocrStatus, transcribedPct, ocrProgressPct, autoGenerateThumbnail, imgSrc])
 
   // Hook per generazione automatica miniature
   const { thumbnail: generatedThumbnail, loading: thumbnailLoading, generate } = useAutoThumbnail(
@@ -114,7 +117,7 @@ export function ThumbCard({
   useEffect(() => {
     try {
       console.log('[CARD][state]', { title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, hasDisplay: !!displayImage })
-    } catch {}
+    } catch { }
   }, [title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, displayImage])
 
   // Fallback: se l'immagine fallisce (es. 404 sul server-thumb), genera la miniatura client-side
@@ -122,7 +125,7 @@ export function ThumbCard({
     if (!fileUrl) return
     if (!imgError) return
     if (generatedThumbnail || thumbnailLoading) return
-    try { generate() } catch {}
+    try { generate() } catch { }
   }, [imgError, fileUrl, generatedThumbnail, thumbnailLoading, generate])
   return (
     <div
@@ -141,7 +144,7 @@ export function ThumbCard({
         {/* Label stato OCR sotto l'header, allineata a destra */}
         {(() => {
           const isPdf = (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
-          
+
           // OCR in corso (0-99%)
           if (typeof ocrProgressPct === 'number' && ocrProgressPct < 100 && !ocrCancelling) {
             return (
@@ -152,7 +155,7 @@ export function ThumbCard({
               </div>
             )
           }
-          
+
           // OCR completato (100% O ocrStatus === 'completed')
           if ((typeof transcribedPct === 'number' && transcribedPct >= 100) || ocrStatus === 'completed') {
             return (
@@ -163,7 +166,7 @@ export function ThumbCard({
               </div>
             )
           }
-          
+
           // OCR parziale/interrotto (1-99%)
           if (typeof transcribedPct === 'number' && transcribedPct > 0 && transcribedPct < 100) {
             return (
@@ -174,7 +177,7 @@ export function ThumbCard({
               </div>
             )
           }
-          
+
           // PDF scansione senza OCR - "Da trascrivere" (SOLO se non ha testo nativo)
           if (isPdf && !hasNativeText && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct) {
             return (
@@ -185,7 +188,7 @@ export function ThumbCard({
               </div>
             )
           }
-          
+
           return null
         })()}
         {/* Body: image or excerpt */}
@@ -203,7 +206,7 @@ export function ThumbCard({
                 {onShow && (
                   <button
                     className="inline-flex items-center px-2 py-0.5 border rounded bg-blue-100 text-blue-800 hover:bg-blue-200 text-[10px]"
-                    onClick={(e)=>{ e.stopPropagation(); onShow() }}
+                    onClick={(e) => { e.stopPropagation(); onShow() }}
                   >Mostra</button>
                 )}
               </div>
@@ -211,18 +214,20 @@ export function ThumbCard({
           )}
           {!imgError && displayImage ? (
             <div className="flex-1 flex items-center justify-center">
-              {(thumbnailLoading || (displayImage && imgLoading)) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/80">
-                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
-              <img 
-                src={displayImage} 
-                alt={title} 
-                className="max-w-full max-h-full object-contain" 
-                onError={() => { setImgError(true); setImgLoading(false) }} 
+              <img
+                src={displayImage}
+                alt={title}
+                className="max-w-full max-h-full object-contain"
+                onError={() => { setImgError(true); setImgLoading(false) }}
                 onLoad={() => { setImgError(false); setImgLoading(false) }}
               />
+            </div>
+          ) : thumbnailLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <div className="text-[10px] text-neutral-600">Generando miniatura...</div>
+              </div>
             </div>
           ) : (
             <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>

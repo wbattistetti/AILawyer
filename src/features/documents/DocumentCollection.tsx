@@ -70,7 +70,7 @@ async function searchInPdfDocuments(items: DocItem[], query: string): Promise<an
 
     for (const doc of pdfTargets) {
       try {
-        const fileUrl = api.getLocalFileUrl(doc.s3Key);
+        const fileUrl = doc.localUrl || `http://localhost:3001/api/files/${encodeURIComponent(doc.s3Key)}`;
 
         // Fetch PDF come ArrayBuffer
         const res = await fetch(fileUrl);
@@ -242,6 +242,7 @@ export function DocumentCollection({
   statusById,
   draggableItems,
   onDragStartItem,
+  extraNodesTop,
 }: {
   title?: string
   items: DocItem[]
@@ -258,6 +259,7 @@ export function DocumentCollection({
   statusById?: Record<string, string>
   draggableItems?: boolean
   onDragStartItem?: (docId: string, e: React.DragEvent) => void
+  extraNodesTop?: React.ReactNode
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState<boolean>(false)
@@ -461,6 +463,7 @@ export function DocumentCollection({
         <div className="flex-1 overflow-auto" data-component="document-collection-thumbnails">
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
+            {extraNodesTop}
             {items.map(doc => {
               const meta = (doc as any).meta || {}
               const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
@@ -470,7 +473,7 @@ export function DocumentCollection({
               const src = meta.source || {}
               const isPdf = !isExtract && ((doc.mime || '').startsWith('application/pdf') || (doc.filename || '').toLowerCase().endsWith('.pdf'))
               const computedFileUrl = !isExtract && (
-                doc.localUrl || (doc.s3Key ? `http://localhost:3001/files/${encodeURIComponent(doc.s3Key)}` : '')
+                doc.localUrl || (doc.s3Key ? `http://localhost:3001/api/files/${encodeURIComponent(doc.s3Key)}` : '')
               ) || undefined
               return (
                 <div
@@ -481,9 +484,9 @@ export function DocumentCollection({
                   <ThumbCard
                     title={isExtract ? titleText : doc.filename}
                     imgSrc={isExtract ? '' : (doc.thumb || '')}
-                    // genera sempre lato client per i PDF
+                    // genera lato client solo se manca una thumb
                     fileUrl={computedFileUrl}
-                    autoGenerateThumbnail={isPdf}
+                    autoGenerateThumbnail={isPdf && !(doc as any).thumb}
                     headerIcon={isExtract ? headerIcon : undefined}
                     headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
                     excerpt={isExtract ? excerpt : undefined}

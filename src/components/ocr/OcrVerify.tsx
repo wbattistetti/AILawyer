@@ -27,11 +27,11 @@ export function OcrVerify({ documento, externalPage, onPageChange }: OcrVerifyPr
   const layout: OcrLayoutPage | undefined = useMemo(() => {
     const lay: any = (documento as any).ocrLayout
     if (!lay) return undefined
-    const arr = Array.isArray(lay) ? lay : (()=>{ try{ return JSON.parse(lay as string) } catch { return undefined } })()
+    const arr = Array.isArray(lay) ? lay : (() => { try { return JSON.parse(lay as string) } catch { return undefined } })()
     if (!arr || !Array.isArray(arr)) return undefined
     return arr.find((p: any) => p?.page === pageIndex + 1) || arr[0]
   }, [documento, pageIndex])
-  const fileUrl = useMemo(() => api.getLocalFileUrl(documento.s3Key), [documento.s3Key])
+  const fileUrl = useMemo(() => (documento as any).localUrl || api.getLocalFileUrl(documento.s3Key), [documento.s3Key, (documento as any).localUrl])
 
   const handleVerify = async () => {
     if (!layout || !textAreaRef.current) return
@@ -92,9 +92,9 @@ export function OcrVerify({ documento, externalPage, onPageChange }: OcrVerifyPr
       {/* Toolbar pagine */}
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs text-muted-foreground">Pagina</span>
-        <input type="number" className="w-16 border rounded px-2 py-1 text-sm" min={1} max={pages.length} value={pageIndex + 1} onChange={(e)=>{
-          const v = Math.max(1, Math.min(pages.length, parseInt(e.target.value||'1',10)))
-          setPageIndex(v-1)
+        <input type="number" className="w-16 border rounded px-2 py-1 text-sm" min={1} max={pages.length} value={pageIndex + 1} onChange={(e) => {
+          const v = Math.max(1, Math.min(pages.length, parseInt(e.target.value || '1', 10)))
+          setPageIndex(v - 1)
           onPageChange?.(v)
         }} />
         <span className="text-xs text-muted-foreground">/ {pages.length}</span>

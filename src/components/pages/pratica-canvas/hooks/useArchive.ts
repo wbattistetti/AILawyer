@@ -18,6 +18,8 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
     _compartoId?: string | null,
     target?: { type?: string; id?: string; title?: string; tags?: string[] } | null
   ) => {
+    // Modalità locale: non effettua upload/creazione su backend
+    const localOnly = (((import.meta as any).env?.VITE_ARCHIVE_LOCAL_ONLY) ?? 'true') !== 'false'
     if (!praticaId) return
 
     // Validazione
@@ -99,15 +101,31 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
     }
     try { console.info('🧮 [ARCH] toProcess', { count: toProcess.length, names: toProcess.map(f => f.name) }) } catch { }
 
-    // Initialize upload progress
-    const newUploads: UploadProgress[] = toProcess.map(file => ({
-      file,
-      progress: 0,
-      status: 'pending',
-    }))
+    // Scegli il comparto target coerente con createDocumento
+    const resolveCompartoId = (_cid?: string | null) => {
+      return (_cid && comparti.find(c => c.id === _cid)?.id)
+        || comparti.find(c => c.key === 'da_classificare')?.id
+        || (comparti[0]?.id ?? '')
+    }
+    const targetCompartoId = resolveCompartoId(_compartoId)
 
-    setUploads(prev => [...prev, ...newUploads])
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch { }
+    // Initialize upload progress con metadati UI
+    const newUploads: UploadProgress[] = toProcess.map(file => {
+      const name = file.name || ''
+      const filenameBase = name.replace(/\.[^.]+$/, '')
+      return {
+        file,
+        progress: 0,
+        status: 'pending',
+        compartoId: targetCompartoId,
+        filenameBase,
+      }
+    })
+
+    if (!localOnly) {
+      setUploads(prev => [...prev, ...newUploads])
+      try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch { }
+    }
 
     // Helper: generate client-side PDF first-page thumb
     const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
@@ -138,22 +156,52 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       const uploadIndex = uploads.length + i
 
       try {
-        setUploads(prev => prev.map((upload, idx) =>
-          idx === uploadIndex ? { ...upload, status: 'uploading', progress: 10 } : upload
-        ))
-        try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch { }
+        if (!localOnly) {
+          setUploads(prev => prev.map((upload, idx) =>
+            idx === uploadIndex ? { ...upload, status: 'uploading', progress: 10 } : upload
+          ))
+          try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch { }
+        }
 
         let uploadUrl: string
         let s3Key: string
-        try {
-          const res = await api.getUploadUrl(file.name, file.type)
-          uploadUrl = res.uploadUrl
-          s3Key = res.s3Key
-        } catch (e) {
-          console.error('❌ [ARCH] getUploadUrl failed', { name: file.name, type: file.type, error: (e as any)?.message || e })
-          throw e
+        if (!localOnly) {
+          try {
+            const res = await api.getUploadUrl(file.name, file.type)
+            uploadUrl = res.uploadUrl
+            s3Key = res.s3Key
+            // collega il placeholder a questo s3Key
+            setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, s3Key } : u))
+          } catch (e) {
+            console.error('❌ [ARCH] getUploadUrl failed', { name: file.name, type: file.type, error: (e as any)?.message || e })
+            throw e
+          }
+        } else {
+          s3Key = `local:${Date.now()}:${Math.random().toString(36).slice(2)}`
         }
-        try { console.info('🔑 [ARCH] got upload url', { name: file.name, s3Key }) } catch { }
+
+        // Inserimento ottimistico immediato: documento temporaneo visibile da subito
+        const tempId = `temp:${s3Key}`
+        const blobUrl = URL.createObjectURL(file)
+        const tempDoc: Documento = {
+          id: tempId,
+          praticaId: praticaId!,
+          compartoId: targetCompartoId,
+          filename: file.name,
+          mime: file.type,
+          size: file.size,
+          s3Key,
+          hash: '',
+          ocrStatus: 'pending',
+          tags: [],
+          createdAt: new Date().toISOString(),
+          hasNativeText: false,
+        } as any
+          // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
+          ; (tempDoc as any).localUrl = blobUrl
+        setDocumenti(prev => [tempDoc, ...prev])
+        if (!localOnly) setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
+        try { console.info('🔑 [ARCH] got key', { name: file.name, s3Key, localOnly }) } catch { }
 
         if (existingKeys.has(s3Key)) {
           setUploads(prev => prev.map((upload, idx) =>
@@ -164,14 +212,45 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
         const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
         if (isPdf) {
-          generateClientPdfThumb(file, 320).then((dataUrl) => {
-            if (dataUrl) setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+          generateClientPdfThumb(file, 220).then((dataUrl) => {
+            if (!dataUrl) return
+            if (!localOnly) setUploads(prev => prev.map((upload, idx) => idx === uploadIndex ? { ...upload, preview: dataUrl } : upload))
+            setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+            try { console.info('🖼️ [ARCH] client thumb ready', { name: file.name, s3Key }) } catch { }
           }).catch(() => { })
         }
 
-        setUploads(prev => prev.map((upload, idx) =>
-          idx === uploadIndex ? { ...upload, progress: 30 } : upload
-        ))
+        // In modalità locale, salva il file fisicamente nella cartella uploads
+        if (localOnly) {
+          try {
+            // Salva il file fisicamente usando l'endpoint locale
+            const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
+            await api.uploadFile(localUploadUrl, file)
+            try { console.info('💾 [ARCH] file saved locally', { name: file.name, s3Key }) } catch { }
+
+            // Sostituisci il blob URL con l'URL fisico
+            setDocumenti(prev => {
+              const next = [...prev]
+              const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
+              if (idxTemp >= 0) {
+                const physicalUrl = `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}`
+                next[idxTemp] = { ...next[idxTemp], localUrl: physicalUrl }
+                return next
+              }
+              return next
+            })
+          } catch (e) {
+            console.warn('⚠️ [ARCH] local save failed (soft)', { name: file.name, s3Key, error: (e as any)?.message || e })
+            // Continua anche se il salvataggio locale fallisce
+          }
+          continue
+        }
+
+        if (!localOnly) {
+          setUploads(prev => prev.map((upload, idx) =>
+            idx === uploadIndex ? { ...upload, progress: 30 } : upload
+          ))
+        }
 
         try {
           await api.uploadFile(uploadUrl, file)
@@ -181,9 +260,11 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         }
         try { console.info('⬆️ [ARCH] uploaded file', { name: file.name, s3Key }) } catch { }
 
-        setUploads(prev => prev.map((upload, idx) =>
-          idx === uploadIndex ? { ...upload, progress: 60 } : upload
-        ))
+        if (!localOnly) {
+          setUploads(prev => prev.map((upload, idx) =>
+            idx === uploadIndex ? { ...upload, progress: 60 } : upload
+          ))
+        }
 
         const tags: string[] = [...(target?.tags || [])]
         if (target?.type === 'drawer') {
@@ -228,11 +309,14 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
         ))
 
+        // Sostituisci il documento temporaneo con quello reale
         setDocumenti(prev => {
-          const i = prev.findIndex(d => d.id === documento.id)
-          if (i >= 0) {
-            const next = [...prev]
-            next[i] = { ...prev[i], ...documento }
+          const next = [...prev]
+          const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
+          if (idxTemp >= 0) {
+            // In modalità locale, usa l'URL fisico invece del blob URL
+            const physicalUrl = localOnly ? `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}` : (next[idxTemp] as any).localUrl
+            next[idxTemp] = { ...(documento as any), localUrl: physicalUrl }
             return next
           }
           return [documento, ...prev]
@@ -241,21 +325,25 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
       } catch (error) {
         console.error('Errore nell\'upload:', error)
-        setUploads(prev => prev.map((upload, idx) =>
-          idx === uploadIndex ? {
-            ...upload,
-            status: 'error',
-            error: 'Errore durante il caricamento'
-          } : upload
-        ))
+        if (!localOnly) {
+          try { setDocumenti(prev => prev.filter(d => d.s3Key !== (s3Key as any))) } catch { }
+          setUploads(prev => prev.map((upload, idx) =>
+            idx === uploadIndex ? {
+              ...upload,
+              status: 'error',
+              error: 'Errore durante il caricamento'
+            } : upload
+          ))
+        }
       }
     }
 
-    toast({
-      title: 'Upload completato',
-      description: `${files.length} file caricati con successo.`,
-    })
-    try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch { }
+    if (!localOnly) {
+      toast({ title: 'Upload completato', description: `${files.length} file caricati con successo.` })
+      try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: 0, target } })) } catch { }
+    } else {
+      toast({ title: 'Aggiunti in locale', description: `${files.length} file visibili subito.` })
+    }
 
   }, [praticaId, documenti, comparti, toast, uploads.length])
 

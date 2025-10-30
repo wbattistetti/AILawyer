@@ -26,7 +26,7 @@ export function PdfViewerAdapter({ file, className = '', onTempFileCreated }: Pd
         console.log('⚠️ Already processing or already processed, skipping...');
         return;
       }
-      
+
       try {
         setIsProcessing(true);
         setLoading(true);
@@ -41,7 +41,7 @@ export function PdfViewerAdapter({ file, className = '', onTempFileCreated }: Pd
 
         // Usiamo lo stesso sistema del drag & drop: carichiamo il file e usiamo getLocalFileUrl
         console.log('🔄 Uploading file like drag & drop:', file.path);
-        
+
         // Leggiamo il file dal filesystem
         const response = await fetch('http://localhost:3001/api/filesystem/read-file', {
           method: 'POST',
@@ -57,23 +57,23 @@ export function PdfViewerAdapter({ file, className = '', onTempFileCreated }: Pd
 
         const fileBlob = await response.blob();
         const fileObj = new File([fileBlob], file.name, { type: 'application/pdf' });
-        
+
         // Carichiamo il file usando lo stesso sistema del drag & drop
         const { uploadUrl, s3Key } = await api.getUploadUrl(fileObj.name, fileObj.type);
         await api.uploadFile(uploadUrl, fileObj);
-        
+
         console.log('✅ File uploaded with s3Key:', s3Key);
-        
+
         // Usiamo lo stesso URL del sistema esistente
-        const localFileUrl = api.getLocalFileUrl(s3Key);
+        const localFileUrl = (file as any).localUrl || api.getLocalFileUrl(s3Key);
         console.log('🔍 Using same URL as thumbnails:', localFileUrl);
         setFileUrl(localFileUrl);
-        
+
         // Notifica il componente padre con la chiave S3
         if (onTempFileCreated) {
           onTempFileCreated(s3Key);
         }
-        
+
         setLoading(false);
       } catch (err) {
         console.error('Error loading PDF file:', err);
@@ -129,7 +129,7 @@ export function PdfViewerAdapter({ file, className = '', onTempFileCreated }: Pd
 
   return (
     <div className={`h-full ${className}`}>
-      <PdfReader 
+      <PdfReader
         fileUrl={fileUrl}
         className="h-full"
       />
