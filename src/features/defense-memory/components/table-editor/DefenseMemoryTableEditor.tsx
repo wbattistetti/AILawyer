@@ -205,6 +205,36 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
 
     const sortedRows = [...rows].sort((a, b) => a.order - b.order)
 
+    // Spostamento motivazioni tra righe e riordino locale
+    const handleMoveMotivation = useCallback((fromRowId: string, toRowId: string, motivationId: string, toIndex: number) => {
+        if (fromRowId === toRowId) {
+            const source = rows.find(r => r.id === fromRowId)
+            if (!source || !source.motivations) return
+            const current = [...source.motivations]
+            const fromIndex = current.findIndex(m => m.id === motivationId)
+            if (fromIndex === -1) return
+            const [moved] = current.splice(fromIndex, 1)
+            const insertAt = Math.max(0, Math.min(toIndex, current.length))
+            current.splice(insertAt, 0, moved)
+            updateRow(fromRowId, { motivations: current })
+            return
+        }
+
+        const fromRow = rows.find(r => r.id === fromRowId)
+        const toRow = rows.find(r => r.id === toRowId)
+        if (!fromRow || !toRow) return
+        const fromMotivs = [...(fromRow.motivations || [])]
+        const idx = fromMotivs.findIndex(m => m.id === motivationId)
+        if (idx === -1) return
+        const [moved] = fromMotivs.splice(idx, 1)
+        const toMotivs = [...(toRow.motivations || [])]
+        const insertAt = Math.max(0, Math.min(toIndex, toMotivs.length))
+        toMotivs.splice(insertAt, 0, moved)
+
+        updateRow(fromRowId, { motivations: fromMotivs })
+        updateRow(toRowId, { motivations: toMotivs })
+    }, [rows, updateRow])
+
     return (
         <div
             ref={containerRef}
@@ -298,6 +328,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                 readOnly={readOnly}
                                 errors={getRowErrors(row.id)}
                                 columnWidths={widths}
+                                onMoveMotivation={handleMoveMotivation}
                             />
                         ))}
                     </div>

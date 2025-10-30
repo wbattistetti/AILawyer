@@ -83,6 +83,7 @@ export interface TableRowProps {
     }
     onCellRefChange?: (rowId: string, element: HTMLDivElement | null) => void
     onCellWidthChange?: (width: number) => void
+    onMoveMotivation?: (fromRowId: string, toRowId: string, motivationId: string, toIndex: number) => void
 }
 
 export interface RowEditFormProps {
@@ -127,4 +128,5 @@ export interface ObservationsCellProps {
     onUpdate: (data: Partial<TableRowFormData>) => void
     readOnly?: boolean
     errors?: ValidationError[]
+    onMoveMotivation?: (fromRowId: string, toRowId: string, motivationId: string, toIndex: number) => void
 }

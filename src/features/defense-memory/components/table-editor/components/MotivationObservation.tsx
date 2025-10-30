@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useRef } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
@@ -19,31 +19,22 @@ export const MotivationObservation: React.FC<MotivationObservationProps> = ({
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-    useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto'
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
-        }
-    }, [value])
-
     return (
-        <Textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            readOnly={readOnly}
-            className={cn(
-                'min-h-[48px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words',
-                className
-            )}
-            onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement
-                target.style.height = 'auto'
-                target.style.height = `${target.scrollHeight}px`
-            }}
-        />
+        <div className={cn('resize-y overflow-auto min-h-[56px] max-h-[600px]', className)}>
+            <Textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                readOnly={readOnly}
+                className={cn(
+                    'h-full min-h-full resize-none overflow-auto text-xs p-2 whitespace-pre-wrap break-words'
+                )}
+            />
+        </div>
     )
 }
+
+export default MotivationObservation
 
 

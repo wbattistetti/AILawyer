@@ -21,7 +21,8 @@ export const TableRow: React.FC<TableRowProps> = ({
     onMoveDown,
     readOnly = false,
     errors = [],
-    columnWidths = DEFAULT_WIDTHS
+    columnWidths = DEFAULT_WIDTHS,
+    onMoveMotivation
 }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
@@ -97,6 +98,7 @@ export const TableRow: React.FC<TableRowProps> = ({
                     onUpdate={handleUpdate}
                     readOnly={readOnly}
                     errors={errors}
+                    onMoveMotivation={onMoveMotivation}
                 />
             </div>
         </div>

@@ -12,6 +12,9 @@ interface MotivationItemProps {
     onRemove?: (id: string) => void
     readOnly?: boolean
     className?: string
+    maxBodyHeight?: number // px, altezza massima del testo con scroll
+    draggable?: boolean
+    onDragStart?: (e: React.DragEvent) => void
 }
 
 export const MotivationItem: React.FC<MotivationItemProps> = ({
@@ -23,13 +26,23 @@ export const MotivationItem: React.FC<MotivationItemProps> = ({
     onToggleVisibility,
     onRemove,
     readOnly = false,
-    className = ''
+    className = '',
+    maxBodyHeight = 160,
+    draggable = false,
+    onDragStart
 }) => {
     return (
         <div className={cn('space-y-1', className)}>
             <div className="flex items-center space-x-1">
                 <FileText className="h-3 w-3 text-blue-600" />
-                <span className="text-xs font-medium text-gray-900">Motivazione:</span>
+                <span
+                    className={cn('text-xs font-medium', isHidden ? 'text-gray-400' : 'text-gray-900')}
+                    draggable={draggable}
+                    onDragStart={onDragStart}
+                >
+                    Motivazione:
+                </span>
+                {/* Ghost hint quando c'è contenuto in clipboard (gestito dal parent via CSS opzionale) */}
                 <div className="ml-auto flex items-center space-x-1">
                     <button
                         onClick={() => onToggleVisibility?.(id)}
@@ -55,29 +68,26 @@ export const MotivationItem: React.FC<MotivationItemProps> = ({
                 </div>
             </div>
 
-            <div className="space-y-1">
-                {isHidden ? (
-                    <div className="flex items-center space-x-1 text-xs text-gray-500 italic">
-                        <EyeOff className="h-3 w-3" />
-                        <span>Estratto nascosto</span>
-                    </div>
-                ) : (
-                    <>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">
+            {!isHidden && (
+                <div className="space-y-1">
+                    <div
+                        className="overflow-auto resize-y min-h-[80px] max-h-[600px] pr-1"
+                    >
+                        <p className="text-xs whitespace-pre-wrap break-words">
                             {text || <span className="text-gray-400 italic">Estratto vuoto</span>}
                         </p>
-                        {(source || typeof page === 'number') && (
-                            <div className="flex items-center space-x-1 text-xs text-gray-500">
-                                <ExternalLink className="h-2 w-2" />
-                                <span>
-                                    {source || 'Documento'}
-                                    {(typeof page === 'number' && page > 0) && ` - Pagina ${page}`}
-                                </span>
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
+                    </div>
+                    {(source || typeof page === 'number') && (
+                        <div className="flex items-center space-x-1 text-xs text-gray-500">
+                            <ExternalLink className="h-2 w-2" />
+                            <span>
+                                {source || 'Documento'}
+                                {(typeof page === 'number' && page > 0) && ` - Pagina ${page}`}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     )
 }
