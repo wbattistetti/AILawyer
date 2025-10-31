@@ -143,11 +143,17 @@ export function ThumbCard({
           }
 
           // OCR completato (100% O ocrStatus === 'completed')
-          if ((typeof transcribedPct === 'number' && transcribedPct >= 100) || ocrStatus === 'completed') {
+          // Controlla sia ocrProgressPct === 100 che transcribedPct >= 100 e ocrStatus === 'completed'
+          const isCompleted =
+            (typeof ocrProgressPct === 'number' && ocrProgressPct >= 100) ||
+            (typeof transcribedPct === 'number' && transcribedPct >= 100) ||
+            ocrStatus === 'completed'
+
+          if (isCompleted) {
             return (
-              <div className="absolute right-2 top-9 z-10">
-                <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white">
-                  Trascritto ✓
+              <div className="absolute right-2 top-9 z-20">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white shadow-sm font-medium">
+                  Trascritto!
                 </span>
               </div>
             )

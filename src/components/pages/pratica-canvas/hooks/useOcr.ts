@@ -237,19 +237,17 @@ export function useOcr(praticaId: string | undefined) {
               }
             }
 
+            // Mantieni lo stato completato (100%) e salva come transcribedPct per persistenza
             setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 100 }))
+            setTranscribedPctByDoc(prev => ({ ...prev, [documento.id]: 100 }))
             setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
             setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
             persistOcrState()
 
             if (praticaId) clearDoc(praticaId, documento.id)
 
-            setTimeout(() => {
-              setOcrProgressByDoc(prev => {
-                const { [documento.id]: _, ...rest } = prev
-                return rest
-              })
-            }, 1500)
+            // NON rimuovere il progresso dopo 1.5 secondi - mantieni lo stato "Trascritto!" visibile
+            // La label "Trascritto!" verrà mostrata grazie a transcribedPct === 100 o ocrProgressPct === 100
             return
           }
         } catch (e: any) {
