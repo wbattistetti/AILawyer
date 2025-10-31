@@ -57,7 +57,7 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
         // Se siamo nel drawer "memoria difensiva", ricarica le memorie
         const key = (title || '').toLowerCase()
         if (key.includes('memoria difensiva')) {
-          console.log('📝 [MEMORY] Estratto aggiunto, ricarico memorie difensive')
+          // Estratto aggiunto, ricarico memorie difensive
           loadMemorieDifensive()
         }
       } catch { }
@@ -89,9 +89,7 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       const pendingExtracts = (window as any).__pendingExtracts || []
       const totalExtracts = estrattiResponse.estratti.length + pendingExtracts.length
 
-      console.log('📊 [MEMORY] Estratti DB:', estrattiResponse.estratti.length)
-      console.log('📊 [MEMORY] Estratti temporanei:', pendingExtracts.length)
-      console.log('📊 [MEMORY] Totale estratti:', totalExtracts)
+      // Log estratti rimosso per ridurre rumore
 
       if (totalExtracts > 0) {
         // Carica memorie difensive

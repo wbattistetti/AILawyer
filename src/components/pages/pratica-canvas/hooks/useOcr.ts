@@ -41,11 +41,50 @@ export function useOcr(praticaId: string | undefined) {
 
     try {
       console.log('[OCR] queue request', documento.id, documento.filename)
-      toast({ title: 'OCR avviato', description: documento.filename })
 
-      const job = await api.queueOcr(documento.id, mode, limitPages)
-      console.log('[OCR][queue-ok]', { docId: documento.id, jobId: job.id })
+      let job: { id: string; status: string }
 
+      // Se il documento ha un ID temporaneo (modalità locale), usa endpoint OCR locale
+      if (documento.id.startsWith('temp:')) {
+        console.log('[OCR] Documento locale, usando endpoint OCR locale...', { tempId: documento.id, s3Key: documento.s3Key })
+
+        // Verifica che il file sia stato salvato (piccolo delay per sicurezza)
+        // In realtà non dovrebbe servire, ma aggiungiamo un check
+        try {
+          const fileCheckUrl = `http://localhost:3001/api/files/${encodeURIComponent(documento.s3Key)}`
+          const checkRes = await fetch(fileCheckUrl, { method: 'HEAD' })
+          if (!checkRes.ok) {
+            console.warn('[OCR] File non ancora disponibile, attendendo...', { s3Key: documento.s3Key, status: checkRes.status })
+            await new Promise(resolve => setTimeout(resolve, 500)) // Attendi 500ms
+          }
+        } catch (e) {
+          console.warn('[OCR] File check failed, procedendo comunque', { s3Key: documento.s3Key, error: e })
+        }
+
+        toast({ title: 'OCR avviato', description: documento.filename })
+
+        // Usa il nuovo endpoint per file locali (senza database)
+        const result = await api.queueOcrLocal({
+          s3Key: documento.s3Key,
+          filename: documento.filename,
+          mime: documento.mime || '',
+          mode,
+          limitPages,
+          praticaId,
+          compartoId: documento.compartoId || undefined,
+        })
+
+        job = { id: result.jobId, status: result.status }
+        console.log('[OCR][queue-local-ok]', { s3Key: documento.s3Key, jobId: job.id })
+      } else {
+        // Documento nel database: usa endpoint normale
+        toast({ title: 'OCR avviato', description: documento.filename })
+        const jobResult = await api.queueOcr(documento.id, mode, limitPages)
+        job = jobResult
+        console.log('[OCR][queue-ok]', { docId: documento.id, jobId: job.id })
+      }
+
+      // Aggiorna state con documento.id (funziona sia per locali che per DB)
       setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
       setOcrJobByDoc(prev => ({ ...prev, [documento.id]: job.id }))
       setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
@@ -146,7 +185,7 @@ export function useOcr(praticaId: string | undefined) {
             }, 1500)
             return
           }
-        } catch {}
+        } catch { }
         setTimeout(poll, 1000)
       }
       poll()
@@ -167,11 +206,11 @@ export function useOcr(praticaId: string | undefined) {
       return rest
     })
     setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: true }))
-    
+
     const jid = ocrJobByDoc[documento.id]
     if (jid) {
-      try { 
-        await api.cancelJob(jid) 
+      try {
+        await api.cancelJob(jid)
       } catch (error) {
         console.error('[OCR] cancel error', error)
       }

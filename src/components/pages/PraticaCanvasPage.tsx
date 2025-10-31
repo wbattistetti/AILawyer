@@ -126,7 +126,7 @@ export function PraticaCanvasPage() {
         setPratica(p)
         setComparti(c)
         setClienti(clientiData.clienti)
-        console.log('🎭 [PraticaCanvasPage] Clienti caricati:', clientiData.clienti.length)
+        // Clienti caricati
       } catch (error) {
         console.error('Failed to load pratica:', error)
         toast({ title: 'Errore', description: 'Impossibile caricare la pratica', variant: 'destructive' })

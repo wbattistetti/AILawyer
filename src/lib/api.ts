@@ -154,6 +154,22 @@ export const api = {
     })
   },
 
+  // OCR for local files (without database record)
+  async queueOcrLocal(params: {
+    s3Key: string
+    filename: string
+    mime?: string
+    mode?: 'quick' | 'full'
+    limitPages?: number
+    praticaId?: string
+    compartoId?: string
+  }): Promise<{ jobId: string; status: string }> {
+    return fetchApi('/ocr/process-local', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+  },
+
   // Files (local dev)
   getLocalFileUrl(key: string) {
     return `${API_BASE}/files/${encodeURIComponent(key)}`

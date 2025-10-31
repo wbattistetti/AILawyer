@@ -44,7 +44,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       return
     }
 
-    try { console.info('📥 [ARCH] handleFileDrop', { praticaId, files: files?.length || 0, _compartoId, target }) } catch { }
+    // Log rimosso per ridurre rumore
 
     // Pre-dedupe
     const existingHashes = new Set((documenti.map(d => (d as any).hash).filter(Boolean) as string[]))
@@ -99,7 +99,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       try { console.info('ℹ️ [ARCH] duplicates skipped', { skipped, toProcess: toProcess.length }) } catch { }
       toast({ title: 'Duplicati ignorati', description: `${skipped} file già presenti non sono stati aggiunti.` })
     }
-    try { console.info('🧮 [ARCH] toProcess', { count: toProcess.length, names: toProcess.map(f => f.name) }) } catch { }
+    // Log rimosso per ridurre rumore
 
     // Scegli il comparto target coerente con createDocumento
     const resolveCompartoId = (_cid?: string | null) => {
@@ -145,6 +145,26 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         return canvas.toDataURL('image/png')
       } catch {
         return ''
+      }
+    }
+
+    // Helper: detect native text in PDF (same logic as backend)
+    const detectNativeTextClient = async (file: File): Promise<boolean> => {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const task = pdfjsLib.getDocument({ data: arrayBuffer })
+        const pdf = await task.promise
+        const page = await pdf.getPage(1)
+        const textContent = await page.getTextContent()
+        const textItemCount = textContent.items.length
+
+        // Same heuristic as backend: > 10 text items = native text
+        const hasNativeText = textItemCount > 10
+
+        return hasNativeText
+      } catch (error) {
+        console.warn('[DETECT][client][native-text][ERROR]', { filename: file.name, error })
+        return false // Safe default
       }
     }
 
@@ -195,13 +215,32 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           ocrStatus: 'pending',
           tags: [],
           createdAt: new Date().toISOString(),
-          hasNativeText: false,
+          hasNativeText: undefined, // Non ancora determinato - aspetta la lettura della prima pagina
         } as any
           // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
           ; (tempDoc as any).localUrl = blobUrl
-        setDocumenti(prev => [tempDoc, ...prev])
+
+        console.log('[DEBUG][CREATE]', {
+          filename: file.name,
+          hasNativeText: tempDoc.hasNativeText,
+          type: typeof tempDoc.hasNativeText
+        })
+
+        setDocumenti(prev => {
+          const newDocs = [tempDoc, ...prev]
+          // Verifica che il valore sia preservato nello stato
+          const added = newDocs[0]
+          console.log('[DEBUG][SET-STATE]', {
+            filename: file.name,
+            hasNativeText: added.hasNativeText,
+            type: typeof added.hasNativeText,
+            isUndefined: added.hasNativeText === undefined,
+            isFalse: added.hasNativeText === false
+          })
+          return newDocs
+        })
         if (!localOnly) setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
-        try { console.info('🔑 [ARCH] got key', { name: file.name, s3Key, localOnly }) } catch { }
+        // Log rimosso per ridurre rumore
 
         if (existingKeys.has(s3Key)) {
           setUploads(prev => prev.map((upload, idx) =>
@@ -212,23 +251,52 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
         const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
         if (isPdf) {
-          generateClientPdfThumb(file, 220).then((dataUrl) => {
-            if (!dataUrl) return
-            if (!localOnly) setUploads(prev => prev.map((upload, idx) => idx === uploadIndex ? { ...upload, preview: dataUrl } : upload))
-            setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
-            try { console.info('🖼️ [ARCH] client thumb ready', { name: file.name, s3Key }) } catch { }
-          }).catch(() => { })
+          // Generate thumbnail and detect native text in parallel
+          Promise.all([
+            generateClientPdfThumb(file, 220),
+            detectNativeTextClient(file)
+          ]).then(([dataUrl, hasNativeText]) => {
+            if (dataUrl) {
+              if (!localOnly) setUploads(prev => prev.map((upload, idx) => idx === uploadIndex ? { ...upload, preview: dataUrl } : upload))
+              setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+            }
+
+            // Update document with native text detection result
+            setDocumenti(prev => {
+              const next = [...prev]
+              const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
+              if (idxTemp >= 0) {
+                const oldHasNativeText = next[idxTemp].hasNativeText
+                next[idxTemp] = { ...next[idxTemp], hasNativeText }
+
+                console.log('[DEBUG][UPDATE]', {
+                  filename: file.name,
+                  oldValue: oldHasNativeText,
+                  oldType: typeof oldHasNativeText,
+                  newValue: hasNativeText,
+                  newType: typeof hasNativeText
+                })
+
+                return next
+              }
+              return next
+            })
+          }).catch((error) => {
+            console.warn('⚠️ [ARCH] PDF processing failed', { name: file.name, error, s3Key, tempId })
+          })
         }
 
-        // In modalità locale, salva il file fisicamente nella cartella uploads
+        // In modalità locale, prova a salvare il file fisicamente nella cartella uploads
         if (localOnly) {
+          let saved = false
           try {
             // Salva il file fisicamente usando l'endpoint locale
             const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
             await api.uploadFile(localUploadUrl, file)
-            try { console.info('💾 [ARCH] file saved locally', { name: file.name, s3Key }) } catch { }
+            saved = true
+            // File salvato localmente
 
-            // Sostituisci il blob URL con l'URL fisico
+            // Sostituisci il blob URL con l'URL fisico (hasNativeText già aggiornato sopra)
             setDocumenti(prev => {
               const next = [...prev]
               const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
@@ -240,8 +308,12 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
               return next
             })
           } catch (e) {
-            console.warn('⚠️ [ARCH] local save failed (soft)', { name: file.name, s3Key, error: (e as any)?.message || e })
-            // Continua anche se il salvataggio locale fallisce
+            // Upload locale fallito, usando blob URL (soft fail)
+            // Mantieni il blob URL se il salvataggio fallisce
+            // L'OCR può comunque funzionare usando il blob URL se il backend lo supporta
+            if (!saved) {
+              // Mantenendo blob URL per OCR
+            }
           }
           continue
         }
@@ -258,7 +330,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           console.error('❌ [ARCH] upload failed', { name: file.name, s3Key, error: (e as any)?.message || e })
           throw e
         }
-        try { console.info('⬆️ [ARCH] uploaded file', { name: file.name, s3Key }) } catch { }
+        // File caricato
 
         if (!localOnly) {
           setUploads(prev => prev.map((upload, idx) =>
@@ -297,7 +369,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           console.error('❌ [ARCH] createDocumento failed', { name: file.name, s3Key, error: (e as any)?.message || e })
           throw e
         }
-        try { console.info('🆔 [ARCH] documento creato', { id: documento.id, filename: documento.filename, compartoId: documento.compartoId }) } catch { }
+        // Documento creato
 
         existingKeys.add(s3Key)
 
@@ -316,7 +388,9 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           if (idxTemp >= 0) {
             // In modalità locale, usa l'URL fisico invece del blob URL
             const physicalUrl = localOnly ? `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}` : (next[idxTemp] as any).localUrl
-            next[idxTemp] = { ...(documento as any), localUrl: physicalUrl }
+            // Mantieni hasNativeText se già rilevato lato client
+            const existingHasNativeText = (next[idxTemp] as any).hasNativeText
+            next[idxTemp] = { ...(documento as any), localUrl: physicalUrl, hasNativeText: existingHasNativeText }
             return next
           }
           return [documento, ...prev]
@@ -350,6 +424,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   const handleRemoveThumb = useCallback(async (documentId: string) => {
     const docToRemove = documenti.find(d => d.id === documentId)
     setDocumenti(prev => prev.filter(d => d.id !== documentId))
+
+    // Se è un documento temporaneo (locale), non chiamare l'API
+    if (documentId.startsWith('temp:')) {
+      toast({
+        title: 'Documento eliminato',
+        description: docToRemove?.filename || 'Documento rimosso con successo'
+      })
+      return
+    }
 
     try {
       await api.deleteDocumento(documentId)

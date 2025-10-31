@@ -32,6 +32,7 @@ interface ThumbCardProps {
   // Nuove props per generazione automatica miniature
   fileUrl?: string
   autoGenerateThumbnail?: boolean
+  isPdf?: boolean // Prop esplicita per indicare se è PDF
   thumbnailOptions?: {
     width?: number
     height?: number
@@ -67,28 +68,26 @@ export function ThumbCard({
   hasNativeText,
   fileUrl,
   autoGenerateThumbnail = false,
-  thumbnailOptions = {}
+  thumbnailOptions = {},
+  isPdf: isPdfProp
 }: ThumbCardProps) {
   const [imgError, setImgError] = useState(false)
   // resetta errori immagine quando cambia la sorgente
   useEffect(() => { setImgError(false) }, [imgSrc])
 
-  // Log per debug OCR status
+  // Log quando ThumbCard riceve props
   useEffect(() => {
-    try {
-      const isPdf = title?.toLowerCase().endsWith('.pdf')
-      console.info('[THUMBCARD][render]', {
-        filename: title,
-        isPdf,
-        hasNativeText,
-        ocrStatus,
-        transcribedPct,
-        ocrProgressPct,
-        autoGenerateThumbnail,
-        hasImgSrc: !!imgSrc,
-      })
-    } catch { }
-  }, [title, hasNativeText, ocrStatus, transcribedPct, ocrProgressPct, autoGenerateThumbnail, imgSrc])
+    console.log('[DEBUG][THUMB-PROPS]', {
+      title,
+      hasNativeText,
+      hasNativeTextType: typeof hasNativeText,
+      hasNativeTextIsFalse: hasNativeText === false,
+      hasNativeTextIsUndefined: hasNativeText === undefined,
+      notHasNativeText: !hasNativeText
+    })
+  }, [title, hasNativeText])
+
+  // Log OCR-DEBUG rimosso per ridurre rumore (mantenere solo se necessario per debug specifico)
 
   // Hook per generazione automatica miniature
   const { thumbnail: generatedThumbnail, loading: thumbnailLoading, generate } = useAutoThumbnail(
@@ -113,12 +112,7 @@ export function ThumbCard({
   // rimuovi lo stato di errore per permettere un nuovo tentativo di render
   useEffect(() => { setImgError(false) }, [displayImage])
 
-  // Debug: log stato card quando cambiano props principali
-  useEffect(() => {
-    try {
-      console.log('[CARD][state]', { title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, hasDisplay: !!displayImage })
-    } catch { }
-  }, [title, transcribedPct, ocrCancelling, ocrProgressPct, hasOcr, imgError, imgLoading, displayImage])
+  // Log stato card rimosso per ridurre rumore
 
   // Fallback: se l'immagine fallisce (es. 404 sul server-thumb), genera la miniatura client-side
   useEffect(() => {
@@ -143,7 +137,10 @@ export function ThumbCard({
         </div>
         {/* Label stato OCR sotto l'header, allineata a destra */}
         {(() => {
-          const isPdf = (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
+          // Usa prop esplicita se disponibile, altrimenti deduci da fileUrl o autoGenerateThumbnail
+          const isPdf = isPdfProp !== undefined
+            ? isPdfProp
+            : (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
 
           // OCR in corso (0-99%)
           if (typeof ocrProgressPct === 'number' && ocrProgressPct < 100 && !ocrCancelling) {
@@ -178,11 +175,23 @@ export function ThumbCard({
             )
           }
 
-          // PDF scansione senza OCR - "Da trascrivere" (SOLO se non ha testo nativo)
-          if (isPdf && !hasNativeText && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct) {
+          // PDF scansione senza OCR - "Da trascrivere" (SOLO se è stato verificato che NON ha testo nativo)
+          const shouldShowDaTrascrivere = isPdf && hasNativeText === false && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct
+
+          console.log('[DEBUG][LABEL-CHECK]', {
+            title,
+            isPdf,
+            hasNativeText,
+            hasNativeTextType: typeof hasNativeText,
+            hasNativeTextIsFalse: hasNativeText === false,
+            hasNativeTextIsUndefined: hasNativeText === undefined,
+            shouldShow: shouldShowDaTrascrivere
+          })
+
+          if (shouldShowDaTrascrivere) {
             return (
-              <div className="absolute right-2 top-9 z-10">
-                <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500 text-white">
+              <div className="absolute right-2 top-9 z-20">
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500 text-white shadow-sm">
                   Da trascrivere
                 </span>
               </div>

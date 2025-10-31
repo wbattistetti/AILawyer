@@ -11,6 +11,11 @@ const uploadSignSchema = z.object({
   contentType: z.string(),
 })
 
+// Sanitizza il nome del file per Windows (rimuove caratteri non validi: < > : " | ? * \)
+function sanitizeFileName(key: string): string {
+  return key.replace(/[:<>"|?*\\]/g, '_')
+}
+
 export async function uploadRoutes(fastify: FastifyInstance) {
   // Get presigned upload URL
   fastify.post<{ Body: { filename: string; contentType: string } }>('/upload/sign', async (request, reply) => {
@@ -27,7 +32,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   })
 
   // Local upload endpoint (fallback without MinIO)
-  fastify.put<{ Params: { key: string } }>('/upload/local/:key', async (request, reply) => {
+  fastify.put<{ Params: { key: string } }>('/upload/local/:key', {
+    bodyLimit: 100 * 1024 * 1024, // 100MB limite per file grandi
+  }, async (request, reply) => {
     try {
       if (config.STORAGE_MODE !== 'local') {
         return reply.status(400).send({ error: 'Local storage non abilitato' })
@@ -35,37 +42,66 @@ export async function uploadRoutes(fastify: FastifyInstance) {
       const s3Key = decodeURIComponent(request.params.key)
       const uploadDir = path.resolve(process.cwd(), '..', 'uploads')
       if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-      const filePath = path.join(uploadDir, s3Key)
 
-      // Prefer the parsed body (Buffer) from the content-type parser
-      let buffer: Buffer | undefined
-      const anyReq: any = request as any
-      if (anyReq.body && Buffer.isBuffer(anyReq.body)) {
-        buffer = anyReq.body as Buffer
+      const sanitizedKey = sanitizeFileName(s3Key)
+      const filePath = path.join(uploadDir, sanitizedKey)
+
+      fastify.log.info({
+        msg: 'Upload local: receiving file',
+        s3Key,
+        uploadDir,
+        filePath,
+        contentType: request.headers['content-type'],
+        hasBody: !!request.body,
+        bodyType: typeof request.body,
+        bodyIsBuffer: Buffer.isBuffer(request.body)
+      })
+
+      // Prova prima request.body (se Fastify ha già parsato come buffer)
+      let buffer: Buffer
+      if (Buffer.isBuffer(request.body)) {
+        buffer = request.body
+        fastify.log.info({ msg: 'Upload local: using parsed body buffer', s3Key, size: buffer.length })
       } else {
+        // Altrimenti leggi dallo stream
         const chunks: Buffer[] = []
         for await (const chunk of request.raw) {
-          chunks.push(Buffer.from(chunk))
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
         }
         buffer = Buffer.concat(chunks)
+        fastify.log.info({ msg: 'Upload local: read from raw stream', s3Key, size: buffer.length })
       }
 
       if (!buffer || buffer.length === 0) {
+        fastify.log.warn({ msg: 'Upload local: empty buffer', s3Key })
         return reply.status(400).send({ error: 'File vuoto o non ricevuto' })
       }
 
+      fastify.log.info({ msg: 'Upload local: got buffer from stream', s3Key, size: buffer.length })
+
       fs.writeFileSync(filePath, buffer)
+      fastify.log.info({ msg: 'Upload local: file saved', s3Key, filePath, size: buffer.length })
       return reply.status(200).send()
-    } catch (error) {
-      fastify.log.error(error)
-      return reply.status(500).send({ error: 'Errore durante l\'upload locale' })
+    } catch (error: any) {
+      fastify.log.error({
+        msg: 'Upload local: error',
+        error: error?.message,
+        stack: error?.stack,
+        s3Key: request.params.key
+      })
+      return reply.status(500).send({
+        error: 'Errore durante l\'upload locale',
+        details: error?.message || String(error)
+      })
     }
   })
 
   // Serve uploaded files for local OCR and preview
   fastify.get<{ Params: { key: string } }>('/files/:key', async (request, reply) => {
     try {
-      const filePath = path.resolve(process.cwd(), '..', 'uploads', request.params.key)
+      const s3Key = decodeURIComponent(request.params.key)
+      const sanitizedKey = sanitizeFileName(s3Key)
+      const filePath = path.resolve(process.cwd(), '..', 'uploads', sanitizedKey)
       console.log('🔍 Server cerca file in:', filePath)
       console.log('🔍 process.cwd():', process.cwd())
       console.log('🔍 File esiste?', fs.existsSync(filePath))
@@ -83,8 +119,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   fastify.get<{ Params: { key: string } }>('/preview/:key.png', async (request, reply) => {
     try {
       const s3Key = decodeURIComponent(request.params.key)
+      const sanitizedKey = sanitizeFileName(s3Key)
       const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
-      const srcPath = path.join(uploadsDir, s3Key)
+      const srcPath = path.join(uploadsDir, sanitizedKey)
       if (!fs.existsSync(srcPath)) {
         const payload = { error: 'File non trovato', details: srcPath }
         fastify.log.error({ msg: 'preview: missing source', ...payload, s3Key })

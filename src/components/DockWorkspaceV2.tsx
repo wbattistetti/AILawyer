@@ -440,7 +440,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     // Se esiste già un pannello archive docked, aprilo invece di aprire la sidebar
     if (archiveTabs.length > 0) {
-      console.log('📂 [switchToArchive] Trovato pannello archive docked esistente, apro quello')
+      // Trovato pannello archive docked esistente, apro quello
       const firstArchive = archiveTabs[0]
       firstArchive.tabset.selected = firstArchive.index
       const nextModel = Model.fromJson(json)
@@ -582,12 +582,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       const node = modelRef.current?.getNodeById(tabId);
       const nodeJson = node ? (modelRef.current?.toJson() as any) : null;
       const archiveTabs = nodeJson?.borders?.[0]?.children?.filter((t: any) => t.component === 'archive') || [];
-      console.log('📦 [DockWorkspaceV2] Rendering archive container', {
-        tabId,
-        timestamp: new Date().toISOString(),
-        archiveTabsCount: archiveTabs.length,
-        archiveTabIds: archiveTabs.map((t: any) => t.id)
-      });
+      // Log rimosso per ridurre rumore;
       return <div className="w-full h-full overflow-auto bg-slate-50" data-component="archive-container" data-tab-id={tabId}>{renderArchive()}</div>
     }
     if (comp === 'search') return <div className="w-full h-full overflow-auto bg-white">{renderSearch ? renderSearch() : null}</div>
@@ -812,7 +807,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
           ...defaultTabs.map((t: any) => t.id),
           ...left.children.filter((t: any) => !defaultTabIds.has(t.id)).map((t: any) => t.id)
         ]
-        console.log('🟡 [ORDER] Ordine originale salvato:', originalTabsOrderRef.current)
+        // Ordine originale salvato
       }
 
       // ✅ 2. Crea una mappa delle tab esistenti per lookup veloce
@@ -840,27 +835,14 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         if (!orderedTabIds.has(tab.id)) {
           allTabsInOrder.push(tab)
           originalTabsOrderRef.current.push(tab.id) // Aggiungi all'ordine salvato
-          console.log('🟡 [ORDER] Nuova tab aggiunta all\'ordine:', tab.id)
+          // Nuova tab aggiunta all'ordine
         }
       })
 
       // ✅ 5. FILTRO SEMPLICE: Mantieni l'ordine originale, mostra solo quelle visibili
       // (undefined o true = visibile, false = nascosta)
-      console.log('🟢🟢🟢 [VISIBILITY] Filtrando tab in sanitizeModelJson:', {
-        before: allTabsInOrder.map((t: any) => ({ id: t.id })),
-        visibility: Array.from(tabsVisibilityRef.current.entries()),
-        filtered: allTabsInOrder.filter((t: any) => tabsVisibilityRef.current.get(t.id) !== false).map((t: any) => ({ id: t.id }))
-      })
-      const beforeFilter = allTabsInOrder.length
       left.children = allTabsInOrder.filter((t: any) => {
-        const isVisible = tabsVisibilityRef.current.get(t.id) !== false
-        console.log(`🟢 [VISIBILITY] Tab ${t.id}: visible=${tabsVisibilityRef.current.get(t.id)}, isVisible=${isVisible}`)
-        return isVisible
-      })
-      console.log('🟢🟢🟢 [VISIBILITY] Filtro completato:', {
-        beforeCount: beforeFilter,
-        afterCount: left.children.length,
-        visibleTabs: left.children.map((t: any) => ({ id: t.id }))
+        return tabsVisibilityRef.current.get(t.id) !== false
       })
 
       // ✅ Nessuna selezione di default
@@ -874,52 +856,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   function ensureBaseStructure() {
     const current = modelRef.current.toJson() as any
-
-    // Log prima della sanitizzazione
-    const hasDocTabsetBefore = !!findById(current.layout, 'docTabset')
-    const hasDockableTabsetBefore = !!findById(current.layout, 'dockableTabset')
-    const hasArchiveBefore = (() => {
-      const findArchive = (node: any): boolean => {
-        if (node.type === 'tabset' && Array.isArray(node.children)) {
-          return node.children.some((child: any) => child.component === 'archive')
-        }
-        if (Array.isArray(node.children)) {
-          return node.children.some(findArchive)
-        }
-        return false
-      }
-      return findArchive(current.layout)
-    })()
-
-    console.log('[ensureBaseStructure] Prima:', {
-      hasDocTabset: hasDocTabsetBefore,
-      hasDockableTabset: hasDockableTabsetBefore,
-      hasArchive: hasArchiveBefore
-    })
-
     const sanitized = sanitizeModelJson(current)
-
-    // Log dopo la sanitizzazione
-    const hasDocTabsetAfter = !!findById(sanitized.layout, 'docTabset')
-    const hasDockableTabsetAfter = !!findById(sanitized.layout, 'dockableTabset')
-    const hasArchiveAfter = (() => {
-      const findArchive = (node: any): boolean => {
-        if (node.type === 'tabset' && Array.isArray(node.children)) {
-          return node.children.some((child: any) => child.component === 'archive')
-        }
-        if (Array.isArray(node.children)) {
-          return node.children.some(findArchive)
-        }
-        return false
-      }
-      return findArchive(sanitized.layout)
-    })()
-
-    console.log('[ensureBaseStructure] Dopo:', {
-      hasDocTabset: hasDocTabsetAfter,
-      hasDockableTabset: hasDockableTabsetAfter,
-      hasArchive: hasArchiveAfter
-    })
 
     // simple deep compare via string; safe given small size
     if (JSON.stringify(current) !== JSON.stringify(sanitized)) {
@@ -934,7 +871,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ STEP 3: Intercetta drag & drop per posizionamento intelligente
   const handleAction = (action: any) => {
-    console.log('🔥 [ACTION] handleAction chiamato:', { type: action.type, data: action.data })
 
     // ✅ STEP 6: Intercetta chiusura tab - mostra la tab nella sidebar
     if (action.type === 'FlexLayout_DeleteTab') {
@@ -955,11 +891,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
               // ✅ ALGORITMO SEMPLICE: Imposta visible: true e ri-renderizza tutte le tab
               tabsVisibilityRef.current.set(dockedPanelInfo.originalTabId, true)
 
-              console.log('🔴 [VISIBILITY] Tab resa visibile:', {
-                originalTabId: dockedPanelInfo.originalTabId,
-                component,
-                visibleTabs: Array.from(tabsVisibilityRef.current.entries()).filter(([_, v]) => v !== false).map(([id]) => id)
-              })
+              // Tab resa visibile
 
               // Rimuovi dal tracking
               dockablePanelsRef.current.delete(nodeId)
@@ -1002,29 +934,21 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     // ✅ STEP 5: Intercetta click su tab nella sidebar
     if (action.type === 'FlexLayout_SelectTab') {
-      console.log('🔥🔥🔥 [ACTION] FlexLayout_SelectTab chiamato:', { action, tabNodeId: action.data?.tabNode })
-
       const tabNodeId = action.data?.tabNode
 
       if (!tabNodeId) {
-        console.log('🔥🔥🔥 [ACTION] Nessun tabNodeId, return')
         return action
       }
 
       // ✅ Ottieni il vero oggetto TabNode dal modello
       const tabNode = modelRef.current.getNodeById(tabNodeId)
 
-      console.log('🔥🔥🔥 [ACTION] TabNode trovato:', { tabNodeId, tabNode: !!tabNode })
-
       if (!tabNode) {
-        console.log('🔥🔥🔥 [ACTION] TabNode non trovato, return')
         return action
       }
 
       const component = tabNode.getComponent()
       const behavior = PANEL_BEHAVIORS[component]
-
-      console.log('🔥🔥🔥 [ACTION] Component e behavior:', { component, behavior })
 
       // Se è un pannello dockable, gestisci il click
       if (behavior === 'dockable') {
@@ -1039,7 +963,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         if (dockedPanelInfo) {
           // È una tab docked, usa l'originalTabId
           sidebarTabId = dockedPanelInfo.originalTabId
-          console.log('🔵 [VISIBILITY] Tab docked trovata, uso originalTabId:', { tabId, sidebarTabId })
         } else {
           // È una tab nella sidebar, usa direttamente l'ID
           sidebarTabId = tabId
@@ -1054,22 +977,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         // ✅ ALGORITMO SEMPLICE: Imposta visible: false e ri-renderizza tutte le tab
         tabsVisibilityRef.current.set(sidebarTabId, false)
 
-        console.log('🔵🔵🔵 [VISIBILITY] Tab nascosta:', {
-          sidebarTabId,
-          component,
-          visibilityMap: Array.from(tabsVisibilityRef.current.entries()),
-          visibleTabs: Array.from(tabsVisibilityRef.current.entries()).filter(([_, v]) => v !== false).map(([id]) => id)
-        })
-
         // Ri-renderizza tutte le tab filtrando quelle visibili
         const json = modelRef.current.toJson() as any
-        console.log('🔵🔵🔵 [VISIBILITY] Prima di sanitizeModelJson:', {
-          tabsInJson: json.borders?.find((b: any) => b.location === 'left')?.children?.map((t: any) => ({ id: t.id }))
-        })
         const sanitized = sanitizeModelJson(json)
-        console.log('🔵🔵🔵 [VISIBILITY] Dopo sanitizeModelJson:', {
-          tabsInSanitized: sanitized.borders?.find((b: any) => b.location === 'left')?.children?.map((t: any) => ({ id: t.id }))
-        })
         const nextModel = Model.fromJson(sanitized)
         modelRef.current = nextModel
         setModel(nextModel)

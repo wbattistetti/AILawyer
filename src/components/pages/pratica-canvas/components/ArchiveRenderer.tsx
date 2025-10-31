@@ -60,7 +60,6 @@ export function ArchiveRenderer({
     const toggle = (id: string) => setOpenMap(m => ({ ...m, [id]: !m[id] }))
 
     const onDropFilesToComparto = (files: File[], compartoId: string) => {
-        try { console.info('📥 [AR] drop files on header', { compartoId, files: files?.length || 0, names: files.map(f => f.name) }) } catch { }
         handleFileDrop(files, compartoId, { type: 'drawer', id: compartoId })
     }
 
@@ -120,7 +119,7 @@ export function ArchiveRenderer({
                     seen.add(key)
                     return true
                 })
-                try { console.info('[AR] render comparto', { nome: comparto.nome, docs: docs.map(d => ({ id: d.id, s3Key: d.s3Key, localUrl: (d as any).localUrl ? true : false })) }) } catch { }
+                // Log rimosso per ridurre rumore
                 return (
                     <div key={comparto.id} className="border rounded-md overflow-hidden">
                         <div {...headerProps(comparto)}>
@@ -183,6 +182,12 @@ export function ArchiveRenderer({
                                         const clientThumb = clientThumbByS3[d.s3Key];
                                         const thumb = clientThumb || serverThumb || '';
                                         const localUrl = (d as any).localUrl || undefined
+                                        console.log('[DEBUG][ARCH-RENDER]', {
+                                            filename: d.filename,
+                                            originalHasNativeText: d.hasNativeText,
+                                            originalType: typeof d.hasNativeText
+                                        })
+
                                         return {
                                             id: d.id,
                                             filename: d.filename,
@@ -190,7 +195,7 @@ export function ArchiveRenderer({
                                             mime: d.mime,
                                             thumb,
                                             localUrl,
-                                            hasNativeText: d.hasNativeText ?? false,
+                                            hasNativeText: d.hasNativeText, // NON convertire undefined in false!
                                             ocrStatus: d.ocrStatus
                                         };
                                     })}

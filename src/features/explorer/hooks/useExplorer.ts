@@ -8,7 +8,7 @@ import { BackendFileSystemAdapter } from '../services/adapters/BackendFileSystem
  */
 export function useExplorerAdapter(): FileSystemAdapter {
   return useMemo(() => {
-    console.log('🔧 Using BackendFileSystemAdapter for real filesystem access');
+    // Using BackendFileSystemAdapter for real filesystem access
     return new BackendFileSystemAdapter();
   }, []);
 }
@@ -19,7 +19,7 @@ export function useExplorerAdapter(): FileSystemAdapter {
  */
 export function useExplorer() {
   const adapter = useExplorerAdapter();
-  
+
   return {
     adapter,
     ExplorerProps: {

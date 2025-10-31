@@ -475,6 +475,18 @@ export function DocumentCollection({
               const computedFileUrl = !isExtract && (
                 doc.localUrl || (doc.s3Key ? `http://localhost:3001/api/files/${encodeURIComponent(doc.s3Key)}` : '')
               ) || undefined
+
+              // NON convertire undefined in false! Passa undefined così com'è
+              const hasNativeTextValue = doc.hasNativeText
+
+              console.log('[DEBUG][DC]', {
+                filename: doc.filename,
+                docHasNativeText: doc.hasNativeText,
+                docHasNativeTextType: typeof doc.hasNativeText,
+                passedValue: hasNativeTextValue,
+                passedType: typeof hasNativeTextValue
+              })
+
               return (
                 <div
                   key={doc.id}
@@ -487,6 +499,7 @@ export function DocumentCollection({
                     // genera lato client solo se manca una thumb
                     fileUrl={computedFileUrl}
                     autoGenerateThumbnail={isPdf && !(doc as any).thumb}
+                    isPdf={isPdf}
                     headerIcon={isExtract ? headerIcon : undefined}
                     headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
                     excerpt={isExtract ? excerpt : undefined}
@@ -507,7 +520,7 @@ export function DocumentCollection({
                     ocrCancelling={cancellingById?.[doc.id] as any}
                     transcribedPct={transcribedPctById?.[doc.id] as any}
                     ocrStatus={doc.ocrStatus ?? null}
-                    hasNativeText={doc.hasNativeText ?? false}
+                    hasNativeText={hasNativeTextValue}
                   />
                 </div>
               )

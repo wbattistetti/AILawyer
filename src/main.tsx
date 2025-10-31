@@ -6,7 +6,7 @@ import './index.css';
 // Inizializza memoria globale per estratti temporanei
 if (!(window as any).__pendingExtracts) {
   (window as any).__pendingExtracts = [];
-  console.log('📝 [MEMORY] Memoria estratti inizializzata (vuota)');
+  // Memoria estratti inizializzata
 }
 
 createRoot(document.getElementById('root')!).render(

@@ -29,6 +29,7 @@ const { clientiRoutes } = await import('./routes/clienti.js')
 const { tipoDinamiciRoutes } = await import('./routes/tipo-dinamici.js')
 const { estrattiRoutes } = await import('./routes/estratti.js')
 const { memoriaDifensivaRoutes } = await import('./routes/memoria-difensiva.js')
+const { ocrRoutes } = await import('./routes/ocr.js')
 
 // Body limit: if MAX_UPLOAD_MB <= 0 → effectively unlimited
 const limitMb = Number(config.MAX_UPLOAD_MB || 0)
@@ -53,6 +54,17 @@ fastify.get('/health', async () => {
 })
 
 // Accept binary uploads (pdf/images) as Buffer for local storage endpoint
+// Register parsers for binary content types BEFORE the catch-all
+fastify.addContentTypeParser('application/pdf', { parseAs: 'buffer' }, (req, body, done) => {
+  done(null, body)
+})
+fastify.addContentTypeParser('image/*', { parseAs: 'buffer' }, (req, body, done) => {
+  done(null, body)
+})
+fastify.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (req, body, done) => {
+  done(null, body)
+})
+// Catch-all for other binary types
 fastify.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
   // Keep JSON/urlencoded handled by built-ins; this only catches others
   done(null, body)
@@ -85,6 +97,8 @@ await fastify.register(estrattiRoutes, { prefix: '/api' })
 console.log('✅ estrattiRoutes registered')
 await fastify.register(memoriaDifensivaRoutes, { prefix: '/api' })
 console.log('✅ memoriaDifensivaRoutes registered')
+await fastify.register(ocrRoutes, { prefix: '/api' })
+console.log('✅ ocrRoutes registered')
 console.log('🎉 All routes registered successfully!')
 
 // Start server

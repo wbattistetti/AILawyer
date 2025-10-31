@@ -1,0 +1,226 @@
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import path from 'path'
+import fs from 'fs'
+import { prisma } from '../lib/database.js'
+import { config } from '../config/index.js'
+import { getOcrQueue } from '../lib/queue.js'
+
+const ocrProcessLocalSchema = z.object({
+    s3Key: z.string(),
+    filename: z.string(),
+    mime: z.string().optional(),
+    mode: z.enum(['quick', 'full']).optional().default('full'),
+    limitPages: z.number().optional(),
+    praticaId: z.string().optional(),
+    compartoId: z.string().optional(),
+})
+
+// Sanitizza il nome del file per Windows (rimuove caratteri non validi: < > : " | ? * \)
+function sanitizeFileName(key: string): string {
+    return key.replace(/[:<>"|?*\\]/g, '_')
+}
+
+export async function ocrRoutes(fastify: FastifyInstance) {
+    // Process OCR for local file (without database record)
+    fastify.post('/ocr/process-local', async (request, reply) => {
+        try {
+            const body = ocrProcessLocalSchema.parse(request.body)
+
+            // Verify file exists in uploads directory
+            const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
+            const sanitizedKey = sanitizeFileName(body.s3Key)
+            const filePath = path.join(uploadsDir, sanitizedKey)
+
+            fastify.log.info({ msg: 'OCR process-local: checking file', s3Key: body.s3Key, uploadsDir, filePath, exists: fs.existsSync(filePath) })
+
+            if (!fs.existsSync(filePath)) {
+                // List files in uploads to help debug
+                const filesInUploads = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).slice(0, 10) : []
+                fastify.log.warn({
+                    msg: 'File not found for OCR',
+                    s3Key: body.s3Key,
+                    filePath,
+                    uploadsDir,
+                    filesInUploads,
+                    cwd: process.cwd()
+                })
+                return reply.status(404).send({ error: 'File non trovato in uploads', details: { s3Key: body.s3Key, filePath, uploadsDir } })
+            }
+
+            fastify.log.info({ msg: 'OCR process-local request', s3Key: body.s3Key, filename: body.filename, mode: body.mode })
+
+            // Create job record (without documentId since document doesn't exist in DB)
+            const job = await prisma.job.create({
+                data: {
+                    type: 'OCR',
+                    documentId: null, // No document record for local files
+                    status: 'pending',
+                    progress: 0,
+                    result: JSON.stringify({ s3Key: body.s3Key, filename: body.filename, mode: body.mode }),
+                },
+            })
+
+            const mode = body.mode || 'full'
+            const limit = body.limitPages || 0
+
+            // Process OCR (same logic as document OCR)
+            if (config.ENABLE_QUEUE) {
+                try {
+                    const ocrQueue = getOcrQueue()
+                    // For local files, we use s3Key as documentId in queue (it's just an identifier)
+                    await ocrQueue.add('process-ocr', {
+                        documentId: body.s3Key, // Use s3Key as identifier
+                        s3Key: body.s3Key,
+                        filename: body.filename,
+                        mime: body.mime || 'application/pdf',
+                        mode,
+                    }, { jobId: job.id })
+                    fastify.log.info({ msg: 'OCR queued', jobId: job.id, s3Key: body.s3Key })
+                } catch (e: any) {
+                    const message = e?.message || String(e)
+                    fastify.log.error({ msg: 'Queue add failed, falling back to inline', err: message })
+                    // Fallback to inline processing
+                    await processOcrInline(fastify, job.id, body.s3Key, body.filename, body.mime || 'application/pdf', mode, limit)
+                }
+            } else {
+                // Inline processing (no queue)
+                await processOcrInline(fastify, job.id, body.s3Key, body.filename, body.mime || 'application/pdf', mode, limit)
+            }
+
+            return { jobId: job.id, status: 'pending' }
+        } catch (error) {
+            fastify.log.error(error)
+            if (error instanceof z.ZodError) {
+                return reply.status(400).send({ error: 'Parametri non validi', details: error.errors })
+            }
+            return reply.status(500).send({ error: 'Errore nell\'avvio dell\'OCR' })
+        }
+    })
+}
+
+async function processOcrInline(
+    fastify: FastifyInstance,
+    jobId: string,
+    s3Key: string,
+    filename: string,
+    mime: string,
+    mode: 'quick' | 'full',
+    limit: number
+) {
+    let last = 0
+    const start = Date.now()
+    try {
+        fastify.log.info({ msg: 'OCR inline start (local file)', jobId, s3Key, filename, mime, limitPages: limit || undefined })
+            ; (process as any).env.BULLMQ_JOB_ID = jobId
+
+        const prevQuick = process.env.OCR_QUICK_MODE
+        const prevLimit = process.env.OCR_LIMIT_PAGES
+        if (mode === 'quick') process.env.OCR_QUICK_MODE = 'true'
+        else process.env.OCR_QUICK_MODE = 'false'
+        if (limit > 0) process.env.OCR_LIMIT_PAGES = String(limit)
+
+        // Import OCR service
+        const { ocrService } = await import('../services/ocr.js')
+
+        // Process OCR
+        const result = await ocrService.extract(s3Key, async (p, meta) => {
+            const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
+            if (percent - last >= 5) {
+                last = percent
+                const elapsedMs = Date.now() - start
+                try {
+                    await prisma.job.update({
+                        where: { id: jobId },
+                        data: { progress: percent, result: JSON.stringify({ meta, elapsedMs }) },
+                    })
+                } catch (e: any) {
+                    fastify.log.warn({ msg: 'OCR progress update failed (soft)', jobId, progress: percent, err: e?.message || String(e) })
+                }
+                fastify.log.info({ msg: 'OCR progress', jobId, progress: percent, meta })
+            }
+            // Inline cancel check
+            try {
+                const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
+                if (mem && mem.has(String(jobId))) {
+                    throw new Error('CANCELLED')
+                }
+            } catch { }
+        })
+
+        // Restore env
+        process.env.OCR_QUICK_MODE = prevQuick
+        process.env.OCR_LIMIT_PAGES = prevLimit
+
+        // Process results
+        const pagesArr: any[] = Array.isArray((result as any).pages) ? (result as any).pages : []
+        const layoutArr: any[] = Array.isArray((result as any).layout) ? (result as any).layout : []
+        const wordsPerPage = layoutArr.map((l: any) => (Array.isArray(l?.words) ? l.words.length : 0))
+        const texts = pagesArr.map((p: any, i: number) => {
+            let t = typeof p?.text === 'string' ? p.text : ''
+            if (!t || !t.trim()) {
+                const lay = layoutArr.find((l: any) => l?.page === (i + 1)) || layoutArr[i]
+                if (lay && Array.isArray(lay.words) && lay.words.length) {
+                    t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                }
+            }
+            return t
+        })
+
+        const elapsedMs = Date.now() - start
+        const avgConfidence = pagesArr.length > 0
+            ? pagesArr.reduce((sum, p) => sum + (Number(p.confidence) || 0), 0) / pagesArr.length
+            : 0
+
+        // Update job with results
+        await prisma.job.update({
+            where: { id: jobId },
+            data: {
+                status: 'completed',
+                progress: 100,
+                result: JSON.stringify({
+                    s3Key,
+                    filename,
+                    mode,
+                    pages: texts.length,
+                    texts,
+                    layout: layoutArr,
+                    avgConfidence,
+                    elapsedMs,
+                    ocrPdfKey: (result as any).pages?.[0]?.ocrPdfKey,
+                }),
+            },
+        })
+
+        fastify.log.info({
+            msg: 'OCR completed (local file)',
+            jobId,
+            s3Key,
+            pages: texts.length,
+            avgConfidence: avgConfidence.toFixed(2),
+            elapsedMs,
+        })
+    } catch (error: any) {
+        const isCancelled = String(error?.message || '').includes('CANCELLED')
+        if (isCancelled) {
+            fastify.log.info({ msg: 'OCR cancelled (local file)', jobId, s3Key })
+            try {
+                await prisma.job.update({ where: { id: jobId }, data: { status: 'cancelled' } })
+            } catch { }
+            return
+        }
+
+        fastify.log.error({ msg: 'OCR failed (local file)', jobId, s3Key, error: error?.message || error })
+        try {
+            await prisma.job.update({
+                where: { id: jobId },
+                data: {
+                    status: 'failed',
+                    error: error?.message || 'Errore sconosciuto',
+                },
+            })
+        } catch { }
+        throw error
+    }
+}
+
