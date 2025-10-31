@@ -41,6 +41,154 @@ function sanitizeFileName(key: string): string {
   return key.replace(/[:<>"|?*\\]/g, '_')
 }
 
+// Helper per estrarre snippet basato su righe complete (evita tagli arbitrari)
+// Unisce righe consecutive brevi per formare frasi logiche complete
+// (risolve il problema dei PDF nativi che spezzano visivamente una riga in più righe nel testo grezzo)
+function extractLineBasedSnippet(text: string, charPosition: number, maxLength: number = 200): string {
+  if (!text || charPosition < 0 || charPosition >= text.length) {
+    return ''
+  }
+
+  // Trova l'inizio della riga che contiene charPosition
+  let lineStart = charPosition
+  while (lineStart > 0 && text[lineStart - 1] !== '\n' && text[lineStart - 1] !== '\r') {
+    lineStart--
+  }
+
+  // Trova la fine della riga che contiene charPosition
+  let lineEnd = charPosition
+  while (lineEnd < text.length && text[lineEnd] !== '\n' && text[lineEnd] !== '\r') {
+    lineEnd++
+  }
+
+  // Estrai la riga iniziale
+  let currentLine = text.slice(lineStart, lineEnd).trim()
+  let snippetStart = lineStart
+  let snippetEnd = lineEnd
+
+  // Se la riga è molto corta (<50 caratteri), unisci con righe adiacenti brevi
+  // Questo gestisce il caso in cui il PDF visualizza una riga ma il testo estratto
+  // la divide in più righe (es: "COMANDO\nPROVINCIALE\nDI CATANIA")
+  // Gestisce anche casi come "Catania,\nagosto - novembre 2020"
+  if (currentLine.length < 50) {
+    // Unisci con righe precedenti se sono brevi
+    let prevLineStart = lineStart - 1
+    let consecutiveEmpty = 0
+    while (prevLineStart > 0 && currentLine.length < 150 && consecutiveEmpty < 2) {
+      // Salta caratteri di fine riga
+      while (prevLineStart > 0 && (text[prevLineStart] === '\n' || text[prevLineStart] === '\r')) {
+        prevLineStart--
+      }
+      if (prevLineStart <= 0) break
+
+      // Trova inizio riga precedente
+      let prevStart = prevLineStart
+      while (prevStart > 0 && text[prevStart - 1] !== '\n' && text[prevStart - 1] !== '\r') {
+        prevStart--
+      }
+
+      const prevLine = text.slice(prevStart, prevLineStart).trim()
+      // Se la riga precedente è vuota, conta e continua (max 2 righe vuote consecutive)
+      if (prevLine.length === 0) {
+        consecutiveEmpty++
+        prevLineStart = prevStart - 1
+        continue
+      }
+      consecutiveEmpty = 0
+
+      // Se la riga precedente è molto lunga, fermati
+      if (prevLine.length > 150) break
+
+      // Unisci: riga precedente + spazio + riga corrente
+      currentLine = prevLine + ' ' + currentLine
+      snippetStart = prevStart
+      prevLineStart = prevStart - 1
+    }
+
+    // Unisci con righe successive se sono brevi
+    let nextLineEnd = lineEnd + 1
+    consecutiveEmpty = 0
+    while (nextLineEnd < text.length && currentLine.length < 150 && consecutiveEmpty < 2) {
+      // Salta caratteri di fine riga
+      while (nextLineEnd < text.length && (text[nextLineEnd] === '\n' || text[nextLineEnd] === '\r')) {
+        nextLineEnd++
+      }
+      if (nextLineEnd >= text.length) break
+
+      // Trova fine riga successiva
+      let nextEnd = nextLineEnd
+      while (nextEnd < text.length && text[nextEnd] !== '\n' && text[nextEnd] !== '\r') {
+        nextEnd++
+      }
+
+      const nextLine = text.slice(nextLineEnd, nextEnd).trim()
+      // Se la riga successiva è vuota, conta e continua (max 2 righe vuote consecutive)
+      if (nextLine.length === 0) {
+        consecutiveEmpty++
+        nextLineEnd = nextEnd + 1
+        continue
+      }
+      consecutiveEmpty = 0
+
+      // Se la riga successiva è molto lunga, fermati
+      if (nextLine.length > 150) break
+
+      // Unisci: riga corrente + spazio + riga successiva
+      currentLine = currentLine + ' ' + nextLine
+      snippetEnd = nextEnd
+      nextLineEnd = nextEnd + 1
+    }
+  }
+
+  let snippet = currentLine.trim()
+  const originalSnippet = snippet // Salva la riga originale per verificare se abbiamo tagliato
+  let startOffset = 0
+  let endOffset = snippet.length
+
+  // Se la riga è troppo lunga, taglia MA mantieni sempre la parola cercata visibile
+  // Mostra la parola cercata + contesto dopo (non centrare)
+  if (snippet.length > maxLength) {
+    // Calcola la posizione della parola cercata nella riga corrente
+    const wordPosInLine = charPosition - snippetStart
+
+    // Assicurati che la posizione sia valida
+    if (wordPosInLine >= 0 && wordPosInLine < snippet.length) {
+      // Mostra la parola cercata + contesto dopo (fino a maxLength)
+      // 20 caratteri prima per contesto, poi la parola + resto fino a maxLength
+      startOffset = Math.max(0, wordPosInLine - 20) // 20 caratteri prima per contesto
+      endOffset = Math.min(snippet.length, startOffset + maxLength)
+      snippet = snippet.slice(startOffset, endOffset)
+    } else {
+      // Fallback: se la posizione è fuori range, usa il centro
+      const centerPos = Math.max(0, Math.min(snippet.length - 1, wordPosInLine))
+      const halfLength = Math.floor(maxLength / 2)
+      startOffset = Math.max(0, centerPos - halfLength)
+      endOffset = Math.min(snippet.length, startOffset + maxLength)
+      snippet = snippet.slice(startOffset, endOffset)
+    }
+  }
+
+  // Aggiungi puntini SOLO se abbiamo tagliato qualcosa
+  // Puntini iniziali solo se abbiamo tagliato l'inizio della riga originale
+  // Puntini finali solo se abbiamo tagliato la fine della riga originale
+  if (snippet.length < originalSnippet.length) {
+    const hadStartTrim = startOffset > 0
+    const hadEndTrim = endOffset < originalSnippet.length
+
+    if (hadStartTrim && hadEndTrim) {
+      return '...' + snippet + '...'
+    } else if (hadStartTrim) {
+      return '...' + snippet
+    } else if (hadEndTrim) {
+      return snippet + '...'
+    } else {
+      return snippet
+    }
+  } else {
+    return snippet
+  }
+}
+
 export async function searchRoutes(fastify: FastifyInstance) {
 
   // Ricerca globale in tutti i documenti dell'archivio
@@ -184,6 +332,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
           charIdx?: number
           qLen?: number
         }> = []
+
+        // Set per deduplicare snippet identici (normalizzati)
+        const seenSnippets = new Set<string>()
 
         let processedCount = 0
         const maxDocsToProcess = 100 // Limite per evitare timeout
@@ -337,18 +488,59 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 }
 
                 // Usa mappedCharIdx per estrarre snippet dal testo originale
+                // Utilizza extractLineBasedSnippet per mostrare righe complete
                 const localCharIdxMapped = mappedCharIdx - accumulatedMapped
-                const snippetStart = Math.max(0, localCharIdxMapped - 50)
-                const snippetEnd = Math.min(pageTextRaw.length, localCharIdxMapped + query.length + 100)
-                let snippet = pageTextRaw.slice(snippetStart, snippetEnd)
+                let snippet = extractLineBasedSnippet(pageTextRaw, localCharIdxMapped, 300)
+
+                // VERIFICA CRITICA: lo snippet DEVE contenere la query cercata
+                // Se non la contiene, significa che la mappatura è errata - cerca nelle righe adiacenti
+                let snippetNormalizedForSearch = normalizeForSearch(snippet)
+                if (!snippetNormalizedForSearch.includes(normalizedQueryForSearch)) {
+                  // La mappatura potrebbe essere imprecisa - cerca la query nelle righe vicine
+                  // Estrai un contesto più ampio (500 caratteri prima e dopo) e cerca la query
+                  const searchStart = Math.max(0, localCharIdxMapped - 500)
+                  const searchEnd = Math.min(pageTextRaw.length, localCharIdxMapped + 500)
+                  const context = pageTextRaw.slice(searchStart, searchEnd)
+                  const contextNormalized = normalizeForSearch(context)
+                  const queryPosInContext = contextNormalized.indexOf(normalizedQueryForSearch)
+
+                  if (queryPosInContext >= 0) {
+                    // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
+                    const correctPos = searchStart + queryPosInContext
+                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300)
+                    snippetNormalizedForSearch = normalizeForSearch(snippet)
+
+                    // LOG per debug
+                    if (occIdx === 0) {
+                      console.log('[SEARCH][LOCAL][SNIPPET-CORRECTED]', {
+                        originalMapped: localCharIdxMapped,
+                        correctedPos: correctPos,
+                        snippet: snippet.substring(0, 150)
+                      })
+                    }
+                  }
+
+                  // Se ancora non contiene la query, salta questo risultato
+                  if (!snippetNormalizedForSearch.includes(normalizedQueryForSearch)) {
+                    console.log('[SEARCH][LOCAL][SNIPPET-FILTER]', {
+                      occIdx,
+                      charIdx,
+                      mappedCharIdx,
+                      localCharIdxMapped,
+                      snippet: snippet.substring(0, 100),
+                      skipped: true
+                    })
+                    continue // Salta questo risultato - snippet non contiene la query
+                  }
+                }
 
                 // LOG SOLO PER LA PRIMA OCCORRENZA
                 if (occIdx === 0) {
                   console.log('[SEARCH][LOCAL][FIRST-SNIPPET]', {
-                    snippetStart,
-                    snippetEnd,
+                    localCharIdxMapped,
+                    snippetLength: snippet.length,
                     snippet: snippet.substring(0, 150),
-                    queryInSnippet: normalizeForSearch(snippet).includes(normalizedQueryForSearch)
+                    queryInSnippet: true
                   })
                 }
 
@@ -385,11 +577,19 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   }
                 }
 
+                // Deduplicazione: verifica se abbiamo già visto questo snippet
+                const snippetKey = normalizeForSearch(snippet)
+                if (seenSnippets.has(snippetKey)) {
+                  // Snippet già presente - salta (evita duplicati)
+                  continue
+                }
+                seenSnippets.add(snippetKey)
+
                 allMatches.push({
                   docId: docId!,
                   filename: localDocInfo.filename,
                   page: foundPage,
-                  snippet: '...' + snippet + '...',
+                  snippet: snippet, // extractLineBasedSnippet già gestisce i puntini
                   x0Pct,
                   y0Pct,
                   x1Pct,
@@ -646,51 +846,63 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   pageTextNormalizedLength: pageTextNormalized.length
                 })
 
-                // Snippet: estrai dal testo normalizzato per allineamento perfetto
-                const snippetStart = Math.max(0, localCharIdx - 20)
-                const snippetEnd = Math.min(pageTextNormalized.length, localCharIdx + qLen + 80)
-                let snippet = pageTextNormalized.slice(snippetStart, snippetEnd)
-
-                console.log('[DEBUG][LOOP][SNIPPET-NORM]', {
-                  docId: doc.id,
-                  occIndex: occIdx,
-                  snippetStart,
-                  snippetEnd,
-                  snippet: snippet.substring(0, 100),
-                  queryInSnippet: snippet.toLowerCase().includes(normalizedQ.toLowerCase()),
-                  charIdxInSnippet: localCharIdx - snippetStart
-                })
-
-                // Prova a mappare al testo originale per snippet più leggibile
-                // Cerca il testo normalizzato nel testo originale (approssimato)
-                const snippetSearch = snippet.toLowerCase().substring(0, Math.min(30, snippet.length))
-                const snippetInOriginal = pageTextRaw.toLowerCase().indexOf(snippetSearch)
-
-                console.log('[DEBUG][LOOP][SNIPPET-MAP]', {
-                  docId: doc.id,
-                  occIndex: occIdx,
-                  snippetSearch: snippetSearch.substring(0, 50),
-                  snippetInOriginal,
-                  pageTextRawStart: pageTextRaw.substring(0, 150),
-                  found: snippetInOriginal >= 0
-                })
-
-                if (snippetInOriginal >= 0 && snippetInOriginal + snippet.length < pageTextRaw.length) {
-                  const originalSnippet = pageTextRaw.slice(snippetInOriginal, snippetInOriginal + snippet.length)
-                  console.log('[DEBUG][LOOP][SNIPPET-FINAL]', {
-                    docId: doc.id,
-                    occIndex: occIdx,
-                    usingOriginal: true,
-                    originalSnippet: originalSnippet.substring(0, 100)
-                  })
-                  snippet = originalSnippet
+                // Snippet: usa extractLineBasedSnippet per mostrare righe complete dal testo originale
+                // Mappiamo localCharIdx (dal testo normalizzato) alla posizione nel testo originale
+                // Approccio semplificato: per documenti con layout, usa direttamente pageTextRaw
+                // Per documenti nativi, localCharIdx dovrebbe essere allineato al testo originale
+                let snippet = ''
+                if (hasLayout && pageTextRaw.length > 0) {
+                  // Per documenti con layout OCR, localCharIdx è già relativo a pageTextRaw
+                  snippet = extractLineBasedSnippet(pageTextRaw, localCharIdx, 300)
                 } else {
-                  console.log('[DEBUG][LOOP][SNIPPET-FINAL]', {
-                    docId: doc.id,
-                    occIndex: occIdx,
-                    usingOriginal: false,
-                    normalizedSnippet: snippet.substring(0, 100)
-                  })
+                  // Per documenti nativi, pageTextRaw contiene il testo completo
+                  // localCharIdx è già corretto per il testo normalizzato, dobbiamo mapparlo
+                  // Usa una stima approssimativa: trova la posizione nel testo originale
+                  // cercando il contesto intorno a localCharIdx nel testo normalizzato
+                  const contextNorm = pageTextNormalized.slice(Math.max(0, localCharIdx - 50), Math.min(pageTextNormalized.length, localCharIdx + 50))
+                  const contextNormLower = contextNorm.toLowerCase()
+                  const textRawLower = pageTextRaw.toLowerCase()
+                  const mappedPos = textRawLower.indexOf(contextNormLower.substring(Math.max(0, contextNormLower.length - 20)))
+
+                  if (mappedPos >= 0) {
+                    const adjustedPos = mappedPos + (localCharIdx - Math.max(0, localCharIdx - 50) + Math.max(0, contextNormLower.length - 20))
+                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(adjustedPos, pageTextRaw.length - 1), 300)
+                  } else {
+                    // Fallback: usa direttamente localCharIdx se il mapping fallisce
+                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(localCharIdx, pageTextRaw.length - 1), 300)
+                  }
+                }
+
+                // VERIFICA CRITICA: lo snippet DEVE contenere la query cercata
+                // Applica la stessa logica di correzione usata per i file locali
+                const normalizedQForSearch = normalizeForSearch(query)
+                let snippetNormalizedForSearch = normalizeForSearch(snippet)
+                if (!snippetNormalizedForSearch.includes(normalizedQForSearch)) {
+                  // La mappatura potrebbe essere imprecisa - cerca la query nelle righe vicine
+                  const searchStart = Math.max(0, (typeof localCharIdx === 'number' ? localCharIdx : 0) - 500)
+                  const searchEnd = Math.min(pageTextRaw.length, (typeof localCharIdx === 'number' ? localCharIdx : 0) + 500)
+                  const context = pageTextRaw.slice(searchStart, searchEnd)
+                  const contextNormalized = normalizeForSearch(context)
+                  const queryPosInContext = contextNormalized.indexOf(normalizedQForSearch)
+
+                  if (queryPosInContext >= 0) {
+                    // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
+                    const correctPos = searchStart + queryPosInContext
+                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300)
+                    snippetNormalizedForSearch = normalizeForSearch(snippet)
+                  }
+
+                  // Se ancora non contiene la query, salta questo risultato
+                  if (!snippetNormalizedForSearch.includes(normalizedQForSearch)) {
+                    console.log('[SEARCH][DB][SNIPPET-FILTER]', {
+                      docId: doc.id,
+                      charIdx,
+                      localCharIdx,
+                      snippet: snippet.substring(0, 100),
+                      skipped: true
+                    })
+                    continue // Salta questo risultato - snippet non contiene la query
+                  }
                 }
 
                 // Trova bbox approssimativa (basata sulle parole)
@@ -733,11 +945,19 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   accumulated
                 })
 
+                // Deduplicazione: verifica se abbiamo già visto questo snippet
+                const snippetKey = normalizeForSearch(snippet)
+                if (seenSnippets.has(snippetKey)) {
+                  // Snippet già presente - salta (evita duplicati)
+                  continue
+                }
+                seenSnippets.add(snippetKey)
+
                 allMatches.push({
                   docId: doc.id,
                   filename: doc.filename,
                   page: foundPage,
-                  snippet: '...' + snippet + '...',
+                  snippet: snippet, // extractLineBasedSnippet già gestisce i puntini
                   x0Pct,
                   y0Pct,
                   x1Pct,
