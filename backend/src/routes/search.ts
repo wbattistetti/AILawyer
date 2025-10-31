@@ -44,7 +44,9 @@ function sanitizeFileName(key: string): string {
 // Helper per estrarre snippet basato su righe complete (evita tagli arbitrari)
 // Unisce righe consecutive brevi per formare frasi logiche complete
 // (risolve il problema dei PDF nativi che spezzano visivamente una riga in più righe nel testo grezzo)
-function extractLineBasedSnippet(text: string, charPosition: number, maxLength: number = 200): string {
+// Per OCR: unione più conservativa (evita snippet troppo lunghi)
+// Per nativo: unione più aggressiva (unisce righe spezzate)
+function extractLineBasedSnippet(text: string, charPosition: number, maxLength: number = 200, isOcr: boolean = false): string {
   if (!text || charPosition < 0 || charPosition >= text.length) {
     return ''
   }
@@ -66,15 +68,21 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
   let snippetStart = lineStart
   let snippetEnd = lineEnd
 
-  // Se la riga è molto corta (<50 caratteri), unisci con righe adiacenti brevi
+  // Se la riga è molto corta, unisci con righe adiacenti brevi
   // Questo gestisce il caso in cui il PDF visualizza una riga ma il testo estratto
   // la divide in più righe (es: "COMANDO\nPROVINCIALE\nDI CATANIA")
   // Gestisce anche casi come "Catania,\nagosto - novembre 2020"
-  if (currentLine.length < 50) {
+  // Per OCR: unione conservativa (righe <30 char, limite 80, max 1 riga vuota)
+  // Per nativo: unione aggressiva (righe <50 char, limite 150, max 2 righe vuote)
+  const minLineLength = isOcr ? 30 : 50
+  const maxTotalLength = isOcr ? 80 : 150
+  const maxEmptyLines = isOcr ? 1 : 2
+
+  if (currentLine.length < minLineLength) {
     // Unisci con righe precedenti se sono brevi
     let prevLineStart = lineStart - 1
     let consecutiveEmpty = 0
-    while (prevLineStart > 0 && currentLine.length < 150 && consecutiveEmpty < 2) {
+    while (prevLineStart > 0 && currentLine.length < maxTotalLength && consecutiveEmpty < maxEmptyLines) {
       // Salta caratteri di fine riga
       while (prevLineStart > 0 && (text[prevLineStart] === '\n' || text[prevLineStart] === '\r')) {
         prevLineStart--
@@ -96,8 +104,8 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
       }
       consecutiveEmpty = 0
 
-      // Se la riga precedente è molto lunga, fermati
-      if (prevLine.length > 150) break
+      // Se la riga precedente è molto lunga, fermati (stesso limite del totale)
+      if (prevLine.length > maxTotalLength) break
 
       // Unisci: riga precedente + spazio + riga corrente
       currentLine = prevLine + ' ' + currentLine
@@ -108,7 +116,7 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
     // Unisci con righe successive se sono brevi
     let nextLineEnd = lineEnd + 1
     consecutiveEmpty = 0
-    while (nextLineEnd < text.length && currentLine.length < 150 && consecutiveEmpty < 2) {
+    while (nextLineEnd < text.length && currentLine.length < maxTotalLength && consecutiveEmpty < maxEmptyLines) {
       // Salta caratteri di fine riga
       while (nextLineEnd < text.length && (text[nextLineEnd] === '\n' || text[nextLineEnd] === '\r')) {
         nextLineEnd++
@@ -130,8 +138,8 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
       }
       consecutiveEmpty = 0
 
-      // Se la riga successiva è molto lunga, fermati
-      if (nextLine.length > 150) break
+      // Se la riga successiva è molto lunga, fermati (stesso limite del totale)
+      if (nextLine.length > maxTotalLength) break
 
       // Unisci: riga corrente + spazio + riga successiva
       currentLine = currentLine + ' ' + nextLine
@@ -436,9 +444,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 // charIdx è la posizione nel testo SENZA spazi (normalizedTextForSearch)
                 const charIdx = occurrences[occIdx]
 
-                // LOG SOLO PER LA PRIMA OCCORRENZA
+                // LOG DETTAGLIATO PER LA PRIMA OCCORRENZA
                 if (occIdx === 0) {
-                  console.log('[SEARCH][LOCAL][FIRST-OCC]', { charIdx })
+                  console.log('🔍🔍🔍 [SEARCH][LOCAL][FIRST-OCCURENCE-START] 🔍🔍🔍', {
+                    occIdx: 0,
+                    charIdx,
+                    totalOccurrences: occurrences.length,
+                    query: normalizedQueryForSearch,
+                    contextAround: normalizedTextForSearch.substring(Math.max(0, charIdx - 100), charIdx + 100)
+                  })
                 }
 
                 // OTTIMIZZATO: lookup O(1) invece di loop O(n)
@@ -489,8 +503,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
                 // Usa mappedCharIdx per estrarre snippet dal testo originale
                 // Utilizza extractLineBasedSnippet per mostrare righe complete
+                // Passa hasLayout come isOcr: se ha layout, è OCR; altrimenti è nativo
                 const localCharIdxMapped = mappedCharIdx - accumulatedMapped
-                let snippet = extractLineBasedSnippet(pageTextRaw, localCharIdxMapped, 300)
+                let snippet = extractLineBasedSnippet(pageTextRaw, localCharIdxMapped, 300, hasLayout)
 
                 // VERIFICA CRITICA: lo snippet DEVE contenere la query cercata
                 // Se non la contiene, significa che la mappatura è errata - cerca nelle righe adiacenti
@@ -507,7 +522,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   if (queryPosInContext >= 0) {
                     // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
                     const correctPos = searchStart + queryPosInContext
-                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300)
+                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300, hasLayout)
                     snippetNormalizedForSearch = normalizeForSearch(snippet)
 
                     // LOG per debug
@@ -537,10 +552,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 // LOG SOLO PER LA PRIMA OCCORRENZA
                 if (occIdx === 0) {
                   console.log('[SEARCH][LOCAL][FIRST-SNIPPET]', {
+                    occIdx: 0,
+                    charIdx,
+                    mappedCharIdx,
                     localCharIdxMapped,
                     snippetLength: snippet.length,
-                    snippet: snippet.substring(0, 150),
-                    queryInSnippet: true
+                    snippet: snippet.substring(0, 200),
+                    query: normalizedQueryForSearch,
+                    queryInSnippet: snippetNormalizedForSearch.includes(normalizedQueryForSearch),
+                    snippetNormalized: snippetNormalizedForSearch.substring(0, 150)
                   })
                 }
 
@@ -578,12 +598,47 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 }
 
                 // Deduplicazione: verifica se abbiamo già visto questo snippet
-                const snippetKey = normalizeForSearch(snippet)
+                // Per OCR: usa una finestra di contesto attorno alla parola cercata (evita snippet troppo lunghi e quasi identici)
+                // Per nativo: usa l'intero snippet normalizzato
+                let snippetKey: string
+                if (hasLayout) {
+                  // OCR: estrai finestra di contesto (50 caratteri prima e dopo la parola cercata nello snippet)
+                  const snippetNormalized = normalizeForSearch(snippet)
+                  const queryNormalized = normalizedQueryForSearch
+                  const queryPos = snippetNormalized.indexOf(queryNormalized)
+                  if (queryPos >= 0) {
+                    const contextStart = Math.max(0, queryPos - 50)
+                    const contextEnd = Math.min(snippetNormalized.length, queryPos + queryNormalized.length + 50)
+                    snippetKey = snippetNormalized.slice(contextStart, contextEnd)
+                  } else {
+                    snippetKey = snippetNormalized.substring(0, 100) // Fallback: primi 100 caratteri
+                  }
+                } else {
+                  // Nativo: usa l'intero snippet normalizzato
+                  snippetKey = normalizeForSearch(snippet)
+                }
+
                 if (seenSnippets.has(snippetKey)) {
                   // Snippet già presente - salta (evita duplicati)
+                  if (occIdx === 0) {
+                    console.log('[SEARCH][LOCAL][FIRST-DUPLICATE]', {
+                      occIdx: 0,
+                      snippetKey: snippetKey.substring(0, 100),
+                      snippet: snippet.substring(0, 150),
+                      skipped: true
+                    })
+                  }
                   continue
                 }
                 seenSnippets.add(snippetKey)
+
+                if (occIdx === 0) {
+                  console.log('[SEARCH][LOCAL][FIRST-ADDED]', {
+                    occIdx: 0,
+                    snippetKey: snippetKey.substring(0, 100),
+                    snippet: snippet.substring(0, 150)
+                  })
+                }
 
                 allMatches.push({
                   docId: docId!,
@@ -598,6 +653,18 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   qLen: query.length
                 })
               }
+
+              // LOG FINALE: mostra i primi snippet aggiunti per verificare l'ordine
+              console.log('✅✅✅ [SEARCH][LOCAL][RESULTS-FINAL] ✅✅✅', {
+                totalOccurrences: occurrences.length,
+                totalMatchesAdded: allMatches.length,
+                first3Matches: allMatches.slice(0, 3).map((m, idx) => ({
+                  index: idx,
+                  snippet: m.snippet.substring(0, 80),
+                  page: m.page,
+                  charIdx: m.charIdx
+                }))
+              })
 
               fastify.log.info({ msg: '[SEARCH][archive][local] Found matches', count: occurrences.length, docId })
             }
@@ -853,7 +920,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 let snippet = ''
                 if (hasLayout && pageTextRaw.length > 0) {
                   // Per documenti con layout OCR, localCharIdx è già relativo a pageTextRaw
-                  snippet = extractLineBasedSnippet(pageTextRaw, localCharIdx, 300)
+                  snippet = extractLineBasedSnippet(pageTextRaw, localCharIdx, 300, true) // isOcr = true
                 } else {
                   // Per documenti nativi, pageTextRaw contiene il testo completo
                   // localCharIdx è già corretto per il testo normalizzato, dobbiamo mapparlo
@@ -866,10 +933,10 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
                   if (mappedPos >= 0) {
                     const adjustedPos = mappedPos + (localCharIdx - Math.max(0, localCharIdx - 50) + Math.max(0, contextNormLower.length - 20))
-                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(adjustedPos, pageTextRaw.length - 1), 300)
+                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(adjustedPos, pageTextRaw.length - 1), 300, false) // isOcr = false (nativo)
                   } else {
                     // Fallback: usa direttamente localCharIdx se il mapping fallisce
-                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(localCharIdx, pageTextRaw.length - 1), 300)
+                    snippet = extractLineBasedSnippet(pageTextRaw, Math.min(localCharIdx, pageTextRaw.length - 1), 300, false) // isOcr = false (nativo)
                   }
                 }
 
@@ -888,7 +955,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   if (queryPosInContext >= 0) {
                     // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
                     const correctPos = searchStart + queryPosInContext
-                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300)
+                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300, hasLayout) // Passa hasLayout come isOcr
                     snippetNormalizedForSearch = normalizeForSearch(snippet)
                   }
 
@@ -946,7 +1013,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 })
 
                 // Deduplicazione: verifica se abbiamo già visto questo snippet
-                const snippetKey = normalizeForSearch(snippet)
+                // Per OCR: usa una finestra di contesto attorno alla parola cercata (evita snippet troppo lunghi e quasi identici)
+                // Per nativo: usa l'intero snippet normalizzato
+                let snippetKey: string
+                if (hasLayout) {
+                  // OCR: estrai finestra di contesto (50 caratteri prima e dopo la parola cercata nello snippet)
+                  const snippetNormalized = normalizeForSearch(snippet)
+                  const queryNormalized = normalizeForSearch(query)
+                  const queryPos = snippetNormalized.indexOf(queryNormalized)
+                  if (queryPos >= 0) {
+                    const contextStart = Math.max(0, queryPos - 50)
+                    const contextEnd = Math.min(snippetNormalized.length, queryPos + queryNormalized.length + 50)
+                    snippetKey = snippetNormalized.slice(contextStart, contextEnd)
+                  } else {
+                    snippetKey = snippetNormalized.substring(0, 100) // Fallback: primi 100 caratteri
+                  }
+                } else {
+                  // Nativo: usa l'intero snippet normalizzato
+                  snippetKey = normalizeForSearch(snippet)
+                }
+
                 if (seenSnippets.has(snippetKey)) {
                   // Snippet già presente - salta (evita duplicati)
                   continue

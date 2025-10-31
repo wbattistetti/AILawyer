@@ -17,6 +17,7 @@ export interface DocumentoCreateInput {
   hash: string
   ocrStatus?: string
   tags?: string[]
+  thumbnailDataUrl?: string // Base64 JPEG data URL per miniatura
 }
 
 export interface ClassificationResult {

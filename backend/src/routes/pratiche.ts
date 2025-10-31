@@ -47,8 +47,34 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   // List pratiche (simple, latest first)
   fastify.get('/pratiche', async (_request, reply) => {
     try {
-      const items = await prisma.pratica.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
-      return items
+      const pratiche = await prisma.pratica.findMany({
+        include: {
+          clienti: {
+            include: {
+              cliente: true
+            }
+          },
+          _count: {
+            select: { documenti: true }
+          }
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 50
+      })
+
+      return pratiche.map(pratica => {
+        const nome = pratica.numeroRuolo || `Pratica ${pratica.id.slice(0, 8)}`
+        const clientiNomi = pratica.clienti.map(pc => `${pc.cliente.nome} ${pc.cliente.cognome}`).join(', ')
+        const cliente = clientiNomi || 'Nessun cliente'
+
+        return {
+          ...pratica,
+          nome,
+          cliente,
+          clienti: pratica.clienti.map(pc => pc.cliente),
+          documentCount: pratica._count.documenti
+        }
+      })
     } catch (error) {
       fastify.log.error(error)
       return reply.status(500).send({ error: 'Errore nel recupero delle pratiche' })
@@ -199,16 +225,101 @@ export async function praticheRoutes(fastify: FastifyInstance) {
     try {
       const pratica = await prisma.pratica.findUnique({
         where: { id: request.params.id },
+        include: {
+          clienti: {
+            include: {
+              cliente: true
+            }
+          }
+        }
       })
 
       if (!pratica) {
         return reply.status(404).send({ error: 'Pratica non trovata' })
       }
 
-      return pratica
+      // Costruisci nome da numeroRuolo
+      const nome = pratica.numeroRuolo || `Pratica ${pratica.id.slice(0, 8)}`
+
+      // Costruisci cliente stringa dai clienti associati
+      const clientiNomi = pratica.clienti.map(pc => `${pc.cliente.nome} ${pc.cliente.cognome}`).join(', ')
+      const cliente = clientiNomi || 'Nessun cliente'
+
+      return {
+        ...pratica,
+        nome, // Aggiungi nome costruito
+        cliente, // Aggiungi cliente costruito
+        clienti: pratica.clienti.map(pc => pc.cliente) // Normalizza struttura clienti
+      }
     } catch (error) {
       fastify.log.error(error)
       return reply.status(500).send({ error: 'Errore nel recupero della pratica' })
+    }
+  })
+
+  // Update pratica
+  fastify.patch<{ Params: { id: string }; Body: { numeroRuolo?: string; foro?: string; pmGiudice?: string } }>('/pratiche/:id', async (request, reply) => {
+    const praticaId = request.params.id
+    console.log('[SAVE][PRATICA][START]', {
+      praticaId,
+      body: request.body,
+      numeroRuolo: request.body.numeroRuolo,
+      foro: request.body.foro,
+      pmGiudice: request.body.pmGiudice
+    })
+
+    try {
+      const pratica = await prisma.pratica.findUnique({
+        where: { id: praticaId }
+      })
+
+      if (!pratica) {
+        console.log('[SAVE][PRATICA][ERROR] Pratica non trovata', { praticaId })
+        return reply.status(404).send({ error: 'Pratica non trovata' })
+      }
+
+      console.log('[SAVE][PRATICA][BEFORE]', {
+        praticaId,
+        oldNumeroRuolo: pratica.numeroRuolo,
+        oldForo: pratica.foro,
+        oldPmGiudice: pratica.pmGiudice
+      })
+
+      const dataToUpdate: any = {}
+      if (request.body.numeroRuolo !== undefined) {
+        dataToUpdate.numeroRuolo = request.body.numeroRuolo
+      }
+      if (request.body.foro !== undefined) {
+        dataToUpdate.foro = request.body.foro
+      }
+      if (request.body.pmGiudice !== undefined) {
+        dataToUpdate.pmGiudice = request.body.pmGiudice
+      }
+
+      console.log('[SAVE][PRATICA][UPDATE-DATA]', { praticaId, dataToUpdate })
+
+      const updated = await prisma.pratica.update({
+        where: { id: praticaId },
+        data: dataToUpdate
+      })
+
+      console.log('[SAVE][PRATICA][SUCCESS]', {
+        praticaId,
+        newNumeroRuolo: updated.numeroRuolo,
+        newForo: updated.foro,
+        newPmGiudice: updated.pmGiudice,
+        updatedAt: updated.updatedAt
+      })
+
+      return updated
+    } catch (error) {
+      console.error('[SAVE][PRATICA][ERROR]', {
+        praticaId,
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      })
+      fastify.log.error(error)
+      return reply.status(500).send({ error: 'Errore nell\'aggiornamento della pratica' })
     }
   })
 
@@ -250,10 +361,47 @@ export async function praticheRoutes(fastify: FastifyInstance) {
 
   // Get documenti for pratica
   fastify.get<{ Params: { id: string } }>('/pratiche/:id/documenti', async (request, reply) => {
+    const praticaId = request.params.id
+    console.log('[LOAD][DOCUMENTI][START]', { praticaId })
+
     try {
       const documentiRaw = await prisma.documento.findMany({
-        where: { praticaId: request.params.id },
+        where: { praticaId: praticaId },
         orderBy: { createdAt: 'desc' },
+        select: {
+          // Escludi thumbnailDataUrl per performance (caricamento lazy)
+          id: true,
+          praticaId: true,
+          compartoId: true,
+          filename: true,
+          mime: true,
+          size: true,
+          s3Key: true,
+          hash: true,
+          ocrStatus: true,
+          ocrText: true,
+          ocrConfidence: true,
+          ocrLayout: true,
+          ocrPdfKey: true,
+          hasNativeText: true,
+          classConfidence: true,
+          classWhy: true,
+          tags: true,
+          createdAt: true,
+          updatedAt: true,
+          // thumbnailDataUrl escluso - carica via /documenti/:id/thumbnail se serve
+        }
+      })
+
+      console.log('[LOAD][DOCUMENTI][FOUND]', {
+        praticaId,
+        count: documentiRaw.length,
+        documenti: documentiRaw.map((d: any) => ({
+          id: d.id,
+          filename: d.filename,
+          compartoId: d.compartoId,
+          s3Key: d.s3Key
+        }))
       })
 
       const documenti = documentiRaw.map((d: any) => {
@@ -262,8 +410,22 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         return { ...d, tags, ocrLayout }
       })
 
+      console.log('[LOAD][DOCUMENTI][SUCCESS]', {
+        praticaId,
+        count: documenti.length,
+        compartiCount: Object.keys(documenti.reduce((acc: any, d: any) => {
+          acc[d.compartoId] = true
+          return acc
+        }, {})).length
+      })
+
       return documenti
     } catch (error) {
+      console.error('[LOAD][DOCUMENTI][ERROR]', {
+        praticaId,
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      })
       fastify.log.error(error)
       return reply.status(500).send({ error: 'Errore nel recupero dei documenti' })
     }
