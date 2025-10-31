@@ -10,6 +10,22 @@ import { getOcrQueue } from '../lib/queue.js'
 // Map: s3Key -> { progress, status, result?, error? }
 const localOcrProgress = new Map<string, { progress: number; status: string; result?: any; error?: string }>()
 
+// Funzione per ottenere il risultato OCR di un file locale (per ricerca e altre operazioni)
+export function getLocalOcrResult(s3Key: string): { texts?: string[], layout?: any[], status: string, progress: number } | null {
+    const progress = localOcrProgress.get(s3Key)
+    if (!progress || progress.status !== 'completed' || !progress.result) {
+        return null
+    }
+
+    const result = progress.result
+    return {
+        texts: result.texts || [],
+        layout: result.layout || [],
+        status: progress.status,
+        progress: progress.progress
+    }
+}
+
 const ocrProcessLocalSchema = z.object({
     s3Key: z.string(),
     filename: z.string(),
