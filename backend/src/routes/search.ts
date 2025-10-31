@@ -17,11 +17,23 @@ if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
 const documentTextCache = new Map<string, { text: string; layout?: any; hasNativeText: boolean; timestamp: number }>()
 
 // Helper per normalizzare il testo (uguale al frontend)
+// Rimuove spazi multipli e normalizza per la ricerca
 function normalize(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')  // Sostituisci spazi multipli con uno solo
+    .trim()
+}
+
+// Helper per normalizzare testo rimuovendo TUTTI gli spazi (per matchare OCR con spazi tra lettere)
+function normalizeForSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')  // Rimuovi TUTTI gli spazi per matchare anche OCR con spazi tra lettere
 }
 
 // Helper per sanitizzare nome file (come in upload.ts e ocr.ts)
@@ -49,6 +61,13 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
         // APPROCCIO IBRIDO: ricerca in memoria + database
 
+        console.log('[SEARCH][ARCHIVE][START]', {
+          query,
+          normalizedQ,
+          docId,
+          limit
+        })
+
         // 1. Gestione file LOCALI (temp:)
         const isLocalFile = docId && docId.startsWith('temp:')
         let localDocInfo: { s3Key: string; filename: string; text: string; layout?: any[] } | null = null
@@ -56,7 +75,16 @@ export async function searchRoutes(fastify: FastifyInstance) {
         if (isLocalFile && docId) {
           // Estrai s3Key da docId (temp:local:timestamp:random -> local:timestamp:random)
           const s3Key = docId.replace(/^temp:/, '')
+          console.log('[SEARCH][ARCHIVE][LOCAL] Checking local file', { docId, s3Key })
+
           const ocrResult = getLocalOcrResult(s3Key)
+          console.log('[SEARCH][ARCHIVE][LOCAL] OCR result', {
+            s3Key,
+            hasResult: !!ocrResult,
+            hasTexts: !!(ocrResult && ocrResult.texts),
+            textsLength: ocrResult?.texts?.length,
+            status: ocrResult?.status
+          })
 
           if (ocrResult && ocrResult.texts) {
             // File locale con OCR completato: usa testo dalla memoria
@@ -67,16 +95,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
               text,
               layout: ocrResult.layout
             }
+            console.log('[SEARCH][archive][local] Found in memory', { s3Key, textLength: text.length, textStart: text.substring(0, 200) })
             fastify.log.info({ msg: '[SEARCH][archive][local] Found in memory', s3Key, textLength: text.length })
           } else {
             // File locale senza OCR: prova a leggere testo nativo dal file
+            console.log('[SEARCH][ARCHIVE][LOCAL] No OCR result, trying native text extraction', { s3Key })
             try {
               const sanitizedKey = sanitizeFileName(s3Key)
               const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
               const filePath = path.join(uploadsDir, sanitizedKey)
 
+              console.log('[SEARCH][ARCHIVE][LOCAL] File path', { sanitizedKey, filePath, exists: fs.existsSync(filePath) })
+
               if (fs.existsSync(filePath)) {
                 const nativeText = await extractNativeText(filePath)
+                console.log('[SEARCH][ARCHIVE][LOCAL] Native text extraction', {
+                  s3Key,
+                  hasText: !!nativeText,
+                  textLength: nativeText?.length,
+                  textStart: nativeText?.substring(0, 200)
+                })
                 if (nativeText) {
                   localDocInfo = {
                     s3Key,
@@ -84,14 +122,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
                     text: nativeText,
                     layout: []
                   }
+                  console.log('[SEARCH][archive][local] Native text extracted', { s3Key, textLength: nativeText.length })
                   fastify.log.info({ msg: '[SEARCH][archive][local] Native text extracted', s3Key, textLength: nativeText.length })
+                } else {
+                  console.log('[SEARCH][ARCHIVE][LOCAL] No native text found', { s3Key })
                 }
+              } else {
+                console.log('[SEARCH][ARCHIVE][LOCAL] File does not exist', { s3Key, filePath })
               }
             } catch (e: any) {
+              console.error('[SEARCH][ARCHIVE][LOCAL] Error extracting native text', { s3Key, error: e?.message, stack: e?.stack })
               fastify.log.warn({ msg: '[SEARCH][archive][local] Failed to read file', s3Key, error: e?.message })
             }
           }
         }
+
+        console.log('[SEARCH][ARCHIVE][LOCAL] Final localDocInfo', {
+          hasLocalDoc: !!localDocInfo,
+          textLength: localDocInfo?.text?.length,
+          hasLayout: !!(localDocInfo?.layout && localDocInfo.layout.length > 0)
+        })
 
         // 2. Trova documenti DB (solo se non è specificato docId locale)
         const documenti = isLocalFile ? [] : await prisma.documento.findMany({
@@ -141,64 +191,183 @@ export async function searchRoutes(fastify: FastifyInstance) {
         // 3. Cerca nel file locale se presente
         if (localDocInfo) {
           try {
+            // Usa normalizeForSearch per rimuovere tutti gli spazi (gestisce OCR con spazi tra lettere)
+            const normalizedTextForSearch = normalizeForSearch(localDocInfo.text)
+            const normalizedQueryForSearch = normalizeForSearch(query)
+
+            // Mantieni anche il testo normalizzato normale per snippet (preserva spazi)
             const normalizedText = normalize(localDocInfo.text)
+
+            console.log('[SEARCH][LOCAL][NORMALIZE]', {
+              originalTextSample: localDocInfo.text.substring(0, 150),
+              normalizedTextSample: normalizedText.substring(0, 150),
+              normalizedForSearchSample: normalizedTextForSearch.substring(0, 150),
+              query,
+              normalizedQ,
+              normalizedQueryForSearch
+            })
+
             const occurrences: number[] = []
             let startIdx = 0
             while (true) {
-              const idx = normalizedText.indexOf(normalizedQ, startIdx)
+              const idx = normalizedTextForSearch.indexOf(normalizedQueryForSearch, startIdx)
               if (idx === -1) break
               occurrences.push(idx)
               startIdx = idx + 1
             }
+
+            console.log('[SEARCH][LOCAL][OCCURRENCES-FOUND]', {
+              totalOccurrences: occurrences.length,
+              firstOccurrence: occurrences[0],
+              firstOccurrences: occurrences.slice(0, 5),
+              normalizedTextForSearchStart: normalizedTextForSearch.substring(0, 200),
+              firstOccurrenceContext: occurrences[0] ? normalizedTextForSearch.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
+            })
 
             if (occurrences.length > 0) {
               // Processa occorrenze con layout se disponibile
               const layout = localDocInfo.layout || []
               const hasLayout = layout.length > 0
 
-              for (const charIdx of occurrences) {
+              // LOG DIAGNOSTICO SOLO ALL'INIZIO
+              console.log('[SEARCH][LOCAL][DIAGNOSTIC]', {
+                totalOccurrences: occurrences.length,
+                firstOccurrenceCharIdx: occurrences[0],
+                query,
+                normalizedQueryForSearch,
+                originalTextStart200: localDocInfo.text.substring(0, 200),
+                normalizedForSearchStart200: normalizedTextForSearch.substring(0, 200),
+                queryAtStartIndex: normalizedTextForSearch.indexOf(normalizedQueryForSearch),
+                hasLayout
+              })
+
+              // OTTIMIZZAZIONE: crea array di mapping UNA SOLA VOLTA prima del loop
+              // mappingArray[charIdx] = posizione nel testo originale
+              const maxCharIdx = Math.max(...occurrences)
+              const mappingArray: number[] = new Array(maxCharIdx + 1).fill(0)
+              let nonSpaceCount = 0
+
+              console.log('[SEARCH][LOCAL][BUILD-MAPPING]', {
+                textLength: localDocInfo.text.length,
+                maxCharIdx,
+                buildingMapping: true
+              })
+
+              for (let i = 0; i < localDocInfo.text.length; i++) {
+                const char = localDocInfo.text[i]
+                const normalizedChar = normalizeForSearch(char)
+                if (normalizedChar.length > 0) {
+                  nonSpaceCount += normalizedChar.length
+                  // Salva la posizione originale per ogni charIdx raggiunto
+                  if (nonSpaceCount <= maxCharIdx) {
+                    mappingArray[nonSpaceCount] = i + 1
+                  }
+                }
+              }
+
+              // Riempiamo i buchi nell'array (se un charIdx non è stato mappato, usa il valore precedente)
+              let lastMapped = 0
+              for (let idx = 0; idx <= maxCharIdx; idx++) {
+                if (mappingArray[idx] > 0) {
+                  lastMapped = mappingArray[idx]
+                } else if (lastMapped > 0) {
+                  mappingArray[idx] = lastMapped
+                }
+              }
+
+              console.log('[SEARCH][LOCAL][MAPPING-BUILT]', {
+                mappingSize: mappingArray.length,
+                firstFew: mappingArray.slice(0, 50).filter(v => v > 0),
+                lastMapped
+              })
+
+              for (let occIdx = 0; occIdx < occurrences.length; occIdx++) {
+                // charIdx è la posizione nel testo SENZA spazi (normalizedTextForSearch)
+                const charIdx = occurrences[occIdx]
+
+                // LOG SOLO PER LA PRIMA OCCORRENZA
+                if (occIdx === 0) {
+                  console.log('[SEARCH][LOCAL][FIRST-OCC]', { charIdx })
+                }
+
+                // OTTIMIZZATO: lookup O(1) invece di loop O(n)
+                const mappedCharIdx = mappingArray[charIdx] || 0
+
+                if (occIdx === 0) {
+                  console.log('[SEARCH][LOCAL][FIRST-MAP]', {
+                    charIdx,
+                    mappedCharIdx,
+                    originalTextAtMappedIdx: localDocInfo.text.substring(Math.max(0, mappedCharIdx - 30), mappedCharIdx + 100)
+                  })
+                }
+
                 let foundPage = 1
                 let pageTextRaw = localDocInfo.text
-                let accumulated = 0
+                let pageTextNormalized = normalizedText
+                let accumulatedNormalized = 0
+                let accumulatedMapped = 0
 
                 if (hasLayout) {
+                  // Calcola accumulated sul testo normalizzato per allineamento corretto
                   for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
                     const pageMeta = layout[pageIdx] || {}
                     const words = pageMeta.words || []
                     const pageText = words.map((w: any) => w.text || '').join(' ')
+                    const pageTextNorm = normalize(pageText)
+                    const pageTextNormForSearch = normalizeForSearch(pageText)
                     const pageLen = pageText.length
+                    const pageLenNormForSearch = pageTextNormForSearch.length
 
-                    if (charIdx >= accumulated && charIdx < accumulated + pageLen) {
+                    if (charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNormForSearch) {
                       foundPage = pageIdx + 1
                       pageTextRaw = pageText
+                      pageTextNormalized = pageTextNorm
                       break
                     }
-                    accumulated += pageLen + 1
+                    accumulatedNormalized += pageLenNormForSearch
+                    accumulatedMapped += pageLen
                   }
                 } else {
+                  // Per PDF nativo senza layout: usa l'intero testo
                   foundPage = Math.floor(charIdx / 2000) + 1
+                  pageTextNormalized = normalizedText
+                  pageTextRaw = localDocInfo.text
+                  accumulatedNormalized = 0
+                  accumulatedMapped = 0
                 }
 
-                const localCharIdx = charIdx - accumulated
-                const snippetStart = Math.max(0, localCharIdx - 20)
-                const snippetEnd = Math.min(pageTextRaw.length, localCharIdx + query.length + 80)
-                const snippet = pageTextRaw.slice(snippetStart, snippetEnd)
+                // Usa mappedCharIdx per estrarre snippet dal testo originale
+                const localCharIdxMapped = mappedCharIdx - accumulatedMapped
+                const snippetStart = Math.max(0, localCharIdxMapped - 50)
+                const snippetEnd = Math.min(pageTextRaw.length, localCharIdxMapped + query.length + 100)
+                let snippet = pageTextRaw.slice(snippetStart, snippetEnd)
+
+                // LOG SOLO PER LA PRIMA OCCORRENZA
+                if (occIdx === 0) {
+                  console.log('[SEARCH][LOCAL][FIRST-SNIPPET]', {
+                    snippetStart,
+                    snippetEnd,
+                    snippet: snippet.substring(0, 150),
+                    queryInSnippet: normalizeForSearch(snippet).includes(normalizedQueryForSearch)
+                  })
+                }
 
                 // Bbox approssimativa
                 let x0Pct = 0, y0Pct = 0, x1Pct = 100, y1Pct = 100
                 if (hasLayout && layout[foundPage - 1]) {
                   const pageWords = layout[foundPage - 1].words || []
                   const matchingWords: any[] = []
-                  let charCount = 0
+                  let charCountNormForSearch = 0
                   for (const w of pageWords) {
                     const wText = w.text || ''
-                    const wStart = charCount
-                    const wEnd = charCount + wText.length
+                    const wTextNormForSearch = normalizeForSearch(wText)
+                    const wStart = charCountNormForSearch
+                    const wEnd = charCountNormForSearch + wTextNormForSearch.length
 
-                    if (wEnd >= localCharIdx && wStart < localCharIdx + query.length) {
+                    if (wEnd >= charIdx && wStart < charIdx + normalizedQueryForSearch.length) {
                       matchingWords.push(w)
                     }
-                    charCount += wText.length + 1
+                    charCountNormForSearch += wTextNormForSearch.length
                   }
 
                   if (matchingWords.length > 0) {
@@ -225,7 +394,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   y0Pct,
                   x1Pct,
                   y1Pct,
-                  charIdx: localCharIdx,
+                  charIdx: localCharIdxMapped,
                   qLen: query.length
                 })
               }
@@ -361,7 +530,10 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 filename: doc.filename,
                 query: normalizedQ,
                 foundOccurrences: occurrences.length,
-                positions: occurrences
+                firstOccurrence: occurrences[0],
+                firstOccurrences: occurrences.slice(0, 5),
+                textSample: normalizedText.substring(0, 200),
+                firstOccurrenceContext: occurrences[0] ? normalizedText.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
               })
 
               if (occurrences.length === 0) continue
@@ -369,46 +541,89 @@ export async function searchRoutes(fastify: FastifyInstance) {
               const hasLayout = layout && Array.isArray(layout) && layout.length > 0
 
               // Per ogni occorrenza, trova la pagina e bbox
-              for (const charIdx of occurrences) {
-                console.log('[DEBUG][LOOP][START]', { docId: doc.id, filename: doc.filename, charIdx, hasLayout })
+              for (let occIdx = 0; occIdx < occurrences.length; occIdx++) {
+                const charIdx = occurrences[occIdx]
+                console.log('[DEBUG][LOOP][START]', {
+                  docId: doc.id,
+                  filename: doc.filename,
+                  occIndex: occIdx,
+                  isFirst: occIdx === 0,
+                  charIdx,
+                  hasLayout,
+                  query: normalizedQ,
+                  charIdxContext: normalizedText.substring(Math.max(0, charIdx - 30), charIdx + 50)
+                })
 
-                let accumulated = 0
+                let accumulatedNormalized = 0
                 let foundPage = -1
                 let pageWords: any[] = []
                 let pageTextRaw = ''
+                let pageTextNormalized = ''
 
                 if (hasLayout) {
-                  // Trova in quale pagina si trova il carattere (usando ocrLayout)
+                  // Trova in quale pagina si trova il carattere (usando testo normalizzato per allineamento)
                   for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
                     const pageMeta = layout[pageIdx] || {}
                     const words = pageMeta.words || []
                     const pageText = words.map((w: any) => w.text || '').join(' ')
-                    const pageLen = pageText.length
+                    const pageTextNorm = normalize(pageText)
+                    const pageLenNorm = pageTextNorm.length
 
-                    if (charIdx >= accumulated && charIdx < accumulated + pageLen) {
+                    console.log('[DEBUG][LOOP][PAGE-CHECK]', {
+                      docId: doc.id,
+                      occIndex: occIdx,
+                      pageIdx: pageIdx + 1,
+                      accumulatedNormalized,
+                      pageLenNorm,
+                      charIdx,
+                      inRange: charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNorm,
+                      pageTextStart: pageText.substring(0, 100),
+                      pageTextNormStart: pageTextNorm.substring(0, 100)
+                    })
+
+                    if (charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNorm) {
                       foundPage = pageIdx + 1
                       pageWords = words
                       pageTextRaw = pageText
+                      pageTextNormalized = pageTextNorm
+
+                      console.log('[DEBUG][LOOP][LAYOUT-FOUND]', {
+                        docId: doc.id,
+                        occIndex: occIdx,
+                        charIdx,
+                        foundPage,
+                        accumulatedNormalized,
+                        pageTextRawLength: pageTextRaw.length,
+                        pageTextNormalizedLength: pageTextNormalized.length,
+                        pageTextRawStart: pageTextRaw.substring(0, 150),
+                        pageTextNormStart: pageTextNormalized.substring(0, 150),
+                        charIdxInPage: charIdx - accumulatedNormalized
+                      })
                       break
                     }
-                    accumulated += pageLen + 1 // +1 per lo spazio tra pagine
+                    accumulatedNormalized += pageLenNorm + 1 // +1 per lo spazio tra pagine
                   }
-                  console.log('[DEBUG][LOOP][LAYOUT]', { docId: doc.id, charIdx, foundPage, accumulated, pageTextRawLength: pageTextRaw.length })
                 } else {
-                  // PDF nativo senza layout: pagina stimata + snippet dal testo grezzo
-                  // Stima pagina: assumendo ~2000 caratteri per pagina
+                  // PDF nativo senza layout: usa l'intero testo, non una finestra scorrevole
+                  // Questo garantisce che la prima occorrenza sia effettivamente all'inizio
                   foundPage = Math.floor(charIdx / 2000) + 1
-                  const substringStart = Math.max(0, charIdx - 500)
-                  pageTextRaw = searchableText.substring(substringStart, charIdx + 500)
-                  accumulated = substringStart  // Memorizza l'offset per calcolare localCharIdx corretto
+
+                  // Usa l'intero testo normalizzato e originale per il calcolo corretto
+                  pageTextNormalized = normalizedText
+                  pageTextRaw = searchableText
+                  accumulatedNormalized = 0  // Nessun offset, partiamo dall'inizio
+
                   console.log('[DEBUG][LOOP][NATIVE]', {
                     docId: doc.id,
+                    occIndex: occIdx,
                     charIdx,
                     foundPage,
                     pageTextRawLength: pageTextRaw.length,
+                    pageTextNormalizedLength: pageTextNormalized.length,
                     searchableTextLength: searchableText.length,
-                    substringStart,
-                    accumulated
+                    accumulatedNormalized,
+                    normalizedTextStart: normalizedText.substring(0, 200),
+                    originalTextStart: searchableText.substring(0, 200)
                   })
                 }
 
@@ -418,26 +633,80 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 }
 
                 // Trova le bbox delle parole che matchano
-                const localCharIdx = charIdx - accumulated
+                const localCharIdx = charIdx - accumulatedNormalized
                 const qLen = query.length
 
-                // Snippet: dal carattere precedente il match fino a +100 char
+                console.log('[DEBUG][LOOP][SNIPPET-CALC]', {
+                  docId: doc.id,
+                  occIndex: occIdx,
+                  charIdx,
+                  accumulatedNormalized,
+                  localCharIdx,
+                  qLen,
+                  pageTextNormalizedLength: pageTextNormalized.length
+                })
+
+                // Snippet: estrai dal testo normalizzato per allineamento perfetto
                 const snippetStart = Math.max(0, localCharIdx - 20)
-                const snippetEnd = Math.min(pageTextRaw.length, localCharIdx + qLen + 80)
-                const snippet = pageTextRaw.slice(snippetStart, snippetEnd)
+                const snippetEnd = Math.min(pageTextNormalized.length, localCharIdx + qLen + 80)
+                let snippet = pageTextNormalized.slice(snippetStart, snippetEnd)
+
+                console.log('[DEBUG][LOOP][SNIPPET-NORM]', {
+                  docId: doc.id,
+                  occIndex: occIdx,
+                  snippetStart,
+                  snippetEnd,
+                  snippet: snippet.substring(0, 100),
+                  queryInSnippet: snippet.toLowerCase().includes(normalizedQ.toLowerCase()),
+                  charIdxInSnippet: localCharIdx - snippetStart
+                })
+
+                // Prova a mappare al testo originale per snippet più leggibile
+                // Cerca il testo normalizzato nel testo originale (approssimato)
+                const snippetSearch = snippet.toLowerCase().substring(0, Math.min(30, snippet.length))
+                const snippetInOriginal = pageTextRaw.toLowerCase().indexOf(snippetSearch)
+
+                console.log('[DEBUG][LOOP][SNIPPET-MAP]', {
+                  docId: doc.id,
+                  occIndex: occIdx,
+                  snippetSearch: snippetSearch.substring(0, 50),
+                  snippetInOriginal,
+                  pageTextRawStart: pageTextRaw.substring(0, 150),
+                  found: snippetInOriginal >= 0
+                })
+
+                if (snippetInOriginal >= 0 && snippetInOriginal + snippet.length < pageTextRaw.length) {
+                  const originalSnippet = pageTextRaw.slice(snippetInOriginal, snippetInOriginal + snippet.length)
+                  console.log('[DEBUG][LOOP][SNIPPET-FINAL]', {
+                    docId: doc.id,
+                    occIndex: occIdx,
+                    usingOriginal: true,
+                    originalSnippet: originalSnippet.substring(0, 100)
+                  })
+                  snippet = originalSnippet
+                } else {
+                  console.log('[DEBUG][LOOP][SNIPPET-FINAL]', {
+                    docId: doc.id,
+                    occIndex: occIdx,
+                    usingOriginal: false,
+                    normalizedSnippet: snippet.substring(0, 100)
+                  })
+                }
 
                 // Trova bbox approssimativa (basata sulle parole)
+                // Usa testo normalizzato per allineamento corretto con localCharIdx
                 const matchingWords: any[] = []
-                let charCount = 0
+                let charCountNorm = 0
                 for (const w of pageWords) {
                   const wText = w.text || ''
-                  const wStart = charCount
-                  const wEnd = charCount + wText.length
+                  const wTextNorm = normalize(wText)
+                  const wStart = charCountNorm
+                  const wEnd = charCountNorm + wTextNorm.length
 
                   if (wEnd >= localCharIdx && wStart < localCharIdx + qLen) {
                     matchingWords.push(w)
                   }
-                  charCount += wText.length + 1
+                  charCountNorm += wTextNorm.length + 1
                 }
 
                 let x0Pct = 0, y0Pct = 0, x1Pct = 100, y1Pct = 100
