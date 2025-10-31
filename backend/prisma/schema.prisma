@@ -102,7 +102,7 @@ model Documento {
 model Job {
   id          String   @id @default(cuid())
   type        String   // OCR, CLASSIFY
-  documentId  String
+  documentId  String?  // Optional for local files without DB record
   status      String   @default("pending") // pending, processing, completed, failed
   progress    Int      @default(0)
   error       String?
@@ -110,7 +110,7 @@ model Job {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  documento Documento @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documento Documento? @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("jobs")
 }

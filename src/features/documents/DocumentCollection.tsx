@@ -479,14 +479,6 @@ export function DocumentCollection({
               // NON convertire undefined in false! Passa undefined così com'è
               const hasNativeTextValue = doc.hasNativeText
 
-              console.log('[DEBUG][DC]', {
-                filename: doc.filename,
-                docHasNativeText: doc.hasNativeText,
-                docHasNativeTextType: typeof doc.hasNativeText,
-                passedValue: hasNativeTextValue,
-                passedType: typeof hasNativeTextValue
-              })
-
               return (
                 <div
                   key={doc.id}

@@ -220,25 +220,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
           ; (tempDoc as any).localUrl = blobUrl
 
-        console.log('[DEBUG][CREATE]', {
-          filename: file.name,
-          hasNativeText: tempDoc.hasNativeText,
-          type: typeof tempDoc.hasNativeText
-        })
-
-        setDocumenti(prev => {
-          const newDocs = [tempDoc, ...prev]
-          // Verifica che il valore sia preservato nello stato
-          const added = newDocs[0]
-          console.log('[DEBUG][SET-STATE]', {
-            filename: file.name,
-            hasNativeText: added.hasNativeText,
-            type: typeof added.hasNativeText,
-            isUndefined: added.hasNativeText === undefined,
-            isFalse: added.hasNativeText === false
-          })
-          return newDocs
-        })
+        setDocumenti(prev => [tempDoc, ...prev])
         if (!localOnly) setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
         // Log rimosso per ridurre rumore
 
@@ -266,17 +248,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
               const next = [...prev]
               const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
               if (idxTemp >= 0) {
-                const oldHasNativeText = next[idxTemp].hasNativeText
                 next[idxTemp] = { ...next[idxTemp], hasNativeText }
-
-                console.log('[DEBUG][UPDATE]', {
-                  filename: file.name,
-                  oldValue: oldHasNativeText,
-                  oldType: typeof oldHasNativeText,
-                  newValue: hasNativeText,
-                  newType: typeof hasNativeText
-                })
-
                 return next
               }
               return next

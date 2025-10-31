@@ -154,7 +154,7 @@ export const api = {
     })
   },
 
-  // OCR for local files (without database record)
+  // OCR for local files (without database record - in-memory only)
   async queueOcrLocal(params: {
     s3Key: string
     filename: string
@@ -163,10 +163,24 @@ export const api = {
     limitPages?: number
     praticaId?: string
     compartoId?: string
-  }): Promise<{ jobId: string; status: string }> {
+  }): Promise<{ s3Key: string; status: string; message: string }> {
     return fetchApi('/ocr/process-local', {
       method: 'POST',
       body: JSON.stringify(params),
+    })
+  },
+
+  // Get OCR progress for local file (in-memory)
+  async getOcrProgressLocal(s3Key: string): Promise<{ progress: number; status: string; result?: any; error?: string }> {
+    return fetchApi(`/ocr/progress-local/${encodeURIComponent(s3Key)}`, {
+      method: 'GET',
+    })
+  },
+
+  // Cancel OCR for local file (in-memory)
+  async cancelOcrLocal(s3Key: string): Promise<{ status: string; s3Key: string }> {
+    return fetchApi(`/ocr/cancel-local/${encodeURIComponent(s3Key)}`, {
+      method: 'DELETE',
     })
   },
 

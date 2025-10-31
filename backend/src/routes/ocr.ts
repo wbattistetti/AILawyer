@@ -6,6 +6,10 @@ import { prisma } from '../lib/database.js'
 import { config } from '../config/index.js'
 import { getOcrQueue } from '../lib/queue.js'
 
+// Stato OCR in memoria per file locali (non persistito nel database)
+// Map: s3Key -> { progress, status, result?, error? }
+const localOcrProgress = new Map<string, { progress: number; status: string; result?: any; error?: string }>()
+
 const ocrProcessLocalSchema = z.object({
     s3Key: z.string(),
     filename: z.string(),
@@ -21,8 +25,160 @@ function sanitizeFileName(key: string): string {
     return key.replace(/[:<>"|?*\\]/g, '_')
 }
 
+// Processa OCR direttamente senza creare Job nel database (per file locali)
+async function processOcrDirect(
+    fastify: FastifyInstance,
+    s3Key: string,
+    filename: string,
+    mime: string,
+    mode: 'quick' | 'full',
+    limit: number
+) {
+    let last = 0
+    const start = Date.now()
+    try {
+        const sanitizedKey = sanitizeFileName(s3Key)
+        fastify.log.info({
+            msg: 'OCR direct start (local file, no DB job)',
+            s3Key,
+            sanitizedKey,
+            filename,
+            mime,
+            limitPages: limit || undefined
+        })
+
+        const prevQuick = process.env.OCR_QUICK_MODE
+        const prevLimit = process.env.OCR_LIMIT_PAGES
+        if (mode === 'quick') process.env.OCR_QUICK_MODE = 'true'
+        else process.env.OCR_QUICK_MODE = 'false'
+        if (limit > 0) process.env.OCR_LIMIT_PAGES = String(limit)
+
+        // Import OCR service
+        const { ocrService } = await import('../services/ocr.js')
+
+        // Process OCR usando la chiave sanitizzata per file locali
+        const keyToUse = s3Key.startsWith('local:') ? sanitizedKey : s3Key
+        const result = await ocrService.extract(keyToUse, async (p, meta) => {
+            const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
+            if (percent - last >= 5) {
+                last = percent
+                const elapsedMs = Date.now() - start
+                // Aggiorna stato in memoria (non nel database)
+                localOcrProgress.set(s3Key, {
+                    progress: percent,
+                    status: 'processing',
+                    result: { meta, elapsedMs }
+                })
+                fastify.log.info({ msg: 'OCR progress (in-memory)', s3Key, progress: percent, meta })
+            }
+            // Check cancel
+            try {
+                const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
+                if (mem && mem.has(s3Key)) {
+                    throw new Error('CANCELLED')
+                }
+            } catch { }
+        })
+
+        // Restore env
+        process.env.OCR_QUICK_MODE = prevQuick
+        process.env.OCR_LIMIT_PAGES = prevLimit
+
+        // Process results
+        const pagesArr: any[] = Array.isArray((result as any).pages) ? (result as any).pages : []
+        const layoutArr: any[] = Array.isArray((result as any).layout) ? (result as any).layout : []
+        const wordsPerPage = layoutArr.map((l: any) => (Array.isArray(l?.words) ? l.words.length : 0))
+        const texts = pagesArr.map((p: any, i: number) => {
+            let t = typeof p?.text === 'string' ? p.text : ''
+            if (!t || !t.trim()) {
+                const lay = layoutArr.find((l: any) => l?.page === (i + 1)) || layoutArr[i]
+                if (lay && Array.isArray(lay.words) && lay.words.length) {
+                    t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                }
+            }
+            return t
+        })
+
+        const elapsedMs = Date.now() - start
+        const avgConfidence = pagesArr.length > 0
+            ? pagesArr.reduce((sum, p) => sum + (Number(p.confidence) || 0), 0) / pagesArr.length
+            : 0
+
+        // Salva risultato completo in memoria
+        const ocrResult = {
+            s3Key,
+            filename,
+            mode,
+            pages: texts.length,
+            texts,
+            layout: layoutArr,
+            avgConfidence,
+            elapsedMs,
+            ocrPdfKey: (result as any).pages?.[0]?.ocrPdfKey,
+        }
+
+        localOcrProgress.set(s3Key, {
+            progress: 100,
+            status: 'completed',
+            result: ocrResult
+        })
+
+        fastify.log.info({
+            msg: 'OCR completed (in-memory)',
+            s3Key,
+            sanitizedKey,
+            pages: texts.length,
+            avgConfidence: avgConfidence.toFixed(2),
+            elapsedMs,
+        })
+    } catch (error: any) {
+        const isCancelled = String(error?.message || '').includes('CANCELLED')
+        if (isCancelled) {
+            fastify.log.info({ msg: 'OCR cancelled (in-memory)', s3Key })
+            localOcrProgress.set(s3Key, { progress: 0, status: 'cancelled' })
+            return
+        }
+
+        fastify.log.error({ msg: 'OCR failed (in-memory)', s3Key, error: error?.message || error })
+        localOcrProgress.set(s3Key, {
+            progress: 0,
+            status: 'failed',
+            error: error?.message || 'Errore sconosciuto'
+        })
+    }
+}
+
 export async function ocrRoutes(fastify: FastifyInstance) {
-    // Process OCR for local file (without database record)
+    // Endpoint per ottenere il progresso OCR in memoria (per file locali)
+    fastify.get<{ Params: { s3Key: string } }>('/ocr/progress-local/:s3Key', async (request, reply) => {
+        const s3Key = decodeURIComponent(request.params.s3Key)
+        const progress = localOcrProgress.get(s3Key)
+
+        if (!progress) {
+            fastify.log.warn({ msg: 'OCR progress not found', s3Key, availableKeys: Array.from(localOcrProgress.keys()).slice(0, 5) })
+            return reply.status(404).send({ error: 'OCR non trovato', s3Key })
+        }
+
+        fastify.log.debug({ msg: 'OCR progress requested', s3Key, progress: progress.progress, status: progress.status })
+        return reply.status(200).send(progress)
+    })
+
+    // Endpoint per cancellare OCR in memoria
+    fastify.delete<{ Params: { s3Key: string } }>('/ocr/cancel-local/:s3Key', async (request, reply) => {
+        const s3Key = decodeURIComponent(request.params.s3Key)
+
+        // Segnala cancellazione
+        if (!(globalThis as any).__CANCEL_FLAGS) {
+            (globalThis as any).__CANCEL_FLAGS = new Set<string>()
+        }
+        (globalThis as any).__CANCEL_FLAGS.add(s3Key)
+
+        localOcrProgress.delete(s3Key)
+        fastify.log.info({ msg: 'OCR cancelled (in-memory)', s3Key })
+
+        return reply.status(200).send({ status: 'cancelled', s3Key })
+    })
+    // Process OCR for local file (without database record - tutto in memoria)
     fastify.post('/ocr/process-local', async (request, reply) => {
         try {
             const body = ocrProcessLocalSchema.parse(request.body)
@@ -35,7 +191,6 @@ export async function ocrRoutes(fastify: FastifyInstance) {
             fastify.log.info({ msg: 'OCR process-local: checking file', s3Key: body.s3Key, uploadsDir, filePath, exists: fs.existsSync(filePath) })
 
             if (!fs.existsSync(filePath)) {
-                // List files in uploads to help debug
                 const filesInUploads = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).slice(0, 10) : []
                 fastify.log.warn({
                     msg: 'File not found for OCR',
@@ -43,58 +198,48 @@ export async function ocrRoutes(fastify: FastifyInstance) {
                     filePath,
                     uploadsDir,
                     filesInUploads,
-                    cwd: process.cwd()
                 })
                 return reply.status(404).send({ error: 'File non trovato in uploads', details: { s3Key: body.s3Key, filePath, uploadsDir } })
             }
 
-            fastify.log.info({ msg: 'OCR process-local request', s3Key: body.s3Key, filename: body.filename, mode: body.mode })
-
-            // Create job record (without documentId since document doesn't exist in DB)
-            const job = await prisma.job.create({
-                data: {
-                    type: 'OCR',
-                    documentId: null, // No document record for local files
-                    status: 'pending',
-                    progress: 0,
-                    result: JSON.stringify({ s3Key: body.s3Key, filename: body.filename, mode: body.mode }),
-                },
-            })
+            fastify.log.info({ msg: 'OCR process-local request (in-memory)', s3Key: body.s3Key, filename: body.filename, mode: body.mode })
 
             const mode = body.mode || 'full'
             const limit = body.limitPages || 0
 
-            // Process OCR (same logic as document OCR)
-            if (config.ENABLE_QUEUE) {
-                try {
-                    const ocrQueue = getOcrQueue()
-                    // For local files, we use s3Key as documentId in queue (it's just an identifier)
-                    await ocrQueue.add('process-ocr', {
-                        documentId: body.s3Key, // Use s3Key as identifier
-                        s3Key: body.s3Key,
-                        filename: body.filename,
-                        mime: body.mime || 'application/pdf',
-                        mode,
-                    }, { jobId: job.id })
-                    fastify.log.info({ msg: 'OCR queued', jobId: job.id, s3Key: body.s3Key })
-                } catch (e: any) {
-                    const message = e?.message || String(e)
-                    fastify.log.error({ msg: 'Queue add failed, falling back to inline', err: message })
-                    // Fallback to inline processing
-                    await processOcrInline(fastify, job.id, body.s3Key, body.filename, body.mime || 'application/pdf', mode, limit)
-                }
-            } else {
-                // Inline processing (no queue)
-                await processOcrInline(fastify, job.id, body.s3Key, body.filename, body.mime || 'application/pdf', mode, limit)
-            }
+            // Inizializza stato in memoria
+            localOcrProgress.set(body.s3Key, { progress: 0, status: 'processing' })
 
-            return { jobId: job.id, status: 'pending' }
-        } catch (error) {
-            fastify.log.error(error)
+            // Processa OCR in background senza creare Job nel database
+            processOcrDirect(fastify, body.s3Key, body.filename, body.mime || 'application/pdf', mode, limit).catch((error) => {
+                fastify.log.error({ msg: 'OCR direct failed', s3Key: body.s3Key, error: error?.message || error })
+                localOcrProgress.set(body.s3Key, {
+                    progress: 0,
+                    status: 'failed',
+                    error: error?.message || String(error)
+                })
+            })
+
+            // Restituisci immediatamente - il progresso sarà disponibile via polling
+            return reply.status(202).send({
+                s3Key: body.s3Key,
+                status: 'processing',
+                message: 'OCR avviato in memoria'
+            })
+        } catch (error: any) {
+            fastify.log.error({
+                msg: 'OCR process-local error',
+                error: error?.message || String(error),
+                stack: error?.stack,
+                s3Key: (request.body as any)?.s3Key
+            })
             if (error instanceof z.ZodError) {
                 return reply.status(400).send({ error: 'Parametri non validi', details: error.errors })
             }
-            return reply.status(500).send({ error: 'Errore nell\'avvio dell\'OCR' })
+            return reply.status(500).send({
+                error: 'Errore nell\'avvio dell\'OCR',
+                details: error?.message || String(error)
+            })
         }
     })
 }
@@ -111,7 +256,17 @@ async function processOcrInline(
     let last = 0
     const start = Date.now()
     try {
-        fastify.log.info({ msg: 'OCR inline start (local file)', jobId, s3Key, filename, mime, limitPages: limit || undefined })
+        // Per file locali, usa la chiave sanitizzata (come viene salvato il file)
+        const sanitizedKey = sanitizeFileName(s3Key)
+        fastify.log.info({
+            msg: 'OCR inline start (local file)',
+            jobId,
+            s3Key,
+            sanitizedKey,
+            filename,
+            mime,
+            limitPages: limit || undefined
+        })
             ; (process as any).env.BULLMQ_JOB_ID = jobId
 
         const prevQuick = process.env.OCR_QUICK_MODE
@@ -123,8 +278,9 @@ async function processOcrInline(
         // Import OCR service
         const { ocrService } = await import('../services/ocr.js')
 
-        // Process OCR
-        const result = await ocrService.extract(s3Key, async (p, meta) => {
+        // Process OCR usando la chiave sanitizzata per file locali
+        const keyToUse = s3Key.startsWith('local:') ? sanitizedKey : s3Key
+        const result = await ocrService.extract(keyToUse, async (p, meta) => {
             const percent = Math.max(0, Math.min(100, Math.round(p * 100)))
             if (percent - last >= 5) {
                 last = percent
@@ -196,6 +352,7 @@ async function processOcrInline(
             msg: 'OCR completed (local file)',
             jobId,
             s3Key,
+            sanitizedKey,
             pages: texts.length,
             avgConfidence: avgConfidence.toFixed(2),
             elapsedMs,

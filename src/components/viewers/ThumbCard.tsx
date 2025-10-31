@@ -75,17 +75,6 @@ export function ThumbCard({
   // resetta errori immagine quando cambia la sorgente
   useEffect(() => { setImgError(false) }, [imgSrc])
 
-  // Log quando ThumbCard riceve props
-  useEffect(() => {
-    console.log('[DEBUG][THUMB-PROPS]', {
-      title,
-      hasNativeText,
-      hasNativeTextType: typeof hasNativeText,
-      hasNativeTextIsFalse: hasNativeText === false,
-      hasNativeTextIsUndefined: hasNativeText === undefined,
-      notHasNativeText: !hasNativeText
-    })
-  }, [title, hasNativeText])
 
   // Log OCR-DEBUG rimosso per ridurre rumore (mantenere solo se necessario per debug specifico)
 
@@ -176,19 +165,7 @@ export function ThumbCard({
           }
 
           // PDF scansione senza OCR - "Da trascrivere" (SOLO se è stato verificato che NON ha testo nativo)
-          const shouldShowDaTrascrivere = isPdf && hasNativeText === false && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct
-
-          console.log('[DEBUG][LABEL-CHECK]', {
-            title,
-            isPdf,
-            hasNativeText,
-            hasNativeTextType: typeof hasNativeText,
-            hasNativeTextIsFalse: hasNativeText === false,
-            hasNativeTextIsUndefined: hasNativeText === undefined,
-            shouldShow: shouldShowDaTrascrivere
-          })
-
-          if (shouldShowDaTrascrivere) {
+          if (isPdf && hasNativeText === false && ocrStatus !== 'completed' && !transcribedPct && !ocrProgressPct) {
             return (
               <div className="absolute right-2 top-9 z-20">
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500 text-white shadow-sm">

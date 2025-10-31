@@ -182,12 +182,6 @@ export function ArchiveRenderer({
                                         const clientThumb = clientThumbByS3[d.s3Key];
                                         const thumb = clientThumb || serverThumb || '';
                                         const localUrl = (d as any).localUrl || undefined
-                                        console.log('[DEBUG][ARCH-RENDER]', {
-                                            filename: d.filename,
-                                            originalHasNativeText: d.hasNativeText,
-                                            originalType: typeof d.hasNativeText
-                                        })
-
                                         return {
                                             id: d.id,
                                             filename: d.filename,
