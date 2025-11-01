@@ -5,6 +5,7 @@ import fs from 'fs'
 import { prisma } from '../lib/database.js'
 import { config } from '../config/index.js'
 import { getOcrQueue } from '../lib/queue.js'
+import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
 
 // Stato OCR in memoria per file locali (non persistito nel database)
 // Map: s3Key -> { progress, status, result?, error? }
@@ -109,7 +110,34 @@ async function processOcrDirect(
             if (!t || !t.trim()) {
                 const lay = layoutArr.find((l: any) => l?.page === (i + 1)) || layoutArr[i]
                 if (lay && Array.isArray(lay.words) && lay.words.length) {
-                    t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                    // ✅ Usa ricostruzione geometrica se le coordinate sono disponibili
+                    const hasCoordinates = lay.words.some((w: any) =>
+                        typeof w.x0 === 'number' && typeof w.y0 === 'number' &&
+                        typeof w.x1 === 'number' && typeof w.y1 === 'number' &&
+                        lay.width && lay.height
+                    )
+
+                    if (hasCoordinates) {
+                        try {
+                            t = reconstructTextFromGeometry(
+                                lay.words.map((w: any) => ({
+                                    text: String(w?.text || '').trim(),
+                                    x0: w.x0 || 0,
+                                    y0: w.y0 || 0,
+                                    x1: w.x1 || 0,
+                                    y1: w.y1 || 0
+                                })).filter((w: { text: string }) => w.text),
+                                lay.width || 1,
+                                lay.height || 1
+                            )
+                        } catch (geoError: any) {
+                            // Fallback a join semplice se ricostruzione geometrica fallisce
+                            t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                        }
+                    } else {
+                        // Fallback a join semplice se coordinate non disponibili
+                        t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                    }
                 }
             }
             return t
@@ -387,7 +415,34 @@ async function processOcrInline(
             if (!t || !t.trim()) {
                 const lay = layoutArr.find((l: any) => l?.page === (i + 1)) || layoutArr[i]
                 if (lay && Array.isArray(lay.words) && lay.words.length) {
-                    t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                    // ✅ Usa ricostruzione geometrica se le coordinate sono disponibili
+                    const hasCoordinates = lay.words.some((w: any) =>
+                        typeof w.x0 === 'number' && typeof w.y0 === 'number' &&
+                        typeof w.x1 === 'number' && typeof w.y1 === 'number' &&
+                        lay.width && lay.height
+                    )
+
+                    if (hasCoordinates) {
+                        try {
+                            t = reconstructTextFromGeometry(
+                                lay.words.map((w: any) => ({
+                                    text: String(w?.text || '').trim(),
+                                    x0: w.x0 || 0,
+                                    y0: w.y0 || 0,
+                                    x1: w.x1 || 0,
+                                    y1: w.y1 || 0
+                                })).filter((w: { text: string }) => w.text),
+                                lay.width || 1,
+                                lay.height || 1
+                            )
+                        } catch (geoError: any) {
+                            // Fallback a join semplice se ricostruzione geometrica fallisce
+                            t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                        }
+                    } else {
+                        // Fallback a join semplice se coordinate non disponibili
+                        t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                    }
                 }
             }
             return t

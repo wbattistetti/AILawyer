@@ -28,6 +28,128 @@ const LOW_RATIO_LIMIT = 0.30
 const CONF_TEXT_THRESHOLD = Number(process.env.OCR_CONF_TEXT_THRESHOLD || 200)
 // NOTE: LIMIT_PAGES and FORCE_FIRST_PAGE must be read at runtime per-run (see extract)
 
+/**
+ * ✅ Ricostruzione geometrica del testo OCR basata su coordinate
+ * Raggruppa parole in righe basandosi su posizione verticale (y0)
+ * e inserisce spazi basandosi su distanza orizzontale tra parole
+ *
+ * @param words Array di parole con coordinate normalizzate (x0, y0, x1, y1)
+ * @param width Larghezza della pagina (per calcoli di distanza)
+ * @param height Altezza della pagina (per calcoli di distanza)
+ * @returns Testo ricostruito fedele al layout visivo
+ */
+export function reconstructTextFromGeometry(
+  words: Array<{ text: string; x0: number; y0: number; x1: number; y1: number }>,
+  width: number,
+  height: number
+): string {
+  if (!words || words.length === 0) return ''
+  if (!width || !height) return words.map(w => w.text).join(' ') // Fallback se dimensioni mancanti
+
+  // 1. Raggruppa parole in righe basandosi su y0Pct (posizione verticale)
+  // Soglia verticale: ±1% di y0Pct per considerare parole sulla stessa riga
+  const VERTICAL_THRESHOLD = 0.01 // 1% di altezza pagina
+  const lines: Array<Array<{ text: string; x0: number; x1: number; y0: number; y1: number }>> = []
+
+  // Ordina prima per y0 (dall'alto in basso), poi per x0 (da sinistra a destra)
+  const sortedWords = [...words]
+    .filter(w => w.text && w.text.trim()) // Rimuovi parole vuote
+    .sort((a, b) => {
+      const yDiff = a.y0 - b.y0
+      if (Math.abs(yDiff) > VERTICAL_THRESHOLD) return yDiff // Prima ordina per riga (y)
+      return a.x0 - b.x0 // Poi ordina per posizione orizzontale (x)
+    })
+
+  // Raggruppa in righe
+  for (const word of sortedWords) {
+    // Trova riga esistente dove questa parola potrebbe appartenere
+    let foundLine = false
+    for (const line of lines) {
+      if (line.length > 0) {
+        const firstWordInLine = line[0]
+        // Se la differenza verticale è minore della soglia, è sulla stessa riga
+        if (Math.abs(word.y0 - firstWordInLine.y0) <= VERTICAL_THRESHOLD) {
+          line.push(word)
+          // Mantieni ordinamento orizzontale all'interno della riga
+          line.sort((a, b) => a.x0 - b.x0)
+          foundLine = true
+          break
+        }
+      }
+    }
+    if (!foundLine) {
+      // Crea nuova riga
+      lines.push([word])
+    }
+  }
+
+  // 2. Costruisci testo riga per riga, inserendo spazi basati su distanza orizzontale
+  const textLines: string[] = []
+
+  for (const line of lines) {
+    if (line.length === 0) continue
+
+    const lineParts: string[] = []
+
+    // Calcola larghezza media delle lettere per questa riga (per soglia dinamica)
+    let totalCharWidth = 0
+    let totalChars = 0
+    for (const word of line) {
+      const wordWidth = word.x1 - word.x0 // Larghezza normalizzata della parola
+      const charCount = word.text.trim().length
+      if (charCount > 0) {
+        totalCharWidth += wordWidth / charCount
+        totalChars += charCount
+      }
+    }
+    const avgCharWidth = totalChars > 0 ? totalCharWidth / totalChars : 0.01 // Fallback: 1% se non calcolabile
+
+    // Soglia dinamica: 1.5x la larghezza media di una lettera
+    // Convertita in percentuale della larghezza pagina
+    const SPACE_THRESHOLD = avgCharWidth * 1.5
+
+    // Costruisci la riga inserendo spazi basati su distanza
+    for (let i = 0; i < line.length; i++) {
+      const word = line[i]
+
+      if (i > 0) {
+        // Calcola distanza tra fine parola precedente e inizio parola corrente
+        const prevWord = line[i - 1]
+        const horizontalDistance = word.x0 - prevWord.x1
+
+        // Se la distanza è maggiore della soglia, inserisci uno spazio
+        if (horizontalDistance > SPACE_THRESHOLD) {
+          lineParts.push(' ')
+        } else if (horizontalDistance > avgCharWidth * 0.3) {
+          // Distanza piccola ma non zero: potrebbe essere lettere separate della stessa parola
+          // Inserisci spazio solo se la distanza è significativa (> 0.3x larghezza lettera)
+          lineParts.push(' ')
+        }
+        // Se la distanza è molto piccola (< 0.3x), considera le parole attaccate (no spazio)
+      }
+
+      lineParts.push(word.text.trim())
+    }
+
+    // Unisci la riga
+    const lineText = lineParts.join('').trim()
+    if (lineText) {
+      textLines.push(lineText)
+    }
+  }
+
+  // 3. Unisci tutte le righe con \n
+  const reconstructedText = textLines.join('\n')
+
+  // Normalizza spazi multipli e rimuovi spazi eccessivi intorno ai \n
+  return reconstructedText
+    .replace(/[ \t]+/g, ' ') // Spazi multipli → singolo spazio
+    .replace(/\s+\n/g, '\n')  // Spazi prima di \n → solo \n
+    .replace(/\n\s+/g, '\n')  // Spazi dopo \n → solo \n
+    .replace(/\n{3,}/g, '\n\n') // Più di 2 \n consecutivi → massimo 2 (paragrafo)
+    .trim()
+}
+
 // Resolve tessdata directory robustly (Windows/local installs)
 const TESSERACT_DIR = (() => {
   try { return path.dirname(TESSERACT) } catch { return '' }
@@ -439,7 +561,38 @@ export class PopplerOcrService implements IOcrPoppler {
             ((a.wi ?? 0) - (b.wi ?? 0))
           )
 
-          // Ricostruzione testo fedele: parola→spazio, cambio linea→\n, cambio paragrafo→\n\n
+          // Ottieni dimensioni pagina per ricostruzione geometrica
+          let W = 0, H = 0
+          try {
+            const buffer = await fs.readFile(pngForSize)
+            const sz = imageSize(buffer)
+            W = (sz?.width || 0)
+            H = (sz?.height || 0)
+          } catch (e) {
+            try { console.warn('[OCR][imageSize][error]', String(e)) } catch {}
+          }
+
+          // ✅ METODO PRIMARIO: Ricostruzione geometrica basata su coordinate
+          // Costruiamo prima il layout normalizzato per avere le coordinate
+          const layoutWords: Array<{ text: string; x0: number; y0: number; x1: number; y1: number }> = []
+          for (const w of byIdx) {
+            const x0px = w.x
+            const x1px = w.x + w.w
+            const y0px_top = w.y
+            const y1px_top = w.y + w.h
+            const y0Pct_dom = H ? (y0px_top / H) : 0
+            const y1Pct_dom = H ? (y1px_top / H) : 0
+            layoutWords.push({
+              text: w.text,
+              x0: W ? (x0px / W) : 0,
+              y0: y0Pct_dom,
+              x1: W ? (x1px / W) : 0,
+              y1: y1Pct_dom,
+            })
+          }
+
+          // ✅ DISABILITATA ricostruzione geometrica: causava troppi problemi
+          // Usa SOLO il metodo strutturale basato su indici Tesseract (più affidabile)
           let textParts: string[] = []
           let last = { b: -1, p: -1, l: -1 }
           for (const w of byIdx) {
@@ -466,42 +619,25 @@ export class PopplerOcrService implements IOcrPoppler {
 
           const confs = byIdx.map(w => w.conf)
           const med = median(confs)
-          let W = 0, H = 0
-          try {
-            const buffer = await fs.readFile(pngForSize)
-            const sz = imageSize(buffer)
-            W = (sz?.width || 0)
-            H = (sz?.height || 0)
-          } catch (e) {
-            try { console.warn('[OCR][imageSize][error]', String(e)) } catch {}
-          }
-          // invScale non serve: Tesseract TSV dà coordinate già in pixel dell'immagine rasterizzata
-          // const invScale = dpiUsed / 72
+
+          // ✅ Salva layout con coordinate normalizzate (già calcolate sopra)
+          // Usiamo layoutWords già costruito per la ricostruzione geometrica
           layout.push({
             page: pageIdx,
             width: W, height: H,
             dpiUsed, psmUsed,
-            words: byIdx.map(w => {
-              // Tesseract TSV: coordinate già in px dell'immagine rasterizzata (top-left origin)
-              // Normalizzo rispetto a W×H e converto Y da top→bottom (PDF/DOM)
-              const x0px = w.x
-              const x1px = w.x + w.w
-              const y0px_top = w.y
-              const y1px_top = w.y + w.h
-              // Converti Y: PDF ha origine bottom-left, DOM top-left
-              // Per viewer DOM: y0Pct in alto, y1Pct in basso (top-origin)
-              const y0Pct_dom = H ? (y0px_top / H) : 0
-              const y1Pct_dom = H ? (y1px_top / H) : 0
-              return {
-                text: w.text,
-                x0: W ? (x0px / W) : 0,
-                y0: y0Pct_dom,
-                x1: W ? (x1px / W) : 0,
-                y1: y1Pct_dom,
-                conf: w.conf,
-                b: w.b, p: w.p, l: w.l, wi: w.wi,
-              }
-            }),
+            words: layoutWords.map((w, idx) => ({
+              text: w.text,
+              x0: w.x0,
+              y0: w.y0,
+              x1: w.x1,
+              y1: w.y1,
+              conf: byIdx[idx]?.conf ?? 0,
+              b: byIdx[idx]?.b,
+              p: byIdx[idx]?.p,
+              l: byIdx[idx]?.l,
+              wi: byIdx[idx]?.wi,
+            })),
           })
           return { text, med }
         }

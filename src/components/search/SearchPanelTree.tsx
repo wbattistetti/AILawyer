@@ -10,7 +10,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
   const lastScrolledQuery = useRef<string | null>(null)
-  
+
   // Auto-scroll al nodo appena cercato (solo UNA volta per query)
   useEffect(() => {
     if (initialQuery && results.length > 0 && initialQuery !== lastScrolledQuery.current) {
@@ -25,7 +25,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
     }
   }, [results.length, initialQuery])
 
-  const onSubmit = () => { 
+  const onSubmit = () => {
     if (q.trim()) {
       search(q.trim())
       // Non svuotare più la query per mantenere l'evidenziazione
@@ -80,8 +80,8 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
             {results.map(node => {
               const open = openNodes[node.id] ?? true
               return (
-                <li 
-                  key={node.id} 
+                <li
+                  key={node.id}
                   className="py-1"
                   ref={(el) => { nodeRefs.current[node.query] = el }}
                 >
@@ -106,9 +106,9 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                             </div>
                             {o && (
                               <ul className="pl-4">
-                                {g.matches.map(m => (
+                                {g.matches.map((m, matchIdx) => (
                                   <li
-                                    key={m.id}
+                                    key={m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`}
                                     className={`px-2 py-1 cursor-pointer flex items-start gap-2 ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
                                     onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
                                   >

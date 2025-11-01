@@ -6,6 +6,7 @@ import { config } from '../config/index.js'
 import { storageService } from '../lib/storage.js'
 import { DocumentoCreateInput } from '../types/index.js'
 import { detectNativeText } from '../lib/detectNativeText.js'
+import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
 import crypto from 'crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -588,7 +589,39 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                           const headWords = lay.words.slice(0, 10).map((w: any) => String(w?.text || '')).join(' ')
                           fastify.log.info({ msg: 'OCR layout words', page: i + 1, words: lay.words.length, headWords })
                         } catch { }
-                        t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+
+                        // ✅ Usa ricostruzione geometrica se le coordinate sono disponibili
+                        const hasCoordinates = lay.words.some((w: any) =>
+                          typeof w.x0 === 'number' && typeof w.y0 === 'number' &&
+                          typeof w.x1 === 'number' && typeof w.y1 === 'number' &&
+                          lay.width && lay.height
+                        )
+
+                        if (hasCoordinates) {
+                          try {
+                            t = reconstructTextFromGeometry(
+                              lay.words.map((w: any) => ({
+                                text: String(w?.text || '').trim(),
+                                x0: w.x0 || 0,
+                                y0: w.y0 || 0,
+                                x1: w.x1 || 0,
+                                y1: w.y1 || 0
+                              })).filter((w: { text: string }) => w.text),
+                              lay.width || 1,
+                              lay.height || 1
+                            )
+                            if (t && t.trim()) {
+                              fastify.log.debug({ msg: 'OCR text reconstructed geometrically (fallback)', page: i + 1 })
+                            }
+                          } catch (geoError: any) {
+                            fastify.log.warn({ msg: 'Geometric reconstruction failed, using simple join', page: i + 1, error: geoError?.message })
+                          }
+                        }
+
+                        // Fallback a join semplice se ricostruzione geometrica non disponibile o fallita
+                        if (!t || !t.trim()) {
+                          t = lay.words.map((w: any) => String(w?.text || '').trim()).filter(Boolean).join(' ')
+                        }
                       }
                     }
                     return t
