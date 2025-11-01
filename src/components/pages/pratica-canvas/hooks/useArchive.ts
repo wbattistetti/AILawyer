@@ -169,10 +169,62 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       }
     })
 
-    if (!localOnly) {
-      setUploads(prev => [...prev, ...newUploads])
-      try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: newUploads.length, target } })) } catch { }
-    }
+    console.log('📤 [UPLOAD][CREATE] Creando nuovi uploads', {
+      filesCount: newUploads.length,
+      newUploads: newUploads.map(u => ({
+        filename: u.file?.name || u.filenameBase,
+        compartoId: u.compartoId,
+        status: u.status,
+        hasTempDoc: u.hasTempDoc
+      })),
+      targetCompartoId,
+      localOnly
+    })
+
+    // ✅ Traccia uploads anche in modalità locale per mostrare i placeholder
+    setUploads(prev => {
+      const updated = [...prev, ...newUploads]
+      console.log('📤 [UPLOAD][SET-UPLOADS] Aggiornando uploads array', {
+        prevCount: prev.length,
+        newCount: updated.length,
+        allUploads: updated.map((u, idx) => ({
+          idx,
+          filename: u.file?.name || u.filenameBase,
+          compartoId: u.compartoId,
+          status: u.status,
+          progress: u.progress,
+          hasTempDoc: u.hasTempDoc,
+          s3Key: u.s3Key
+        }))
+      })
+      // ✅ Emetti evento ASYNC per evitare warning React
+      queueMicrotask(() => {
+        try {
+          console.log('📤 [UPLOAD][EVENT] Emettendo app:uploading', {
+            count: newUploads.length,
+            target,
+            uploadsCount: updated.length,
+            uploadsSummary: updated.map(u => ({
+              filename: u.file?.name || u.filenameBase,
+              compartoId: u.compartoId,
+              status: u.status,
+              progress: u.progress
+            }))
+          })
+          window.dispatchEvent(new CustomEvent('app:uploading', {
+            detail: {
+              count: newUploads.length,
+              target,
+              uploads: updated, // ✅ Passa gli uploads aggiornati (prev + nuovi)
+              newUploads // ✅ Passa anche i nuovi uploads
+            }
+          }))
+        } catch (e) {
+          console.error('📤 [UPLOAD][EVENT][ERROR] Errore emettendo evento', e)
+        }
+      })
+      return updated
+    })
 
     // Helper: generate client-side PDF first-page thumb
     const generateClientPdfThumb = async (file: File, targetW = 300): Promise<string> => {
@@ -267,14 +319,106 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
           ; (tempDoc as any).localUrl = blobUrl
 
-        setDocumenti(prev => [...prev, tempDoc]) // ✅ Inserisce alla fine per mantenere ordine cronologico
-        if (!localOnly) setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
+        setDocumenti(prev => {
+          const updated = [...prev, tempDoc] // ✅ Inserisce alla fine per mantenere ordine cronologico
+          console.log('📄 [DOCUMENT][CREATE-TEMP] Creato documento temporaneo', {
+            tempId,
+            s3Key,
+            filename: tempDoc.filename,
+            compartoId: tempDoc.compartoId,
+            prevCount: prev.length,
+            updatedCount: updated.length,
+            hasLocalUrl: !!(tempDoc as any).localUrl
+          })
+          // ✅ Emetti evento ASYNC per evitare warning React "Cannot update a component while rendering a different component"
+          queueMicrotask(() => {
+            try {
+              console.log('📄 [DOCUMENT][EVENT] Emettendo app:documents-updated', {
+                documentiCount: updated.length,
+                lastDoc: {
+                  id: tempDoc.id,
+                  filename: tempDoc.filename,
+                  compartoId: tempDoc.compartoId,
+                  s3Key: tempDoc.s3Key
+                }
+              })
+              window.dispatchEvent(new CustomEvent('app:documents-updated', {
+                detail: { documenti: updated }
+              }))
+            } catch (e) {
+              console.error('📄 [DOCUMENT][EVENT][ERROR] Errore emettendo evento', e)
+            }
+          })
+          return updated
+        })
+        // ✅ IMPORTANTE: marca hasTempDoc anche in modalità locale per nascondere il placeholder quando appare il documento temporaneo
+        setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
         // Log rimosso per ridurre rumore
 
         if (existingKeys.has(s3Key)) {
-          setUploads(prev => prev.map((upload, idx) =>
-            idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
-          ))
+          const uploadToComplete = uploads[uploadIndex]
+          const fileToRemove = uploadToComplete?.file
+          const compartoIdToRemove = uploadToComplete?.compartoId
+
+          console.log('⚡ [UPLOAD][SKIP-DUPLICATE] File già esistente, completando upload', {
+            uploadIndex,
+            filename: fileToRemove?.name,
+            compartoId: compartoIdToRemove,
+            s3Key,
+            uploadStatus: uploadToComplete?.status,
+            uploadProgress: uploadToComplete?.progress
+          })
+
+          setUploads(prev => {
+            const updated = prev.map((upload, idx) =>
+              idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
+            )
+            console.log('⚡ [UPLOAD][SKIP-DUPLICATE][SET-UPLOADS] Aggiornato a completed', {
+              uploadIndex,
+              allUploads: updated.map((u, i) => ({
+                idx: i,
+                filename: u.file?.name || u.filenameBase,
+                status: u.status,
+                progress: u.progress,
+                compartoId: u.compartoId
+              }))
+            })
+            return updated
+          })
+
+          // ✅ Rimuovi solo questo upload completato dopo un breve delay
+          if (fileToRemove && compartoIdToRemove) {
+            const timeoutId = setTimeout(() => {
+              console.log('🗑️ [UPLOAD][REMOVE] Rimuovendo upload completato', {
+                filename: fileToRemove.name,
+                compartoId: compartoIdToRemove
+              })
+              setUploads(prev => {
+                const beforeCount = prev.length
+                const filtered = prev.filter(u => {
+                  // Rimuovi solo se è lo stesso file nello stesso comparto
+                  const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
+                  return shouldRemove
+                })
+                console.log('🗑️ [UPLOAD][REMOVE][DONE] Upload rimosso', {
+                  beforeCount,
+                  afterCount: filtered.length,
+                  removed: beforeCount - filtered.length,
+                  remaining: filtered.map((u, i) => ({
+                    idx: i,
+                    filename: u.file?.name || u.filenameBase,
+                    status: u.status,
+                    compartoId: u.compartoId
+                  }))
+                })
+                return filtered
+              })
+            }, 1500)
+            console.log('⏰ [UPLOAD][REMOVE][SCHEDULED] Timeout schedulato', {
+              timeoutMs: 1500,
+              filename: fileToRemove.name
+            })
+          }
           continue
         }
 
@@ -474,6 +618,96 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
               hasThumbnail: !!(documento as any).thumbnailDataUrl
             })
 
+            // ✅ In modalità locale, completa e rimuovi l'upload dopo il salvataggio
+            // ✅ Usa setUploads in modo funzionale per leggere lo stato corrente
+            setUploads(prev => {
+              console.log('🔍 [UPLOAD][COMPLETE][LOCAL][DEBUG] Cercando upload da completare', {
+                prevCount: prev.length,
+                allUploads: prev.map((u, idx) => ({
+                  idx,
+                  filename: u.file?.name || u.filenameBase,
+                  compartoId: u.compartoId,
+                  status: u.status,
+                  s3Key: u.s3Key
+                })),
+                targetS3Key: s3Key,
+                targetFile: file.name,
+                targetCompartoId: compartoIdFinale
+              })
+
+              // ✅ Cerca l'upload usando criteri multipli (s3Key, file, compartoId + filename)
+              const uploadIdx = prev.findIndex(u =>
+                u.s3Key === s3Key ||
+                (u.file === file) ||
+                (u.compartoId === compartoIdFinale &&
+                 (u.file?.name === file.name || u.filenameBase === file.name.replace(/\.[^.]+$/, '')) &&
+                 u.status !== 'completed' &&
+                 u.status !== 'error')
+              )
+
+              if (uploadIdx < 0) {
+                console.warn('⚠️ [UPLOAD][COMPLETE][LOCAL] Upload non trovato', {
+                  uploadsCount: prev.length,
+                  targetS3Key: s3Key,
+                  targetFile: file.name,
+                  targetCompartoId: compartoIdFinale
+                })
+                return prev // Nessun upload trovato, non cambiare nulla
+              }
+
+              const uploadToComplete = prev[uploadIdx]
+              console.log('✅ [UPLOAD][COMPLETE][LOCAL] Upload trovato e completato', {
+                uploadIdx,
+                filename: uploadToComplete.file?.name || uploadToComplete.filenameBase,
+                compartoId: uploadToComplete.compartoId,
+                s3Key: uploadToComplete.s3Key
+              })
+
+              const updated = prev.map((upload, idx) =>
+                idx === uploadIdx ? { ...upload, progress: 100, status: 'completed' } : upload
+              )
+
+              console.log('✅ [UPLOAD][COMPLETE][LOCAL][SET-UPLOADS] Aggiornato a completed', {
+                uploadIdx,
+                allUploads: updated.map((u, i) => ({
+                  idx: i,
+                  filename: u.file?.name || u.filenameBase,
+                  status: u.status,
+                  progress: u.progress,
+                  compartoId: u.compartoId,
+                  hasTempDoc: u.hasTempDoc
+                }))
+              })
+
+              // ✅ Rimuovi l'upload completato dopo un breve delay
+              const fileToRemove = uploadToComplete.file
+              const compartoIdToRemove = uploadToComplete.compartoId
+
+              if (fileToRemove && compartoIdToRemove) {
+                setTimeout(() => {
+                  console.log('🗑️ [UPLOAD][REMOVE][LOCAL] Rimuovendo upload completato', {
+                    filename: fileToRemove.name,
+                    compartoId: compartoIdToRemove
+                  })
+                  setUploads(prevUploads => {
+                    const beforeCount = prevUploads.length
+                    const filtered = prevUploads.filter(u => {
+                      const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
+                      return shouldRemove
+                    })
+                    console.log('🗑️ [UPLOAD][REMOVE][LOCAL][DONE] Upload rimosso', {
+                      beforeCount,
+                      afterCount: filtered.length,
+                      removed: beforeCount - filtered.length
+                    })
+                    return filtered
+                  })
+                }, 1500)
+              }
+
+              return updated
+            })
+
             // Sostituisci il documento temporaneo con quello reale
             // Mantieni blob URL (non fisico) - il file sarà caricato on-demand per OCR
             setDocumenti(prev => {
@@ -610,9 +844,70 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           idx === uploadIndex ? { ...upload, progress: 80, status: 'processing' } : upload
         ))
 
-        setUploads(prev => prev.map((upload, idx) =>
-          idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
-        ))
+        const uploadToComplete = uploads[uploadIndex]
+        const fileToRemove = uploadToComplete?.file
+        const compartoIdToRemove = uploadToComplete?.compartoId
+
+        console.log('✅ [UPLOAD][COMPLETE] Upload completato con successo', {
+          uploadIndex,
+          filename: fileToRemove?.name || uploadToComplete?.filenameBase,
+          compartoId: compartoIdToRemove,
+          s3Key,
+          uploadStatus: uploadToComplete?.status,
+          uploadProgress: uploadToComplete?.progress
+        })
+
+        setUploads(prev => {
+          const updated = prev.map((upload, idx) =>
+            idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
+          )
+          console.log('✅ [UPLOAD][COMPLETE][SET-UPLOADS] Aggiornato a completed', {
+            uploadIndex,
+            allUploads: updated.map((u, i) => ({
+              idx: i,
+              filename: u.file?.name || u.filenameBase,
+              status: u.status,
+              progress: u.progress,
+              compartoId: u.compartoId,
+              hasTempDoc: u.hasTempDoc
+            }))
+          })
+          return updated
+        })
+
+        // ✅ Rimuovi solo questo upload completato dopo un breve delay
+        if (fileToRemove && compartoIdToRemove) {
+          const timeoutId = setTimeout(() => {
+            console.log('🗑️ [UPLOAD][REMOVE] Rimuovendo upload completato', {
+              filename: fileToRemove.name,
+              compartoId: compartoIdToRemove
+            })
+            setUploads(prev => {
+              const beforeCount = prev.length
+              const filtered = prev.filter(u => {
+                // Rimuovi solo se è lo stesso file nello stesso comparto
+                const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
+                return shouldRemove
+              })
+              console.log('🗑️ [UPLOAD][REMOVE][DONE] Upload rimosso', {
+                beforeCount,
+                afterCount: filtered.length,
+                removed: beforeCount - filtered.length,
+                remaining: filtered.map((u, i) => ({
+                  idx: i,
+                  filename: u.file?.name || u.filenameBase,
+                  status: u.status,
+                  compartoId: u.compartoId
+                }))
+              })
+              return filtered
+            })
+          }, 1500)
+          console.log('⏰ [UPLOAD][REMOVE][SCHEDULED] Timeout schedulato', {
+            timeoutMs: 1500,
+            filename: fileToRemove.name
+          })
+        }
 
         // Sostituisci il documento temporaneo con quello reale
         setDocumenti(prev => {

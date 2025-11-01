@@ -330,6 +330,22 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return undefined
   }, [])
 
+  // ✅ Helper per cercare ricorsivamente un tabset
+  const findTabsetRecursive = useCallback((node: any, id: string): any => {
+    if (!node) return null
+    if (node.type === 'tabset' && node.id === id) {
+      console.log('[FIND-TABSET-RECURSIVE][FOUND]', { id, nodeType: node.type, childrenCount: node.children?.length })
+      return node
+    }
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        const result = findTabsetRecursive(child, id)
+        if (result) return result
+      }
+    }
+    return null
+  }, [])
+
   // ✅ Crea array di DrawerTabItem dai comparti
   const drawerTabs = useMemo<DrawerTabItem[]>(() => {
     return comparti.map(c => ({
@@ -343,122 +359,171 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ Gestisce il click su una tab del cassetto
   const handleDrawerTabSelect = useCallback((drawerId: string) => {
+    console.log('[DRAWER-TAB-SELECT][START]', { drawerId, compartiCount: comparti.length, drawerTabsCount: drawerTabs.length })
+
     setSelectedDrawerId(drawerId)
 
     // Trova il comparto corrispondente
     const comparto = comparti.find(c => c.key === drawerId)
-    if (!comparto) return
-
-    const drawerTab = drawerTabs.find(t => t.id === drawerId)
-    if (!drawerTab) return
-
-    // Apri o aggiorna il pannello dockabile sopra la striscia
-    if (!modelRef.current) return
-    const json = modelRef.current.toJson() as any
-
-    // Cerca se esiste già un tabset per i cassetti
-    let drawerTabset = findTabsetRecursive(json.layout, 'drawerContentTabset')
-
-    if (!drawerTabset) {
-      // Crea il tabset sopra il bottom border
-      // Il layout principale è un row, aggiungiamo il tabset come ultimo figlio (sotto)
-      if (!json.layout.children || json.layout.children.length === 0) {
-        json.layout.children = []
-      }
-
-      // Aggiungi il tabset per il contenuto dei cassetti (weight basso = in fondo)
-      drawerTabset = {
-        type: 'tabset',
-        id: 'drawerContentTabset',
-        weight: 20, // Peso basso = posizionato in fondo
-        enableResize: true,
-        enableMaximize: false,
-        children: []
-      }
-
-      // Se il layout principale è un row, devo wrappare tutto in una column per layout verticale
-      // così il drawerTabset può essere posizionato in fondo
-      if (json.layout.type === 'row') {
-        // Crea una colonna che contiene il row esistente e il drawerTabset
-        const existingRow = { ...json.layout }
-        json.layout = {
-          type: 'column',
-          children: [
-            {
-              ...existingRow,
-              weight: 80 // Il contenuto principale occupa la maggior parte dello spazio
-            },
-            {
-              ...drawerTabset,
-              weight: 20 // Il drawerTabset occupa il resto (in fondo)
-            }
-          ]
-        }
-      } else if (json.layout.type === 'column') {
-        // Se è già una column, aggiungi il drawerTabset in fondo
-        json.layout.children.push({
-          ...drawerTabset,
-          weight: 20
-        })
-      } else {
-        // Altrimenti wrappa in una column
-        const existingChildren = [...(json.layout.children || [])]
-        json.layout = {
-          type: 'column',
-          children: [
-            ...existingChildren.map((c: any) => ({ ...c, weight: c.weight || 80 })),
-            {
-              ...drawerTabset,
-              weight: 20
-            }
-          ]
-        }
-      }
+    console.log('[DRAWER-TAB-SELECT][COMPARTO]', {
+      found: !!comparto,
+      comparto: comparto ? { id: comparto.id, key: comparto.key, nome: comparto.nome } : null,
+      allCompartiKeys: comparti.map(c => c.key)
+    })
+    if (!comparto) {
+      console.error('[DRAWER-TAB-SELECT] Comparto non trovato per key:', drawerId)
+      return
     }
 
-    // Verifica se esiste già una tab per questo drawer
-    const existingTabIndex = drawerTabset.children?.findIndex((t: any) => t.config?.drawerId === drawerId)
+    const drawerTab = drawerTabs.find(t => t.id === drawerId)
+    console.log('[DRAWER-TAB-SELECT][DRAWER-TAB]', { found: !!drawerTab })
+    if (!drawerTab) {
+      console.error('[DRAWER-TAB-SELECT] DrawerTab non trovato per id:', drawerId)
+      return
+    }
+
+    // Apri o aggiorna il pannello dockabile sopra la striscia
+    if (!modelRef.current) {
+      console.error('[DRAWER-TAB-SELECT] modelRef.current è null')
+      return
+    }
+
+    const json = modelRef.current.toJson() as any
+    console.log('[DRAWER-TAB-SELECT][LAYOUT-START]', {
+      layoutType: json.layout?.type,
+      hasChildren: !!json.layout?.children,
+      childrenCount: json.layout?.children?.length,
+      hasBorders: !!json.borders,
+      bordersCount: json.borders?.length
+    })
+
+    // ✅ STRATEGIA: Usa un border bottom invece del layout column
+    // I border sono sempre visibili e posizionati correttamente da FlexLayout
+
+    // Cerca se esiste già un border bottom
+    if (!json.borders) json.borders = []
+    let bottomBorder = json.borders.find((b: any) => b.location === 'bottom')
+    console.log('[DRAWER-TAB-SELECT][BORDER-SEARCH]', { found: !!bottomBorder })
+
+    if (!bottomBorder) {
+      console.log('[DRAWER-TAB-SELECT][BORDER-CREATE] Creando bottom border con drawer tabs...')
+      // Crea un border bottom con il drawer tab
+      bottomBorder = {
+        type: 'border',
+        location: 'bottom',
+        size: 350, // Altezza fissa del border
+        children: []
+      }
+      json.borders.push(bottomBorder)
+    } else {
+      console.log('[DRAWER-TAB-SELECT][BORDER-EXISTS] Border bottom esistente', {
+        childrenCount: bottomBorder.children?.length
+      })
+    }
+
+    // Cerca la tab esistente per questo drawer nel border bottom
+    const existingTabIndex = bottomBorder.children?.findIndex((t: any) => t.config?.drawerId === comparto.id)
+    console.log('[DRAWER-TAB-SELECT][TAB-CHECK]', {
+      existingTabIndex,
+      hasChildren: !!bottomBorder.children,
+      allTabsIds: bottomBorder.children?.map((t: any) => ({ id: t.id, drawerId: t.config?.drawerId })) || []
+    })
 
     if (existingTabIndex >= 0) {
-      // Seleziona la tab esistente
-      drawerTabset.selected = existingTabIndex
+      console.log('[DRAWER-TAB-SELECT][SELECT-EXISTING] Selezionando tab esistente nel border', { existingTabIndex })
+      // Seleziona la tab esistente nel border
+      bottomBorder.selected = existingTabIndex
     } else {
-      // Crea nuova tab
+      console.log('[DRAWER-TAB-SELECT][CREATE-NEW-TAB] Creando nuova tab nel border...', {
+        compartoId: comparto.id,
+        compartoNome: comparto.nome,
+        drawerKey: drawerId
+      })
+
+      // Crea nuova tab nel border bottom
       const newTab = {
         type: 'tab',
         name: comparto.nome,
         component: 'drawer-content',
-        id: `drawer-${drawerId}`,
+        id: `drawer-${comparto.id}`,
         config: {
-          drawerId,
+          drawerId: comparto.id,
+          drawerKey: drawerId, // ✅ Usa la drawerKey per ricostruire icona/colore/numero nel factory
           drawerTitle: comparto.nome,
           drawerType: drawerTab.type
+          // ✅ NOTA: Numero, icona e colore vengono ricostruiti nel factory usando drawerKey
         }
       }
 
-      if (!drawerTabset.children) drawerTabset.children = []
-      drawerTabset.children.push(newTab)
-      drawerTabset.selected = drawerTabset.children.length - 1
+      if (!bottomBorder.children) bottomBorder.children = []
+      bottomBorder.children.push(newTab)
+      bottomBorder.selected = bottomBorder.children.length - 1
+      console.log('[DRAWER-TAB-SELECT][NEW-TAB-CREATED]', {
+        tabId: newTab.id,
+        tabConfig: newTab.config,
+        selectedIndex: bottomBorder.selected,
+        totalTabs: bottomBorder.children.length
+      })
     }
 
     // Aggiorna il modello
+    console.log('[DRAWER-TAB-SELECT][UPDATE-MODEL] Aggiornando modello...', {
+      layoutType: json.layout?.type,
+      borderBottomChildren: bottomBorder.children?.length,
+      borderBottomSelected: bottomBorder.selected
+    })
+    console.log('[DRAWER-TAB-SELECT][JSON-FULL]', JSON.stringify(json, null, 2))
+
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
+    console.log('[DRAWER-TAB-SELECT][UPDATE-MODEL-DONE] Modello aggiornato, forzando re-render')
   }, [comparti, drawerTabs])
 
-  // ✅ Helper per cercare ricorsivamente un tabset
-  const findTabsetRecursive = useCallback((node: any, id: string): any => {
-    if (!node) return null
-    if (node.type === 'tabset' && node.id === id) return node
-    if (Array.isArray(node.children)) {
-      for (const child of node.children) {
-        const result = findTabsetRecursive(child, id)
-        if (result) return result
-      }
+  // ✅ Gestisce il drop di file sulla tab della striscia
+  const handleDrawerTabDrop = useCallback((files: File[], drawerKey: string) => {
+    console.log('[DRAWER-TAB-DROP][START]', { drawerKey, filesCount: files.length })
+    // Trova il comparto corrispondente alla key
+    const comparto = comparti.find(c => c.key === drawerKey)
+    if (!comparto) {
+      console.warn('[DRAWER-TAB-DROP] Comparto non trovato per key:', drawerKey)
+      return
     }
-    return null
-  }, [])
+
+    const drawerTab = drawerTabs.find(t => t.id === drawerKey)
+    if (!drawerTab) {
+      console.warn('[DRAWER-TAB-DROP] DrawerTab non trovato per key:', drawerKey)
+      return
+    }
+
+    // Emetti l'evento per aggiungere i file al cassetto
+    try {
+      console.log('[DRAWER-TAB-DROP][UPLOAD-EVENT] Emettendo app:upload-files', {
+        filesCount: files.length,
+        compartoId: comparto.id,
+        compartoNome: comparto.nome
+      })
+      const ev = new CustomEvent('app:upload-files', {
+        detail: {
+          files,
+          target: {
+            type: 'drawer',
+            id: comparto.id, // Usa l'id del comparto, non la key
+            title: comparto.nome
+          }
+        }
+      })
+      window.dispatchEvent(ev)
+      console.log('[DRAWER-TAB-DROP][UPLOAD-EVENT-DONE] Evento emesso')
+    } catch (error) {
+      console.error('[DRAWER-TAB-DROP] Errore nell\'emissione evento:', error)
+      return
+    }
+
+    // Apri automaticamente il popover sopra la striscia
+    console.log('[DRAWER-TAB-DROP][OPEN-PANEL] Chiamando handleDrawerTabSelect per aprire il pannello')
+    handleDrawerTabSelect(drawerKey)
+  }, [comparti, drawerTabs, handleDrawerTabSelect])
 
   // Listener per aprire un cassetto in una nuova tab
   useEffect(() => {
@@ -757,6 +822,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
     const tabId = node.getId()
+    console.log('[FACTORY][CALL]', { component: comp, tabId })
 
     // ✅ STEP 4: Pannelli con fullscreen toggle
     if (comp === 'explorer') {
@@ -875,10 +941,42 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       return <div className="w-full h-full overflow-hidden bg-white"><DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} type={cfg.drawerType as any} /></div>
     }
     if (comp === 'drawer-content') {
-      const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string; drawerType?: string }
+      const cfg = (node.getConfig() || {}) as {
+        drawerId?: string
+        drawerKey?: string
+        drawerTitle?: string
+        drawerType?: string
+      }
+      // ✅ Usa drawerId (comparto.id) che è quello che DrawerViewer si aspetta
+      const drawerIdToUse = cfg.drawerId || cfg.drawerKey || ''
+
+      // ✅ Ricostruisci numero, icona e colore usando drawerKey
+      const drawerTab = cfg.drawerKey ? drawerTabs.find((dt: DrawerTabItem) => dt.id === cfg.drawerKey) : undefined
+      const drawerNumber = drawerTab ? drawerTabs.findIndex((dt: DrawerTabItem) => dt.id === cfg.drawerKey) + 1 : undefined
+      const drawerIcon = drawerTab?.icon
+      const drawerColor = drawerTab?.color
+
+      console.log('[FACTORY][DRAWER-CONTENT] Rendering drawer-content', {
+        tabId,
+        drawerId: drawerIdToUse,
+        drawerTitle: cfg.drawerTitle,
+        drawerType: cfg.drawerType,
+        drawerNumber,
+        drawerColor,
+        hasIcon: !!drawerIcon,
+        config: cfg
+      })
+
       return (
         <div className="w-full h-full overflow-hidden bg-white">
-          <DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} type={cfg.drawerType as any} />
+          <DrawerViewer
+            id={drawerIdToUse}
+            title={cfg.drawerTitle || 'Cassetto'}
+            type={cfg.drawerType as any}
+            number={drawerNumber}
+            icon={drawerIcon}
+            color={drawerColor}
+          />
         </div>
       )
     }
@@ -1759,6 +1857,48 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
   }, [tabsOpenState, model]) // Re-esegui quando cambia lo stato delle tab
 
+  // ✅ Verifica e forza dimensioni del bottom border dopo il rendering
+  useEffect(() => {
+    if (!selectedDrawerId || !layoutRootRef.current) return
+
+    const checkAndForceDimensions = () => {
+      // Cerca il border bottom
+      const bottomBorder = layoutRootRef.current?.querySelector('.flexlayout__border_bottom') as HTMLElement | null
+
+      if (bottomBorder) {
+        const rect = bottomBorder.getBoundingClientRect()
+        console.log('[DRAWER-BORDER][DOM-CHECK]', {
+          found: true,
+          width: rect.width,
+          height: rect.height,
+          visible: rect.width > 0 && rect.height > 0,
+          computedHeight: window.getComputedStyle(bottomBorder).height,
+        })
+
+        // Se ha dimensioni troppo piccole, forza dimensioni minime
+        if (rect.height < 200) {
+          console.log('[DRAWER-BORDER][FORCE-SIZE] Forzando dimensioni...')
+          bottomBorder.style.height = '350px'
+          bottomBorder.style.minHeight = '350px'
+        }
+      } else {
+        console.warn('[DRAWER-BORDER][DOM-CHECK]', { found: false })
+      }
+    }
+
+    // Check immediato e dopo delays per catturare il rendering
+    checkAndForceDimensions()
+    const timeout1 = setTimeout(checkAndForceDimensions, 100)
+    const timeout2 = setTimeout(checkAndForceDimensions, 300)
+    const timeout3 = setTimeout(checkAndForceDimensions, 500)
+
+    return () => {
+      clearTimeout(timeout1)
+      clearTimeout(timeout2)
+      clearTimeout(timeout3)
+    }
+  }, [selectedDrawerId, model])
+
   return (
     <div
       ref={layoutRootRef}
@@ -1794,6 +1934,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             items={drawerTabs}
             selectedId={selectedDrawerId}
             onSelect={handleDrawerTabSelect}
+            onDrop={handleDrawerTabDrop}
             className="h-full"
           />
         </div>

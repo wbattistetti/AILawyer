@@ -4,10 +4,17 @@
 }
 
 .dockv2-root .flexlayout__border_top,
-.dockv2-root .flexlayout__border_bottom,
 .dockv2-root .flexlayout__border_right {
   display: none !important;
-  /* keep only left border (Archivio/Search) visible */
+  /* keep only left border (Archivio/Search) and bottom border (drawers) visible */
+}
+
+/* ✅ Bottom border per i cassetti: sempre visibile e con altezza fissa */
+.dockv2-root .flexlayout__border_bottom {
+  display: flex !important;
+  min-height: 350px !important;
+  height: 350px !important;
+  z-index: 100 !important;
 }
 
 .dockv2-root .flexlayout__layout {
@@ -121,8 +128,30 @@
 /* ✅ STEP 6: Pulsantino fullscreen nell'header - icona arancione, senza bordo */
 .dockv2-root .fullscreen-toggle-button {
   display: none !important;
-  /* nascosto: ora usiamo il bottone nell'header */
 }
+
+/* ✅ Drawer content tabset: forza dimensioni minime e visibilità */
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] {
+  min-height: 250px !important;
+  height: 350px !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+}
+
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab {
+  height: 100% !important;
+  min-height: 250px !important;
+}
+
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab_content {
+  height: 100% !important;
+  min-height: 250px !important;
+  overflow: auto !important;
+}
+
+/* nascosto: ora usiamo il bottone nell'header */
 
 .dockv2-root .fullscreen-toggle-button:hover {
   background: rgba(255, 107, 53, 0.1) !important;
@@ -467,4 +496,25 @@
   color: var(--tab-color, #666) !important;
   opacity: var(--tab-opacity, 0.4) !important;
   transition: opacity 0.3s ease, color 0.3s ease !important;
+}
+
+/* ✅ Pannello drawer dockabile in fondo - assicura visibilità e dimensioni minime */
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] {
+  min-height: 250px !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tabset_content {
+  min-height: 200px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Assicura che il tabset sia visibile anche quando ha solo una tab */
+.dockv2-root .flexlayout__tabset[id="drawerContentTabset"]:not(:empty) {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }

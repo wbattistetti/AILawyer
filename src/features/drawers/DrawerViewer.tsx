@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import type { DrawerType } from './types'
 import { DocumentCollection } from '../documents/DocumentCollection'
+import { ArchiveRenderer } from '../../components/pages/pratica-canvas/components/ArchiveRenderer'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash } from 'lucide-react'
 
 function iconFor(title?: string) {
@@ -27,20 +28,27 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
     const onDocs = (e: any) => {
       try {
         const arr = (e?.detail?.items || []) as Array<any>
-        // Se il cassetto ha un titolo che identifica una collezione, filtra per tag corrispondente
-        const key = (title || '').toLowerCase()
+
+        // ✅ PRIMA: Filtra per compartoId se id è fornito e corrisponde a un compartoId
         let filtered = arr
-        if (key.includes('sequestro')) filtered = arr.filter(x => (x.tags || []).includes('verbale_sequestro'))
-        else if (key.includes('arresto')) filtered = arr.filter(x => (x.tags || []).includes('verbale_arresto'))
-        else if (key.includes('verbali') || key.includes('verbale')) filtered = arr.filter(x => (x.tags || []).includes('verbale'))
-        else if (key.includes('intercett')) filtered = arr.filter(x => (x.tags || []).includes('intercettazioni'))
-        else if (key.includes('reati')) filtered = arr.filter(x => (x.tags || []).includes('reati'))
+        if (id) {
+          // Se id è un compartoId valido, filtra i documenti per quel comparto
+          filtered = arr.filter((x: any) => x.compartoId === id)
+        }
+
+        // ✅ POI: Se il cassetto ha un titolo che identifica una collezione speciale, filtra per tag corrispondente
+        const key = (title || '').toLowerCase()
+        if (key.includes('sequestro')) filtered = filtered.filter(x => (x.tags || []).includes('verbale_sequestro'))
+        else if (key.includes('arresto')) filtered = filtered.filter(x => (x.tags || []).includes('verbale_arresto'))
+        else if (key.includes('verbali') || key.includes('verbale')) filtered = filtered.filter(x => (x.tags || []).includes('verbale'))
+        else if (key.includes('intercett')) filtered = filtered.filter(x => (x.tags || []).includes('intercettazioni'))
+        else if (key.includes('reati')) filtered = filtered.filter(x => (x.tags || []).includes('reati'))
         else if (key.includes('memoria difensiva')) {
           // Per memoria difensiva, carica le memorie invece dei documenti normali
           loadMemorieDifensive()
           return
         }
-        // default: nessun filtro
+
         setItems(filtered)
       } catch { }
     }
@@ -202,16 +210,206 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
   )
 }
 
-export function DrawerViewer({ id, title, type }: { id: string; title: string; type?: DrawerType }) {
+export function DrawerViewer({
+  id,
+  title,
+  type,
+  number,
+  icon,
+  color
+}: {
+  id: string
+  title: string
+  type?: DrawerType
+  number?: number
+  icon?: React.ReactNode
+  color?: string
+}) {
+  const [archiveData, setArchiveData] = useState<any>(null)
+  // ✅ Usa un ref per tracciare l'ultimo snapshot dei dati per evitare aggiornamenti inutili
+  const lastDataRef = useRef<string | null>(null)
+
+    useEffect(() => {
+      const syncData = () => {
+        const data = (window as any).__archiveData
+
+        // ✅ Verifica che i dati essenziali siano presenti prima di aggiornare
+        if (!data || !Array.isArray(data.comparti) || typeof data.handleFileDrop !== 'function') {
+          return // Skip se dati non validi
+        }
+
+        // ✅ Crea un hash dei dati critici per evitare aggiornamenti inutili
+        const dataHash = JSON.stringify({
+          documentiCount: data.documenti?.length || 0,
+          uploadsCount: data.uploads?.length || 0,
+          uploadsSummary: (data.uploads || []).map((u: any) => ({
+            filename: u.file?.name || u.filenameBase,
+            status: u.status,
+            progress: u.progress,
+            compartoId: u.compartoId
+          })),
+          documentiSummary: (data.documenti || []).slice(0, 10).map((d: any) => ({
+            id: d.id,
+            s3Key: d.s3Key,
+            compartoId: d.compartoId
+          }))
+        })
+
+        // ✅ Aggiorna solo se i dati sono realmente cambiati
+        if (lastDataRef.current === dataHash) {
+          return // Dati non cambiati, skip aggiornamento
+        }
+
+        lastDataRef.current = dataHash
+
+        console.log('✅ [DRAWER][SYNC][UPDATE] Aggiornando archiveData (dati cambiati)', {
+          documentiCount: data.documenti?.length || 0,
+          uploadsCount: data.uploads?.length || 0,
+          compartiCount: data.comparti?.length || 0,
+          uploadsForThisDrawer: data.uploads?.filter((u: any) => u.compartoId === id).length || 0
+        })
+
+        setArchiveData(data)
+      }
+
+    // Sincronizza immediatamente
+    syncData()
+
+    // ✅ Ascolta eventi di upload per sincronizzazione immediata
+    const handleUploadEvent = (e?: Event) => {
+      const detail = (e as CustomEvent)?.detail
+
+      // ✅ Se l'evento contiene gli uploads aggiornati, aggiorna immediatamente lo stato locale
+      if (detail?.uploads) {
+        // ✅ Usa queueMicrotask per evitare warning React
+        queueMicrotask(() => {
+          const data = (window as any).__archiveData
+          // ✅ Verifica che i dati essenziali siano presenti
+          if (data && Array.isArray(data.comparti) && typeof data.handleFileDrop === 'function') {
+            // Aggiorna solo uploads mantenendo il resto dei dati
+            setArchiveData({
+              ...data,
+              uploads: detail.uploads
+            })
+          }
+        })
+        return // Skip syncData perché abbiamo già aggiornato
+      }
+
+      // Altrimenti, sincronizza normalmente (solo se necessario)
+      setTimeout(syncData, 50)
+    }
+
+    // ✅ Handler specifico per aggiornamenti documenti
+    const handleDocumentsUpdate = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail
+
+      if (detail?.documenti) {
+        // ✅ Usa queueMicrotask per evitare warning React
+        queueMicrotask(() => {
+          const data = (window as any).__archiveData
+          // ✅ Verifica che i dati essenziali siano presenti
+          if (data && Array.isArray(data.comparti) && typeof data.handleFileDrop === 'function') {
+            setArchiveData({
+              ...data,
+              documenti: detail.documenti
+            })
+          }
+        })
+        return
+      }
+      setTimeout(syncData, 50)
+    }
+
+    // ✅ Ascolta eventi emessi da handleFileDrop
+    window.addEventListener('app:uploading', handleUploadEvent)
+    window.addEventListener('app:archive-data-updated', handleUploadEvent)
+    window.addEventListener('app:documents-updated', handleDocumentsUpdate)
+
+    // ✅ Rimuoviamo completamente il polling - gli eventi sono sufficienti
+    // Il polling causava loop infiniti di sincronizzazione
+
+    return () => {
+      window.removeEventListener('app:uploading', handleUploadEvent)
+      window.removeEventListener('app:archive-data-updated', handleUploadEvent)
+      window.removeEventListener('app:documents-updated', handleDocumentsUpdate)
+    }
+  }, [id]) // ✅ Aggiunto id come dipendenza per ricreare listener se cambia drawer
+
+  if (!archiveData) {
+    return (
+      <div className="w-full h-full flex flex-col">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white" style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}>
+          {number !== undefined && <span className="text-sm font-semibold text-slate-700">{number}</span>}
+          {icon && <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>{icon}</span>}
+          <span className="text-base font-semibold text-slate-900">{title}</span>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">Caricamento...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ Verifica che il comparto esista
+  const comparto = archiveData.comparti?.find((c: any) => c.id === id)
+
+  if (!comparto) {
+    return (
+      <div className="w-full h-full flex flex-col">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white" style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}>
+          {number !== undefined && <span className="text-sm font-semibold text-slate-700">{number}</span>}
+          {icon && <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>{icon}</span>}
+          <span className="text-base font-semibold text-slate-900">{title}</span>
+        </div>
+        <div className="flex-1 p-3 text-sm text-muted-foreground">Cassetto non trovato</div>
+      </div>
+    )
+  }
+
   return (
     <div className="w-full h-full flex flex-col">
-      {/* Niente header qui: titolo/icona saranno nella tab */}
-      <div className="flex-1 overflow-auto">
-        {type === 'DocumentCollection' ? (
-          <DocumentCollectionView id={id} title={title} />
-        ) : (
-          <div className="p-3 text-sm text-muted-foreground">Viewer del cassetto generico</div>
+      {/* ✅ Header personalizzato come la tab */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white"
+        style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}
+      >
+        {/* Numero */}
+        {number !== undefined && (
+          <span className="text-sm font-semibold text-slate-700">{number}</span>
         )}
+
+        {/* Icona */}
+        {icon && (
+          <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>
+            {icon}
+          </span>
+        )}
+
+        {/* Titolo */}
+        <span className="text-base font-semibold text-slate-900">{title}</span>
+      </div>
+
+      {/* ✅ Usa ArchiveRenderer per questo singolo comparto */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ArchiveRenderer
+          documenti={archiveData.documenti}
+          clientThumbByS3={archiveData.clientThumbByS3}
+          dockV2Ref={archiveData.dockV2Ref}
+          handleFileDrop={archiveData.handleFileDrop}
+          handleRemoveThumb={archiveData.handleRemoveThumb}
+          handleOcr={archiveData.handleOcr}
+          handleOcrCancel={archiveData.handleOcrCancel}
+          ocrProgressByDoc={archiveData.ocrProgressByDoc}
+          ocrEtaByDoc={archiveData.ocrEtaByDoc}
+          ocrStatusByDoc={archiveData.ocrStatusByDoc}
+          ocrCancellingByDoc={archiveData.ocrCancellingByDoc}
+          transcribedPctByDoc={archiveData.transcribedPctByDoc}
+          comparti={archiveData.comparti}
+          uploads={archiveData.uploads}
+          toast={archiveData.toast}
+          singleCompartoId={id} // ✅ Mostra solo questo comparto!
+        />
       </div>
     </div>
   )

@@ -97,6 +97,73 @@ export function PraticaCanvasPage() {
     handleFileDrop
   })
 
+  // ✅ Esponi dati globalmente per DrawerViewer (cassetti)
+  useEffect(() => {
+    const archiveData = {
+      praticaId: id, // ✅ Aggiunto per DrawerViewer se vuole usare gli hook direttamente
+      documenti,
+      uploads,
+      clientThumbByS3,
+      comparti,
+      handleFileDrop,
+      handleRemoveThumb,
+      handleOcr,
+      handleOcrCancel,
+      ocrProgressByDoc,
+      ocrEtaByDoc,
+      ocrStatusByDoc,
+      ocrCancellingByDoc,
+      transcribedPctByDoc,
+      dockV2Ref,
+      toast
+    }
+
+    console.log('🌐 [PRATICA-CANVAS][UPDATE-ARCHIVE-DATA] Aggiornando window.__archiveData', {
+      praticaId: id,
+      documentiCount: documenti.length,
+      uploadsCount: uploads.length,
+      compartiCount: comparti.length,
+      uploadsSummary: uploads.map((u, i) => ({
+        idx: i,
+        filename: u.file?.name || u.filenameBase,
+        compartoId: u.compartoId,
+        status: u.status,
+        progress: u.progress,
+        hasTempDoc: u.hasTempDoc
+      })),
+      documentiSummary: documenti.slice(0, 5).map((d, i) => ({
+        idx: i,
+        id: d.id?.substring(0, 20),
+        filename: d.filename,
+        compartoId: d.compartoId,
+        s3Key: d.s3Key?.substring(0, 30)
+      }))
+    })
+
+    ;(window as any).__archiveData = archiveData
+
+    // ✅ Emetti evento per notificare DrawerViewer dell'aggiornamento
+    console.log('🌐 [PRATICA-CANVAS][EVENT] Emettendo app:archive-data-updated')
+    window.dispatchEvent(new CustomEvent('app:archive-data-updated'))
+  }, [
+    id, // ✅ Aggiunto id alle dipendenze
+    documenti,
+    uploads,
+    clientThumbByS3,
+    comparti,
+    handleFileDrop,
+    handleRemoveThumb,
+    handleOcr,
+    handleOcrCancel,
+    ocrProgressByDoc,
+    ocrEtaByDoc,
+    ocrStatusByDoc,
+    ocrCancellingByDoc,
+    transcribedPctByDoc,
+    dockV2Ref,
+    toast
+  ])
+
 
 
 

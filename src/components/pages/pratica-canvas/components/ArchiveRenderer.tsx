@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Comparto, Documento, UploadProgress } from '../../../../types';
 import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
 import { DocumentCollection } from '../../../../features/documents/DocumentCollection';
@@ -31,6 +31,7 @@ interface ArchiveRendererProps {
     comparti: Comparto[];
     uploads?: UploadProgress[];
     toast: any;
+    singleCompartoId?: string; // ✅ Se presente, mostra solo questo comparto (senza header accordion)
 }
 
 export function ArchiveRenderer({
@@ -48,12 +49,35 @@ export function ArchiveRenderer({
     transcribedPctByDoc,
     comparti,
     uploads,
-    toast
+    toast,
+    singleCompartoId // ✅ Nuovo prop
 }: ArchiveRendererProps) {
     const showOverlay = false;
     const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
     const [hoverHeader, setHoverHeader] = useState<string | null>(null)
     const [hoverBody, setHoverBody] = useState<string | null>(null)
+
+    // ✅ Filtra comparti se singleCompartoId è presente (memoizzato per evitare re-render infiniti)
+    const filteredComparti = useMemo(() => {
+        return singleCompartoId
+            ? comparti.filter(c => c.id === singleCompartoId)
+            : comparti
+    }, [comparti, singleCompartoId])
+
+    // ✅ Apri automaticamente se c'è un solo comparto (modo drawer)
+    useEffect(() => {
+        if (filteredComparti.length === 1) {
+            const compartoId = filteredComparti[0].id
+            // Solo aggiorna se non è già aperto (evita loop infiniti)
+            setOpenMap(prev => {
+                if (prev[compartoId]) return prev // Già aperto, non cambiare
+                return { [compartoId]: true }
+            })
+        }
+    }, [filteredComparti])
+
+    // ✅ Nascondi header accordion se è singleCompartoId (modo drawer)
+    const hideHeaders = !!singleCompartoId
 
     // Quiet: rimuovi log rumorosi
 
@@ -111,55 +135,147 @@ export function ArchiveRenderer({
         }
     }
 
+    // ✅ In modalità drawer (singleCompartoId), gestisci drop sull'intero container
+    const [isDragging, setIsDragging] = useState(false)
+    const drawerDropHandlers = hideHeaders ? {
+        onDragEnter: (e: React.DragEvent) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-doc-id')) {
+                setIsDragging(true)
+                if (filteredComparti.length === 1) {
+                    setHoverBody(filteredComparti[0].id)
+                }
+            }
+        },
+        onDragOver: (e: React.DragEvent) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-doc-id')) {
+                e.dataTransfer.dropEffect = 'copy'
+            }
+        },
+        onDragLeave: (e: React.DragEvent) => {
+            e.preventDefault()
+            e.stopPropagation()
+            // Solo se lasciamo completamente il container
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDragging(false)
+                if (filteredComparti.length === 1) {
+                    setHoverBody(null)
+                }
+            }
+        },
+        onDrop: async (e: React.DragEvent) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setIsDragging(false)
+            if (filteredComparti.length === 1) {
+                const comparto = filteredComparti[0]
+                setHoverBody(null)
+                const docId = e.dataTransfer.getData('application/x-doc-id')
+                if (docId) {
+                    await onDropDocIdToComparto(docId, comparto.id)
+                    return
+                }
+                const files = Array.from(e.dataTransfer.files || [])
+                if (files.length) {
+                    onDropFilesToComparto(files as any, comparto.id)
+                }
+            }
+        }
+    } : {}
+
     return (
-        <div className="relative w-full h-full overflow-auto space-y-2 p-2" data-component="archive-renderer">
-            {(comparti || []).sort((a, b) => a.ordine - b.ordine).map(comparto => {
+        <div
+            className={`relative w-full h-full overflow-auto ${hideHeaders ? 'p-0' : 'space-y-2 p-2'} ${hideHeaders && isDragging ? 'border-2 border-dashed border-blue-400 bg-blue-50/50' : ''}`}
+            data-component="archive-renderer"
+            {...drawerDropHandlers}
+            style={hideHeaders && hoverBody && !isDragging ? {
+                background: hexToRgba(colorFor(filteredComparti[0]?.nome || ''), 0.06)
+            } : undefined}
+        >
+            {filteredComparti.sort((a, b) => a.ordine - b.ordine).map(comparto => {
                 // Filtra documenti del comparto e deduplica per s3Key per evitare doppioni temporanei
                 const rawDocs = documenti.filter(d => d.compartoId === comparto.id)
+
+                // ✅ Prima passa: trova tutti gli s3Key dei documenti reali (non temp)
+                const realS3Keys = new Set<string>()
+                rawDocs.forEach(d => {
+                    if (!d.id.startsWith('temp:') && d.s3Key) {
+                        realS3Keys.add(d.s3Key)
+                    }
+                })
+
+                // ✅ Seconda passa: filtra documenti, dando priorità ai documenti reali
                 const seen = new Set<string>()
                 const docs = rawDocs.filter(d => {
                     const key = d.s3Key || d.id
+                    const isTemp = d.id.startsWith('temp:')
+
+                    // Se è un documento temp e esiste già un documento reale con lo stesso s3Key, escludi il temp
+                    if (isTemp && d.s3Key && realS3Keys.has(d.s3Key)) {
+                        return false
+                    }
+
+                    // Deduplica normale: se abbiamo già visto questa key, escludi
                     if (seen.has(key)) return false
                     seen.add(key)
                     return true
                 })
                 // Log rimosso per ridurre rumore
                 return (
-                    <div key={comparto.id} className="border rounded-md overflow-hidden">
-                        <div {...headerProps(comparto)}>
-                            <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-sm" style={{ background: colorFor(comparto.nome), color: '#fff' }}>
-                                    {(() => { const I: any = iconFor(comparto.nome); return <I size={32} /> })()}
-                                </span>
-                                <div className="font-medium text-[1.05rem]">{comparto.nome} ({docs.length})</div>
+                    <div key={comparto.id} className={hideHeaders ? "" : "border rounded-md overflow-hidden"}>
+                        {!hideHeaders && (
+                            <div {...headerProps(comparto)}>
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-sm" style={{ background: colorFor(comparto.nome), color: '#fff' }}>
+                                        {(() => { const I: any = iconFor(comparto.nome); return <I size={32} /> })()}
+                                    </span>
+                                    <div className="font-medium text-[1.05rem]">{comparto.nome} ({docs.length})</div>
+                                </div>
+                                <div className="text-sm text-neutral-500">{openMap[comparto.id] ? '▾' : '▸'}</div>
                             </div>
-                            <div className="text-sm text-neutral-500">{openMap[comparto.id] ? '▾' : '▸'}</div>
-                        </div>
-                        {openMap[comparto.id] && (
+                        )}
+                        {(hideHeaders || openMap[comparto.id]) && (
                             <div
-                                className="bg-white"
-                                style={{ background: hoverBody === comparto.id ? hexToRgba(colorFor(comparto.nome), 0.06) : undefined }}
-                                onDragEnter={(e) => { e.preventDefault(); setHoverBody(comparto.id) }}
-                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-                                onDragLeave={() => { setHoverBody(h => (h === comparto.id ? null : h)) }}
-                                onDrop={async (e) => {
-                                    e.preventDefault();
-                                    setHoverBody(null)
-                                    const docId = e.dataTransfer.getData('application/x-doc-id')
-                                    if (docId) { await onDropDocIdToComparto(docId, comparto.id); return }
-                                    const files = Array.from(e.dataTransfer.files || [])
-                                    if (files.length) { onDropFilesToComparto(files as any, comparto.id) }
-                                }}
+                                className={hideHeaders ? "" : "bg-white"}
+                                style={hideHeaders ? {} : { background: hoverBody === comparto.id ? hexToRgba(colorFor(comparto.nome), 0.06) : undefined }}
+                                // ✅ In modalità drawer (hideHeaders), i drop sono gestiti dal container padre
+                                // ✅ In modalità archivio normale, gestisci drop qui
+                                {...(hideHeaders ? {} : {
+                                    onDragEnter: (e: React.DragEvent) => { e.preventDefault(); setHoverBody(comparto.id) },
+                                    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' },
+                                    onDragLeave: () => { setHoverBody(h => (h === comparto.id ? null : h)) },
+                                    onDrop: async (e: React.DragEvent) => {
+                                        e.preventDefault();
+                                        setHoverBody(null)
+                                        const docId = e.dataTransfer.getData('application/x-doc-id')
+                                        if (docId) { await onDropDocIdToComparto(docId, comparto.id); return }
+                                        const files = Array.from(e.dataTransfer.files || [])
+                                        if (files.length) { onDropFilesToComparto(files as any, comparto.id) }
+                                    }
+                                })}
                             >
                                 <DocumentCollection
                                     extraNodesTop={(() => {
-                                        const ups = (uploads || []).filter(u => {
+                                        const allUploads = uploads || []
+
+                                        const ups = allUploads.filter(u => {
                                             if (!u || u.compartoId !== comparto.id) return false
                                             if (u.status === 'error' || u.status === 'completed') return false
                                             if (u.hasTempDoc) return false
+                                            // ✅ Escludi upload se esiste già un documento (temporaneo o reale) con lo stesso s3Key O stesso file name
                                             if (u.s3Key && documenti.some(d => d.s3Key === u.s3Key)) return false
+                                            // ✅ Escludi anche se il documento temporaneo ha lo stesso filename nello stesso comparto
+                                            if (u.file?.name && documenti.some(d =>
+                                                d.compartoId === comparto.id &&
+                                                d.filename === u.file.name &&
+                                                d.id.startsWith('temp:')
+                                            )) return false
                                             return true
                                         })
+
                                         if (ups.length === 0) return null
                                         return ups.map((u, idx) => {
                                             const color = colorFor(comparto.nome)
