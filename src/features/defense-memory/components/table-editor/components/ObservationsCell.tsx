@@ -97,6 +97,7 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
         const newMotivation: Motivation = {
             id: `mot_${Math.random().toString(36).slice(2)}`,
             text: extractData.content || '',
+            imageDataUrl: extractData.imageDataUrl,
             source: extractData.source || 'Documento',
             page: extractData.page || 0,
             isHidden: false,
@@ -125,6 +126,7 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                 const newMotivation: Motivation = {
                     id: `mot_${Math.random().toString(36).slice(2)}`,
                     text: data.content || '',
+                    imageDataUrl: data.imageDataUrl,
                     source: data.source || 'Documento',
                     page: data.page || 0,
                     isHidden: false,
@@ -173,6 +175,7 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                         const newMotivation: Motivation = {
                             id: `mot_${Math.random().toString(36).slice(2)}`,
                             text: extractData.content || '',
+                            imageDataUrl: extractData.imageDataUrl,
                             source: extractData.source || 'Documento',
                             page: extractData.page || 0,
                             isHidden: false,
@@ -219,6 +222,7 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                                             <MotivationItem
                                                 id={m.id}
                                                 text={m.text}
+                                                imageDataUrl={m.imageDataUrl}
                                                 source={m.source}
                                                 page={m.page}
                                                 isHidden={m.isHidden}

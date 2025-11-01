@@ -2,6 +2,7 @@ import React from 'react'
 import { ContextMenuState } from '../types'
 import type { PersistentSelection } from '../types'
 import { extractClipboardManager } from '../../../../utils/extractClipboard'
+import { cropCanvasFromViewportBox } from '../utils/canvasCrop'
 
 interface ContextMenuProps {
 	contextMenu: ContextMenuState
@@ -15,6 +16,7 @@ interface ContextMenuProps {
 	onExtractPageChange: (page: number) => void
 	onExtractOpenChange: (open: boolean) => void
 	docName?: string
+	hasNativeText?: boolean
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -28,7 +30,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 	onExtractPosChange,
 	onExtractPageChange,
 	onExtractOpenChange,
-	docName
+	docName,
+	hasNativeText
 }) => {
 	const handleCreateTask = () => {
 		console.log('🎬 [ContextMenu] Create task clicked')
@@ -36,7 +39,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 		// TODO: Implementare logica per creare task
 	}
 
-	const handleCopyExtract = () => {
+	const handleCopyExtract = async () => {
 		console.log('🎬 [ContextMenu] Copia estratto clicked')
 		console.log('🎬 [ContextMenu] Stato attuale persistentSelections:', persistentSelections.length, 'elementi')
 
@@ -49,13 +52,21 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 		const pageNum = lastSelection.pdfPageNumber || 1
 		const pageLayer = pageElsRef.current.get(pageNum)
 
+		if (!pageLayer) {
+			console.warn('[ContextMenu] Pagina non trovata:', pageNum)
+			onContextMenuChange({ x: 0, y: 0, visible: false })
+			return
+		}
+
 		// Calcola le coordinate percentuali dal viewportBox se disponibile
 		let bbox = { x0Pct: 0, y0Pct: 0, x1Pct: 0, y1Pct: 0 }
+		let viewportBox: { x: number; y: number; w: number; h: number } | null = null
 		let selectedPersistentId: string | null = null
 
 		if (lastSelection.viewportBox && pageLayer) {
 			const pr = pageLayer.getBoundingClientRect()
 			const vb = lastSelection.viewportBox
+			viewportBox = vb
 			bbox = {
 				x0Pct: vb.x / pr.width,
 				y0Pct: vb.y / pr.height,
@@ -72,6 +83,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 				persistentId: lastPersistent.id
 			})
 			if (lastPersistent.page === pageNum) {
+				const pr = pageLayer.getBoundingClientRect()
+				viewportBox = {
+					x: lastPersistent.x0Pct * pr.width,
+					y: lastPersistent.y0Pct * pr.height,
+					w: (lastPersistent.x1Pct - lastPersistent.x0Pct) * pr.width,
+					h: (lastPersistent.y1Pct - lastPersistent.y0Pct) * pr.height
+				}
 				bbox = {
 					x0Pct: lastPersistent.x0Pct,
 					y0Pct: lastPersistent.y0Pct,
@@ -81,6 +99,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 				selectedPersistentId = lastPersistent.id
 				console.log('🎬 [ContextMenu] Usando selezione persistente:', selectedPersistentId)
 			}
+		}
+
+		if (!viewportBox) {
+			console.warn('[ContextMenu] Nessun viewportBox disponibile')
+			onContextMenuChange({ x: 0, y: 0, visible: false })
+			return
 		}
 
 		// Estrai il nome del documento (senza estensione .pdf)
@@ -94,15 +118,50 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 			displayName = displayName.replace('Documento ', '')
 		}
 
+		// Determina se dobbiamo ritagliare l'immagine (OCR) o copiare solo il testo (nativo)
+		const isOcrDocument = hasNativeText === false // Se hasNativeText è esplicitamente false, è OCR
+		let imageDataUrl: string | undefined = undefined
+
+		// Se è un documento OCR e abbiamo un viewportBox, ritaglia l'immagine dal canvas
+		if (isOcrDocument && viewportBox) {
+			try {
+				// Cerca il canvas nella pagina
+				const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
+				const canvas = (canvasLayer?.querySelector('canvas') || pageLayer.querySelector('canvas')) as HTMLCanvasElement | null
+
+				if (canvas) {
+					console.log('🎬 [ContextMenu] Ritagliando immagine da canvas per documento OCR')
+					const croppedImage = await cropCanvasFromViewportBox(canvas, viewportBox, pageLayer)
+					if (croppedImage) {
+						imageDataUrl = croppedImage
+						console.log('✅ [ContextMenu] Immagine ritagliata con successo, dimensione:', croppedImage.length, 'bytes')
+					} else {
+						console.warn('[ContextMenu] Impossibile ritagliare immagine, uso solo testo')
+					}
+				} else {
+					console.warn('[ContextMenu] Canvas non trovato nella pagina')
+				}
+			} catch (error) {
+				console.error('[ContextMenu] Errore durante il ritaglio immagine:', error)
+			}
+		}
+
 		// Copia l'estratto nella clipboard globale
 		const extractData = {
 			content: lastSelection.text || '',
+			imageDataUrl, // Incluso solo se è un documento OCR
 			source: displayName,
 			page: pageNum,
 			bbox
 		}
 
 		extractClipboardManager.copy(extractData)
+		console.log('✅ [ContextMenu] Estratto copiato:', {
+			hasText: !!extractData.content,
+			hasImage: !!extractData.imageDataUrl,
+			page: extractData.page,
+			source: extractData.source
+		})
 
 		// Rimuovi la selezione persistente dopo 2 secondi se è stata usata
 		if (selectedPersistentId) {

@@ -10,6 +10,7 @@ export interface ExtractData {
 export interface Motivation {
     id: string
     text: string
+    imageDataUrl?: string  // Per snippet immagine OCR (base64 data URL)
     source?: string
     page?: number
     isHidden: boolean

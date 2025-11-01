@@ -126,7 +126,7 @@ export function useDockableTabs(clienti: Cliente[] = []) {
         const staticTabs = [
             { component: 'archive', id: 'archiveTab', name: 'Archivio' },
             { component: 'search', id: 'searchTab', name: 'Search' },
-            { component: 'persons', id: 'personsTab', name: 'Schede Anagrafiche' },
+            { component: 'persons', id: 'personsTab', name: 'Anagrafiche' },
             { component: 'events', id: 'eventsTab', name: 'Eventi' },
         ]
 

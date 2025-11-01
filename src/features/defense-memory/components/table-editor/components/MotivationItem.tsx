@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 interface MotivationItemProps {
     id: string
     text: string
+    imageDataUrl?: string  // Per snippet immagine OCR
     source?: string
     page?: number
     isHidden: boolean
@@ -20,6 +21,7 @@ interface MotivationItemProps {
 export const MotivationItem: React.FC<MotivationItemProps> = ({
     id,
     text,
+    imageDataUrl,
     source,
     page,
     isHidden,
@@ -73,9 +75,25 @@ export const MotivationItem: React.FC<MotivationItemProps> = ({
                     <div
                         className="overflow-auto resize-y min-h-[80px] max-h-[600px] pr-1"
                     >
-                        <p className="text-xs whitespace-pre-wrap break-words">
-                            {text || <span className="text-gray-400 italic">Estratto vuoto</span>}
-                        </p>
+                        {/* Mostra immagine se presente, altrimenti testo */}
+                        {imageDataUrl ? (
+                            <div className="space-y-2">
+                                <img
+                                    src={imageDataUrl}
+                                    alt="Estratto documento"
+                                    className="max-w-full h-auto rounded border border-gray-200 shadow-sm"
+                                />
+                                {text && (
+                                    <p className="text-xs whitespace-pre-wrap break-words text-gray-600">
+                                        {text}
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="text-xs whitespace-pre-wrap break-words">
+                                {text || <span className="text-gray-400 italic">Estratto vuoto</span>}
+                            </p>
+                        )}
                     </div>
                     {(source || typeof page === 'number') && (
                         <div className="flex items-center space-x-1 text-xs text-gray-500">

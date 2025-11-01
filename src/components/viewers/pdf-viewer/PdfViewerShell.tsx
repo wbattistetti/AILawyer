@@ -24,6 +24,7 @@ interface PdfViewerShellProps {
   docId?: string
   praticaId?: string
   docName?: string
+  hasNativeText?: boolean
 }
 
 export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
@@ -34,7 +35,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   hideToolbar: _hideToolbar,
   docId,
   praticaId,
-  docName
+  docName,
+  hasNativeText
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
@@ -213,6 +215,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         onExtractPageChange={shell.setExtractPage}
         onExtractOpenChange={shell.setExtractOpen}
         docName={docName}
+        hasNativeText={hasNativeText}
       />
 
       <OcrInspector

@@ -45,6 +45,7 @@ export function PdfViewerManager({
           praticaId={praticaId}
           onPageChange={setSyncPage}
           docName={doc.filename}
+          hasNativeText={doc.hasNativeText}
         />
       </div>
     </div>

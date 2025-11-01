@@ -1,5 +1,6 @@
 export interface ExtractClipboardData {
     content: string
+    imageDataUrl?: string  // Per snippet immagine OCR (base64 data URL)
     source: string
     page: number
     bbox: {

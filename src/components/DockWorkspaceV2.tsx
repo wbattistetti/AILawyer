@@ -1,11 +1,10 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Layout, Model, TabNode, IJsonModel, Actions } from 'flexlayout-react'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
-import { CabinetView } from '../features/case-overview/components/CabinetView'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
-import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText } from 'lucide-react'
+import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Archive, Search, User, CreditCard, Calendar, Network } from 'lucide-react'
 // import type { Comparto } from '@/types' // Removed unused import
 import './DockWorkspaceV2.css'
 
@@ -24,7 +23,7 @@ const PanelWithFullscreenToggle: React.FC<{
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Pannelli che supportano fullscreen toggle
-  const supportsFullscreen = ['explorer', 'graph', 'cabinet'].includes(component)
+  const supportsFullscreen = ['explorer', 'graph'].includes(component)
 
   // console.log('[FULLSCREEN-TOGGLE] Rendering component:', component, 'supportsFullscreen:', supportsFullscreen)
 
@@ -74,14 +73,12 @@ type PanelBehavior = 'fullscreen' | 'dockable' | 'document' | 'overlay'
 
 // ✅ STEP 4: Mappatura comportamenti per componente (tutti dockable con fullscreen toggle)
 const PANEL_BEHAVIORS: Record<string, PanelBehavior> = {
-  // Pannelli dockable con fullscreen toggle (Explorer, Grafo, Armadio)
+  // Pannelli dockable con fullscreen toggle (Explorer, Grafo)
   'explorer': 'dockable',
   'graph': 'dockable',
-  'cabinet': 'dockable',
 
   // Pannelli dockable normali (trascinabili e ridimensionabili nel canvas)
   'archive': 'dockable',
-  'search': 'dockable',
   'persons': 'dockable',
   'contacts': 'dockable',
   'ids': 'dockable',
@@ -98,10 +95,64 @@ const PANEL_BEHAVIORS: Record<string, PanelBehavior> = {
   'drawer': 'overlay'
 }
 
+// ✅ Mappatura colori e icone per ogni tipo di tab
+type TabConfig = {
+  icon: React.ComponentType<any> // Lucide icons possono avere props aggiuntive come strokeWidth, fill, style
+  colorBase: string // Colore base (usato quando tab è chiusa - spento)
+  colorActive: string // Colore attivo (usato quando tab è aperta - vivace)
+}
+
+const TAB_CONFIGS: Record<string, TabConfig> = {
+  'explorer': {
+    icon: FolderOpen,
+    colorBase: '#93c5fd', // blue-300 spento
+    colorActive: '#3b82f6' // blue-500 vivace
+  },
+  'archive': {
+    icon: Archive,
+    colorBase: '#a78bfa', // violet-300 spento
+    colorActive: '#8b5cf6' // violet-500 vivace
+  },
+  'search': {
+    icon: Search,
+    colorBase: '#fbbf24', // amber-300 spento
+    colorActive: '#f59e0b' // amber-500 vivace
+  },
+  'persons': {
+    icon: User,
+    colorBase: '#86efac', // green-300 spento
+    colorActive: '#22c55e' // green-500 vivace
+  },
+  'contacts': {
+    icon: Phone,
+    colorBase: '#60a5fa', // blue-400 spento
+    colorActive: '#2563eb' // blue-600 vivace
+  },
+  'ids': {
+    icon: CreditCard,
+    colorBase: '#f472b6', // pink-300 spento
+    colorActive: '#ec4899' // pink-500 vivace
+  },
+  'events': {
+    icon: Calendar,
+    colorBase: '#fb7185', // rose-400 spento
+    colorActive: '#e11d48' // rose-600 vivace
+  },
+  'graph': {
+    icon: Network,
+    colorBase: '#34d399', // emerald-300 spento
+    colorActive: '#10b981' // emerald-500 vivace
+  },
+  'cliente-memoria': {
+    icon: Users,
+    colorBase: '#94a3b8', // slate-400 spento
+    colorActive: '#64748b' // slate-500 vivace
+  }
+}
+
 type Props = {
   // docs: DocTab[] // Removed unused prop
   renderArchive: () => React.ReactNode
-  renderSearch?: () => React.ReactNode
   renderPersons?: () => React.ReactNode
   renderContacts?: () => React.ReactNode
   renderIds?: () => React.ReactNode
@@ -127,7 +178,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   const {
     // docs, // Removed unused prop
     renderArchive,
-    renderSearch,
     renderPersons,
     renderContacts,
     renderIds,
@@ -145,12 +195,11 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   const modelRef = useRef<Model | null>(null)
   const fullscreenTogglesRef = useRef<Map<string, () => void>>(new Map())
 
-  // ✅ Traccia i pannelli dockable attivi per nascondere/mostrare le tab nella sidebar
+  // ✅ Traccia i pannelli dockable attivi per evidenziare le tab nella sidebar quando aperte
   const dockablePanelsRef = useRef<Map<string, { component: string; title: string; originalTabId: string; clienteId?: string }>>(new Map())
 
-  // ✅ Ref per tracciare la visibilità delle tab (algoritmo semplice)
-  // Map<tabId, boolean> dove false = nascosta, true/undefined = visibile
-  const tabsVisibilityRef = useRef<Map<string, boolean>>(new Map())
+  // ✅ Ref per forzare re-render quando cambia lo stato delle tab aperte
+  const [tabsOpenState, setTabsOpenState] = useState(0)
 
   // ✅ Ref per salvare l'ordine originale delle tab (salvato una volta, mai ricalcolato)
   const originalTabsOrderRef = useRef<string[]>([])
@@ -556,27 +605,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         </PanelWithFullscreenToggle>
       )
     }
-    if (comp === 'cabinet') {
-      return (
-        <PanelWithFullscreenToggle
-          component={comp}
-          tabId={tabId}
-          registerToggle={registerToggle}
-          setFullscreenStates={setFullscreenStates}
-          forceTabUpdate={forceTabUpdate}
-          forceRerender={forceRerender}
-        >
-          <div className="w-full h-full overflow-hidden bg-white">
-            <CabinetView
-              graph={{ nodes: [], edges: [] } as any}
-              onOpen={() => { }}
-              praticaId={praticaId || ''}
-            />
-          </div>
-        </PanelWithFullscreenToggle>
-      )
-    }
-
     // ✅ STEP 4: Pannelli dockable normali (senza fullscreen toggle)
     if (comp === 'archive') {
       const node = modelRef.current?.getNodeById(tabId);
@@ -585,7 +613,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       // Log rimosso per ridurre rumore;
       return <div className="w-full h-full overflow-auto bg-slate-50" data-component="archive-container" data-tab-id={tabId}>{renderArchive()}</div>
     }
-    if (comp === 'search') return <div className="w-full h-full overflow-auto bg-white">{renderSearch ? renderSearch() : null}</div>
     if (comp === 'persons') return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
     if (comp === 'contacts') return <div className="w-full h-full overflow-auto bg-white">{renderContacts ? renderContacts() : null}</div>
     if (comp === 'ids') return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
@@ -679,13 +706,11 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     const staticTabs = [
       { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' },
       { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' },
-      { type: 'tab', name: 'Search', component: 'search', id: 'searchTab' },
-      { type: 'tab', name: 'Schede Anagrafiche', component: 'persons', id: 'personsTab' },
+      { type: 'tab', name: 'Anagrafiche', component: 'persons', id: 'personsTab' },
       { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' },
       { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' },
       { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' },
-      { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' },
-      { type: 'tab', name: 'Armadio', component: 'cabinet', id: 'cabinetTab' }
+      { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }
     ]
 
     // Tab dinamiche per clienti
@@ -696,8 +721,22 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       id: `cliente-${cliente.id}-tab`
     }))
 
-    // Combina tab statiche e dinamiche
-    const allTabs = [...staticTabs, ...clienteTabs]
+    // ✅ PRIMA: Tab dinamiche (clienti) ordinate alfabeticamente
+    const clienteTabsSorted = [...clienteTabs].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase().trim()
+      const nameB = (b.name || '').toLowerCase().trim()
+      return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
+    })
+
+    // ✅ POI: Tab statiche ordinate alfabeticamente
+    const staticTabsSorted = [...staticTabs].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase().trim()
+      const nameB = (b.name || '').toLowerCase().trim()
+      return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
+    })
+
+    // ✅ Combina: prima clienti, poi tab statiche
+    const allTabs = [...clienteTabsSorted, ...staticTabsSorted]
 
     return {
       global: {
@@ -799,16 +838,29 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       // Le tab vengono nascoste/mostrate usando tabsVisibilityRef (false = nascosta, true/undefined = visibile)
       const defaultTabs = getDefaultModelJson().borders?.[0]?.children || []
 
-      // ✅ 1. Salva l'ordine originale la prima volta (mai ricalcolato)
-      if (originalTabsOrderRef.current.length === 0) {
-        // Costruisci l'ordine originale: defaultTabs + eventuali tab custom già presenti
-        const defaultTabIds = new Set(defaultTabs.map((t: any) => t.id))
-        originalTabsOrderRef.current = [
-          ...defaultTabs.map((t: any) => t.id),
-          ...left.children.filter((t: any) => !defaultTabIds.has(t.id)).map((t: any) => t.id)
-        ]
-        // Ordine originale salvato
-      }
+      // ✅ 1. Separa tab dinamiche (cliente-memoria) e tab statiche, ordina separatamente
+      const clienteTabs = left.children.filter((t: any) => t.component === 'cliente-memoria')
+      const staticTabs = left.children.filter((t: any) => t.component !== 'cliente-memoria')
+
+      // ✅ Ordina tab dinamiche (clienti) alfabeticamente
+      const clienteTabsSorted = [...clienteTabs].sort((a: any, b: any) => {
+        const nameA = (a.name || '').toLowerCase().trim()
+        const nameB = (b.name || '').toLowerCase().trim()
+        return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
+      })
+
+      // ✅ Ordina tab statiche alfabeticamente
+      const staticTabsSorted = [...staticTabs].sort((a: any, b: any) => {
+        const nameA = (a.name || '').toLowerCase().trim()
+        const nameB = (b.name || '').toLowerCase().trim()
+        return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
+      })
+
+      // ✅ Combina: prima clienti, poi tab statiche
+      const allTabsSorted = [...clienteTabsSorted, ...staticTabsSorted]
+
+      // Aggiorna l'ordine originale per riflettere l'ordine: clienti prima, poi statiche
+      originalTabsOrderRef.current = allTabsSorted.map((t: any) => t.id)
 
       // ✅ 2. Crea una mappa delle tab esistenti per lookup veloce
       const existingTabsMap = new Map(left.children.map((t: any) => [t.id, t]))
@@ -839,11 +891,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         }
       })
 
-      // ✅ 5. FILTRO SEMPLICE: Mantieni l'ordine originale, mostra solo quelle visibili
-      // (undefined o true = visibile, false = nascosta)
-      left.children = allTabsInOrder.filter((t: any) => {
-        return tabsVisibilityRef.current.get(t.id) !== false
-      })
+      // ✅ 5. Tab sempre visibili - non filtrare più
+      left.children = allTabsInOrder
 
       // ✅ Nessuna selezione di default
       if (typeof left.selected !== 'number') left.selected = -1
@@ -888,42 +937,17 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             const dockedPanelInfo = dockablePanelsRef.current.get(nodeId)
 
             if (dockedPanelInfo && modelRef.current) {
-              // ✅ ALGORITMO SEMPLICE: Imposta visible: true e ri-renderizza tutte le tab
-              tabsVisibilityRef.current.set(dockedPanelInfo.originalTabId, true)
-
-              // Tab resa visibile
-
-              // Rimuovi dal tracking
+              // ✅ Rimuovi dal tracking quando il pannello viene chiuso
               dockablePanelsRef.current.delete(nodeId)
 
-              // Ri-renderizza tutte le tab filtrando quelle visibili
-              requestAnimationFrame(() => {
-                if (modelRef.current) {
-                  const currentJson = modelRef.current.toJson() as any
-                  const sanitized = sanitizeModelJson(currentJson)
-                  const nextModel = Model.fromJson(sanitized)
-                  modelRef.current = nextModel
-                  setModel(nextModel)
-                }
-              })
+              // ✅ Forza re-render per aggiornare lo stato visivo delle tab (ritorna spenta)
+              setTabsOpenState(prev => prev + 1)
 
               return action // ✅ Consenti la chiusura del pannello
             } else {
               // Fallback se non troviamo l'info
               dockablePanelsRef.current.delete(nodeId)
-
-              // Prova con sanitizeModelJson come fallback
-              if (modelRef.current) {
-                requestAnimationFrame(() => {
-                  if (modelRef.current) {
-                    const currentJson = modelRef.current.toJson() as any
-                    const sanitized = sanitizeModelJson(currentJson)
-                    const nextModel = Model.fromJson(sanitized)
-                    modelRef.current = nextModel
-                    setModel(nextModel)
-                  }
-                })
-              }
+              setTabsOpenState(prev => prev + 1)
             }
           }
         }
@@ -974,15 +998,11 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
           clienteId = extractClienteIdFromSidebarTab(sidebarTabId) || undefined
         }
 
-        // ✅ ALGORITMO SEMPLICE: Imposta visible: false e ri-renderizza tutte le tab
-        tabsVisibilityRef.current.set(sidebarTabId, false)
+        // ✅ Tab rimangono sempre visibili - non nascondiamo più le tab quando aperte
+        // La tab nella sidebar rimane visibile e verrà evidenziata quando il pannello è aperto
 
-        // Ri-renderizza tutte le tab filtrando quelle visibili
-        const json = modelRef.current.toJson() as any
-        const sanitized = sanitizeModelJson(json)
-        const nextModel = Model.fromJson(sanitized)
-        modelRef.current = nextModel
-        setModel(nextModel)
+        // ✅ Forza re-render per aggiornare lo stato visivo delle tab
+        setTabsOpenState(prev => prev + 1)
 
         // ✅ STEP 5: POI crea il pannello dockable (con ID diverso)
         // ✅ Per archive e cliente-memoria, verifica se esiste già un pannello docked prima di crearne uno nuovo
@@ -1241,14 +1261,12 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       // Tab statiche: mappa componente -> ID tab sidebar
       const staticTabIds: Record<string, string> = {
         'archive': 'archiveTab',
-        'search': 'searchTab',
         'persons': 'personsTab',
         'contacts': 'contactsTab',
         'ids': 'idsTab',
         'events': 'eventsTab',
         'explorer': 'explorerTab',
-        'graph': 'graphTab',
-        'cabinet': 'cabinetTab'
+        'graph': 'graphTab'
       }
       originalTabId = staticTabIds[component] || `${component}Tab`
     }
@@ -1265,11 +1283,32 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     setModel(nextModel)
   }
 
+  // ✅ Helper per verificare se una tab è aperta (ha un pannello docked)
+  const isTabOpen = useCallback((tabId: string): boolean => {
+    // Cerca tra i pannelli docked se esiste uno con questo originalTabId
+    for (const [dockedTabId, info] of dockablePanelsRef.current.entries()) {
+      if (info.originalTabId === tabId) {
+        // Verifica che il pannello docked esista ancora nel modello
+        if (modelRef.current) {
+          const dockedNode = modelRef.current.getNodeById(dockedTabId)
+          if (dockedNode) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }, [])
+
   const iconFactory = (node: TabNode) => {
     const comp = node.getComponent()
+
+    // ✅ Tab documenti temporanei
     if (comp === 'tmpdoc') {
       return <ScanText size={20} className="text-emerald-600" />
     }
+
+    // ✅ Tab drawer
     if (comp === 'drawer') {
       const cfg = (node.getConfig() || {}) as { drawerTitle?: string }
       const t = (cfg.drawerTitle || '').toLowerCase()
@@ -1285,32 +1324,114 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       if (t.includes('reati')) return <Boxes size={24} className="text-slate-700" />
       return <Boxes size={24} className="text-slate-600" />
     }
+
+    // ✅ Tab della sidebar - usa la mappatura
+    const config = TAB_CONFIGS[comp]
+    if (config) {
+      const tabId = node.getId()
+      // ✅ Usa tabsOpenState per forzare re-render quando cambia
+      const _ = tabsOpenState // Force dependency
+      const isOpen = isTabOpen(tabId)
+      const Icon = config.icon
+      const color = isOpen ? config.colorActive : config.colorBase
+      const opacity = isOpen ? 1 : 0.4 // Tab chiusa = 40% opacità, tab aperta = 100%
+
+      return (
+        <Icon
+          size={18}
+          className="dockv2-tab-icon"
+          style={{
+            color,
+            opacity,
+            transition: 'opacity 0.3s ease, color 0.3s ease'
+          }}
+        />
+      )
+    }
+
     return undefined
   }
 
-  // ✅ Inserisce il pulsante fullscreen nell'header della Tab SOLO per pannelli docked (non sidebar)
+  // ✅ Renderizza tab con colori dinamici e pulsante fullscreen quando necessario
   const onRenderTab = useCallback((node: any, renderValues: any) => {
-
     const comp = node.getComponent?.()
-    if (!['explorer', 'graph', 'cabinet'].includes(comp)) {
-      return
-    }
+    const tabId = node.getId()
 
-    // ✅ PROBLEMA 1 FIX: Solo per pannelli docked, non per sidebar
-    // Verifica se il tab è in un tabset del canvas (non in border)
+    // ✅ Verifica se la tab è nella sidebar (left border)
     const parent = node.getParent()
-    if (!parent || parent.getType() !== 'tabset') {
+    const isInSidebar = parent && parent.getType() === 'tabset' && parent.getParent()?.getType() === 'border'
+
+    if (isInSidebar) {
+      // ✅ Tab nella sidebar: applica colori dinamici basati su stato aperto/chiuso
+      const config = TAB_CONFIGS[comp || '']
+      if (config) {
+        const isOpen = isTabOpen(tabId)
+        const color = isOpen ? config.colorActive : config.colorBase
+        const opacity = isOpen ? 1 : 0.4
+        const Icon = config.icon
+
+        // Applica classi CSS e attributi data per controllo via CSS
+        renderValues.className = (renderValues.className || '') + ' dockv2-sidebar-tab'
+        if (isOpen) {
+          renderValues.className += ' dockv2-sidebar-tab-open dockv2-tab-bold' // Classe specifica per grassetto
+        }
+        renderValues.className += ` dockv2-tab-${comp || ''}`
+
+        // ✅ Aggiungi l'icona come leading element (prima del testo) - con outline/stroke colorato
+        // IMPORTANTE: Le icone Lucide devono usare stroke invece di fill per essere colorate
+        renderValues.leading = (
+          <Icon
+            size={18}
+            className="dockv2-tab-icon"
+            strokeWidth={2.5}
+            fill="none"
+            style={{
+              color: color,
+              stroke: color, // Colore delle linee (outline) - FORZA il colore
+              opacity: opacity,
+              transition: 'opacity 0.3s ease, color 0.3s ease, stroke 0.3s ease',
+              marginRight: '6px',
+              flexShrink: 0,
+              display: 'inline-block',
+              verticalAlign: 'middle'
+            } as React.CSSProperties}
+          />
+        )
+
+        const borderColor = isOpen ? color : 'transparent'
+
+        // ✅ Applica CSS variables e stili inline SENZA sfondo colorato (trasparente)
+        // IMPORTANTE: fontWeight deve essere applicato anche come CSS variable per forzare il grassetto
+        renderValues.style = {
+          ...(renderValues.style || {}),
+          '--tab-color': color,
+          '--tab-border-color': borderColor,
+          '--tab-opacity': opacity.toString(),
+          '--tab-font-weight': isOpen ? '700' : '400', // CSS variable per font-weight
+          color: color,
+          backgroundColor: 'transparent', // ✅ SFONDO TRASPARENTE invece di bgColor
+          borderLeft: isOpen ? `4px solid ${color}` : '4px solid transparent', // Bordo più spesso
+          fontWeight: isOpen ? '700' : '400', // Font-weight inline più forte
+          opacity: opacity
+        }
+
+        // Aggiungi attributo data per CSS più specifico
+        renderValues.attributes = {
+          ...(renderValues.attributes || {}),
+          'data-tab-open': isOpen ? 'true' : 'false',
+          'data-tab-component': comp || ''
+        }
+      }
       return
     }
 
-    // Se il parent è un border (sidebar), non aggiungere il pulsante
-    const parentParent = parent.getParent()
-    if (parentParent && parentParent.getType() === 'border') {
+    // ✅ Pulsante fullscreen SOLO per pannelli docked (non sidebar)
+    if (!['explorer', 'graph'].includes(comp)) {
       return
     }
 
     // ✅ Ottieni lo stato fullscreen dal state globale (reattivo)
-    const isFullscreen = fullscreenStates.get(node.getId()) || false
+    const isFullscreen = fullscreenStates.get(tabId) || false
 
     renderValues.buttons = renderValues.buttons || []
     renderValues.buttons.push(
@@ -1320,7 +1441,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         title={isFullscreen ? "Riduci" : "Massimizza"}
         onClick={(e: any) => {
           e.stopPropagation()
-          const toggleFn = fullscreenTogglesRef.current.get(node.getId())
+          const toggleFn = fullscreenTogglesRef.current.get(tabId)
           if (toggleFn) {
             toggleFn()
           }
@@ -1329,7 +1450,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         {isFullscreen ? '⛷' : '⛶'}
       </button>
     )
-  }, [fullscreenTrigger, fullscreenStates])
+  }, [fullscreenTrigger, fullscreenStates, isTabOpen])
 
   // ✅ Rimossa: l'aggiornamento del modello viene gestito direttamente in handleAction quando necessario
 
@@ -1408,6 +1529,42 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   // ✅ Rimossa: non serve più nascondere/mostrare tab con CSS
   // Le tab vengono gestite direttamente nel modello JSON (rimozione/aggiunta dall'array)
 
+  // ✅ Forza grassetto sul testo delle tab aperte usando DOM manipulation
+  useEffect(() => {
+    const forceBoldOnOpenTabs = () => {
+      if (!layoutRootRef.current) return
+
+      // Trova tutte le tab nella sidebar sinistra che sono aperte
+      const openTabs = layoutRootRef.current.querySelectorAll(
+        '.flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open'
+      )
+
+      openTabs.forEach((tab) => {
+        // Forza font-weight su tutti gli elementi di testo dentro la tab
+        const textElements = tab.querySelectorAll('span, div, label, p, button, a')
+        textElements.forEach((el) => {
+          if (el instanceof HTMLElement && !el.classList.contains('dockv2-tab-icon')) {
+            el.style.fontWeight = '700'
+          }
+        })
+        // Forza anche sul tab stesso
+        if (tab instanceof HTMLElement) {
+          tab.style.fontWeight = '700'
+        }
+      })
+    }
+
+    // Esegui immediatamente e dopo un breve delay per catturare elementi renderizzati dopo
+    forceBoldOnOpenTabs()
+    const timeout = setTimeout(forceBoldOnOpenTabs, 100)
+    const interval = setInterval(forceBoldOnOpenTabs, 500) // Refresh ogni 500ms
+
+    return () => {
+      clearTimeout(timeout)
+      clearInterval(interval)
+    }
+  }, [tabsOpenState, model]) // Re-esegui quando cambia lo stato delle tab
+
   return (
     <div
       ref={layoutRootRef}
@@ -1415,6 +1572,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}
     >
       <LayoutAny
+        key={`layout-${tabsOpenState}`}
         model={model}
         factory={factory}
         iconFactory={iconFactory}

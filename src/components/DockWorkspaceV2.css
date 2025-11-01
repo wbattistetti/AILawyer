@@ -29,10 +29,16 @@
   padding-top: 4px !important;
 }
 
-/* Assicura che le tab abbiano spazio sufficiente */
+/* Assicura che le tab abbiano spazio sufficiente e SFONDO TRASPARENTE */
 .dockv2-root .flexlayout__border_left .flexlayout__tab {
   margin-top: 2px !important;
   margin-bottom: 2px !important;
+  background-color: transparent !important; /* ✅ Forza sfondo trasparente su tutte le tab */
+}
+
+/* ✅ IMPORTANTE: Forza sfondo trasparente anche su elementi interni delle tab */
+.dockv2-root .flexlayout__border_left .flexlayout__tab * {
+  background-color: transparent !important;
 }
 
 /* Nascondi le tab docked nella sidebar */
@@ -44,11 +50,26 @@
 .dockv2-root .flexlayout__border_left .flexlayout__border_button_trailing,
 .dockv2-root .flexlayout__border_left .flexlayout__tab_button_close,
 .dockv2-root .flexlayout__border_left [class*="close"],
-.dockv2-root .flexlayout__border_left [class*="button_trailing"],
-.dockv2-root .flexlayout__border_left svg[viewBox="0 0 24 24"] {
+.dockv2-root .flexlayout__border_left [class*="button_trailing"] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+}
+
+/* Nascondi SVG di chiusura ma NON le icone delle tab */
+.dockv2-root .flexlayout__border_left .flexlayout__tab_button_close svg,
+.dockv2-root .flexlayout__border_left [class*="close"] svg {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* ✅ IMPORTANTE: Le icone delle tab devono essere visibili */
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon,
+.dockv2-root .flexlayout__border_left .flexlayout__tab svg.dockv2-tab-icon {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: var(--tab-opacity, 0.4) !important;
 }
 
 /* ✅ STEP 3: Migliora UX drag & drop */
@@ -121,4 +142,329 @@
 
 .dockv2-root .dockv2-tab-fullscreen:hover {
   color: #e55a2b !important;
+}
+
+/* ✅ Sistema di illuminazione tab nella sidebar sinistra */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab {
+  padding-left: 12px !important;
+  padding-right: 8px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  border-radius: 6px !important;
+  margin-left: 6px !important;
+  margin-right: 6px !important;
+  margin-top: 3px !important;
+  margin-bottom: 3px !important;
+  position: relative !important;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* ✅ IMPORTANTE: Forza colore, background TRASPARENTE e font-weight usando CSS variables */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab {
+  color: var(--tab-color, #666) !important;
+  background-color: transparent !important; /* ✅ SFONDO TRASPARENTE */
+  border-left: 4px solid var(--tab-border-color, transparent) !important;
+  font-weight: var(--tab-font-weight, 400) !important; /* Usa CSS variable per font-weight */
+  transition: all 0.3s ease !important;
+}
+
+/* ✅ Forza font-weight anche su tutti gli elementi interni */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab * {
+  font-weight: inherit !important;
+}
+
+/* Tab chiusa (spenta) */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab:not(.dockv2-sidebar-tab-open) {
+  opacity: 0.7 !important;
+  font-weight: 400 !important;
+}
+
+/* ✅ Tab aperta (GRASSETTO SOLO NELLA SIDEBAR) */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open {
+  opacity: 1 !important;
+  font-weight: 700 !important; /* GRASSETTO FORTE */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* ✅ IMPORTANTE: Il testo della tab nella sidebar deve essere grassetto quando aperta - SELEZTORI ULTRA SPECIFICI */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-tab-bold,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open .flexlayout__tab_button_content,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open .flexlayout__tab_button_text,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open .flexlayout__tab_button,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open span:not(.dockv2-tab-icon),
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open div,
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open label {
+  font-weight: 700 !important; /* GRASSETTO FORTE */
+}
+
+/* ✅ Forza grassetto su TUTTI gli elementi interni della tab aperta */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open *:not(svg):not(path) {
+  font-weight: 700 !important;
+}
+
+/* ✅ Classe specifica per forzare grassetto */
+.dockv2-root .flexlayout__border_left .dockv2-tab-bold,
+.dockv2-root .flexlayout__border_left .dockv2-tab-bold *:not(svg):not(path) {
+  font-weight: 700 !important;
+}
+
+/* ✅ Le tab nei pannelli dockati NON devono avere grassetto */
+.dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab {
+  font-weight: 400 !important; /* Normale per tab nei pannelli */
+}
+
+.dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab .flexlayout__tab_button_content,
+.dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab .flexlayout__tab_button_text {
+  font-weight: 400 !important; /* Normale per testo nei pannelli */
+}
+
+/* Icona tab nella sidebar - deve essere visibile */
+.dockv2-root .flexlayout__border_left .dockv2-tab-icon {
+  margin-right: 6px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+
+/* ✅ Assicura che le icone siano sempre visibili come outline/stroke colorato */
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important; /* Sempre opacità piena per l'icona */
+  color: var(--tab-color, #666) !important;
+  margin-right: 8px !important;
+}
+
+/* ✅ Forza colore sullo SVG dentro l'icona - rimuove il bianco predefinito - ULTRA SPECIFICO */
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component] .dockv2-tab-icon svg {
+  stroke: var(--tab-color, currentColor) !important; /* Usa CSS variable o currentColor come fallback */
+  fill: none !important; /* Nessun riempimento, solo outline */
+  stroke-width: 2.5 !important; /* Spessore delle linee */
+  color: var(--tab-color, currentColor) !important;
+}
+
+/* ✅ Forza anche sul path dentro SVG - SOVRASCRIVE qualsiasi stile default */
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg path,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg circle,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg rect,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg line,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg polyline,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg polygon,
+.dockv2-root .flexlayout__border_left .flexlayout__tab .dockv2-tab-icon svg g {
+  stroke: var(--tab-color, currentColor) !important;
+  fill: none !important;
+  color: var(--tab-color, currentColor) !important;
+}
+
+/* ✅ Colori specifici per ogni tipo di tab - anche sulle icone SVG */
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #93c5fd) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #3b82f6 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #a78bfa) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #8b5cf6 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #86efac) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #22c55e !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #60a5fa) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #2563eb !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #f472b6) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #ec4899 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #fb7185) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #e11d48 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #34d399) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #10b981 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"] .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"] .dockv2-tab-icon svg * {
+  stroke: var(--tab-color, #94a3b8) !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
+  stroke: #64748b !important;
+}
+
+/* Tab chiusa (spenta) - icona più tenue */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab:not(.dockv2-sidebar-tab-open) .dockv2-tab-icon {
+  opacity: 0.6 !important;
+}
+
+/* Tab chiusa (spenta) - colore tenue, opacità 40% */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab:not(.dockv2-sidebar-tab-open) {
+  opacity: 0.6 !important;
+  font-weight: 400 !important;
+}
+
+/* Tab aperta (illuminata) - colore vivace, opacità 100%, bordo sinistro colorato, background leggero, GRASSETTO */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open {
+  opacity: 1 !important;
+  font-weight: 600 !important; /* Grassetto quando aperto */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ✅ Colori specifici per ogni tipo di tab - SFONDO SEMPRE TRASPARENTE, solo colore icona e testo */
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="explorer"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #3b82f6 !important;
+  color: #3b82f6 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #8b5cf6 !important;
+  color: #8b5cf6 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #22c55e !important;
+  color: #22c55e !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="contacts"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #2563eb !important;
+  color: #2563eb !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="ids"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #ec4899 !important;
+  color: #ec4899 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="events"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #e11d48 !important;
+  color: #e11d48 !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="graph"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #10b981 !important;
+  color: #10b981 !important;
+}
+
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"]:not(.dockv2-sidebar-tab-open) {
+  background-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="cliente-memoria"].dockv2-sidebar-tab-open {
+  background-color: transparent !important;
+  border-left-color: #64748b !important;
+  color: #64748b !important;
+}
+
+/* Hover su tab sidebar - SFONDO TRASPARENTE anche su hover */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab:hover {
+  opacity: 0.85 !important;
+  background-color: transparent !important; /* ✅ SFONDO TRASPARENTE anche su hover */
+  filter: brightness(1.1);
+}
+
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab.dockv2-sidebar-tab-open:hover {
+  opacity: 1 !important;
+  background-color: transparent !important; /* ✅ SFONDO TRASPARENTE anche su hover */
+  filter: brightness(1.05);
+}
+
+/* Testo delle tab - usa il colore della variabile CSS */
+.dockv2-root .flexlayout__border_left .flexlayout__tab.dockv2-sidebar-tab .flexlayout__tab_button_text {
+  color: var(--tab-color, #666) !important;
+  opacity: var(--tab-opacity, 0.4) !important;
+  transition: opacity 0.3s ease, color 0.3s ease !important;
 }
