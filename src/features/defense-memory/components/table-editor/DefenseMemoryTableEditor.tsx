@@ -4,7 +4,7 @@ import { useTableData } from './hooks/useTableData'
 import { useRowValidation } from './hooks/useRowValidation'
 import { useResizableColumns } from './hooks/useResizableColumns'
 import { TableHeader } from './components/TableHeader'
-import { TableRow } from './components/TableRow'
+import { AccordionRow } from './components/AccordionRow'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
 import { cn } from '@/lib/utils'
 
@@ -284,12 +284,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                     </div>
                 ) : (
                     <div className="w-full h-full flex flex-col">
-                        {/* ✅ Header colonne - COMPLETAMENTE RIMOSSO/INVISIBILE */}
-
-                        {/* Righe - La griglia riempie tutto il pannello */}
+                        {/* ✅ Accordion rows - struttura collassabile */}
                         <div className="flex-1 w-full overflow-auto">
                             {sortedRows.map((row, index) => (
-                                <TableRow
+                                <AccordionRow
                                     key={row.id}
                                     row={row}
                                     order={index + 1}
@@ -301,7 +299,6 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                     errors={getRowErrors(row.id)}
                                     columnWidths={widths}
                                     onMoveMotivation={handleMoveMotivation}
-                                    onResizeStart={handleResizeStart} // ✅ Passa funzione resize
                                 />
                             ))}
                         </div>
