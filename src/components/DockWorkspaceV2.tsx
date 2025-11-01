@@ -1925,7 +1925,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         <div
           className="border-t border-slate-200 bg-slate-50"
           style={{
-            height: '60px',
+            minHeight: '100px', // ✅ Altezza sufficiente per tab con testo multi-linea
+            height: 'auto',
             flexShrink: 0,
             zIndex: 10
           }}

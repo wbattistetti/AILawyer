@@ -2,31 +2,41 @@ import { Briefcase, Users, Mail, FileText, Gavel, Search, Hammer, Image, Calenda
 
 export function colorFor(nome?: string): string {
     const key = (nome || '').toLowerCase()
-    if (key.includes('classificar')) return '#f59e0b' // amber
-    if (key.includes('admin')) return '#3b82f6' // blue
-    if (key.includes('anagra')) return '#10b981' // emerald
-    if (key.includes('corrispondenza') || key.includes('pec')) return '#6366f1' // indigo
-    if (key.includes('denuncia') || key.includes('notizia di reato') || key.includes('reato')) return '#ef4444' // red
-    if (key.includes('indagini')) return '#a855f7' // purple
-    if (key.includes('perizie') || key.includes('consul')) return '#14b8a6' // teal
-    if (key.includes('prove') || key.includes('allegati') || key.includes('foto') || key.includes('audio') || key.includes('chat')) return '#f97316' // orange
-    if (key.includes('udienze') || key.includes('verbali')) return '#0ea5e9' // sky
-    if (key.includes('provvedimenti') || key.includes('giudice') || key.includes('gip') || key.includes('gup')) return '#22c55e' // green
+    if (key.includes('o.c.c.c') || key.includes('anagrafica') || key.includes('inquisito')) return '#10b981' // emerald
+    if (key.includes('fatto') || key.includes('reati') || key.includes('contestati') || key.includes('p.m.')) return '#ef4444' // red
+    if (key.includes('informativa')) return '#3b82f6' // blue
+    if (key.includes('fascicolo') || key.includes('gip')) return '#a855f7' // purple
+    if (key.includes('verbali') || key.includes('arresto') || key.includes('perquisizioni') || key.includes('sequestro')) return '#f97316' // orange
+    if (key.includes('interrogatori') || key.includes('dichiarazioni')) return '#0ea5e9' // sky
+    if (key.includes('intercettazioni') || key.includes('telefoniche')) return '#6366f1' // indigo
+    if (key.includes('utenze') || key.includes('scadenze') || key.includes('proroghe')) return '#14b8a6' // teal
+    if (key.includes('trascriptioni') || key.includes('trascriptioni')) return '#8b5cf6' // violet
+    if (key.includes('atti interlocutori') || key.includes('corrispondenza varia')) return '#ec4899' // pink
+    if (key.includes('nomi citati') || key.includes('frequentazioni')) return '#22c55e' // green
+    if (key.includes('contestazioni')) return '#dc2626' // red-600
+    if (key.includes('raccolta prove') || key.includes('osservazioni')) return '#f59e0b' // amber
+    if (key.includes('mappe') || key.includes('concettuali') || key.includes('grafico')) return '#06b6d4' // cyan
+    if (key.includes('note') || key.includes('campo libero')) return '#64748b' // slate
     return '#64748b' // slate
 }
 
 export function iconFor(nome?: string) {
     const key = (nome || '').toLowerCase()
-    if (key.includes('classificar')) return FileText
-    if (key.includes('admin')) return Briefcase
-    if (key.includes('anagra')) return Users
-    if (key.includes('corrispondenza') || key.includes('pec')) return Mail
-    if (key.includes('denuncia') || key.includes('reato')) return Gavel
-    if (key.includes('indagini')) return Search
-    if (key.includes('perizie') || key.includes('consul')) return Hammer
-    if (key.includes('prove') || key.includes('allegati') || key.includes('foto') || key.includes('audio') || key.includes('chat')) return Image
-    if (key.includes('udienze') || key.includes('verbali')) return Calendar
-    if (key.includes('provvedimenti') || key.includes('giudice') || key.includes('gip') || key.includes('gup')) return Scale
+    if (key.includes('o.c.c.c') || key.includes('anagrafica') || key.includes('inquisito')) return Users
+    if (key.includes('fatto') || key.includes('reati') || key.includes('contestati') || key.includes('p.m.')) return Gavel
+    if (key.includes('informativa')) return FileText
+    if (key.includes('fascicolo') || key.includes('gip')) return Search
+    if (key.includes('verbali') || key.includes('arresto') || key.includes('perquisizioni') || key.includes('sequestro')) return FileText
+    if (key.includes('interrogatori') || key.includes('dichiarazioni')) return FileText
+    if (key.includes('intercettazioni') || key.includes('telefoniche')) return Mail
+    if (key.includes('utenze') || key.includes('scadenze') || key.includes('proroghe')) return Calendar
+    if (key.includes('trascriptioni') || key.includes('trascriptioni')) return FileText
+    if (key.includes('atti interlocutori') || key.includes('corrispondenza varia')) return Mail
+    if (key.includes('nomi citati') || key.includes('frequentazioni')) return Users
+    if (key.includes('contestazioni')) return Gavel
+    if (key.includes('raccolta prove') || key.includes('osservazioni')) return Image
+    if (key.includes('mappe') || key.includes('concettuali') || key.includes('grafico')) return Search
+    if (key.includes('note') || key.includes('campo libero')) return FileText
     return FileText
 }
 

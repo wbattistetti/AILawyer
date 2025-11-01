@@ -103,16 +103,21 @@ async function seed() {
 
     // Create default comparti
     const COMPARTI_DEFAULT = [
-      { key: 'da_classificare', nome: 'Da classificare', ordine: 0 },
-      { key: 'admin_procure', nome: 'Admin & Procure', ordine: 1 },
-      { key: 'parti_anagrafiche', nome: 'Parti & Anagrafiche', ordine: 2 },
-      { key: 'corrispondenza_pec', nome: 'Corrispondenza & PEC', ordine: 3 },
-      { key: 'denuncia_querela', nome: 'Denuncia–Querela / Notizia di reato', ordine: 4 },
-      { key: 'indagini_preliminari', nome: 'Indagini preliminari (PG/PM, 415-bis)', ordine: 5 },
-      { key: 'perizie_consulenze', nome: 'Perizie & Consulenze (CTP/CTU)', ordine: 6 },
-      { key: 'prove_allegati', nome: 'Prove & Allegati (foto, audio, chat)', ordine: 7 },
-      { key: 'udienze_verbali', nome: 'Udienze & Verbali', ordine: 8 },
-      { key: 'provvedimenti_giudice', nome: 'Provvedimenti del giudice (GIP/GUP/Trib.)', ordine: 9 },
+      { key: 'parti_anagrafiche', nome: 'O.C.C.C. ANAGRAFICA INQUISITO', ordine: 0 },
+      { key: 'admin_procure', nome: 'FATTO REATI CONTESTATI P.M.', ordine: 1 },
+      { key: 'denuncia_querela', nome: 'INFORMATIVE', ordine: 2 },
+      { key: 'indagini_preliminari', nome: 'FASCICOLO P.M. e GIP', ordine: 3 },
+      { key: 'verbal_arresto_sequestro', nome: 'VERBALI: ARRESTO PERQUISIZIONI SEQUESTRO', ordine: 4 },
+      { key: 'interrogatori_dichiarazioni', nome: 'INTERROGATORI E DICHIARAZIONI', ordine: 5 },
+      { key: 'corrispondenza_pec', nome: 'INTERCETTAZIONI TELEFONICHE', ordine: 6 },
+      { key: 'utenz_scadenze', nome: 'ELENCO UTENZE SCADENZE PROROGHE', ordine: 7 },
+      { key: 'trascriptioni_intercett', nome: 'TRASCRIZIONI INTERCETTAZIONI TELEFONICHE', ordine: 8 },
+      { key: 'atti_interlocutori', nome: 'ATTI INTERLOCUTORI CORRISPONDENZA VARIA', ordine: 9 },
+      { key: 'nomi_citati_frequentazioni', nome: 'NOMI CITATI IN ATTI FREQUENTAZIONI', ordine: 10 },
+      { key: 'contestazioni', nome: 'CONTESTAZIONI P.M./GIP', ordine: 11 },
+      { key: 'raccolta_prove', nome: 'RACCOLTA PROVE OSSERVAZIONI', ordine: 12 },
+      { key: 'mappe_concettuali', nome: 'MAPPE CONCETTUALI GRAFICO', ordine: 13 },
+      { key: 'note_campo_libero', nome: 'NOTE A CAMPO LIBERO', ordine: 14 },
     ]
 
     await prisma.comparto.createMany({
