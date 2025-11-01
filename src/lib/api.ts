@@ -56,6 +56,13 @@ export const api = {
     return fetchApi('/pratiche')
   },
 
+  async updatePratica(id: string, data: { numeroRuolo?: string; foro?: string; pmGiudice?: string }): Promise<Pratica> {
+    return fetchApi(`/pratiche/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    })
+  },
+
   async checkDraft(nome: string): Promise<{ exists: boolean; draft?: { id: string; nome: string; cliente: string; createdAt: string; documentCount: number } }> {
     return fetchApi(`/pratiche/check-draft?nome=${encodeURIComponent(nome)}`)
   },
@@ -103,11 +110,35 @@ export const api = {
     return fetchApi(`/documenti/${id}`)
   },
 
+  // Get thumbnail (lazy loading)
+  async getDocumentoThumbnail(id: string): Promise<{ id: string; thumbnailDataUrl: string; filename: string }> {
+    return fetchApi(`/documenti/${id}/thumbnail`)
+  },
+
   async updateDocumento(id: string, data: Partial<Documento>): Promise<Documento> {
-    return fetchApi(`/documenti/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
+    console.log('[UPDATE][DOCUMENTO][FRONTEND][START]', {
+      docId: id,
+      updateData: data,
+      compartoId: data.compartoId
     })
+    try {
+      const updated = await fetchApi(`/documenti/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      })
+      console.log('[UPDATE][DOCUMENTO][FRONTEND][SUCCESS]', {
+        docId: id,
+        filename: updated.filename,
+        newCompartoId: updated.compartoId
+      })
+      return updated
+    } catch (error) {
+      console.error('[UPDATE][DOCUMENTO][FRONTEND][ERROR]', {
+        docId: id,
+        error
+      })
+      throw error
+    }
   },
 
   async deleteDocumento(id: string): Promise<{ ok: boolean }> {
@@ -120,7 +151,47 @@ export const api = {
   },
 
   async getDocumentiByPratica(praticaId: string): Promise<Documento[]> {
-    return fetchApi(`/pratiche/${praticaId}/documenti`)
+    console.log('[LOAD][DOCUMENTI][FRONTEND][START]', { praticaId })
+    try {
+      const documenti = await fetchApi(`/pratiche/${praticaId}/documenti`)
+
+      // 🔍 LOG: Verifica se ocrText è presente quando vengono caricati i documenti (frontend)
+      const ocrTextStatus = documenti.map((d: Documento) => ({
+        id: d.id.substring(0, 20) + '...',
+        filename: d.filename,
+        ocrStatus: d.ocrStatus,
+        hasOcrText: !!(d as any).ocrText,
+        ocrTextLength: (d as any).ocrText?.length || 0
+      }))
+
+      console.log('[LOAD][DOCUMENTI][FRONTEND][SUCCESS]', {
+        praticaId,
+        count: documenti.length,
+        documenti: documenti.map((d: Documento) => ({
+          id: d.id,
+          filename: d.filename,
+          compartoId: d.compartoId
+        }))
+      })
+
+      console.log('[LOAD][DOCUMENTI][FRONTEND][OCR-TEXT-STATUS]', {
+        praticaId,
+        ocrTextStatus,
+        summary: {
+          total: documenti.length,
+          withOcrText: ocrTextStatus.filter((d: any) => d.hasOcrText).length,
+          completedWithoutText: ocrTextStatus.filter((d: any) => d.ocrStatus === 'completed' && !d.hasOcrText).length
+        }
+      })
+
+      return documenti
+    } catch (error) {
+      console.error('[LOAD][DOCUMENTI][FRONTEND][ERROR]', {
+        praticaId,
+        error
+      })
+      throw error
+    }
   },
 
   // Upload

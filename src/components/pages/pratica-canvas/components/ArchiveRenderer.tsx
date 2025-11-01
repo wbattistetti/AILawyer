@@ -65,11 +65,15 @@ export function ArchiveRenderer({
 
     const onDropDocIdToComparto = async (docId: string, compartoId: string) => {
         try {
-            console.info('🔀 [AR] move doc to comparto', { docId, compartoId })
+            console.log('[MOVE][DOCUMENTO][ARCHIVE][START]', { docId, compartoId })
             await api.updateDocumento(docId, { compartoId })
-            try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
+            console.log('[MOVE][DOCUMENTO][ARCHIVE][SUCCESS]', { docId, compartoId })
+            try {
+                console.log('[MOVE][DOCUMENTO][ARCHIVE] Emetto app:request-documents per ricaricare')
+                window.dispatchEvent(new CustomEvent('app:request-documents'))
+            } catch { }
         } catch (e) {
-            console.error('move document failed', e)
+            console.error('[MOVE][DOCUMENTO][ARCHIVE][ERROR]', { docId, compartoId, error: e })
         }
     }
 
@@ -182,7 +186,7 @@ export function ArchiveRenderer({
                                         const clientThumb = clientThumbByS3[d.s3Key];
                                         const thumb = clientThumb || serverThumb || '';
                                         const localUrl = (d as any).localUrl || undefined
-                                        return {
+                                        const docItem = {
                                             id: d.id,
                                             filename: d.filename,
                                             s3Key: d.s3Key,
@@ -191,7 +195,18 @@ export function ArchiveRenderer({
                                             localUrl,
                                             hasNativeText: d.hasNativeText, // NON convertire undefined in false!
                                             ocrStatus: d.ocrStatus
-                                        };
+                                        }
+
+                                        // Log solo se hasNativeText è undefined (non dovrebbe succedere dopo salvataggio)
+                                        if (isPdf && docItem.hasNativeText === undefined && comparto.key === 'da_classificare') {
+                                            console.warn('[ARCHIVE][LOAD][MISSING-HASNATIVETEXT]', {
+                                                filename: d.filename,
+                                                docId: d.id,
+                                                hasNativeText: docItem.hasNativeText
+                                            })
+                                        }
+
+                                        return docItem
                                     })}
                                     onOpen={(doc) => {
                                         const trovato = documenti.find(x => x.id === doc.id);

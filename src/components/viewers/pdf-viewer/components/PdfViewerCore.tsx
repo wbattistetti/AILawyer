@@ -139,21 +139,12 @@ export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(fun
 				onZoom={(e: any) => {
 					const s = (e?.scale || e?.zoom) as number
 					if (typeof s === 'number') {
-						console.log('[ZOOM][viewer-onZoom] FIRED', {
-							scale: s.toFixed(3),
-							pct: Math.round(s * 100),
-							scaleRefBefore: scaleRef.current.toFixed(3)
-						})
 						scaleRef.current = s
 						setZoomPct(Math.round(s * 100))
-							; (window as any).__rpvLastZoomScale = s
+						; (window as any).__rpvLastZoomScale = s
 						const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 						if (viewer) {
 							viewer.style.setProperty('--scale-factor', String(s))
-							console.log('[ZOOM][viewer-onZoom] CSS var set', {
-								scaleFactor: s.toFixed(3),
-								viewerExists: !!viewer
-							})
 						}
 						try { requestAnimationFrame(() => { try { (window as any).__deskewApply?.() } catch { } }) } catch { }
 					}

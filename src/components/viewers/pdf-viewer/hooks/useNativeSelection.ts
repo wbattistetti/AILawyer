@@ -81,9 +81,6 @@ export const useNativeSelection = ({
 
 	const handleSelection = useCallback(() => {
 		// Logica per gestire la selezione nativa
-		try {
-			console.log('[NATIVE][event] selectionchange handler')
-		} catch { }
 	}, [])
 
 	useEffect(() => {
@@ -413,12 +410,9 @@ export const useNativeSelection = ({
 			if (timer) window.clearTimeout(timer)
 			// ignora gli update mentre si trascina, apri solo su mouseup
 			if (!isSelectingRef.current) {
-				try { console.log('[NATIVE][event] selectionchange (idle)') } catch { }
 				timer = window.setTimeout(handleSelection, 30)
-			} else {
-				try { console.log('[NATIVE][event] selectionchange (drag)') } catch { }
-				// Ignore while dragging to avoid flicker; we'll handle on mouseup
 			}
+			// Ignore while dragging to avoid flicker; we'll handle on mouseup
 		}
 
 		// During drag across lines, show a stable draft box so the native selection disappearing doesn't cause flicker

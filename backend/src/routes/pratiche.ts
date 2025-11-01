@@ -410,6 +410,16 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         return { ...d, tags, ocrLayout }
       })
 
+      // 🔍 LOG: Verifica se ocrText è presente quando vengono caricati i documenti
+      const ocrTextStatus = documenti.map((d: any) => ({
+        id: d.id.substring(0, 20) + '...',
+        filename: d.filename,
+        ocrStatus: d.ocrStatus,
+        hasOcrText: !!d.ocrText,
+        ocrTextLength: d.ocrText?.length || 0,
+        ocrTextPreview: d.ocrText ? d.ocrText.substring(0, 100) : null
+      }))
+
       console.log('[LOAD][DOCUMENTI][SUCCESS]', {
         praticaId,
         count: documenti.length,
@@ -417,6 +427,16 @@ export async function praticheRoutes(fastify: FastifyInstance) {
           acc[d.compartoId] = true
           return acc
         }, {})).length
+      })
+
+      console.log('[LOAD][DOCUMENTI][OCR-TEXT-STATUS]', {
+        praticaId,
+        ocrTextStatus,
+        summary: {
+          total: documenti.length,
+          withOcrText: ocrTextStatus.filter((d: any) => d.hasOcrText).length,
+          completedWithoutText: ocrTextStatus.filter((d: any) => d.ocrStatus === 'completed' && !d.hasOcrText).length
+        }
       })
 
       return documenti

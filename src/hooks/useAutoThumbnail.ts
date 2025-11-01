@@ -41,9 +41,26 @@ export function useAutoThumbnail(
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  const [hasFailedPermanently, setHasFailedPermanently] = useState(false)
 
   const generate = useCallback(async () => {
-    if (!fileUrl || !enabled) return
+    if (!fileUrl || !enabled || hasFailedPermanently) return
+
+    // Se è un URL backend (non blob:), verifica se il file esiste prima di tentare
+    if (fileUrl.startsWith('http://') && !fileUrl.startsWith('blob:')) {
+      try {
+        const response = await fetch(fileUrl, { method: 'HEAD' })
+        if (!response.ok && response.status === 404) {
+          // File non esiste fisicamente (modalità privacy) - ferma i retry
+          setHasFailedPermanently(true)
+          setError('File non disponibile sul server')
+          setLoading(false)
+          return
+        }
+      } catch (headError) {
+        // Se HEAD fallisce, procedi comunque con il tentativo di generazione
+      }
+    }
 
     try {
       setLoading(true)
@@ -58,13 +75,20 @@ export function useAutoThumbnail(
 
       setThumbnail(result.dataUrl)
       setRetryCount(0) // Reset retry count on success
+      setHasFailedPermanently(false) // Reset permanent failure on success
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Errore sconosciuto'
       setError(errorMessage)
 
-      // Retry logic
-      if (retryOnError && retryCount < maxRetries) {
+      // Se l'errore indica che il file non esiste, ferma i retry
+      if (errorMessage.includes('Missing PDF') || errorMessage.includes('404')) {
+        setHasFailedPermanently(true)
+        return
+      }
+
+      // Retry logic solo se non è un fallimento permanente
+      if (retryOnError && retryCount < maxRetries && !hasFailedPermanently) {
         setRetryCount(prev => prev + 1)
         // Retry after a delay
         setTimeout(() => {
@@ -77,20 +101,21 @@ export function useAutoThumbnail(
     } finally {
       setLoading(false)
     }
-  }, [fileUrl, enabled, width, height, quality, scale, retryOnError, maxRetries, retryCount])
+  }, [fileUrl, enabled, width, height, quality, scale, retryOnError, maxRetries, retryCount, hasFailedPermanently])
 
   const clear = useCallback(() => {
     setThumbnail(null)
     setError(null)
     setRetryCount(0)
+    setHasFailedPermanently(false)
   }, [])
 
-  // Genera automaticamente quando cambia fileUrl
+  // Genera automaticamente quando cambia fileUrl (solo se non ha fallito permanentemente)
   useEffect(() => {
-    if (fileUrl && enabled && !thumbnail && !loading) {
+    if (fileUrl && enabled && !thumbnail && !loading && !hasFailedPermanently) {
       generate()
     }
-  }, [fileUrl, enabled, thumbnail, generate]) // RIMOSSO loading dalle dependencies
+  }, [fileUrl, enabled, thumbnail, loading, hasFailedPermanently, generate])
 
   // Pulisce quando cambia fileUrl
   useEffect(() => {
@@ -98,6 +123,11 @@ export function useAutoThumbnail(
       clear()
     }
   }, [fileUrl, clear])
+
+  // Reset hasFailedPermanently quando cambia fileUrl
+  useEffect(() => {
+    setHasFailedPermanently(false)
+  }, [fileUrl])
 
   return {
     thumbnail,

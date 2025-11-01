@@ -66,7 +66,12 @@ export function useEventListeners({
             } catch { }
         }
 
-        const onRequestDocs = () => broadcastDocs()
+        const onRequestDocs = () => {
+          console.log('[LOAD][DOCUMENTI][EVENT] app:request-documents ricevuto', {
+            documentiCount: documenti.length
+          })
+          broadcastDocs()
+        }
         const onUploading = (e: any) => {
             try {
                 const t = e?.detail?.target

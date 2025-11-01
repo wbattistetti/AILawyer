@@ -90,6 +90,7 @@ model Documento {
   classWhy         String?
   tags             String   @default("[]")
   thumbnailDataUrl String?  // Base64 JPEG data URL per miniatura (generata client-side, salvata per performance)
+  filePath         String?  // Path originale del file locale (solo se disponibile, es. File System Access API)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

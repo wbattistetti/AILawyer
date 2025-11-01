@@ -88,7 +88,10 @@ export class OcrmypdfService {
       const pages = [{ text, confidence: 0 }]
       // Persist OCRed PDF alongside original: save to uploads with suffix .ocr.pdf
       const ocrPdfBuffer = fs.readFileSync(outPdf)
-      const ocrPdfKey = s3Key.endsWith('.pdf') ? s3Key.replace(/\.pdf$/i, '.ocr.pdf') : s3Key + '.ocr.pdf'
+      const ocrPdfKeyRaw = s3Key.endsWith('.pdf') ? s3Key.replace(/\.pdf$/i, '.ocr.pdf') : s3Key + '.ocr.pdf'
+      // Sanitize filename for Windows compatibility (remove invalid chars like :)
+      const sanitizeFileName = (key: string) => key.replace(/[:<>"|?*\\]/g, '_')
+      const ocrPdfKey = sanitizeFileName(ocrPdfKeyRaw)
       // Save to local uploads dir for local mode consumers
       const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
       try { fs.mkdirSync(path.dirname(path.join(uploadsDir, ocrPdfKey)), { recursive: true }) } catch {}

@@ -6,6 +6,7 @@ import { SearchProvider } from '../../components/search/SearchProvider'
 import { SearchPanelTree } from '../../components/search/SearchPanelTree'
 import * as pdfjsLib from 'pdfjs-dist'
 import { api } from '../../lib/api'
+import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
 
 type DocItem = {
   id: string
@@ -479,42 +480,43 @@ export function DocumentCollection({
               // NON convertire undefined in false! Passa undefined così com'è
               const hasNativeTextValue = doc.hasNativeText
 
-              return (
-                <div
-                  key={doc.id}
-                  draggable={!!draggableItems}
-                  onDragStart={(e) => onDragStartItem?.(doc.id, e)}
-                >
-                  <ThumbCard
-                    title={isExtract ? titleText : doc.filename}
-                    imgSrc={isExtract ? '' : (doc.thumb || '')}
-                    // genera lato client solo se manca una thumb
-                    fileUrl={computedFileUrl}
-                    autoGenerateThumbnail={isPdf && !(doc as any).thumb}
-                    isPdf={isPdf}
-                    headerIcon={isExtract ? headerIcon : undefined}
-                    headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
-                    excerpt={isExtract ? excerpt : undefined}
-                    metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
-                    metaPage={isExtract ? (src.page || undefined) : undefined}
-                    onShow={isExtract ? (() => { try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct != null ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined) } })) } catch { } }) : undefined}
-                    selected={selectedId === doc.id}
-                    onSelect={() => setSelectedId(doc.id)}
-                    onPreview={() => onOpen(doc)}
-                    onTable={() => onOpen(doc)}
-                    onRemove={() => onRemove?.(doc)}
-                    onOcr={() => onOcr?.(doc)}
-                    onOcrCancel={() => onOcrCancel?.(doc)}
+              // Priorità thumbnail: 1) doc.thumbnailDataUrl dal DB, 2) doc.thumb (server thumb), 3) generazione client
+              // Nota: lazy loading thumbnail dal DB viene gestito da ThumbCardWithLazyThumbnail component
+              const thumbnailFromDb = (doc as any).thumbnailDataUrl || undefined
+              const serverThumb = (doc as any).thumb || ''
+              const finalImgSrc = isExtract ? '' : (thumbnailFromDb || serverThumb)
+              const shouldAutoGenerate = isPdf && !thumbnailFromDb && !serverThumb && computedFileUrl
+              const shouldLoadLazyThumbnail = !isExtract && isPdf && !thumbnailFromDb && !serverThumb
 
-                    ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
-                    ocrEtaText={etaById?.[doc.id] ?? null}
-                    ocrStatusText={statusById?.[doc.id] ?? null}
-                    ocrCancelling={cancellingById?.[doc.id] as any}
-                    transcribedPct={transcribedPctById?.[doc.id] as any}
-                    ocrStatus={doc.ocrStatus ?? null}
-                    hasNativeText={hasNativeTextValue}
-                  />
-                </div>
+              return (
+                <ThumbCardWithLazyThumbnail
+                  key={doc.id}
+                  doc={doc}
+                  isExtract={isExtract}
+                  titleText={titleText}
+                  excerpt={excerpt}
+                  src={src}
+                  headerIcon={headerIcon}
+                  finalImgSrc={finalImgSrc}
+                  computedFileUrl={computedFileUrl}
+                  shouldAutoGenerate={shouldAutoGenerate}
+                  shouldLoadLazyThumbnail={shouldLoadLazyThumbnail}
+                  isPdf={isPdf}
+                  hasNativeTextValue={hasNativeTextValue}
+                  draggableItems={draggableItems}
+                  onDragStartItem={onDragStartItem}
+                  selectedId={selectedId}
+                  setSelectedId={setSelectedId}
+                  onOpen={onOpen}
+                  onRemove={onRemove}
+                  onOcr={onOcr}
+                  onOcrCancel={onOcrCancel}
+                  progressById={progressById}
+                  etaById={etaById}
+                  statusById={statusById}
+                  cancellingById={cancellingById}
+                  transcribedPctById={transcribedPctById}
+                />
               )
             })}
           </div>
@@ -531,7 +533,91 @@ export function DocumentCollection({
   )
 }
 
-export default DocumentCollection
+// Componente wrapper per gestire lazy loading thumbnail (hook non può essere in map)
+function ThumbCardWithLazyThumbnail({
+  doc,
+  isExtract,
+  titleText,
+  excerpt,
+  src,
+  headerIcon,
+  finalImgSrc,
+  computedFileUrl,
+  shouldAutoGenerate,
+  shouldLoadLazyThumbnail,
+  isPdf,
+  hasNativeTextValue,
+  draggableItems,
+  onDragStartItem,
+  selectedId,
+  setSelectedId,
+  onOpen,
+  onRemove,
+  onOcr,
+  onOcrCancel,
+  progressById,
+  etaById,
+  statusById,
+  cancellingById,
+  transcribedPctById,
+}: any) {
+  // Lazy load thumbnail dal DB se necessario
+  const { thumbnail: lazyThumbnail } = useDocumentThumbnail(
+    shouldLoadLazyThumbnail ? doc.id : undefined,
+    true
+  )
+
+  // Aggiorna imgSrc con lazy thumbnail se disponibile
+  const finalImgSrcWithLazy = isExtract ? '' : (finalImgSrc || lazyThumbnail || '')
+  const finalShouldAutoGenerate = shouldAutoGenerate && !lazyThumbnail
+
+  // Log solo per problemi: hasNativeText true ma thumbnail mancante o viceversa
+  if (isPdf && !isExtract && hasNativeTextValue === true && !finalImgSrcWithLazy) {
+    console.warn('[THUMBCARD][PROBLEM]', {
+      filename: doc.filename,
+      hasNativeText: hasNativeTextValue,
+      thumbnailMissing: !finalImgSrcWithLazy
+    })
+  }
+
+  return (
+    <div
+      draggable={!!draggableItems}
+      onDragStart={(e) => onDragStartItem?.(doc.id, e)}
+    >
+                  <ThumbCard
+                    title={isExtract ? titleText : doc.filename}
+                    imgSrc={finalImgSrcWithLazy}
+                    // genera lato client solo se manca thumbnail dal DB e server
+                    fileUrl={computedFileUrl}
+                    autoGenerateThumbnail={finalShouldAutoGenerate}
+                    isPdf={isPdf}
+                    headerIcon={isExtract ? headerIcon : undefined}
+                    headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
+                    excerpt={isExtract ? excerpt : undefined}
+                    metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
+                    metaPage={isExtract ? (src.page || undefined) : undefined}
+                    onShow={isExtract ? (() => { try { window.dispatchEvent(new CustomEvent('app:goto-source', { detail: { docId: src.docId, title: src.title, page: src.page, box: (src.x0Pct != null ? { x0Pct: src.x0Pct, x1Pct: src.x1Pct, y0Pct: src.y0Pct, y1Pct: src.y1Pct } : undefined) } })) } catch { } }) : undefined}
+                    selected={selectedId === doc.id}
+                    onSelect={() => setSelectedId(doc.id)}
+                    onPreview={() => onOpen(doc)}
+                    onTable={() => onOpen(doc)}
+                    onRemove={() => onRemove?.(doc)}
+                    onOcr={() => onOcr?.(doc)}
+                    onOcrCancel={() => onOcrCancel?.(doc)}
+                    ocrProgressPct={typeof progressById?.[doc.id] === 'number' ? progressById![doc.id] : undefined as any}
+                    ocrEtaText={etaById?.[doc.id] ?? null}
+                    ocrStatusText={statusById?.[doc.id] ?? null}
+                    ocrCancelling={cancellingById?.[doc.id] as any}
+                    transcribedPct={transcribedPctById?.[doc.id] as any}
+                    ocrStatus={doc.ocrStatus ?? null}
+                    hasNativeText={hasNativeTextValue}
+                    // Log per debug
+                    // Debug log aggiunto nel componente wrapper se necessario
+                  />
+    </div>
+  )
+}
 
 
 

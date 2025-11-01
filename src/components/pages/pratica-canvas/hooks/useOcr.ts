@@ -42,12 +42,13 @@ export function useOcr(praticaId: string | undefined) {
     try {
       console.log('[OCR] queue request', documento.id, documento.filename)
 
-      // Determina se è un file locale (non salvato nel database)
-      const isLocal = documento.id.startsWith('temp:')
+      // Determina se è un file locale (modalità privacy)
+      // Può essere: 1) documento temporaneo (temp:) o 2) documento salvato con s3Key "local:..."
+      const isLocal = documento.id.startsWith('temp:') || documento.s3Key?.startsWith('local:')
 
       let job: { id: string; status: string }
 
-      // Se il documento ha un ID temporaneo (modalità locale), usa endpoint OCR locale
+      // Se è un file locale (modalità privacy), usa endpoint OCR locale e gestisci upload on-demand
       if (isLocal) {
         console.log('[OCR] Documento locale, usando endpoint OCR locale...', {
           tempId: documento.id,
@@ -55,36 +56,171 @@ export function useOcr(praticaId: string | undefined) {
           filename: documento.filename
         })
 
-        // Verifica che il file sia stato salvato usando il sanitized key
-        try {
-          // Il backend usa sanitizeFileName, quindi dobbiamo usare lo stesso
-          const sanitizedKey = documento.s3Key.replace(/[:<>"|?*\\]/g, '_')
-          const fileCheckUrl = `http://localhost:3001/api/files/${encodeURIComponent(sanitizedKey)}`
-          console.log('[OCR] Verificando file...', { originalKey: documento.s3Key, sanitizedKey, url: fileCheckUrl })
+        // UPLOAD ON-DEMAND: Verifica se il file è già in uploads/, altrimenti caricalo
+        const sanitizedKey = documento.s3Key.replace(/[:<>"|?*\\]/g, '_')
+        const fileCheckUrl = `http://localhost:3001/api/files/${encodeURIComponent(sanitizedKey)}`
 
+        try {
+          // Controlla se il file esiste già in uploads/
           const checkRes = await fetch(fileCheckUrl, { method: 'HEAD' })
+
           if (!checkRes.ok) {
-            console.warn('[OCR] File non ancora disponibile', {
+            console.log('[OCR] File non in uploads/, faccio upload on-demand...', {
               s3Key: documento.s3Key,
               sanitizedKey,
-              status: checkRes.status,
-              statusText: checkRes.statusText
+              hasFilePath: !!documento.filePath
             })
-            // Riprova dopo un breve delay
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            const retryRes = await fetch(fileCheckUrl, { method: 'HEAD' })
-            if (!retryRes.ok) {
-              throw new Error(`File non trovato dopo retry: ${retryRes.status} ${retryRes.statusText}`)
+
+            // Prova prima con filePath se disponibile (copia automatica dal disco locale)
+            if (documento.filePath) {
+              console.log('[OCR] FilePath disponibile, copio automaticamente dal disco locale...', {
+                filePath: documento.filePath,
+                s3Key: documento.s3Key
+              })
+
+              toast({
+                title: 'Caricamento file...',
+                description: 'Il file viene copiato automaticamente dal disco locale per l\'OCR'
+              })
+
+              try {
+                const copyRes = await fetch('http://localhost:3001/api/filesystem/copy-for-ocr', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    sourcePath: documento.filePath,
+                    targetS3Key: documento.s3Key
+                  })
+                })
+
+                if (!copyRes.ok) {
+                  const errorData = await copyRes.json().catch(() => ({}))
+                  throw new Error(errorData.error || `Failed to copy file: ${copyRes.statusText}`)
+                }
+
+                console.log('[OCR] File copiato automaticamente da filePath', {
+                  filePath: documento.filePath,
+                  s3Key: documento.s3Key
+                })
+
+                // Verifica che sia stato copiato
+                await new Promise(resolve => setTimeout(resolve, 500))
+                const verifyRes = await fetch(fileCheckUrl, { method: 'HEAD' })
+                if (!verifyRes.ok) {
+                  throw new Error(`File non disponibile dopo copia: ${verifyRes.status} ${verifyRes.statusText}`)
+                }
+
+                // Successo! Il file è ora in uploads/, procedi con OCR
+                console.log('[OCR] File ora disponibile in uploads/, procedo con OCR')
+              } catch (copyError: any) {
+                console.error('[OCR] Errore nella copia automatica da filePath', {
+                  error: copyError,
+                  filePath: documento.filePath,
+                  message: copyError?.message
+                })
+
+                // Fallback: se la copia fallisce (file spostato/cancellato), prova con _sourceFile
+                console.log('[OCR] Copia da filePath fallita, provo fallback con _sourceFile...')
+
+                const sourceFileFallback = (documento as any)._sourceFile
+                if (!sourceFileFallback) {
+                  toast({
+                    title: 'File non disponibile',
+                    description: `Il file non è più nella posizione originale e non è in memoria. Percorso originale: ${documento.filePath}`,
+                    variant: 'destructive'
+                  })
+                  return
+                }
+
+                // Prosegui con upload da _sourceFile (fallback)
+                console.log('[OCR] Usando _sourceFile come fallback...')
+
+                toast({
+                  title: 'Caricamento file...',
+                  description: 'Il file viene caricato per l\'OCR (modalità privacy)'
+                })
+
+                const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(documento.s3Key)}`
+                await api.uploadFile(localUploadUrl, sourceFileFallback)
+
+                console.log('[OCR] Upload on-demand completato (da _sourceFile fallback)', {
+                  s3Key: documento.s3Key,
+                  sanitizedKey
+                })
+
+                // Verifica che il file sia stato caricato correttamente
+                await new Promise(resolve => setTimeout(resolve, 500))
+                const verifyResFallback = await fetch(fileCheckUrl, { method: 'HEAD' })
+                if (!verifyResFallback.ok) {
+                  throw new Error(`File non disponibile dopo upload: ${verifyResFallback.status} ${verifyResFallback.statusText}`)
+                }
+              }
+            } else {
+              // filePath non disponibile: prova con _sourceFile
+              const sourceFile = (documento as any)._sourceFile
+              if (!sourceFile) {
+                // File non disponibile in memoria e nessun filePath
+                console.warn('[OCR] File non in memoria (dopo refresh?) e non in uploads/, e nessun filePath', {
+                  s3Key: documento.s3Key,
+                  docId: documento.id
+                })
+
+                toast({
+                  title: 'File non disponibile',
+                  description: 'In modalità privacy, il file deve essere ricaricato per l\'OCR. Trascina il documento di nuovo nell\'archivio.',
+                  variant: 'destructive'
+                })
+                return
+              }
+
+              // Upload on-demand: carica il file ora (da _sourceFile)
+              console.log('[OCR] Upload on-demand in corso (da _sourceFile)...', {
+                filename: sourceFile.name,
+                size: sourceFile.size,
+                s3Key: documento.s3Key
+              })
+
+              toast({
+                title: 'Caricamento file...',
+                description: 'Il file viene caricato per l\'OCR (modalità privacy)'
+              })
+
+              const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(documento.s3Key)}`
+              await api.uploadFile(localUploadUrl, sourceFile)
+
+              console.log('[OCR] Upload on-demand completato', {
+                s3Key: documento.s3Key,
+                sanitizedKey
+              })
+
+              // Verifica che il file sia stato caricato correttamente
+              await new Promise(resolve => setTimeout(resolve, 500)) // Breve delay per assicurarsi che sia scritto
+              const verifyRes = await fetch(fileCheckUrl, { method: 'HEAD' })
+              if (!verifyRes.ok) {
+                throw new Error(`File non disponibile dopo upload: ${verifyRes.status} ${verifyRes.statusText}`)
+              }
             }
+
+            console.log('[OCR] File verificato dopo upload on-demand', {
+              s3Key: documento.s3Key,
+              sanitizedKey
+            })
           } else {
-            console.log('[OCR] File verificato e disponibile', { s3Key: documento.s3Key, sanitizedKey })
+            console.log('[OCR] File già disponibile in uploads/', {
+              s3Key: documento.s3Key,
+              sanitizedKey
+            })
           }
         } catch (e: any) {
           const errorMsg = e?.message || String(e)
-          console.error('[OCR] File check failed', { s3Key: documento.s3Key, error: errorMsg })
+          console.error('[OCR] Upload on-demand failed', {
+            s3Key: documento.s3Key,
+            error: errorMsg,
+            hasSourceFile: !!(documento as any)._sourceFile
+          })
           toast({
             title: 'Errore OCR',
-            description: `File non trovato: ${errorMsg}`,
+            description: `Impossibile caricare il file: ${errorMsg}`,
             variant: 'destructive'
           })
           return

@@ -4,6 +4,14 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 
+/**
+ * Sanitizza una chiave s3Key per uso come nome file su filesystem Windows/Linux
+ * Rimuove caratteri non validi come : < > " | ? * \
+ */
+function sanitizeFileName(key: string): string {
+  return key.replace(/[:<>"|?*\\]/g, '_')
+}
+
 export class StorageService {
   private client: Client
   private localDir: string
@@ -39,16 +47,24 @@ export class StorageService {
   }
 
   async getObject(s3Key: string): Promise<Buffer> {
-    // Prefer local file if present to avoid any remote calls
-    const localPath = path.join(this.localDir, s3Key)
+    // Sanitizza s3Key per path Windows (rimuove caratteri non validi come ':')
+    // Per file locali in modalità privacy, il s3Key può essere "local:timestamp:random"
+    const sanitizedKey = sanitizeFileName(s3Key)
+    const localPath = path.join(this.localDir, sanitizedKey)
+
     if (fs.existsSync(localPath)) {
-      console.log('Storage:getObject local', { s3Key, localPath })
+      console.log('Storage:getObject local', { s3Key, sanitizedKey, localPath })
       return fs.promises.readFile(localPath)
     }
     if (config.STORAGE_MODE === 'local') {
-      // If in local mode but file not found, still try local path to surface ENOENT
-      console.warn('Storage:getObject ENOENT local', { s3Key, localPath })
-      return fs.promises.readFile(localPath)
+      // If in local mode but file not found, provide a clearer error message
+      console.warn('Storage:getObject ENOENT local', {
+        s3Key,
+        sanitizedKey,
+        localPath,
+        note: 'File non trovato. In modalità privacy, il file potrebbe non essere stato ancora caricato.'
+      })
+      throw new Error(`File non trovato: ${s3Key}. In modalità privacy, il file deve essere caricato tramite upload on-demand prima dell'uso.`)
     }
     console.log('Storage:getObject remote', { s3Key, bucket: config.S3_BUCKET, endpoint: config.S3_ENDPOINT })
     const stream = await this.client.getObject(config.S3_BUCKET, s3Key)
@@ -62,7 +78,8 @@ export class StorageService {
 
   async deleteObject(s3Key: string): Promise<void> {
     if (config.STORAGE_MODE === 'local') {
-      const filePath = path.join(this.localDir, s3Key)
+      const sanitizedKey = sanitizeFileName(s3Key)
+      const filePath = path.join(this.localDir, sanitizedKey)
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
       return
     }
@@ -70,7 +87,8 @@ export class StorageService {
   }
 
   getLocalPath(s3Key: string): string {
-    return path.join(this.localDir, s3Key)
+    const sanitizedKey = sanitizeFileName(s3Key)
+    return path.join(this.localDir, sanitizedKey)
   }
 }
 

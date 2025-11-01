@@ -56,10 +56,6 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	onSelectedAnnotChange,
 	onSelectionHandledChange
 }) => {
-	console.log('🎬🎬🎬 [ExtractDialog] DIALOG MONTATO! 🎬🎬🎬')
-	console.log('🎬 [ExtractDialog] extractOpen:', extractOpen)
-	console.log('🎬 [ExtractDialog] praticaId:', praticaId)
-	console.log('🎬 [ExtractDialog] lastSelection:', !!lastSelection)
 	// Stati per il nuovo layout
 	const [extractType, setExtractType] = useState<'reato' | 'motivazione' | 'contromotivazione'>('reato')
 	const [selectedParentId, setSelectedParentId] = useState<string | null>(null)

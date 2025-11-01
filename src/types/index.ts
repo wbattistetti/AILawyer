@@ -37,6 +37,8 @@ export interface Documento {
   classConfidence?: number
   classWhy?: string
   tags: string[]
+  thumbnailDataUrl?: string // Base64 JPEG data URL per miniatura (caricato lazy)
+  filePath?: string // Path originale del file locale (solo se disponibile, es. File System Access API)
   createdAt: string
 }
 

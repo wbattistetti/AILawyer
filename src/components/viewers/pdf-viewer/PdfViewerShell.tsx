@@ -36,10 +36,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   praticaId,
   docName
 }) => {
-  console.log('🎬🎬🎬 [PdfViewerShell] SHELL MONTATO! 🎬🎬🎬')
-  console.log('🎬 [PdfViewerShell] fileUrl:', fileUrl)
-  console.log('🎬 [PdfViewerShell] docId:', docId)
-  console.log('🎬 [PdfViewerShell] praticaId:', praticaId)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
 

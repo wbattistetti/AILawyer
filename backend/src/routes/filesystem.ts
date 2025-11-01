@@ -11,13 +11,13 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.get('/api/filesystem/drives', async (request, reply) => {
     try {
       const drives = [];
-      
+
       // Windows drives
       if (process.platform === 'win32') {
         try {
           const { stdout } = await execAsync('wmic logicaldisk get size,freespace,caption,drivetype');
           const lines = stdout.split('\n').filter(line => line.trim());
-          
+
           for (const line of lines.slice(1)) { // Skip header
             const parts = line.trim().split(/\s+/);
             if (parts.length >= 4) {
@@ -38,7 +38,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
           }
         } catch (wmicError) {
           fastify.log.warn('wmic command failed, using fallback method:', wmicError);
-          
+
           // Fallback: try to access common drive letters
           const commonDrives = ['C:', 'D:', 'E:', 'F:'];
           for (const drive of commonDrives) {
@@ -57,7 +57,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
           }
         }
       }
-      
+
       return drives;
     } catch (error) {
       fastify.log.error('Failed to list drives:', error);
@@ -69,7 +69,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/list', async (request, reply) => {
     try {
       const { path: dirPath } = request.body as { path: string };
-      
+
       if (!dirPath) {
         return reply.code(400).send({ error: 'Path is required' });
       }
@@ -84,12 +84,12 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
 
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
       const files = [];
-      
+
       for (const entry of entries) {
         try {
           const fullPath = path.join(dirPath, entry.name);
           const stats = await fs.stat(fullPath);
-          
+
           files.push({
             name: entry.name,
             path: fullPath,
@@ -103,7 +103,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
           continue;
         }
       }
-      
+
       return { files };
     } catch (error) {
       fastify.log.error(`Failed to list directory:`, error);
@@ -115,7 +115,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/exists', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
-      
+
       if (!filePath) {
         return reply.code(400).send({ error: 'Path is required' });
       }
@@ -136,17 +136,17 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/open', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
-      
+
       if (!filePath) {
         return reply.code(400).send({ error: 'Path is required' });
       }
 
-      const command = process.platform === 'win32' 
+      const command = process.platform === 'win32'
         ? `start "" "${filePath}"`
         : process.platform === 'darwin'
         ? `open "${filePath}"`
         : `xdg-open "${filePath}"`;
-      
+
       await execAsync(command);
       return { success: true };
     } catch (error) {
@@ -159,7 +159,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/reveal', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
-      
+
       if (!filePath) {
         return reply.code(400).send({ error: 'Path is required' });
       }
@@ -169,7 +169,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
         : process.platform === 'darwin'
         ? `open -R "${filePath}"`
         : `xdg-open "${filePath}"`;
-      
+
       await execAsync(command);
       return { success: true };
     } catch (error) {
@@ -181,12 +181,12 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   // Read file chunk
   fastify.post('/api/filesystem/read-chunk', async (request, reply) => {
     try {
-      const { path: filePath, start, length } = request.body as { 
-        path: string; 
-        start: number; 
-        length: number; 
+      const { path: filePath, start, length } = request.body as {
+        path: string;
+        start: number;
+        length: number;
       };
-      
+
       if (!filePath || start === undefined || length === undefined) {
         return reply.code(400).send({ error: 'Path, start, and length are required' });
       }
@@ -209,9 +209,9 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.get('/api/filesystem/file/*', async (request, reply) => {
     try {
       const filePath = decodeURIComponent(request.url.replace('/api/filesystem/file/', ''));
-      
+
       console.log('🔍 Serving file:', filePath);
-      
+
       // Check if file exists
       try {
         await fs.access(filePath);
@@ -222,11 +222,11 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
 
       // Get file stats
       const stats = await fs.stat(filePath);
-      
+
       // Set appropriate headers based on file extension
       const ext = path.extname(filePath).toLowerCase();
       let contentType = 'application/octet-stream';
-      
+
       switch (ext) {
         case '.pdf':
           contentType = 'application/pdf';
@@ -259,7 +259,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
       reply.header('Content-Type', contentType);
       reply.header('Content-Length', String(stats.size));
       reply.header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-      
+
       // Read the file as buffer
       const fileBuffer = await fs.readFile(filePath);
       return reply.send(fileBuffer);
@@ -273,7 +273,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/read-file', async (request, reply) => {
     try {
       const { filePath } = request.body as { filePath: string };
-      
+
       if (!filePath) {
         return reply.code(400).send({ error: 'File path is required' });
       }
@@ -287,11 +287,11 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
 
       // Get file stats
       const stats = await fs.stat(filePath);
-      
+
       // Set appropriate headers
       const ext = path.extname(filePath).toLowerCase();
       let contentType = 'application/octet-stream';
-      
+
       switch (ext) {
         case '.pdf':
           contentType = 'application/pdf';
@@ -316,7 +316,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
 
       reply.header('Content-Type', contentType);
       reply.header('Content-Length', String(stats.size));
-      
+
       // Read the file as buffer
       const fileBuffer = await fs.readFile(filePath);
       return reply.send(fileBuffer);
@@ -330,7 +330,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/copy-temp', async (request, reply) => {
     try {
       const { sourcePath } = request.body as { sourcePath: string };
-      
+
       if (!sourcePath) {
         return reply.code(400).send({ error: 'Source path is required' });
       }
@@ -372,7 +372,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/move-to-archive', async (request, reply) => {
     try {
       const { tempFileName, archivePath } = request.body as { tempFileName: string; archivePath?: string };
-      
+
       if (!tempFileName) {
         return reply.code(400).send({ error: 'Temp file name is required' });
       }
@@ -389,7 +389,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
       // Determine archive path
       const finalArchivePath = archivePath || path.join(process.cwd(), 'uploads', tempFileName);
       const archiveDir = path.dirname(finalArchivePath);
-      
+
       // Create archive directory if it doesn't exist
       await fs.mkdir(archiveDir, { recursive: true });
 
@@ -410,7 +410,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.delete('/api/filesystem/temp/:filename', async (request, reply) => {
     try {
       const { filename } = request.params as { filename: string };
-      
+
       const tempDir = path.join(process.cwd(), 'uploads', 'temp');
       const tempFilePath = path.join(tempDir, filename);
 
@@ -434,7 +434,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   fastify.post('/api/filesystem/cleanup-temp', async (request, reply) => {
     try {
       const tempDir = path.join(process.cwd(), 'uploads', 'temp');
-      
+
       // Check if temp directory exists
       const tempExists = await fs.access(tempDir).then(() => true).catch(() => false);
       if (!tempExists) {
@@ -448,20 +448,74 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
       for (const file of files) {
         const filePath = path.join(tempDir, file);
         const stats = await fs.stat(filePath);
-        
+
         if (stats.mtime.getTime() < oneHourAgo) {
           await fs.unlink(filePath);
           deletedCount++;
         }
       }
 
-      return reply.send({ 
+      return reply.send({
         message: `Cleaned up ${deletedCount} old temp files`,
-        deletedCount 
+        deletedCount
       });
     } catch (error) {
       fastify.log.error('Failed to cleanup temp files:', error);
       return reply.code(500).send({ error: 'Failed to cleanup temp files' });
+    }
+  });
+
+  // Copia file da filePath originale a uploads/ per OCR on-demand
+  fastify.post('/api/filesystem/copy-for-ocr', async (request, reply) => {
+    try {
+      const { sourcePath, targetS3Key } = request.body as { sourcePath: string; targetS3Key: string };
+
+      if (!sourcePath || !targetS3Key) {
+        return reply.code(400).send({ error: 'sourcePath and targetS3Key are required' });
+      }
+
+      // Verifica che il file sorgente esista
+      try {
+        await fs.access(sourcePath);
+      } catch {
+        return reply.code(404).send({ error: 'Source file not found', sourcePath });
+      }
+
+      // Sanitizza s3Key per path Windows (rimuove caratteri non validi come ':')
+      const sanitizeFileName = (key: string) => key.replace(/[:<>"|?*\\]/g, '_');
+      const sanitizedKey = sanitizeFileName(targetS3Key);
+      const uploadsDir = path.resolve(process.cwd(), '..', 'uploads');
+      const targetPath = path.join(uploadsDir, sanitizedKey);
+
+      // Crea directory se non esiste
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+      // Copia file
+      await fs.copyFile(sourcePath, targetPath);
+
+      fastify.log.info({
+        msg: 'File copied for OCR',
+        sourcePath,
+        targetPath,
+        s3Key: targetS3Key,
+        sanitizedKey
+      });
+
+      return reply.send({
+        success: true,
+        targetPath,
+        sanitizedKey
+      });
+    } catch (error: any) {
+      fastify.log.error({
+        msg: 'Failed to copy file for OCR',
+        error: error?.message,
+        stack: error?.stack
+      });
+      return reply.code(500).send({
+        error: 'Failed to copy file for OCR',
+        details: error?.message || String(error)
+      });
     }
   });
 }

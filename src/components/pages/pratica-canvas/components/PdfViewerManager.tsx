@@ -22,9 +22,6 @@ export function PdfViewerManager({
   setVerifyEnabled,
   verifyLinesByPage
 }: PdfViewerManagerProps) {
-  console.log('🎬🎬🎬 [PdfViewerManager] MANAGER MONTATO! 🎬🎬🎬')
-  console.log('🎬 [PdfViewerManager] doc:', doc?.filename)
-  console.log('🎬 [PdfViewerManager] praticaId:', praticaId)
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col h-full">

@@ -18,6 +18,7 @@ export interface DocumentoCreateInput {
   ocrStatus?: string
   tags?: string[]
   thumbnailDataUrl?: string // Base64 JPEG data URL per miniatura
+  filePath?: string // Path originale del file locale (solo se disponibile, es. File System Access API)
 }
 
 export interface ClassificationResult {

@@ -22,6 +22,7 @@ const documentoCreateSchema = z.object({
   tags: z.array(z.string()).optional(),
   thumbnailDataUrl: z.string().optional(), // Base64 JPEG data URL per miniatura
   hasNativeText: z.boolean().optional(), // Flag per testo nativo (priorità su rilevamento backend)
+  filePath: z.string().optional(), // Path originale del file locale (solo se disponibile, es. File System Access API)
 })
 
 const documentoUpdateSchema = z.object({
@@ -255,6 +256,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             ocrStatus: data.ocrStatus || 'pending',
             hasNativeText: finalHasNativeText,
             thumbnailDataUrl: data.thumbnailDataUrl || null, // Salva thumbnail se presente
+            filePath: data.filePath || null, // Salva filePath se presente
             tags: JSON.stringify(data.tags || []),
           } as any, // TODO: rimuovere quando Prisma Client sarà rigenerato
         })

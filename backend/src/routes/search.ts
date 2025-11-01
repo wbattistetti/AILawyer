@@ -300,31 +300,103 @@ export async function searchRoutes(fastify: FastifyInstance) {
         })
 
         // 2. Trova documenti DB (solo se non è specificato docId locale)
+        const whereClause: any = {
+          OR: [
+            // Documenti con OCR completato
+            {
+              ocrStatus: 'completed',
+              NOT: { ocrText: null }
+            },
+            // PDF nativi con text layer
+            {
+              hasNativeText: true
+            }
+          ]
+        }
+
+        // Se docId è specificato, filtra solo quel documento
+        if (docId) {
+          whereClause.id = docId
+        }
+
+        console.log('[SEARCH][archive][query]', {
+          docId,
+          isLocalFile,
+          whereClause
+        })
+
         const documenti = isLocalFile ? [] : await prisma.documento.findMany({
-          where: {
-            // Se docId è specificato, filtra solo quel documento
-            ...(docId ? { id: docId } : {}),
-            OR: [
-              // Documenti con OCR completato
-              {
-                ocrStatus: 'completed',
-                NOT: { ocrText: null }
-              },
-              // PDF nativi con text layer
-              {
-                hasNativeText: true
-              }
-            ]
-          },
+          where: whereClause,
           select: {
             id: true,
             filename: true,
             s3Key: true,
             ocrText: true,
             ocrLayout: true,
-            hasNativeText: true
+            hasNativeText: true,
+            ocrStatus: true
           }
         })
+
+        console.log('[SEARCH][archive][query-result]', {
+          dbCount: documenti.length,
+          requestedDocId: docId,
+          documenti: documenti.map((d: any) => ({
+            id: d.id.substring(0, 20) + '...',
+            filename: d.filename,
+            ocrStatus: d.ocrStatus,
+            hasOcrText: !!d.ocrText,
+            ocrTextLength: d.ocrText?.length || 0,
+            hasNativeText: d.hasNativeText
+          }))
+        })
+
+        // 🔍 DEBUG: Se docId è specificato ma nessun documento trovato, problema nella query!
+        if (docId && !isLocalFile && documenti.length === 0) {
+          console.warn('[SEARCH][archive][docId-not-found]', {
+            docId,
+            whereClause,
+            note: 'Documento con questo docId non trovato dalla query Prisma. Verifica se esiste nel database e se soddisfa le condizioni OR.'
+          })
+
+          // Verifica se il documento esiste comunque (senza filtri OR)
+          try {
+            const docExists = await prisma.documento.findUnique({
+              where: { id: docId },
+              select: {
+                id: true,
+                filename: true,
+                ocrStatus: true,
+                ocrText: true,
+                hasNativeText: true
+              }
+            })
+
+            if (docExists) {
+              console.warn('[SEARCH][archive][docId-exists-but-not-matched]', {
+                docId,
+                docExists: {
+                  filename: docExists.filename,
+                  ocrStatus: docExists.ocrStatus,
+                  hasOcrText: !!docExists.ocrText,
+                  ocrTextLength: docExists.ocrText?.length || 0,
+                  hasNativeText: docExists.hasNativeText
+                },
+                note: 'Il documento esiste ma non soddisfa le condizioni OR della query. Questo spiega perché la ricerca non trova niente!'
+              })
+            } else {
+              console.warn('[SEARCH][archive][docId-not-exists]', {
+                docId,
+                note: 'Il documento con questo docId non esiste nel database.'
+              })
+            }
+          } catch (checkError) {
+            console.error('[SEARCH][archive][docId-check-error]', {
+              docId,
+              error: checkError
+            })
+          }
+        }
 
         fastify.log.info({ msg: '[SEARCH][archive] candidate docs', dbCount: documenti.length, hasLocal: !!localDocInfo })
 
@@ -696,6 +768,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
               // Non in cache: carica dal DB o estrai
               searchableText = (doc.ocrText || '') as string
 
+              // 🔍 LOG: Verifica se ocrText è presente quando viene fatta la ricerca
+              console.log('[SEARCH][archive][ocrText-check]', {
+                docId: doc.id.substring(0, 20) + '...',
+                filename: doc.filename,
+                ocrStatus: doc.ocrStatus,
+                hasOcrText: !!doc.ocrText,
+                ocrTextLength: doc.ocrText?.length || 0,
+                searchableTextLength: searchableText.length,
+                ocrTextPreview: doc.ocrText ? doc.ocrText.substring(0, 100) : 'null/undefined'
+              })
+
+              // Se ocrStatus è 'completed' ma ocrText è null, segnala il problema
+              if (doc.ocrStatus === 'completed' && !searchableText) {
+                console.warn('[SEARCH][archive][ocrText-missing]', {
+                  docId: doc.id,
+                  filename: doc.filename,
+                  note: 'ocrStatus è completed ma ocrText è vuoto/null. Possibile problema nel salvataggio OCR.'
+                })
+              }
+
               // Se è nativo ma non ha ocrText, ESTRAI ORA e salva nel DB
               if (doc.hasNativeText && !searchableText) {
                 fastify.log.info({ msg: '[SEARCH][archive][native] Extracting text...', docId: doc.id, filename: doc.filename })
@@ -1009,7 +1101,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   page: foundPage,
                   snippetPreview: snippet.substring(0, 50),
                   localCharIdx,
-                  accumulated
+                  accumulatedNormalized
                 })
 
                 // Deduplicazione: verifica se abbiamo già visto questo snippet

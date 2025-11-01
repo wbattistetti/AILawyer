@@ -147,6 +147,50 @@ async function processOcrDirect(
             avgConfidence: avgConfidence.toFixed(2),
             elapsedMs,
         })
+
+        // ✅ SEMPRE salva nel database se il documento esiste (unica logica, no doppio percorso)
+        // Il testo pesa poco e deve essere persistito per la ricerca
+        try {
+            const documento = await prisma.documento.findFirst({
+                where: { s3Key: s3Key },
+                select: { id: true }
+            })
+
+            if (documento) {
+                // Documento esiste nel DB: salva SEMPRE ocrText (unica logica, no distinzione memoria/DB)
+                const ocrText = texts.join('\n\f\n')
+
+                await prisma.documento.update({
+                    where: { id: documento.id },
+                    data: {
+                        ocrStatus: 'completed',
+                        ocrText,
+                        ocrConfidence: avgConfidence,
+                        ocrLayout: JSON.stringify(layoutArr),
+                    }
+                })
+
+                fastify.log.info({
+                    msg: 'OCR text saved to database (unified logic)',
+                    docId: documento.id,
+                    s3Key,
+                    textLength: ocrText.length,
+                    pages: texts.length
+                })
+            } else {
+                fastify.log.debug({
+                    msg: 'OCR completed but document not in DB (local-only, not saved in pratica)',
+                    s3Key
+                })
+            }
+        } catch (dbError: any) {
+            // Non bloccare se il salvataggio DB fallisce, ma logga
+            fastify.log.warn({
+                msg: 'OCR completed but failed to save to DB',
+                s3Key,
+                error: dbError?.message
+            })
+        }
     } catch (error: any) {
         const isCancelled = String(error?.message || '').includes('CANCELLED')
         if (isCancelled) {
@@ -211,11 +255,21 @@ export async function ocrRoutes(fastify: FastifyInstance) {
                 fastify.log.warn({
                     msg: 'File not found for OCR',
                     s3Key: body.s3Key,
+                    sanitizedKey,
                     filePath,
                     uploadsDir,
                     filesInUploads,
                 })
-                return reply.status(404).send({ error: 'File non trovato in uploads', details: { s3Key: body.s3Key, filePath, uploadsDir } })
+                return reply.status(404).send({
+                    error: 'File non trovato in uploads',
+                    details: {
+                        s3Key: body.s3Key,
+                        sanitizedKey,
+                        filePath,
+                        uploadsDir,
+                        note: 'In modalità privacy, il file deve essere caricato tramite upload on-demand dal frontend prima dell\'OCR.'
+                    }
+                })
             }
 
             fastify.log.info({ msg: 'OCR process-local request (in-memory)', s3Key: body.s3Key, filename: body.filename, mode: body.mode })

@@ -1,5 +1,6 @@
 import { Button } from '../../../../components/ui/button';
-import { ArrowLeft, Upload, RefreshCw } from 'lucide-react';
+import { Switch } from '../../../../components/ui/switch';
+import { ArrowLeft, Upload, RefreshCw, Loader2 } from 'lucide-react';
 import { Pratica } from '../../../../types';
 
 interface HeaderToolbarProps {
@@ -8,6 +9,9 @@ interface HeaderToolbarProps {
   onOpenPratica: () => void;
   onSavePratica: () => void;
   onUploadDocuments: () => void;
+  saveFilesToDb: boolean;
+  onSaveFilesToDbChange: (value: boolean) => void;
+  isSaving?: boolean;
 }
 
 export function HeaderToolbar({
@@ -15,7 +19,10 @@ export function HeaderToolbar({
   onHomeClick,
   onOpenPratica,
   onSavePratica,
-  onUploadDocuments
+  onUploadDocuments,
+  saveFilesToDb,
+  onSaveFilesToDbChange,
+  isSaving = false
 }: HeaderToolbarProps) {
   return (
     <div className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur border-b">
@@ -45,9 +52,36 @@ export function HeaderToolbar({
             <Button variant="outline" size="sm" onClick={onOpenPratica}>
               Apri pratica…
             </Button>
-            <Button variant="outline" size="sm" onClick={onSavePratica}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Salva pratica
+
+            {/* Toggle "File su DB" */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 border rounded-md bg-white">
+              <label htmlFor="save-files-toggle" className="text-sm text-muted-foreground cursor-pointer whitespace-nowrap">
+                File su DB
+              </label>
+              <Switch
+                id="save-files-toggle"
+                checked={saveFilesToDb}
+                onCheckedChange={onSaveFilesToDbChange}
+              />
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSavePratica}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Salva pratica
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Salva pratica
+                </>
+              )}
             </Button>
             <Button size="sm" onClick={onUploadDocuments}>
               <Upload className="w-4 h-4 mr-2" />

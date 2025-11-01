@@ -46,6 +46,8 @@ export function PraticaCanvasPage() {
   const [clienti, setClienti] = useState<Cliente[]>([])
   // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
   const [syncPage, setSyncPage] = useState<number | null>(null)
+  const [saveFilesToDb, setSaveFilesToDb] = useState<boolean>(false) // Default: false (privacy mode)
+  const [isSaving, setIsSaving] = useState<boolean>(false)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
@@ -564,7 +566,72 @@ export function PraticaCanvasPage() {
         pratica={pratica}
         onHomeClick={() => navigate('/')}
         onOpenPratica={() => navigate('/')}
-        onSavePratica={() => handleRefreshHook(id!)}
+        onSavePratica={async () => {
+          if (!id || !pratica) {
+            console.warn('[SAVE][PRATICA][FRONTEND] Dati mancanti', { id, pratica })
+            return
+          }
+
+          setIsSaving(true)
+
+          const dataToSave = {
+            numeroRuolo: pratica.numeroRuolo,
+            foro: pratica.foro,
+            pmGiudice: pratica.pmGiudice || undefined
+          }
+
+          console.log('[SAVE][PRATICA][FRONTEND][START]', {
+            praticaId: id,
+            dataToSave,
+            pratica: {
+              id: pratica.id,
+              numeroRuolo: pratica.numeroRuolo,
+              foro: pratica.foro,
+              pmGiudice: pratica.pmGiudice
+            }
+          })
+
+          try {
+            // Salva i dati modificati della pratica
+            const updated = await api.updatePratica(id, dataToSave)
+
+            console.log('[SAVE][PRATICA][FRONTEND][SUCCESS]', {
+              praticaId: id,
+              updatedPratica: {
+                id: updated.id,
+                numeroRuolo: updated.numeroRuolo,
+                foro: updated.foro,
+                pmGiudice: updated.pmGiudice
+              }
+            })
+
+            // Ricarica i dati aggiornati
+            console.log('[SAVE][PRATICA][FRONTEND][REFRESH] Ricarico dati pratica...')
+            await handleRefreshHook(id)
+
+            toast({
+              title: 'Pratica salvata',
+              description: 'Le modifiche sono state salvate con successo'
+            })
+          } catch (error) {
+            console.error('[SAVE][PRATICA][FRONTEND][ERROR]', {
+              praticaId: id,
+              error,
+              message: (error as Error).message,
+              stack: (error as Error).stack
+            })
+            toast({
+              title: 'Errore',
+              description: 'Impossibile salvare la pratica',
+              variant: 'destructive'
+            })
+          } finally {
+            setIsSaving(false)
+          }
+        }}
+        saveFilesToDb={saveFilesToDb}
+        onSaveFilesToDbChange={setSaveFilesToDb}
+        isSaving={isSaving}
         onUploadDocuments={() => open()}
       />
 

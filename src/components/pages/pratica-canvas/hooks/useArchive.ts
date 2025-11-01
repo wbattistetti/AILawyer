@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useToast } from '../../../../hooks/use-toast'
 import { api } from '../../../../lib/api'
 import { Documento, UploadProgress } from '../../../../types'
@@ -13,6 +13,41 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   const [clientThumbByS3, setClientThumbByS3] = useState<Record<string, string>>({})
   const [openDocumentIds, setOpenDocumentIds] = useState<Set<string>>(new Set())
 
+  // Carica documenti quando cambia praticaId
+  useEffect(() => {
+    if (!praticaId) {
+      console.log('[LOAD][DOCUMENTI][ARCHIVE] Nessuna praticaId, reset documenti')
+      setDocumenti([])
+      return
+    }
+
+    console.log('[LOAD][DOCUMENTI][ARCHIVE][START]', { praticaId })
+
+    const loadDocumenti = async () => {
+      try {
+        const documentiData = await api.getDocumentiByPratica(praticaId)
+        console.log('[LOAD][DOCUMENTI][ARCHIVE][SUCCESS]', {
+          praticaId,
+          count: documentiData.length,
+          documentiByComparto: documentiData.reduce((acc: any, d: Documento) => {
+            const compartoId = d.compartoId || 'unknown'
+            if (!acc[compartoId]) acc[compartoId] = []
+            acc[compartoId].push({ id: d.id, filename: d.filename })
+            return acc
+          }, {})
+        })
+        setDocumenti(documentiData)
+      } catch (error) {
+        console.error('[LOAD][DOCUMENTI][ARCHIVE][ERROR]', {
+          praticaId,
+          error
+        })
+      }
+    }
+
+    loadDocumenti()
+  }, [praticaId])
+
   const handleFileDrop = useCallback(async (
     files: File[],
     _compartoId?: string | null,
@@ -20,7 +55,19 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   ) => {
     // Modalità locale: non effettua upload/creazione su backend
     const localOnly = (((import.meta as any).env?.VITE_ARCHIVE_LOCAL_ONLY) ?? 'true') !== 'false'
-    if (!praticaId) return
+
+    console.log('[HANDLE][FILEDROP][START]', {
+      filesCount: files.length,
+      praticaId,
+      localOnly,
+      compartoId: _compartoId,
+      target
+    })
+
+    if (!praticaId) {
+      console.warn('[HANDLE][FILEDROP] Nessuna praticaId, salto')
+      return
+    }
 
     // Validazione
     if (files.length > MAX_FILES_PER_BATCH) {
@@ -220,7 +267,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
           ; (tempDoc as any).localUrl = blobUrl
 
-        setDocumenti(prev => [tempDoc, ...prev])
+        setDocumenti(prev => [...prev, tempDoc]) // ✅ Inserisce alla fine per mantenere ordine cronologico
         if (!localOnly) setUploads(prev => prev.map((u, idx) => idx === uploadIndex ? { ...u, hasTempDoc: true } : u))
         // Log rimosso per ridurre rumore
 
@@ -232,62 +279,236 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         }
 
         const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
-        if (isPdf) {
-          // Generate thumbnail and detect native text in parallel
+
+        // Per PDF in modalità locale: aspetta generazione thumbnail + rilevamento testo nativo PRIMA di salvare
+        let pdfProcessingResult: { dataUrl?: string; hasNativeText: boolean } | null = null
+        if (isPdf && localOnly) {
+          try {
+            const [dataUrl, hasNativeText] = await Promise.all([
+              generateClientPdfThumb(file, 220),
+              detectNativeTextClient(file)
+            ])
+
+            pdfProcessingResult = { dataUrl, hasNativeText }
+
+            console.log('[THUMBNAIL][GENERATION]', {
+              filename: file.name,
+              s3Key: s3Key.substring(0, 30) + '...',
+              hasThumbnail: !!dataUrl,
+              hasNativeText // ⚠️ VALORE CRITICO PER IL PROBLEMA
+            })
+
+            if (dataUrl) {
+              setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+            }
+
+            // Update document with native text detection result AND thumbnail
+            setDocumenti(prev => {
+              const next = [...prev]
+              const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
+              if (idxTemp >= 0) {
+                next[idxTemp] = {
+                  ...next[idxTemp],
+                  hasNativeText,
+                  thumbnailDataUrl: dataUrl || undefined // Salva thumbnail per salvataggio nel DB
+                }
+                console.log('[THUMBNAIL][STATE][UPDATED]', {
+                  filename: file.name,
+                  s3Key: s3Key.substring(0, 30) + '...',
+                  hasNativeText: next[idxTemp].hasNativeText, // ⚠️ VALORE CRITICO
+                  hasThumbnail: !!(next[idxTemp] as any).thumbnailDataUrl
+                })
+                return next
+              }
+              return next
+            })
+          } catch (error) {
+            console.error('⚠️ [ARCH] PDF processing failed', { name: file.name, error, s3Key, tempId })
+            pdfProcessingResult = { hasNativeText: false } // Fallback in caso di errore
+          }
+        } else if (isPdf && !localOnly) {
+          // Per PDF non-local: genera in background (non bloccare)
           Promise.all([
             generateClientPdfThumb(file, 220),
             detectNativeTextClient(file)
           ]).then(([dataUrl, hasNativeText]) => {
             if (dataUrl) {
-              if (!localOnly) setUploads(prev => prev.map((upload, idx) => idx === uploadIndex ? { ...upload, preview: dataUrl } : upload))
+              setUploads(prev => prev.map((upload, idx) => idx === uploadIndex ? { ...upload, preview: dataUrl } : upload))
               setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
             }
 
-            // Update document with native text detection result
             setDocumenti(prev => {
               const next = [...prev]
               const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
               if (idxTemp >= 0) {
-                next[idxTemp] = { ...next[idxTemp], hasNativeText }
+                next[idxTemp] = {
+                  ...next[idxTemp],
+                  hasNativeText,
+                  thumbnailDataUrl: dataUrl || undefined
+                }
                 return next
               }
               return next
             })
           }).catch((error) => {
-            console.warn('⚠️ [ARCH] PDF processing failed', { name: file.name, error, s3Key, tempId })
+            console.error('⚠️ [ARCH] PDF processing failed', { name: file.name, error, s3Key, tempId })
           })
         }
 
-        // In modalità locale, prova a salvare il file fisicamente nella cartella uploads
+        // In modalità locale, copia file in uploads/ subito per garantire persistenza dopo refresh
+        // Il blob URL rimane per preview immediato, ma il file fisico è disponibile per OCR
         if (localOnly) {
-          let saved = false
+          console.log('[SAVE][FILE][REFERENCE]', {
+            filename: file.name,
+            s3Key,
+            note: 'File copiato in uploads/ per persistenza (modalità privacy, ma file locale su stessa macchina)'
+          })
+
+          // Upload immediato in uploads/ per garantire che OCR funzioni anche dopo refresh
           try {
-            // Salva il file fisicamente usando l'endpoint locale
             const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
             await api.uploadFile(localUploadUrl, file)
-            saved = true
-            // File salvato localmente
+            console.log('[SAVE][FILE][UPLOADED]', {
+              filename: file.name,
+              s3Key,
+              size: file.size
+            })
+          } catch (uploadError) {
+            console.error('[SAVE][FILE][UPLOAD][ERROR]', {
+              filename: file.name,
+              s3Key,
+              error: uploadError
+            })
+            // Continua comunque - il blob URL funziona per il viewer
+          }
 
-            // Sostituisci il blob URL con l'URL fisico (hasNativeText già aggiornato sopra)
+          // ✅ IMPORTANTE: anche in modalità locale, salva il record nel database!
+          // Determina tags
+          const tags: string[] = [...(target?.tags || [])]
+          if (target?.type === 'drawer') {
+            const key = (target.title || '').toLowerCase()
+            if (tags.length === 0) {
+              if (key.includes('sequestro')) tags.push('verbale_sequestro', 'verbale')
+              else if (key.includes('arresto')) tags.push('verbale_arresto', 'verbale')
+              else if (key.includes('verbali') || key.includes('verbale')) tags.push('verbale')
+              else if (key.includes('intercett')) tags.push('intercettazioni')
+              else if (key.includes('reati')) tags.push('reati')
+            }
+          }
+
+          const compartoIdFinale = (_compartoId && comparti.find(c => c.id === _compartoId)?.id)
+            || comparti.find(c => c.key === 'da_classificare')?.id
+            || (comparti[0]?.id ?? '')
+
+          console.log('[SAVE][DOCUMENTO][ARCHIVE][LOCAL][START]', {
+            filename: file.name,
+            praticaId,
+            compartoId: compartoIdFinale,
+            s3Key,
+            localOnly: true,
+            targetCompartoId: _compartoId
+          })
+
+           try {
+             // Ottieni hasNativeText e thumbnail
+             // Per PDF: usa il risultato della Promise che abbiamo appena completato
+             // Per non-PDF o non-local: leggi dallo stato
+             let hasNativeTextValue: boolean
+             let thumbnailDataUrl: string | undefined
+
+             if (isPdf && pdfProcessingResult) {
+               // Usa il risultato della Promise completata
+               hasNativeTextValue = pdfProcessingResult.hasNativeText
+               thumbnailDataUrl = pdfProcessingResult.dataUrl || undefined
+             } else {
+               // Per non-PDF o modalità non-local: leggi dallo stato
+               const currentDocs = documenti
+               const tempDoc = currentDocs.find(d => d.id === tempId || d.s3Key === s3Key)
+               hasNativeTextValue = (tempDoc as any)?.hasNativeText || false
+               thumbnailDataUrl = (tempDoc as any)?.thumbnailDataUrl || undefined
+             }
+
+             console.log('🔍 [SAVE][BEFORE]', {
+               filename: file.name,
+               s3Key: s3Key.substring(0, 30) + '...',
+               hasNativeTextValue, // ⚠️ VALORE CHE STIAMO PER INVIARE
+               fromPdfProcessing: isPdf && !!pdfProcessingResult, // Indica se viene da Promise completata
+               hasThumbnail: !!thumbnailDataUrl
+             })
+
+              // Cerca di ottenere filePath se disponibile (File System Access API)
+              let filePath: string | undefined = undefined
+
+              // Verifica se il file ha una proprietà webkitRelativePath (usato quando si seleziona una directory)
+              if ((file as any).webkitRelativePath) {
+                // Questo non è il path completo, ma potrebbe essere utile in futuro
+                // Per ora lo ignoriamo perché non è un path assoluto
+              }
+
+              // Nota: Nel drag & drop normale, il browser non fornisce il path per motivi di sicurezza.
+              // Il filePath può essere ottenuto solo tramite File System Access API (showOpenFilePicker),
+              // che richiede un'interazione esplicita dell'utente. Per ora, salveremo undefined.
+              // In futuro, possiamo aggiungere un file picker opzionale che usa File System Access API
+              // per ottenere il path e salvarlo insieme al file.
+
+              const documento = await api.createDocumento({
+                praticaId,
+                compartoId: compartoIdFinale,
+                filename: file.name,
+                mime: file.type,
+                size: file.size,
+                s3Key,
+                hash: '', // Il backend calcolerà l'hash dal file
+                ocrStatus: 'pending',
+                tags,
+                thumbnailDataUrl, // Salva thumbnail nel database
+                hasNativeText: hasNativeTextValue, // Passa hasNativeText esplicitamente
+                filePath, // Path originale se disponibile
+              })
+
+            console.log('✅ [SAVE][SUCCESS]', {
+              filename: documento.filename,
+              docId: documento.id.substring(0, 20) + '...',
+              hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE SALVATO NEL DB
+              sentHasNativeText: hasNativeTextValue, // ⚠️ VALORE CHE ABBIAMO INVIATO
+              hasThumbnail: !!(documento as any).thumbnailDataUrl
+            })
+
+            // Sostituisci il documento temporaneo con quello reale
+            // Mantieni blob URL (non fisico) - il file sarà caricato on-demand per OCR
             setDocumenti(prev => {
               const next = [...prev]
               const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
               if (idxTemp >= 0) {
-                const physicalUrl = `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}`
-                next[idxTemp] = { ...next[idxTemp], localUrl: physicalUrl }
+                // Mantieni blob URL originale, non fisico
+                const existingBlobUrl = (next[idxTemp] as any).localUrl || blobUrl
+                next[idxTemp] = {
+                  ...documento,
+                  localUrl: existingBlobUrl, // Mantieni blob URL, non fisico
+                  hasNativeText: hasNativeTextValue,
+                  // Aggiungi riferimento al File originale per upload on-demand
+                  _sourceFile: file // Salva riferimento al file per upload on-demand
+                } as any
                 return next
               }
               return next
             })
+
+            // Ricarica documenti per assicurarsi che tutto sia sincronizzato
+            try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
           } catch (e) {
-            // Upload locale fallito, usando blob URL (soft fail)
-            // Mantieni il blob URL se il salvataggio fallisce
-            // L'OCR può comunque funzionare usando il blob URL se il backend lo supporta
-            if (!saved) {
-              // Mantenendo blob URL per OCR
-            }
+            console.error('[SAVE][DOCUMENTO][ARCHIVE][LOCAL][ERROR]', {
+              filename: file.name,
+              praticaId,
+              compartoId: compartoIdFinale,
+              s3Key,
+              error: (e as any)?.message || e,
+              stack: (e as any)?.stack
+            })
+            // Non bloccare - il documento temporaneo rimane visibile
           }
-          continue
+
+          continue // Salta la parte di upload S3
         }
 
         if (!localOnly) {
@@ -323,12 +544,36 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         }
 
         let documento
+        const compartoIdFinale = (_compartoId && comparti.find(c => c.id === _compartoId)?.id)
+          || comparti.find(c => c.key === 'da_classificare')?.id
+          || (comparti[0]?.id ?? '')
+
+        console.log('[SAVE][DOCUMENTO][ARCHIVE][START]', {
+          filename: file.name,
+          praticaId,
+          compartoId: compartoIdFinale,
+          s3Key,
+          localOnly,
+          targetCompartoId: _compartoId
+        })
+
         try {
+          // Ottieni thumbnail dal documento temporaneo se disponibile
+          const currentDocs = documenti
+          const tempDoc = currentDocs.find(d => d.id === tempId || d.s3Key === s3Key)
+          const thumbnailDataUrl = (tempDoc as any)?.thumbnailDataUrl || undefined
+          const hasNativeTextValueNonLocal = (tempDoc as any)?.hasNativeText || false
+
+          console.log('🔍 [SAVE][NON-LOCAL][BEFORE]', {
+            filename: file.name,
+            s3Key: s3Key.substring(0, 30) + '...',
+            hasNativeTextValue: hasNativeTextValueNonLocal, // ⚠️ VALORE CRITICO
+            hasThumbnail: !!thumbnailDataUrl
+          })
+
           documento = await api.createDocumento({
             praticaId,
-            compartoId: (_compartoId && comparti.find(c => c.id === _compartoId)?.id)
-              || comparti.find(c => c.key === 'da_classificare')?.id
-              || (comparti[0]?.id ?? ''),
+            compartoId: compartoIdFinale,
             filename: file.name,
             mime: file.type,
             size: file.size,
@@ -336,9 +581,25 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             hash: '',
             ocrStatus: 'pending',
             tags,
+            thumbnailDataUrl, // Salva thumbnail nel database
+            hasNativeText: hasNativeTextValueNonLocal, // Passa hasNativeText esplicitamente
+          })
+
+          console.log('✅ [SAVE][NON-LOCAL][SUCCESS]', {
+            filename: documento.filename,
+            docId: documento.id.substring(0, 20) + '...',
+            hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE SALVATO
+            sentHasNativeText: hasNativeTextValueNonLocal // ⚠️ VALORE INVIATO
           })
         } catch (e) {
-          console.error('❌ [ARCH] createDocumento failed', { name: file.name, s3Key, error: (e as any)?.message || e })
+          console.error('[SAVE][DOCUMENTO][ARCHIVE][ERROR]', {
+            name: file.name,
+            s3Key,
+            praticaId,
+            compartoId: compartoIdFinale,
+            error: (e as any)?.message || e,
+            stack: (e as any)?.stack
+          })
           throw e
         }
         // Documento creato
@@ -358,11 +619,14 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           const next = [...prev]
           const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
           if (idxTemp >= 0) {
-            // In modalità locale, usa l'URL fisico invece del blob URL
-            const physicalUrl = localOnly ? `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}` : (next[idxTemp] as any).localUrl
+            // In modalità non locale, usa URL fisico (S3 o uploads/)
+            // In modalità locale, mantieni blob URL (file caricato on-demand per OCR)
+            const fileUrl = localOnly
+              ? (next[idxTemp] as any).localUrl // Mantieni blob URL se localOnly
+              : `http://localhost:3001/api/files/${encodeURIComponent(s3Key)}` // URL fisico per non-local
             // Mantieni hasNativeText se già rilevato lato client
             const existingHasNativeText = (next[idxTemp] as any).hasNativeText
-            next[idxTemp] = { ...(documento as any), localUrl: physicalUrl, hasNativeText: existingHasNativeText }
+            next[idxTemp] = { ...(documento as any), localUrl: fileUrl, hasNativeText: existingHasNativeText }
             return next
           }
           return [documento, ...prev]
