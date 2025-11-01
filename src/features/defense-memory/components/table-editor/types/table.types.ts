@@ -85,6 +85,7 @@ export interface TableRowProps {
     onCellRefChange?: (rowId: string, element: HTMLDivElement | null) => void
     onCellWidthChange?: (width: number) => void
     onMoveMotivation?: (fromRowId: string, toRowId: string, motivationId: string, toIndex: number) => void
+    onResizeStart?: (column: 'typeDescription' | 'observations', e: React.MouseEvent) => void // ✅ Funzione per resize colonne
 }
 
 export interface RowEditFormProps {

@@ -22,7 +22,8 @@ export const TableRow: React.FC<TableRowProps> = ({
     readOnly = false,
     errors = [],
     columnWidths = DEFAULT_WIDTHS,
-    onMoveMotivation
+    onMoveMotivation,
+    onResizeStart // ✅ Funzione per resize colonne
 }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
@@ -42,7 +43,7 @@ export const TableRow: React.FC<TableRowProps> = ({
     return (
         <div
             className={cn(
-                "flex border-b border-gray-200 hover:bg-gray-50 transition-colors relative",
+                "flex border-b border-gray-200 hover:bg-gray-50 transition-colors relative w-full",
                 hasErrors && "bg-red-50 border-red-200",
                 readOnly && "bg-gray-50"
             )}
@@ -57,12 +58,27 @@ export const TableRow: React.FC<TableRowProps> = ({
                 <RowNumberCell order={order} />
             </div>
 
-            {/* Tipo e Descrizione - Editabile in-place - solo auto-size, no resize */}
+            {/* Tipo e Descrizione - Editabile in-place - con handle di resize - larghezza fissa ma ridimensionabile */}
             <div
                 ref={cellRef}
                 className="border-r border-gray-300 flex-shrink-0 relative"
-                style={{ width: columnWidths.typeDescription }}
+                style={{ width: columnWidths.typeDescription, minWidth: '300px', flex: `0 0 ${columnWidths.typeDescription}px` }}
             >
+                {/* ✅ Handle di resize sulla linea verticale destra - sempre visibile e trascinabile */}
+                <div
+                    className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize z-10 transition-all"
+                    onMouseDown={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (onResizeStart) {
+                            onResizeStart('typeDescription', e)
+                        }
+                    }}
+                    style={{
+                        marginRight: '-1px'
+                    }}
+                    title="Trascina per ridimensionare"
+                />
                 <TypeDescriptionCell
                     cellType={row.cellType}
                     description={row.description}
@@ -74,10 +90,10 @@ export const TableRow: React.FC<TableRowProps> = ({
                 />
             </div>
 
-            {/* Osservazioni - Editabile in-place */}
+            {/* Osservazioni - Editabile in-place - con flex per riempire spazio rimanente */}
             <div
-                className="flex-shrink-0 relative"
-                style={{ width: columnWidths.observations }}
+                className="flex-1 relative min-w-0"
+                style={{ minWidth: columnWidths.observations }}
             >
                 {/* Pulsante Azioni - appare solo su hover, posizionato in alto a destra */}
                 {isHovered && !readOnly && (

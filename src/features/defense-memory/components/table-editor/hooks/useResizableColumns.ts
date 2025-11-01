@@ -39,8 +39,8 @@ const calculateMinWidthForCombos = (): number => {
 const MIN_TYPE_DESCRIPTION_WIDTH = calculateMinWidthForCombos()
 
 const DEFAULT_WIDTHS: ColumnWidths = {
-    number: 40,
-    typeDescription: Math.max(450, MIN_TYPE_DESCRIPTION_WIDTH), // Assicura che sia almeno il minimo
+    number: 50, // ✅ Prima colonna più stretta
+    typeDescription: Math.max(600, MIN_TYPE_DESCRIPTION_WIDTH), // ✅ Seconda colonna più larga e riempie lo spazio
     observations: 400
 }
 

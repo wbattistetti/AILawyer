@@ -257,10 +257,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 clienteNome={clienteNome}
             />
 
-            {/* Tabella */}
+            {/* Tabella - riempie tutto il pannello */}
             <div
                 ref={scrollableRef}
-                className="flex-1 overflow-x-auto overflow-y-auto"
+                className="flex-1 overflow-x-auto overflow-y-auto w-full"
                 onWheel={handleWheelZoom}
             >
                 {sortedRows.length === 0 ? (
@@ -283,54 +283,28 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         </div>
                     </div>
                 ) : (
-                    <div className="min-w-max" style={{ minWidth: `${widths.number + widths.typeDescription + widths.observations}px` }}>
-                        {/* Header colonne */}
-                        <div className="flex border-b border-gray-200 text-sm font-medium text-gray-900" style={{ backgroundColor: '#e6f2ff' }}>
-                            <div
-                                className="p-4 text-center flex-shrink-0"
-                                style={{ width: widths.number }}
-                            >
-                                #
-                            </div>
-                            <div
-                                className="p-4 border-r border-gray-300 flex-shrink-0 relative"
-                                style={{ width: widths.typeDescription }}
-                            >
-                                Tipo e Descrizione
-                                {/* Handle di resize solo verso destra */}
-                                <div
-                                    className="absolute right-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize"
-                                    onMouseDown={(e) => handleResizeStart('typeDescription', e)}
-                                />
-                            </div>
-                            <div
-                                className="p-4 flex-shrink-0 relative"
-                                style={{ width: widths.observations }}
-                            >
-                                Osservazioni
-                                <div
-                                    className="absolute right-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize"
-                                    onMouseDown={(e) => handleResizeStart('observations', e)}
-                                />
-                            </div>
-                        </div>
+                    <div className="w-full h-full flex flex-col">
+                        {/* ✅ Header colonne - COMPLETAMENTE RIMOSSO/INVISIBILE */}
 
-                        {/* Righe */}
-                        {sortedRows.map((row, index) => (
-                            <TableRow
-                                key={row.id}
-                                row={row}
-                                order={index + 1}
-                                onUpdate={updateRow}
-                                onDelete={handleDeleteRow}
-                                onMoveUp={canMoveUp(row.id) ? () => handleMoveRowUp(row.id) : undefined}
-                                onMoveDown={canMoveDown(row.id) ? () => handleMoveRowDown(row.id) : undefined}
-                                readOnly={readOnly}
-                                errors={getRowErrors(row.id)}
-                                columnWidths={widths}
-                                onMoveMotivation={handleMoveMotivation}
-                            />
-                        ))}
+                        {/* Righe - La griglia riempie tutto il pannello */}
+                        <div className="flex-1 w-full overflow-auto">
+                            {sortedRows.map((row, index) => (
+                                <TableRow
+                                    key={row.id}
+                                    row={row}
+                                    order={index + 1}
+                                    onUpdate={updateRow}
+                                    onDelete={handleDeleteRow}
+                                    onMoveUp={canMoveUp(row.id) ? () => handleMoveRowUp(row.id) : undefined}
+                                    onMoveDown={canMoveDown(row.id) ? () => handleMoveRowDown(row.id) : undefined}
+                                    readOnly={readOnly}
+                                    errors={getRowErrors(row.id)}
+                                    columnWidths={widths}
+                                    onMoveMotivation={handleMoveMotivation}
+                                    onResizeStart={handleResizeStart} // ✅ Passa funzione resize
+                                />
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
