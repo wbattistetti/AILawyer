@@ -156,10 +156,12 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
         return (
             <div
                 className={cn(
-                    'relative select-none rounded',
-                    (hover || isDragOver) ? 'bg-blue-50' : (hasExtractInClipboard && isMouseInside ? 'bg-blue-50/60' : 'bg-transparent')
+                    'relative select-none rounded transition-colors',
+                    (hover || isDragOver) ? 'bg-cyan-100' : (hasExtractInClipboard && isMouseInside ? 'bg-cyan-50' : 'bg-cyan-50/30')
                 )}
                 style={{ height: 8, marginTop: 8, marginBottom: 8 }}
+                onMouseEnter={() => setHover(true)}
+                onMouseLeave={() => setHover(false)}
             >
                 {/* Hit area che copre intercapedine al 100% */}
                 <div
@@ -185,8 +187,8 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                         extractClipboardManager.clear()
                     }}
                 />
-                {/* Linea blu centrale come feedback, senza cambiare l'altezza della fascia */}
-                <div className={cn('absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] rounded transition-colors', (hover || isDragOver) ? 'bg-blue-600' : (hasExtractInClipboard && isMouseInside ? 'bg-blue-400/60' : 'bg-transparent'))} />
+                {/* Linea azzurrina centrale come feedback, senza cambiare l'altezza della fascia */}
+                <div className={cn('absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] rounded transition-colors', (hover || isDragOver) ? 'bg-cyan-500' : (hasExtractInClipboard && isMouseInside ? 'bg-cyan-400' : 'bg-cyan-300/50'))} />
             </div>
         )
     }
@@ -257,9 +259,10 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                             {/* Zona aggiunta sempre visibile */}
                             <div
                                 className={cn(
-                                    'p-1 bg-gray-50 rounded-md border border-dashed border-gray-300 transition-colors',
-                                    isDragOver && 'border-blue-400 bg-blue-50',
-                                    hasExtractInClipboard && isHoveringMotivazione && 'border-blue-500 bg-blue-100'
+                                    'p-1 bg-cyan-50 rounded-md border border-dashed border-cyan-300 transition-colors',
+                                    'hover:bg-cyan-100 hover:border-cyan-400',
+                                    isDragOver && 'border-cyan-500 bg-cyan-200',
+                                    hasExtractInClipboard && isHoveringMotivazione && 'border-cyan-500 bg-cyan-100'
                                 )}
                                 onClick={hasExtractInClipboard ? handlePasteMotivation : undefined}
                             >
@@ -284,9 +287,10 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                     ) : (
                         <div
                             className={cn(
-                                'p-1 bg-gray-50 rounded-md border border-dashed border-gray-300 transition-colors',
-                                isDragOver && 'border-blue-400 bg-blue-50',
-                                hasExtractInClipboard && isHoveringMotivazione && 'border-blue-500 bg-blue-100'
+                                'p-1 bg-cyan-50 rounded-md border border-dashed border-cyan-300 transition-colors',
+                                'hover:bg-cyan-100 hover:border-cyan-400',
+                                isDragOver && 'border-cyan-500 bg-cyan-200',
+                                hasExtractInClipboard && isHoveringMotivazione && 'border-cyan-500 bg-cyan-100'
                             )}
                             onClick={hasExtractInClipboard ? handlePasteMotivation : undefined}
                         >
@@ -311,51 +315,54 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
             )}
 
             {/* Osservazioni */}
-            <div className="space-y-1">
-                <div className="flex items-center space-x-1">
-                    <FileText className="h-3 w-3 text-gray-600" />
-                    <span className="text-xs font-medium text-gray-900">{isReatoContestato ? 'Osservazione generale' : 'Osservazioni'}:</span>
-                </div>
-
-                <div>
-                    {isReatoContestato ? (
-                        <Textarea
-                            value={(motivations.map(m => m.observation?.trim()).filter(Boolean) as string[]).join('\n\n')}
-                            readOnly
-                            className={cn(
-                                'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words bg-gray-50'
-                            )}
-                        />
-                    ) : (
-                        <Textarea
-                            ref={textareaRef}
-                            value={row.observations || ''}
-                            onChange={(e) => handleObservationsChange(e.target.value)}
-                            placeholder="Inserisci le tue osservazioni..."
-                            readOnly={readOnly}
-                            className={cn(
-                                'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words'
-                            )}
-                            onInput={(e) => {
-                                const target = e.target as HTMLTextAreaElement
-                                target.style.height = 'auto'
-                                target.style.height = `${target.scrollHeight}px`
-                            }}
-                        />
-                    )}
-                    {getFieldError('observations') && (
-                        <p className="text-xs text-red-500 mt-0.5">{getFieldError('observations')}</p>
-                    )}
-                </div>
-                {(hasExtractInClipboard && isMouseInside) && (
-                    <div
-                        className="pointer-events-none absolute z-10 text-[11px] px-2 py-1 rounded bg-blue-600 text-white shadow"
-                        style={{ left: Math.max(0, cursorPos.x + 12), top: Math.max(0, cursorPos.y + 12) }}
-                    >
-                        Incolla estratto in una delle aree evidenziate
+            {/* ✅ Mostra solo se non è reato contestato OPPURE se ci sono almeno 2 motivazioni */}
+            {(!isReatoContestato || motivations.length >= 2) && (
+                <div className="space-y-1">
+                    <div className="flex items-center space-x-1">
+                        <FileText className="h-3 w-3 text-gray-600" />
+                        <span className="text-xs font-medium text-gray-900">{isReatoContestato ? 'Osservazione generale' : 'Osservazioni'}:</span>
                     </div>
-                )}
-            </div>
+
+                    <div>
+                        {isReatoContestato ? (
+                            <Textarea
+                                value={(motivations.map(m => m.observation?.trim()).filter(Boolean) as string[]).join('\n\n')}
+                                readOnly
+                                className={cn(
+                                    'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words bg-gray-50'
+                                )}
+                            />
+                        ) : (
+                            <Textarea
+                                ref={textareaRef}
+                                value={row.observations || ''}
+                                onChange={(e) => handleObservationsChange(e.target.value)}
+                                placeholder="Inserisci le tue osservazioni..."
+                                readOnly={readOnly}
+                                className={cn(
+                                    'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words'
+                                )}
+                                onInput={(e) => {
+                                    const target = e.target as HTMLTextAreaElement
+                                    target.style.height = 'auto'
+                                    target.style.height = `${target.scrollHeight}px`
+                                }}
+                            />
+                        )}
+                        {getFieldError('observations') && (
+                            <p className="text-xs text-red-500 mt-0.5">{getFieldError('observations')}</p>
+                        )}
+                    </div>
+                    {(hasExtractInClipboard && isMouseInside) && (
+                        <div
+                            className="pointer-events-none absolute z-10 text-[11px] px-2 py-1 rounded bg-blue-600 text-white shadow"
+                            style={{ left: Math.max(0, cursorPos.x + 12), top: Math.max(0, cursorPos.y + 12) }}
+                        >
+                            Incolla estratto in una delle aree evidenziate
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

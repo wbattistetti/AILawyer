@@ -2,10 +2,13 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo
 import { Layout, Model, TabNode, IJsonModel, Actions } from 'flexlayout-react'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
+import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Archive, Search, User, CreditCard, Calendar, Network } from 'lucide-react'
-// import type { Comparto } from '@/types' // Removed unused import
+import type { Comparto } from '@/types'
+import { api } from '@/lib/api'
+import type { DrawerType } from '../features/drawers/types'
 import './DockWorkspaceV2.css'
 
 type DocTab = { id: string; title: string }
@@ -215,6 +218,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   // ✅ State per forzare re-render quando cambia lo stato fullscreen
   const [fullscreenTrigger, setFullscreenTrigger] = useState(0)
 
+  // ✅ State per i cassetti (comparti)
+  const [comparti, setComparti] = useState<Comparto[]>([])
+  const [selectedDrawerId, setSelectedDrawerId] = useState<string | undefined>(undefined)
+
   const registerToggle = useCallback((id: string, fn: () => void) => {
     if (!id) return
     const map = fullscreenTogglesRef.current
@@ -273,6 +280,185 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       localStorage.setItem(storageKey, JSON.stringify(json))
     } catch { }
   }, [model, storageKey])
+
+  // ✅ Carica comparti quando praticaId è disponibile
+  useEffect(() => {
+    if (!praticaId) return
+    api.getComparti(praticaId)
+      .then((comparti: Comparto[]) => {
+        setComparti(comparti)
+      })
+      .catch(console.error)
+  }, [praticaId])
+
+  // ✅ Funzioni helper per colori e icone dei cassetti (come in CabinetView)
+  const colorFor = useCallback((label?: string): string => {
+    const s = (label || '').toLowerCase()
+    if (s.includes('da classificare')) return '#ef4444'
+    if (s.includes('admin') || s.includes('procure')) return '#8b5cf6'
+    if (s.includes('parti') || s.includes('anagrafiche')) return '#3b82f6'
+    if (s.includes('corrispondenza') || s.includes('pec')) return '#06b6d4'
+    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return '#dc2626'
+    if (s.includes('indagini') || s.includes('preliminari')) return '#f59e0b'
+    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return '#10b981'
+    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return '#ec4899'
+    if (s.includes('udienze') || s.includes('verbali')) return '#f59e0b'
+    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return '#6366f1'
+    if (s.includes('cliente') || s === 'a') return '#84cc16'
+    return '#64748b'
+  }, [])
+
+  const iconFor = useCallback((label?: string): React.ReactNode => {
+    const s = (label || '').toLowerCase()
+    if (s.includes('da classificare')) return <Boxes className="w-4 h-4" />
+    if (s.includes('admin') || s.includes('procure')) return <Landmark className="w-4 h-4" />
+    if (s.includes('parti') || s.includes('anagrafiche')) return <Users className="w-4 h-4" />
+    if (s.includes('corrispondenza') || s.includes('pec')) return <FileText className="w-4 h-4" />
+    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return <Gavel className="w-4 h-4" />
+    if (s.includes('indagini') || s.includes('preliminari')) return <Shield className="w-4 h-4" />
+    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return <FileText className="w-4 h-4" />
+    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return <Boxes className="w-4 h-4" />
+    if (s.includes('udienze') || s.includes('verbali')) return <Clock className="w-4 h-4" />
+    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return <Gavel className="w-4 h-4" />
+    if (s.includes('cliente') || s === 'a') return <Users className="w-4 h-4" />
+    return <Boxes className="w-4 h-4" />
+  }, [])
+
+  const typeFor = useCallback((label?: string): DrawerType | undefined => {
+    const s = (label || '').toLowerCase()
+    if (s.includes('elenco verbali') || s.includes('verbale di sequestro') || s.includes('verbale di arresto') || s.includes('reati contestati') || s.includes('intercett')) return 'DocumentCollection'
+    return undefined
+  }, [])
+
+  // ✅ Crea array di DrawerTabItem dai comparti
+  const drawerTabs = useMemo<DrawerTabItem[]>(() => {
+    return comparti.map(c => ({
+      id: c.key,
+      label: c.nome,
+      icon: iconFor(c.nome),
+      color: colorFor(c.nome),
+      type: typeFor(c.nome)
+    }))
+  }, [comparti, colorFor, iconFor, typeFor])
+
+  // ✅ Gestisce il click su una tab del cassetto
+  const handleDrawerTabSelect = useCallback((drawerId: string) => {
+    setSelectedDrawerId(drawerId)
+
+    // Trova il comparto corrispondente
+    const comparto = comparti.find(c => c.key === drawerId)
+    if (!comparto) return
+
+    const drawerTab = drawerTabs.find(t => t.id === drawerId)
+    if (!drawerTab) return
+
+    // Apri o aggiorna il pannello dockabile sopra la striscia
+    if (!modelRef.current) return
+    const json = modelRef.current.toJson() as any
+
+    // Cerca se esiste già un tabset per i cassetti
+    let drawerTabset = findTabsetRecursive(json.layout, 'drawerContentTabset')
+
+    if (!drawerTabset) {
+      // Crea il tabset sopra il bottom border
+      // Il layout principale è un row, aggiungiamo il tabset come ultimo figlio (sotto)
+      if (!json.layout.children || json.layout.children.length === 0) {
+        json.layout.children = []
+      }
+
+      // Aggiungi il tabset per il contenuto dei cassetti (weight basso = in fondo)
+      drawerTabset = {
+        type: 'tabset',
+        id: 'drawerContentTabset',
+        weight: 20, // Peso basso = posizionato in fondo
+        enableResize: true,
+        enableMaximize: false,
+        children: []
+      }
+
+      // Se il layout principale è un row, devo wrappare tutto in una column per layout verticale
+      // così il drawerTabset può essere posizionato in fondo
+      if (json.layout.type === 'row') {
+        // Crea una colonna che contiene il row esistente e il drawerTabset
+        const existingRow = { ...json.layout }
+        json.layout = {
+          type: 'column',
+          children: [
+            {
+              ...existingRow,
+              weight: 80 // Il contenuto principale occupa la maggior parte dello spazio
+            },
+            {
+              ...drawerTabset,
+              weight: 20 // Il drawerTabset occupa il resto (in fondo)
+            }
+          ]
+        }
+      } else if (json.layout.type === 'column') {
+        // Se è già una column, aggiungi il drawerTabset in fondo
+        json.layout.children.push({
+          ...drawerTabset,
+          weight: 20
+        })
+      } else {
+        // Altrimenti wrappa in una column
+        const existingChildren = [...(json.layout.children || [])]
+        json.layout = {
+          type: 'column',
+          children: [
+            ...existingChildren.map((c: any) => ({ ...c, weight: c.weight || 80 })),
+            {
+              ...drawerTabset,
+              weight: 20
+            }
+          ]
+        }
+      }
+    }
+
+    // Verifica se esiste già una tab per questo drawer
+    const existingTabIndex = drawerTabset.children?.findIndex((t: any) => t.config?.drawerId === drawerId)
+
+    if (existingTabIndex >= 0) {
+      // Seleziona la tab esistente
+      drawerTabset.selected = existingTabIndex
+    } else {
+      // Crea nuova tab
+      const newTab = {
+        type: 'tab',
+        name: comparto.nome,
+        component: 'drawer-content',
+        id: `drawer-${drawerId}`,
+        config: {
+          drawerId,
+          drawerTitle: comparto.nome,
+          drawerType: drawerTab.type
+        }
+      }
+
+      if (!drawerTabset.children) drawerTabset.children = []
+      drawerTabset.children.push(newTab)
+      drawerTabset.selected = drawerTabset.children.length - 1
+    }
+
+    // Aggiorna il modello
+    const nextModel = Model.fromJson(json)
+    modelRef.current = nextModel
+    setModel(nextModel)
+  }, [comparti, drawerTabs])
+
+  // ✅ Helper per cercare ricorsivamente un tabset
+  const findTabsetRecursive = useCallback((node: any, id: string): any => {
+    if (!node) return null
+    if (node.type === 'tabset' && node.id === id) return node
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        const result = findTabsetRecursive(child, id)
+        if (result) return result
+      }
+    }
+    return null
+  }, [])
 
   // Listener per aprire un cassetto in una nuova tab
   useEffect(() => {
@@ -687,6 +873,14 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     if (comp === 'drawer') {
       const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string; drawerType?: string }
       return <div className="w-full h-full overflow-hidden bg-white"><DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} type={cfg.drawerType as any} /></div>
+    }
+    if (comp === 'drawer-content') {
+      const cfg = (node.getConfig() || {}) as { drawerId?: string; drawerTitle?: string; drawerType?: string }
+      return (
+        <div className="w-full h-full overflow-hidden bg-white">
+          <DrawerViewer id={cfg.drawerId || ''} title={cfg.drawerTitle || 'Cassetto'} type={cfg.drawerType as any} />
+        </div>
+      )
     }
     return null
   }
@@ -1569,20 +1763,41 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     <div
       ref={layoutRootRef}
       className="dockv2-root"
-      style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative' }}
+      style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative', display: 'flex', flexDirection: 'column' }}
     >
-      <LayoutAny
-        key={`layout-${tabsOpenState}`}
-        model={model}
-        factory={factory}
-        iconFactory={iconFactory}
-        realtimeResize
-        onModelChange={handleModelChange}
-        onAction={handleAction}
-        onRenderTab={onRenderTab}
+      {/* Layout principale - con padding bottom per la striscia */}
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <LayoutAny
+          key={`layout-${tabsOpenState}`}
+          model={model}
+          factory={factory}
+          iconFactory={iconFactory}
+          realtimeResize
+          onModelChange={handleModelChange}
+          onAction={handleAction}
+          onRenderTab={onRenderTab}
+        // ✅ STEP 4: Fullscreen gestito dal componente PanelWithFullscreenToggle
+        />
+      </div>
 
-      // ✅ STEP 4: Fullscreen gestito dal componente PanelWithFullscreenToggle
-      />
+      {/* ✅ Striscia cassetti in fondo */}
+      {drawerTabs.length > 0 && (
+        <div
+          className="border-t border-slate-200 bg-slate-50"
+          style={{
+            height: '60px',
+            flexShrink: 0,
+            zIndex: 10
+          }}
+        >
+          <DrawerTabStrip
+            items={drawerTabs}
+            selectedId={selectedDrawerId}
+            onSelect={handleDrawerTabSelect}
+            className="h-full"
+          />
+        </div>
+      )}
 
       {/* CSS gestito da DockWorkspaceV2.css */}
     </div>

@@ -77,6 +77,23 @@ export const addRow = (rows: TableRow[], newRow: Omit<TableRow, 'id' | 'order'>)
     return [...rows, row]
 }
 
+export const addRowAt = (rows: TableRow[], targetOrder: number, newRow: Omit<TableRow, 'id' | 'order'>): TableRow[] => {
+    // Incrementa l'ordine di tutte le righe >= targetOrder
+    const adjustedRows = rows.map(row => ({
+        ...row,
+        order: row.order >= targetOrder ? row.order + 1 : row.order
+    }))
+
+    // Crea la nuova riga con l'ordine target
+    const newTableRow: TableRow = {
+        ...newRow,
+        id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        order: targetOrder
+    }
+
+    return reorderRows([...adjustedRows, newTableRow])
+}
+
 export const updateRow = (rows: TableRow[], rowId: string, updates: Partial<TableRow>): TableRow[] => {
     return rows.map(row =>
         row.id === rowId

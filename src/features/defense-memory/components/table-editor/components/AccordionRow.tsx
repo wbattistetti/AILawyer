@@ -1,10 +1,137 @@
-import React, { useState } from 'react'
-import { TableRowProps } from '../../types/table.types'
-import { TypeDescriptionCell } from './TypeDescriptionCell'
+import React, { useState, useRef, useEffect } from 'react'
+import { TableRowProps, CellType } from '../../types/table.types'
 import { ObservationsCell } from './ObservationsCell'
-import { RowActions } from './RowActions'
+import { Combobox } from './Combobox'
+import { REATI_PENALI } from '../utils/reatoSuggestions'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronRight, Scale, FileText, AlertCircle } from 'lucide-react'
+import { ChevronDown, ChevronRight, Scale, FileText, AlertCircle, Calendar as CalendarIcon, MoreVertical, Plus, Trash2 } from 'lucide-react'
+import { format } from 'date-fns'
+import { it } from 'date-fns/locale'
+
+// Lista di atti comuni nel sistema giudiziario
+const ATTI_COMUNI = [
+    'decreto di archiviazione',
+    'decreto di citazione',
+    'decreto di rinvio a giudizio',
+    'mandato di comparizione',
+    'mandato di cattura',
+    'mandato di perquisizione',
+    'mandato di sequestro',
+    'ordinanza di custodia cautelare',
+    'ordinanza di applicazione della misura cautelare',
+    'ordinanza di proroga della misura cautelare',
+    'ordinanza di revoca della misura cautelare',
+    'ordinanza di scarcerazione',
+    'ordinanza di controllo',
+    'ordinanza di sorveglianza speciale',
+    'ordinanza di allontanamento dalla casa familiare',
+    'ordinanza di divieto di avvicinamento',
+    'ordinanza di divieto di comunicazione',
+    'ordinanza di obbligo di dimora',
+    'ordinanza di obbligo di presentazione',
+    'sentenza',
+    'sentenza di primo grado',
+    'sentenza di secondo grado',
+    'sentenza di condanna',
+    'sentenza di assoluzione',
+    'sentenza di non luogo a procedere',
+    'sentenza di estinzione del reato',
+    'sentenza di archiviazione',
+    'verbale di interrogatorio',
+    'verbale di audizione',
+    'verbale di perquisizione',
+    'verbale di sequestro',
+    'verbale di arresto',
+    'verbale di fermo',
+    'verbale di identificazione',
+    'verbale di accertamento',
+    'verbale di constatazione',
+    'verbale di consegna',
+    'verbale di notifica',
+    'verbale di garanzia',
+    'verbale di contestazione',
+    'notifica di avviso di garanzia',
+    'notifica di avviso di conclusione delle indagini',
+    'notifica di avviso di udienza',
+    'notifica di avviso di sentenza',
+    'procura',
+    'procura generale',
+    'procura speciale',
+    'procura a procedere',
+    'procura a querelare',
+    'ricorso',
+    'ricorso per cassazione',
+    'ricorso per revisione',
+    'ricorso per impugnazione',
+    'atto di citazione',
+    'atto di opposizione',
+    'atto di costituzione di parte civile',
+    'atto di querela',
+    'atto di denuncia',
+    'atto di precisazione',
+    'atto di integrazione',
+    'atto di deposito',
+    'atto di notifica',
+    'atto di cancellazione',
+    'atto di archiviazione',
+    'atto di rinvio',
+    'atto di stralcio',
+    'atto di separazione',
+    'atto di riunione',
+    'atto di rimessione',
+    'atto di remissione',
+    'atto di rinuncia',
+    'atto di transazione',
+    'atto di composizione',
+    'atto di conciliazione',
+    'atto di mediazione',
+    'atto di arbitrato',
+    'atto di compromesso',
+    'atto di lodo',
+    'atto di esecuzione',
+    'atto di pignoramento',
+    'atto di sequestro',
+    'atto di vendita',
+    'atto di assegnazione',
+    'atto di divisione',
+    'atto di unione',
+    'atto di fusione',
+    'atto di scissione',
+    'atto di trasformazione',
+    'atto di modifica',
+    'atto di variazione',
+    'atto di integrazione',
+    'atto di rettifica',
+    'atto di correzione',
+    'atto di annullamento',
+    'atto di revoca',
+    'atto di risoluzione',
+    'atto di rescissione',
+    'atto di nullità',
+    'atto di inesistenza',
+    'atto di inefficacia',
+    'atto di invalidità',
+    'atto di illegittimità',
+    'atto di incostituzionalità',
+    'atto di disapplicazione',
+    'atto di disapplicazione parziale',
+    'atto di disapplicazione totale',
+    'atto di disapplicazione integrale',
+    'atto di disapplicazione sostanziale',
+    'atto di disapplicazione formale',
+    'atto di disapplicazione procedurale',
+    'atto di disapplicazione sostanziale e formale',
+    'atto di disapplicazione sostanziale e procedurale',
+    'atto di disapplicazione formale e procedurale',
+    'atto di disapplicazione sostanziale, formale e procedurale'
+]
 
 const DEFAULT_WIDTHS = {
     number: 40,
@@ -19,6 +146,8 @@ export const AccordionRow: React.FC<TableRowProps> = ({
     onDelete,
     onMoveUp,
     onMoveDown,
+    onAddRowAbove,
+    onAddRowBelow,
     readOnly = false,
     errors = [],
     columnWidths = DEFAULT_WIDTHS,
@@ -26,15 +155,37 @@ export const AccordionRow: React.FC<TableRowProps> = ({
 }) => {
     const [isExpanded, setIsExpanded] = useState(false)
     const [isHovered, setIsHovered] = useState(false)
+    const [contestationDateOpen, setContestationDateOpen] = useState(false)
+    const [eventDateOpen, setEventDateOpen] = useState(false)
+    const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+    // ✅ Ref per i container dei campi editabili (per verificare mouse dentro/fuori)
+    const typeContainerRef = useRef<HTMLDivElement>(null)
+    const descriptionContainerRef = useRef<HTMLDivElement>(null)
+    const contestationDateContainerRef = useRef<HTMLDivElement>(null)
+    const eventDateContainerRef = useRef<HTMLDivElement>(null)
+
+    // ✅ Ref per misurare larghezze quando le combobox sono espande
+    const typeSelectRef = useRef<HTMLButtonElement | null>(null)
+    const typeButtonRef = useRef<HTMLButtonElement | null>(null)
+    const descriptionComboboxRef = useRef<HTMLDivElement | null>(null)
+
+    // ✅ Stati per larghezze calcolate (per spacing dinamico)
+    const [typeWidth, setTypeWidth] = useState(140) // Min width iniziale
+    const [descriptionWidth, setDescriptionWidth] = useState(200)
+
+    // ✅ Stati editing per ogni campo (edit-on-click/hover)
+    const [isTypeEditing, setIsTypeEditing] = useState(!row.cellType)
+    const [isDescriptionEditing, setIsDescriptionEditing] = useState(false)
+    const [isContestationDateEditing, setIsContestationDateEditing] = useState(false)
+    const [isEventDateEditing, setIsEventDateEditing] = useState(false)
 
     const handleUpdate = (data: Partial<{ cellType: any; description: string; contestationDate?: string; eventDate?: string; observations?: string; extract?: any }>) => {
         onUpdate(row.id, data)
     }
 
     const handleDelete = () => {
-        if (window.confirm('Sei sicuro di voler eliminare questa riga?')) {
-            onDelete(row.id)
-        }
+        onDelete(row.id)
     }
 
     const hasErrors = errors.length > 0
@@ -80,13 +231,136 @@ export const AccordionRow: React.FC<TableRowProps> = ({
     const typeConfig = getTypeConfig()
     const IconComponent = typeConfig.icon
 
-    // Genera il titolo completo per l'header
-    const getHeaderTitle = (): string => {
-        if (row.description?.trim()) {
-            return row.description
+    // ✅ Sincronizza stati editing con props
+    useEffect(() => {
+        if (!row.cellType) {
+            setIsTypeEditing(true)
         }
-        return `${typeConfig.typeLabel} (senza descrizione)`
+    }, [row.cellType])
+
+    // ✅ Calcola larghezza tipo quando la Select è attiva (per spacing descrizione)
+    useEffect(() => {
+        if (isTypeEditing && typeSelectRef.current) {
+            // Quando la Select è aperta, misura la larghezza del trigger
+            const measureWidth = () => {
+                const trigger = typeSelectRef.current
+                if (trigger) {
+                    const width = trigger.getBoundingClientRect().width
+                    setTypeWidth(Math.max(width, 140)) // Min 140px
+                }
+            }
+            // Usa setTimeout per permettere al DOM di renderizzare
+            const timeoutId = setTimeout(measureWidth, 0)
+            return () => clearTimeout(timeoutId)
+        } else if (!isTypeEditing && typeButtonRef.current) {
+            // Quando è una label, misura la larghezza della label
+            const measureWidth = () => {
+                const button = typeButtonRef.current
+                if (button) {
+                    const width = button.getBoundingClientRect().width
+                    setTypeWidth(Math.max(width, 140))
+                }
+            }
+            const timeoutId = setTimeout(measureWidth, 0)
+            return () => clearTimeout(timeoutId)
+        }
+    }, [isTypeEditing, row.cellType])
+
+    // ✅ Calcola larghezza descrizione quando la combobox è attiva (per spacing date)
+    useEffect(() => {
+        if (isDescriptionEditing && descriptionComboboxRef.current) {
+            const measureWidth = () => {
+                const combobox = descriptionComboboxRef.current
+                if (combobox) {
+                    const width = combobox.getBoundingClientRect().width
+                    setDescriptionWidth(Math.max(width, 200))
+                }
+            }
+            const timeoutId = setTimeout(measureWidth, 100)
+            return () => clearTimeout(timeoutId)
+        } else if (!isDescriptionEditing && descriptionContainerRef.current) {
+            // Quando è una label, misura la larghezza della label
+            const measureWidth = () => {
+                const container = descriptionContainerRef.current
+                if (container) {
+                    const button = container.querySelector('button')
+                    if (button) {
+                        const width = button.getBoundingClientRect().width
+                        setDescriptionWidth(Math.max(width, 200))
+                    }
+                }
+            }
+            const timeoutId = setTimeout(measureWidth, 0)
+            return () => clearTimeout(timeoutId)
+        }
+    }, [isDescriptionEditing, row.description])
+
+    // ✅ Gestione cambio tipo
+    const handleTypeChange = (newType: CellType) => {
+        setIsTypeEditing(false)
+        handleUpdate({
+            cellType: newType,
+            description: '',
+            contestationDate: undefined,
+            eventDate: undefined
+        })
     }
+
+    // ✅ Gestione cambio descrizione
+    const handleDescriptionChange = (newDescription: string) => {
+        handleUpdate({ description: newDescription })
+    }
+
+    const handleDescriptionBlur = () => {
+        setIsDescriptionEditing(false)
+    }
+
+    // ✅ Gestione date
+    const handleDateChange = (field: 'contestationDate' | 'eventDate', date: Date | undefined) => {
+        if (date) {
+            handleUpdate({ [field]: date.toISOString().split('T')[0] })
+            if (field === 'contestationDate') {
+                setContestationDateOpen(false)
+                setIsContestationDateEditing(false)
+            } else {
+                setEventDateOpen(false)
+                setIsEventDateEditing(false)
+            }
+        } else {
+            handleUpdate({ [field]: undefined })
+        }
+    }
+
+    // ✅ Helper per labels
+    const getTypeLabel = (type: CellType | null): string => {
+        if (!type) return 'Seleziona tipo'
+        switch (type) {
+            case 'reato-contestato': return 'Reato contestato'
+            case 'atto': return 'Atto'
+            case 'fatto': return 'Fatto'
+            default: return type
+        }
+    }
+
+    const getDescriptionLabel = (): string => {
+        if (row.description?.trim()) return row.description
+        if (row.cellType === 'reato-contestato') return 'Clicca per selezionare reato...'
+        if (row.cellType === 'atto') return 'Clicca per selezionare atto...'
+        if (row.cellType === 'fatto') return 'Clicca per inserire descrizione...'
+        return 'Clicca per inserire...'
+    }
+
+    // ✅ Auto-espansione textarea per fatto
+    useEffect(() => {
+        if (descriptionTextareaRef.current && row.cellType === 'fatto') {
+            const textarea = descriptionTextareaRef.current
+            textarea.style.height = '24px'
+            textarea.style.height = `${Math.max(24, textarea.scrollHeight)}px`
+        }
+    }, [row.description, row.cellType])
+
+    // ✅ Determina se mostrare date
+    const showDates = row.cellType === 'reato-contestato' || row.cellType === 'fatto'
 
     return (
         <div
@@ -100,16 +374,16 @@ export const AccordionRow: React.FC<TableRowProps> = ({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            {/* ✅ Header accordion - sempre visibile con colore pastello */}
+            {/* ✅ Header accordion - sempre visibile con controlli inline */}
             <div
                 className={cn(
-                    "flex items-center px-3 py-3 cursor-pointer transition-colors border-l-4",
+                    "flex items-center px-3 py-2 gap-2 transition-colors border-l-4",
                     typeConfig.bgColor,
                     !hasErrors && typeConfig.borderColor,
                     hasErrors && "bg-red-50 border-l-red-400",
                     isExpanded && "shadow-sm"
                 )}
-                onClick={() => setIsExpanded(!isExpanded)}
+                style={{ gap: '8px' }} // ✅ Gap fisso tra tutti gli elementi
             >
                 {/* Numero d'ordine */}
                 <div className={cn("flex-shrink-0 w-8 text-center text-sm font-semibold", typeConfig.textColor)}>
@@ -117,12 +391,15 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                 </div>
 
                 {/* Icona tipo */}
-                <div className={cn("flex-shrink-0 mr-2", typeConfig.textColor)}>
+                <div className={cn("flex-shrink-0", typeConfig.textColor)}>
                     <IconComponent className="h-4 w-4" />
                 </div>
 
-                {/* Icona expand/collapse */}
-                <div className="flex-shrink-0 mr-2 text-gray-400">
+                {/* ✅ Icona expand/collapse - AREA CLICCABILE per expand/collapse */}
+                <div
+                    className="flex-shrink-0 cursor-pointer text-gray-400 hover:text-gray-600"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                >
                     {isExpanded ? (
                         <ChevronDown className="h-4 w-4" />
                     ) : (
@@ -130,34 +407,585 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                     )}
                 </div>
 
-                {/* Titolo formato: "Tipo - Descrizione" */}
-                <div className="flex-1 min-w-0">
-                    <div className={cn("text-sm font-medium truncate", typeConfig.textColor)}>
-                        <span className="font-semibold">{typeConfig.typeLabel}</span>
-                        {row.description?.trim() && (
-                            <span className="ml-2 font-normal">- {row.description}</span>
-                        )}
-                    </div>
-                    {row.contestationDate && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                            {new Date(row.contestationDate).toLocaleDateString('it-IT')}
-                        </div>
+                {/* ✅ Tipo - Label o Select (edit-on-click/hover, torna label su mouse leave) */}
+                <div
+                    ref={typeContainerRef}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseLeave={(e) => {
+                        if (isTypeEditing && !readOnly && row.cellType) {
+                            const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                            // Se il mouse si è spostato dentro il container stesso, non chiudere
+                            if (relatedTarget && typeContainerRef.current?.contains(relatedTarget)) {
+                                return
+                            }
+
+                            setTimeout(() => {
+                                // Verifica di nuovo se il mouse è ancora dentro
+                                if (typeContainerRef.current && !typeContainerRef.current.matches(':hover')) {
+                                    setIsTypeEditing(false)
+                                }
+                            }, 200)
+                        }
+                    }}
+                    className="flex-shrink-0"
+                >
+                    {isTypeEditing ? (
+                        <Select
+                            value={row.cellType || ''}
+                            onValueChange={(value) => handleTypeChange(value as CellType)}
+                            disabled={readOnly}
+                            onOpenChange={(open) => {
+                                if (!open && row.cellType) {
+                                    setIsTypeEditing(false)
+                                }
+                                // ✅ Misura larghezza quando la Select si apre
+                                if (open && typeSelectRef.current) {
+                                    setTimeout(() => {
+                                        const trigger = typeSelectRef.current
+                                        if (trigger) {
+                                            const width = trigger.getBoundingClientRect().width
+                                            setTypeWidth(Math.max(width, 140))
+                                        }
+                                    }, 100)
+                                }
+                            }}
+                        >
+                            <SelectTrigger
+                                ref={typeSelectRef}
+                                className={cn(
+                                    "h-8 text-xs w-auto min-w-[140px]",
+                                    row.cellType ? typeConfig.textColor : "text-gray-500"
+                                )}
+                            >
+                                <SelectValue placeholder="Seleziona tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="reato-contestato">Reato contestato</SelectItem>
+                                <SelectItem value="atto">Atto</SelectItem>
+                                <SelectItem value="fatto">Fatto</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <button
+                            ref={typeButtonRef}
+                            onClick={() => !readOnly && setIsTypeEditing(true)}
+                            onMouseEnter={() => !readOnly && setIsTypeEditing(true)}
+                            disabled={readOnly}
+                            className={cn(
+                                "h-8 text-xs px-2 py-1 rounded border border-transparent text-left",
+                                "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                row.cellType ? typeConfig.textColor : "text-gray-500",
+                                readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                            )}
+                            style={{ minWidth: '140px' }}
+                        >
+                            {getTypeLabel(row.cellType)}
+                        </button>
                     )}
                 </div>
 
-                {/* Pulsanti Azioni - visibili su hover o quando expanded */}
-                {(isHovered || isExpanded) && !readOnly && (
-                    <div className="flex-shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
-                        <RowActions
-                            onDelete={handleDelete}
-                            onMoveUp={onMoveUp}
-                            onMoveDown={onMoveDown}
-                            canMoveUp={onMoveUp ? true : false}
-                            canMoveDown={onMoveDown ? true : false}
-                            readOnly={readOnly}
-                        />
-                    </div>
+                {/* ✅ Campo Dettagli - Label o Combobox/Textarea (edit-on-click/hover, torna label su mouse leave) */}
+                {row.cellType === 'reato-contestato' && (
+                    <>
+                        <div
+                            ref={descriptionContainerRef}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseLeave={(e) => {
+                                if (isDescriptionEditing && !readOnly) {
+                                    const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                    // Se il mouse si è spostato dentro il container stesso (combobox, dropdown), non chiudere
+                                    if (relatedTarget && descriptionContainerRef.current?.contains(relatedTarget)) {
+                                        return
+                                    }
+
+                                    setTimeout(() => {
+                                        // Verifica di nuovo se il mouse è ancora dentro
+                                        if (descriptionContainerRef.current && !descriptionContainerRef.current.matches(':hover')) {
+                                            setIsDescriptionEditing(false)
+                                        }
+                                    }, 200)
+                                }
+                            }}
+                            className="flex-shrink-0"
+                            style={{ minWidth: '200px', maxWidth: '400px' }}
+                        >
+                            {isDescriptionEditing ? (
+                                <div ref={descriptionComboboxRef}>
+                                <Combobox
+                                    value={row.description || ''}
+                                    onChange={handleDescriptionChange}
+                                    suggestions={[...REATI_PENALI].sort()}
+                                    placeholder="Digita il nome del reato..."
+                                    readOnly={readOnly}
+                                    aria-label="Seleziona reato contestato"
+                                    className="w-full"
+                                    autoOpen={isDescriptionEditing}
+                                    onBlur={handleDescriptionBlur}
+                                    onSelection={() => setIsDescriptionEditing(false)}
+                                />
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsDescriptionEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsDescriptionEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "h-8 text-xs px-2 py-1 rounded border border-transparent text-left",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.description ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                    style={{ width: '100%' }}
+                                >
+                                    {getDescriptionLabel()}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* ✅ Date per Reato contestato - subito dopo la descrizione */}
+                        {/* Data Contestazione */}
+                        <div
+                            ref={contestationDateContainerRef}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseLeave={(e) => {
+                                if (isContestationDateEditing && !readOnly) {
+                                    const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                    // Se il mouse si è spostato dentro il container stesso (popover, calendar), non chiudere
+                                    if (relatedTarget && contestationDateContainerRef.current?.contains(relatedTarget)) {
+                                        return
+                                    }
+
+                                    setTimeout(() => {
+                                        // Verifica di nuovo se il mouse è ancora dentro
+                                        if (contestationDateContainerRef.current && !contestationDateContainerRef.current.matches(':hover')) {
+                                            setIsContestationDateEditing(false)
+                                            setContestationDateOpen(false)
+                                        }
+                                    }, 200)
+                                }
+                            }}
+                            className="flex-shrink-0"
+                        >
+                            {isContestationDateEditing ? (
+                                <Popover open={contestationDateOpen} onOpenChange={(open) => {
+                                    setContestationDateOpen(open)
+                                    if (!open) {
+                                        setIsContestationDateEditing(false)
+                                    }
+                                }}>
+                                    <PopoverTrigger asChild>
+                                        <button
+                                            type="button"
+                                            disabled={readOnly}
+                                            className={cn(
+                                                "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
+                                                !row.contestationDate && "text-muted-foreground"
+                                            )}
+                                            onClick={() => setContestationDateOpen(true)}
+                                        >
+                                            <CalendarIcon className="mr-1 h-3 w-3" />
+                                            {row.contestationDate ? (
+                                                format(new Date(row.contestationDate), "dd/MM/yyyy", { locale: it })
+                                            ) : (
+                                                <span>Seleziona data</span>
+                                            )}
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="single"
+                                            selected={row.contestationDate ? new Date(row.contestationDate) : undefined}
+                                            onSelect={(date) => handleDateChange('contestationDate', date)}
+                                            disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                            initialFocus
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsContestationDateEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsContestationDateEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "inline-flex items-center justify-start text-left font-normal rounded-md border border-transparent px-2 py-1 text-xs h-8 whitespace-nowrap",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.contestationDate ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-1 h-3 w-3" />
+                                    {row.contestationDate ? (
+                                        format(new Date(row.contestationDate), "dd/MM/yyyy", { locale: it })
+                                    ) : (
+                                        <span>Data Contestazione</span>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Data Fatto */}
+                        <div
+                            ref={eventDateContainerRef}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseLeave={(e) => {
+                                if (isEventDateEditing && !readOnly) {
+                                    const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                    // Se il mouse si è spostato dentro il container stesso (popover, calendar), non chiudere
+                                    if (relatedTarget && eventDateContainerRef.current?.contains(relatedTarget)) {
+                                        return
+                                    }
+
+                                    setTimeout(() => {
+                                        // Verifica di nuovo se il mouse è ancora dentro
+                                        if (eventDateContainerRef.current && !eventDateContainerRef.current.matches(':hover')) {
+                                            setIsEventDateEditing(false)
+                                            setEventDateOpen(false)
+                                        }
+                                    }, 200)
+                                }
+                            }}
+                            className="flex-shrink-0"
+                        >
+                            {isEventDateEditing ? (
+                                <Popover open={eventDateOpen} onOpenChange={(open) => {
+                                    setEventDateOpen(open)
+                                    if (!open) {
+                                        setIsEventDateEditing(false)
+                                    }
+                                }}>
+                                    <PopoverTrigger asChild>
+                                        <button
+                                            type="button"
+                                            disabled={readOnly}
+                                            className={cn(
+                                                "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
+                                                !row.eventDate && "text-muted-foreground"
+                                            )}
+                                            onClick={() => setEventDateOpen(true)}
+                                        >
+                                            <CalendarIcon className="mr-1 h-3 w-3" />
+                                            {row.eventDate ? (
+                                                format(new Date(row.eventDate), "dd/MM/yyyy", { locale: it })
+                                            ) : (
+                                                <span>Seleziona data</span>
+                                            )}
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="single"
+                                            selected={row.eventDate ? new Date(row.eventDate) : undefined}
+                                            onSelect={(date) => handleDateChange('eventDate', date)}
+                                            disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                            initialFocus
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsEventDateEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsEventDateEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "inline-flex items-center justify-start text-left font-normal rounded-md border border-transparent px-2 py-1 text-xs h-8 whitespace-nowrap",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.eventDate ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-1 h-3 w-3" />
+                                    {row.eventDate ? (
+                                        format(new Date(row.eventDate), "dd/MM/yyyy", { locale: it })
+                                    ) : (
+                                        <span>Data Fatto</span>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+                    </>
                 )}
+
+                {row.cellType === 'atto' && (
+                    <div
+                        ref={descriptionContainerRef}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseLeave={(e) => {
+                            if (isDescriptionEditing && !readOnly) {
+                                const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                // Se il mouse si è spostato dentro il container stesso (combobox, dropdown), non chiudere
+                                if (relatedTarget && descriptionContainerRef.current?.contains(relatedTarget)) {
+                                    return
+                                }
+
+                                setTimeout(() => {
+                                    // Verifica di nuovo se il mouse è ancora dentro
+                                    if (descriptionContainerRef.current && !descriptionContainerRef.current.matches(':hover')) {
+                                        setIsDescriptionEditing(false)
+                                    }
+                                }, 200)
+                            }
+                        }}
+                        className="flex-shrink-0"
+                        style={{
+                            minWidth: '200px',
+                            maxWidth: '400px',
+                            marginLeft: `${typeWidth + 3}px` // ✅ Spacing dinamico
+                        }}
+                    >
+                        {isDescriptionEditing ? (
+                            <div ref={descriptionComboboxRef}>
+                            <Combobox
+                                    value={row.description || ''}
+                                    onChange={handleDescriptionChange}
+                                    suggestions={[...ATTI_COMUNI].sort()}
+                                    placeholder="Digita il nome dell'atto..."
+                                    readOnly={readOnly}
+                                    aria-label="Seleziona atto"
+                                    className="w-full"
+                                    autoOpen={isDescriptionEditing}
+                                    onBlur={handleDescriptionBlur}
+                                    onSelection={() => setIsDescriptionEditing(false)}
+                                />
+                            </div>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsDescriptionEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsDescriptionEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "h-8 text-xs px-2 py-1 rounded border border-transparent text-left",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.description ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                    style={{ width: '100%' }}
+                                >
+                                    {getDescriptionLabel()}
+                                </button>
+                            )}
+                        </div>
+                )}
+
+                {row.cellType === 'fatto' && (
+                    <>
+                        <div
+                            ref={descriptionContainerRef}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseLeave={(e) => {
+                                if (isDescriptionEditing && !readOnly) {
+                                    const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                    // Se il mouse si è spostato dentro il container stesso (textarea), non chiudere
+                                    if (relatedTarget && descriptionContainerRef.current?.contains(relatedTarget)) {
+                                        return
+                                    }
+
+                                    setTimeout(() => {
+                                        // Verifica di nuovo se il mouse è ancora dentro
+                                        if (descriptionContainerRef.current && !descriptionContainerRef.current.matches(':hover')) {
+                                            setIsDescriptionEditing(false)
+                                        }
+                                    }, 200)
+                                }
+                            }}
+                            className="flex-shrink-0"
+                            style={{ minWidth: '200px', maxWidth: '400px' }}
+                        >
+                            {isDescriptionEditing ? (
+                                <div ref={descriptionComboboxRef}>
+                                <Textarea
+                                    ref={descriptionTextareaRef}
+                                    value={row.description || ''}
+                                    onChange={(e) => handleDescriptionChange(e.target.value)}
+                                    onBlur={handleDescriptionBlur}
+                                    placeholder="Inserisci descrizione del fatto..."
+                                    readOnly={readOnly}
+                                    className={cn(
+                                        "text-xs resize-none overflow-hidden border rounded-md px-2 py-1 w-full",
+                                        "border-amber-200 min-h-[24px] max-h-[72px]",
+                                        "focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                    )}
+                                    style={{
+                                        minHeight: '24px',
+                                        height: 'auto'
+                                    }}
+                                    onInput={(e) => {
+                                        const target = e.target as HTMLTextAreaElement
+                                        target.style.height = '24px'
+                                        target.style.height = `${Math.max(24, Math.min(target.scrollHeight, 72))}px`
+                                    }}
+                                />
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsDescriptionEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsDescriptionEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "h-8 text-xs px-2 py-1 rounded border border-transparent text-left",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.description ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                    style={{ width: '100%' }}
+                                >
+                                    {getDescriptionLabel()}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* ✅ Date per Fatto - subito dopo la descrizione */}
+                        {/* Data Fatto */}
+                        <div
+                            ref={contestationDateContainerRef}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ marginLeft: `${descriptionWidth + 3}px` }} // ✅ Spacing dinamico
+                            onMouseLeave={(e) => {
+                                if (isContestationDateEditing && !readOnly) {
+                                    const relatedTarget = e.relatedTarget as HTMLElement | null
+
+                                    // Se il mouse si è spostato dentro il container stesso (popover, calendar), non chiudere
+                                    if (relatedTarget && contestationDateContainerRef.current?.contains(relatedTarget)) {
+                                        return
+                                    }
+
+                                    setTimeout(() => {
+                                        // Verifica di nuovo se il mouse è ancora dentro
+                                        if (contestationDateContainerRef.current && !contestationDateContainerRef.current.matches(':hover')) {
+                                            setIsContestationDateEditing(false)
+                                            setContestationDateOpen(false)
+                                        }
+                                    }, 200)
+                                }
+                            }}
+                            className="flex-shrink-0"
+                        >
+                            {isContestationDateEditing ? (
+                                <Popover open={contestationDateOpen} onOpenChange={(open) => {
+                                    setContestationDateOpen(open)
+                                    if (!open) {
+                                        setIsContestationDateEditing(false)
+                                    }
+                                }}>
+                                    <PopoverTrigger asChild>
+                                        <button
+                                            type="button"
+                                            disabled={readOnly}
+                                            className={cn(
+                                                "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
+                                                !row.contestationDate && "text-muted-foreground"
+                                            )}
+                                            onClick={() => setContestationDateOpen(true)}
+                                        >
+                                            <CalendarIcon className="mr-1 h-3 w-3" />
+                                            {row.contestationDate ? (
+                                                format(new Date(row.contestationDate), "dd/MM/yyyy", { locale: it })
+                                            ) : (
+                                                <span>Seleziona data</span>
+                                            )}
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="single"
+                                            selected={row.contestationDate ? new Date(row.contestationDate) : undefined}
+                                            onSelect={(date) => handleDateChange('contestationDate', date)}
+                                            disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                            initialFocus
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            ) : (
+                                <button
+                                    onClick={() => !readOnly && setIsContestationDateEditing(true)}
+                                    onMouseEnter={() => !readOnly && setIsContestationDateEditing(true)}
+                                    disabled={readOnly}
+                                    className={cn(
+                                        "inline-flex items-center justify-start text-left font-normal rounded-md border border-transparent px-2 py-1 text-xs h-8 whitespace-nowrap",
+                                        "hover:bg-white/50 hover:border-gray-300 transition-colors",
+                                        row.contestationDate ? "text-gray-900" : "text-gray-400 italic",
+                                        readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-1 h-3 w-3" />
+                                    {row.contestationDate ? (
+                                        format(new Date(row.contestationDate), "dd/MM/yyyy", { locale: it })
+                                    ) : (
+                                        <span>Data Fatto</span>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {/* ✅ Spazio flessibile per spingere il menu a destra */}
+                <div className="flex-1" />
+
+                {/* ✅ Puntini verticali con menu - sempre occupano spazio, visibili su hover */}
+                <div
+                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "h-8 w-8 p-0 opacity-0 transition-opacity",
+                                    (isHovered || isExpanded) && !readOnly && "opacity-100"
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                                disabled={readOnly}
+                            >
+                                <MoreVertical className="h-4 w-4 text-gray-500" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            {onAddRowAbove && (
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onAddRowAbove(row.id)
+                                    }}
+                                    disabled={readOnly}
+                                >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Aggiungi riga sopra
+                                </DropdownMenuItem>
+                            )}
+                            {onAddRowBelow && (
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onAddRowBelow(row.id)
+                                    }}
+                                    disabled={readOnly}
+                                >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Aggiungi riga sotto
+                                </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDelete()
+                                }}
+                                disabled={readOnly}
+                                className="text-red-600 focus:text-red-600"
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Elimina
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
 
                 {/* Indicatore errori */}
                 {hasErrors && (
@@ -175,49 +1003,16 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                 )}
             >
                 <div className="p-4 bg-white border-t border-gray-100">
-                    <div className="flex gap-4 w-full">
-                        {/* Cella sinistra - Tipo e Descrizione - AUTO-SIZE */}
-                        <div className="flex-shrink-0 w-auto relative">
-                            {/* ✅ Handle di resize sulla linea verticale destra */}
-                            <div
-                                className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize z-10 transition-all"
-                                onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    // Qui puoi aggiungere la logica di resize se vuoi
-                                }}
-                                style={{
-                                    marginRight: '-2px'
-                                }}
-                                title="Trascina per ridimensionare"
-                            />
-                            <div className="space-y-3 pr-2">
-                                <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">Dettagli</div>
-                                <TypeDescriptionCell
-                                    cellType={row.cellType}
-                                    description={row.description}
-                                    contestationDate={row.contestationDate}
-                                    eventDate={row.eventDate}
-                                    errors={errors}
-                                    onUpdate={handleUpdate}
-                                    readOnly={readOnly}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Cella destra - Osservazioni e Motivazioni - RIEMPIE SPAZIO RIMANENTE */}
-                        <div className="flex-1 min-w-0">
-                            <div className="space-y-3">
-                                <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">Osservazioni e Motivazioni</div>
-                                <ObservationsCell
-                                    row={row}
-                                    onUpdate={handleUpdate}
-                                    readOnly={readOnly}
-                                    errors={errors}
-                                    onMoveMotivation={onMoveMotivation}
-                                />
-                            </div>
-                        </div>
+                    {/* Contenuto espanso - solo Osservazioni e Motivazioni (i controlli sono già nell'header) */}
+                    <div className="space-y-3">
+                        <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">Osservazioni e Motivazioni</div>
+                        <ObservationsCell
+                            row={row}
+                            onUpdate={handleUpdate}
+                            readOnly={readOnly}
+                            errors={errors}
+                            onMoveMotivation={onMoveMotivation}
+                        />
                     </div>
                 </div>
             </div>

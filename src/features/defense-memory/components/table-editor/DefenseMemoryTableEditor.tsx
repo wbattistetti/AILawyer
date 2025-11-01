@@ -3,6 +3,7 @@ import { DefenseMemoryTableEditorProps } from './types/table.types'
 import { useTableData } from './hooks/useTableData'
 import { useRowValidation } from './hooks/useRowValidation'
 import { useResizableColumns } from './hooks/useResizableColumns'
+import { useUndoRedo } from './hooks/useUndoRedo'
 import { TableHeader } from './components/TableHeader'
 import { AccordionRow } from './components/AccordionRow'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
@@ -23,6 +24,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         tableData,
         rows,
         addRow,
+        addRowAt,
         updateRow,
         deleteRow,
         moveRowUp,
@@ -31,7 +33,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         resetTable,
         getRowCount,
         canMoveUp,
-        canMoveDown
+        canMoveDown,
+        loadTableData
     } = useTableData({
         initialData,
         onDataChange: (data) => {
@@ -43,6 +46,14 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                     (window as any).__defenseMemoryTable = data
                 }
             }
+        }
+    })
+
+    // ✅ Undo/Redo functionality
+    const { undo, redo, canUndo, canRedo } = useUndoRedo({
+        tableData,
+        onStateChange: (data) => {
+            loadTableData(data)
         }
     })
 
@@ -164,6 +175,32 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         moveRowDown(rowId)
     }, [moveRowDown])
 
+    const handleAddRowAbove = useCallback((rowId: string) => {
+        const sortedRows = [...rows].sort((a, b) => a.order - b.order)
+        const currentIndex = sortedRows.findIndex(row => row.id === rowId)
+        if (currentIndex >= 0) {
+            const targetOrder = sortedRows[currentIndex].order
+            addRowAt(targetOrder, {
+                cellType: 'fatto',
+                description: '',
+                observations: ''
+            })
+        }
+    }, [rows, addRowAt])
+
+    const handleAddRowBelow = useCallback((rowId: string) => {
+        const sortedRows = [...rows].sort((a, b) => a.order - b.order)
+        const currentIndex = sortedRows.findIndex(row => row.id === rowId)
+        if (currentIndex >= 0) {
+            const targetOrder = sortedRows[currentIndex].order + 1
+            addRowAt(targetOrder, {
+                cellType: 'fatto',
+                description: '',
+                observations: ''
+            })
+        }
+    }, [rows, addRowAt])
+
     const handleSave = useCallback(() => {
         const validation = validateAll()
         if (validation.isValid) {
@@ -252,6 +289,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 onAddRow={handleAddRow}
                 onSave={onSave ? handleSave : undefined}
                 onExport={handleExport}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={canUndo}
+                canRedo={canRedo}
                 rowCount={getRowCount()}
                 readOnly={readOnly}
                 clienteNome={clienteNome}
@@ -295,6 +336,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                     onDelete={handleDeleteRow}
                                     onMoveUp={canMoveUp(row.id) ? () => handleMoveRowUp(row.id) : undefined}
                                     onMoveDown={canMoveDown(row.id) ? () => handleMoveRowDown(row.id) : undefined}
+                                    onAddRowAbove={handleAddRowAbove}
+                                    onAddRowBelow={handleAddRowBelow}
                                     readOnly={readOnly}
                                     errors={getRowErrors(row.id)}
                                     columnWidths={widths}

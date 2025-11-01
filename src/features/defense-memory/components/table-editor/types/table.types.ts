@@ -74,6 +74,8 @@ export interface TableRowProps {
     onDelete: (rowId: string) => void
     onMoveUp?: (rowId: string) => void
     onMoveDown?: (rowId: string) => void
+    onAddRowAbove?: (rowId: string) => void
+    onAddRowBelow?: (rowId: string) => void
     readOnly?: boolean
     errors?: ValidationError[]
     columnWidths?: {

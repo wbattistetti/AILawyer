@@ -39,15 +39,30 @@ export const Combobox: React.FC<ComboboxProps> = ({
     const dropdownRef = useRef<HTMLDivElement>(null)
     const measureRef = useRef<HTMLSpanElement>(null)
     const measureDropdownRef = useRef<HTMLSpanElement>(null)
+    const isSelectingRef = useRef(false) // ✅ Ref per prevenire flickering
+    const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
     // Filtra le suggestions basate sull'input
     const filteredSuggestions = useMemo(() => {
         if (!inputValue.trim()) {
-            return suggestions.slice(0, 10)
+            return { suggestions: suggestions.slice(0, 10), matchingCount: 0 }
         }
-        return suggestions
-            .filter(s => s.toLowerCase().includes(inputValue.toLowerCase()))
-            .slice(0, 10)
+
+        const searchTerm = inputValue.toLowerCase()
+
+        // ✅ Prime tutte le voci che contengono il testo digitato
+        const matching = suggestions.filter(s => s.toLowerCase().includes(searchTerm))
+
+        // ✅ Poi tutte le altre voci (escluse quelle già mostrate)
+        const notMatching = suggestions.filter(s => !s.toLowerCase().includes(searchTerm))
+
+        // ✅ Combina: prima matching, poi notMatching (limitato a 20 voci totali)
+        const allSuggestions = [...matching, ...notMatching].slice(0, 20)
+
+        return {
+            suggestions: allSuggestions,
+            matchingCount: Math.min(matching.length, allSuggestions.length)
+        }
     }, [inputValue, suggestions])
 
     // Sincronizza inputValue con value esterno
@@ -76,7 +91,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
 
     // Calcola larghezza dropdown basata sulla voce più lunga
     useEffect(() => {
-        if (measureDropdownRef.current && filteredSuggestions.length > 0 && isOpen) {
+        if (measureDropdownRef.current && filteredSuggestions.suggestions.length > 0 && isOpen) {
             const inputStyle = inputRef.current ? window.getComputedStyle(inputRef.current) : null
             if (!inputStyle) return
 
@@ -87,7 +102,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
             measureDropdownRef.current.style.letterSpacing = inputStyle.letterSpacing
 
             let maxWidth = 0
-            for (const suggestion of filteredSuggestions) {
+            for (const suggestion of filteredSuggestions.suggestions) {
                 measureDropdownRef.current.textContent = suggestion
                 const width = measureDropdownRef.current.getBoundingClientRect().width
                 maxWidth = Math.max(maxWidth, width)
@@ -146,11 +161,24 @@ export const Combobox: React.FC<ComboboxProps> = ({
     }, [autoOpen, readOnly])
 
     const handleBlur = () => {
+        // ✅ Se stiamo selezionando una voce, ignora il blur
+        if (isSelectingRef.current) {
+            return
+        }
+
+        // ✅ Cancella eventuale timeout precedente
+        if (blurTimeoutRef.current) {
+            clearTimeout(blurTimeoutRef.current)
+        }
+
         // Delay per permettere click su opzioni
-        setTimeout(() => {
-            setIsOpen(false)
-            setSelectedIndex(-1)
-            onBlur?.()
+        blurTimeoutRef.current = setTimeout(() => {
+            if (!isSelectingRef.current) {
+                setIsOpen(false)
+                setSelectedIndex(-1)
+                onBlur?.()
+            }
+            blurTimeoutRef.current = null
         }, 150)
     }
 
@@ -159,7 +187,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
 
         if (!isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
             setIsOpen(true)
-            setSelectedIndex(e.key === 'ArrowDown' ? 0 : filteredSuggestions.length - 1)
+            setSelectedIndex(e.key === 'ArrowDown' ? 0 : filteredSuggestions.suggestions.length - 1)
             e.preventDefault()
             return
         }
@@ -169,19 +197,19 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 case 'ArrowDown':
                     e.preventDefault()
                     setSelectedIndex(prev =>
-                        prev < filteredSuggestions.length - 1 ? prev + 1 : 0
+                        prev < filteredSuggestions.suggestions.length - 1 ? prev + 1 : 0
                     )
                     break
                 case 'ArrowUp':
                     e.preventDefault()
                     setSelectedIndex(prev =>
-                        prev > 0 ? prev - 1 : filteredSuggestions.length - 1
+                        prev > 0 ? prev - 1 : filteredSuggestions.suggestions.length - 1
                     )
                     break
                 case 'Enter':
                     e.preventDefault()
-                    if (selectedIndex >= 0 && selectedIndex < filteredSuggestions.length) {
-                        const selectedSuggestion = filteredSuggestions[selectedIndex]
+                    if (selectedIndex >= 0 && selectedIndex < filteredSuggestions.suggestions.length) {
+                        const selectedSuggestion = filteredSuggestions.suggestions[selectedIndex]
                         setInputValue(selectedSuggestion)
                         onChange(selectedSuggestion)
                         setIsOpen(false)
@@ -210,15 +238,54 @@ export const Combobox: React.FC<ComboboxProps> = ({
     }
 
     const handleSelectSuggestion = (suggestion: string) => {
+        // ✅ Marca che stiamo selezionando per prevenire blur handler
+        isSelectingRef.current = true
+
+        // ✅ Cancella eventuale timeout di blur
+        if (blurTimeoutRef.current) {
+            clearTimeout(blurTimeoutRef.current)
+            blurTimeoutRef.current = null
+        }
+
         setInputValue(suggestion)
         onChange(suggestion)
         setIsOpen(false)
         setSelectedIndex(-1)
-        inputRef.current?.blur()
+
         // Chiama onSelection per chiudere la modalità editing
         if (suggestion.trim()) {
             onSelection?.(suggestion)
         }
+
+        // ✅ Reset del flag dopo un breve delay per permettere al blur di completare
+        setTimeout(() => {
+            isSelectingRef.current = false
+            inputRef.current?.blur()
+        }, 50)
+    }
+
+    // ✅ Funzione per evidenziare il testo digitato nelle suggestions
+    const highlightText = (text: string, searchTerm: string): React.ReactNode => {
+        if (!searchTerm.trim()) {
+            return <span>{text}</span>
+        }
+
+        // Escape dei caratteri speciali per la regex
+        const escapedSearchTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const regex = new RegExp(`(${escapedSearchTerm})`, 'gi')
+        const parts = text.split(regex)
+
+        return (
+            <span>
+                {parts.map((part, index) => {
+                    // Verifica se questa parte corrisponde al searchTerm (case-insensitive)
+                    if (part.toLowerCase() === searchTerm.toLowerCase()) {
+                        return <strong key={index}>{part}</strong>
+                    }
+                    return <span key={index}>{part}</span>
+                })}
+            </span>
+        )
     }
 
     return (
@@ -277,26 +344,37 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 </button>
             </div>
 
-            {isOpen && !readOnly && filteredSuggestions.length > 0 && (
+            {isOpen && !readOnly && filteredSuggestions.suggestions.length > 0 && (
                 <div
                     ref={dropdownRef}
                     className="absolute z-50 mt-0.5 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-auto text-xs"
                 >
-                    {filteredSuggestions.map((suggestion, index) => (
-                        <div
-                            key={index}
-                            onClick={() => handleSelectSuggestion(suggestion)}
-                            className={cn(
-                                "px-2 py-1 cursor-pointer flex items-center justify-between",
-                                index === selectedIndex && "bg-blue-100",
-                                inputValue === suggestion && "bg-blue-50"
+                    {filteredSuggestions.suggestions.map((suggestion, index) => (
+                        <React.Fragment key={index}>
+                            <div
+                                onMouseDown={(e) => {
+                                    // ✅ Previeni il blur dell'input quando clicchiamo sulla voce
+                                    e.preventDefault()
+                                    handleSelectSuggestion(suggestion)
+                                }}
+                                className={cn(
+                                    "px-2 py-1 cursor-pointer flex items-center justify-between",
+                                    index === selectedIndex && "bg-blue-100",
+                                    inputValue === suggestion && "bg-blue-50"
+                                )}
+                            >
+                                <span className="text-xs">{highlightText(suggestion, inputValue)}</span>
+                                {inputValue === suggestion && (
+                                    <Check className="h-3 w-3 text-blue-600" />
+                                )}
+                            </div>
+                            {/* ✅ Linea separatrice tra matching e non-matching */}
+                            {index === filteredSuggestions.matchingCount - 1 &&
+                             filteredSuggestions.matchingCount > 0 &&
+                             index < filteredSuggestions.suggestions.length - 1 && (
+                                <div className="border-t border-gray-300 my-0.5" />
                             )}
-                        >
-                            <span className="text-xs">{suggestion}</span>
-                            {inputValue === suggestion && (
-                                <Check className="h-3 w-3 text-blue-600" />
-                            )}
-                        </div>
+                        </React.Fragment>
                     ))}
                 </div>
             )}

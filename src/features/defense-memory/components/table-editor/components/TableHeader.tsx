@@ -1,12 +1,17 @@
 import React from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, Save, Download, Upload } from 'lucide-react'
+import { Plus, Save, Download, Upload, Undo2, Redo2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface TableHeaderProps {
     onAddRow: () => void
     onSave?: () => void
     onExport?: () => void
     onImport?: () => void
+    onUndo?: () => void
+    onRedo?: () => void
+    canUndo?: boolean
+    canRedo?: boolean
     rowCount: number
     readOnly?: boolean
     className?: string
@@ -18,6 +23,10 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
     onSave,
     onExport,
     onImport,
+    onUndo,
+    onRedo,
+    canUndo = false,
+    canRedo = false,
     rowCount,
     readOnly = false,
     className = '',
@@ -35,6 +44,40 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
+                {/* ✅ Undo/Redo buttons */}
+                {!readOnly && onUndo && onRedo && (
+                    <>
+                        <Button
+                            onClick={onUndo}
+                            size="sm"
+                            variant="outline"
+                            disabled={!canUndo}
+                            className={cn(
+                                "flex items-center space-x-1",
+                                !canUndo && "opacity-50 cursor-not-allowed"
+                            )}
+                            title="Annulla (Ctrl+Z)"
+                        >
+                            <Undo2 className="h-4 w-4" />
+                            <span>Annulla</span>
+                        </Button>
+                        <Button
+                            onClick={onRedo}
+                            size="sm"
+                            variant="outline"
+                            disabled={!canRedo}
+                            className={cn(
+                                "flex items-center space-x-1",
+                                !canRedo && "opacity-50 cursor-not-allowed"
+                            )}
+                            title="Ripeti (Ctrl+Y)"
+                        >
+                            <Redo2 className="h-4 w-4" />
+                            <span>Ripeti</span>
+                        </Button>
+                    </>
+                )}
+
                 {!readOnly && (
                     <Button
                         onClick={onAddRow}

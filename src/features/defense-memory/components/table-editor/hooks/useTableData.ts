@@ -4,6 +4,7 @@ import {
     createEmptyTable,
     createEmptyRow,
     addRow,
+    addRowAt,
     updateRow,
     deleteRow,
     moveRow,
@@ -28,6 +29,17 @@ export const useTableData = ({ initialData, onDataChange }: UseTableDataProps = 
     const addNewRow = useCallback((rowData: Omit<TableRowFormData, 'id' | 'order'>) => {
         setTableData(prev => {
             const newData = addRow(prev.rows, rowData)
+            return {
+                ...prev,
+                rows: newData,
+                lastUpdated: new Date().toISOString()
+            }
+        })
+    }, [])
+
+    const addNewRowAt = useCallback((targetOrder: number, rowData: Omit<TableRowFormData, 'id' | 'order'>) => {
+        setTableData(prev => {
+            const newData = addRowAt(prev.rows, targetOrder, rowData)
             return {
                 ...prev,
                 rows: newData,
@@ -123,6 +135,7 @@ export const useTableData = ({ initialData, onDataChange }: UseTableDataProps = 
         tableData,
         rows: tableData.rows,
         addRow: addNewRow,
+        addRowAt: addNewRowAt,
         updateRow: updateExistingRow,
         deleteRow: removeRow,
         moveRowUp,
