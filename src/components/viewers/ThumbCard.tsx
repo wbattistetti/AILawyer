@@ -242,20 +242,45 @@ export function ThumbCard({
             <div className="text-[11px] leading-snug text-neutral-800 w-full line-clamp-6">{excerpt || ' '}</div>
           )}
         </div>
-        {(!ocrCancelling &&
-          typeof ocrProgressPct === 'number' &&
-          ocrProgressPct < 100 &&
-          !(typeof transcribedPct === 'number' && transcribedPct >= 100) &&
-          ocrStatus !== 'completed'
-        ) && (
+        {(() => {
+          const shouldShowOverlay = !ocrCancelling &&
+            typeof ocrProgressPct === 'number' &&
+            ocrProgressPct >= 0 &&
+            ocrProgressPct < 100 &&
+            !(typeof transcribedPct === 'number' && transcribedPct >= 100) &&
+            ocrStatus !== 'completed'
+
+          if (typeof ocrProgressPct === 'number' || ocrProgressPct !== undefined) {
+            try {
+              console.log('[THUMBCARD][OCR-OVERLAY]', {
+                title,
+                ocrProgressPct,
+                transcribedPct,
+                ocrStatus,
+                ocrCancelling,
+                shouldShowOverlay,
+                checks: {
+                  notCancelling: !ocrCancelling,
+                  isNumber: typeof ocrProgressPct === 'number',
+                  isPositive: typeof ocrProgressPct === 'number' && ocrProgressPct >= 0,
+                  lessThan100: typeof ocrProgressPct === 'number' && ocrProgressPct < 100,
+                  notTranscribed100: !(typeof transcribedPct === 'number' && transcribedPct >= 100),
+                  notCompleted: ocrStatus !== 'completed'
+                }
+              })
+            } catch {}
+          }
+
+          return shouldShowOverlay && (
             <OcrProgressOverlay
-              progressPct={ocrProgressPct}
+              progressPct={ocrProgressPct!}
               etaText={ocrEtaText ?? null}
               statusText={ocrStatusText ?? null}
               onCancel={onOcrCancel ?? null}
               cancelling={false}
             />
-          )}
+          )
+        })()}
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition">

@@ -34,7 +34,7 @@ export const OcrProgressOverlay = React.memo(function OcrProgressOverlay({ progr
               })()}
             </span>
           )}
-          {cancelling && (<span className="font-semibold">Sto interrompendo l’OCR…</span>)}
+          {cancelling && (<span className="font-semibold">Sto interrompendo l'OCR…</span>)}
           {canCancel && (
             <button
               className="px-2 py-0.5 text-[10px] rounded border border-red-400 bg-red-50 text-red-700 hover:bg-red-100"

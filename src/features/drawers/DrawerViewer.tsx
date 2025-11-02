@@ -252,7 +252,12 @@ export function DrawerViewer({
             id: d.id,
             s3Key: d.s3Key,
             compartoId: d.compartoId
-          }))
+          })),
+          // ✅ Includi ocrProgressByDoc per rilevare cambiamenti nello stato OCR
+          ocrProgressByDoc: data.ocrProgressByDoc || {},
+          ocrEtaByDoc: data.ocrEtaByDoc || {},
+          ocrStatusByDoc: data.ocrStatusByDoc || {},
+          transcribedPctByDoc: data.transcribedPctByDoc || {}
         })
 
         // ✅ Aggiorna solo se i dati sono realmente cambiati
@@ -315,18 +320,22 @@ export function DrawerViewer({
       setTimeout(syncData, 50)
     }
 
-    // ✅ Ascolta eventi emessi da handleFileDrop
+    // ✅ Ascolta eventi emessi da handleFileDrop e da PraticaCanvasPage
     window.addEventListener('app:uploading', handleUploadEvent)
     window.addEventListener('app:archive-data-updated', handleUploadEvent)
     window.addEventListener('app:documents-updated', handleDocumentsUpdate)
 
-    // ✅ Rimuoviamo completamente il polling - gli eventi sono sufficienti
-    // Il polling causava loop infiniti di sincronizzazione
+    // ✅ Sincronizza anche quando window.__archiveData viene aggiornato (es. quando cambia ocrProgressByDoc)
+    // Usa un polling leggero solo per rilevare aggiornamenti di ocrProgressByDoc
+    const intervalId = setInterval(() => {
+      syncData()
+    }, 500) // Controlla ogni 500ms
 
     return () => {
       window.removeEventListener('app:uploading', handleUploadEvent)
       window.removeEventListener('app:archive-data-updated', handleUploadEvent)
       window.removeEventListener('app:documents-updated', handleDocumentsUpdate)
+      clearInterval(intervalId)
     }
   }, [id]) // ✅ Aggiunto id come dipendenza per ricreare listener se cambia drawer
 

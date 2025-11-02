@@ -294,11 +294,23 @@ export function useOcr(praticaId: string | undefined) {
             isLocal
           })
 
-          const meta = progress.result?.meta || {}
           const elapsedMs = progress.result?.elapsedMs || 0
 
-          const done = Number(meta.currentPage || 0)
-          const total = Number(meta.totalPages || 0)
+          // Quando completed, il risultato ha struttura diversa: { pages, texts, ... } invece di { meta, elapsedMs }
+          let done: number
+          let total: number
+          let meta: any = {}
+
+          if (progress.status === 'completed' && typeof progress.result?.pages === 'number') {
+            // Caso completed: usa result.pages
+            total = progress.result.pages
+            done = progress.result.pages
+          } else {
+            // Caso processing: usa meta.currentPage e meta.totalPages
+            meta = progress.result?.meta || {}
+            done = Number(meta.currentPage || 0)
+            total = Number(meta.totalPages || 0)
+          }
 
           // Per file locali: usa direttamente progress.progress se disponibile, altrimenti calcola da meta
           const percent = isLocal
@@ -310,14 +322,24 @@ export function useOcr(praticaId: string | undefined) {
             total,
             progressFromBackend: progress.progress,
             computedPercent: percent,
-            meta
+            meta,
+            status: progress.status
           })
 
           const isCancelling = !!ocrCancellingByDoc[documento.id]
           const hasFrozen = typeof transcribedPctByDoc[documento.id] === 'number'
 
           if (!isCancelling && !hasFrozen) {
-            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: percent }))
+            setOcrProgressByDoc(prev => {
+              const updated = { ...prev, [documento.id]: percent }
+              console.log('[OCR][UPDATE-PROGRESS]', {
+                docId: documento.id,
+                percent,
+                prevProgress: prev[documento.id],
+                allProgress: updated
+              })
+              return updated
+            })
 
             const phase = meta.phase || 'OCR'
             setOcrStatusByDoc(prev => ({
@@ -374,13 +396,30 @@ export function useOcr(praticaId: string | undefined) {
             }
 
             // Mantieni lo stato completato (100%) e salva come transcribedPct per persistenza
-            setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 100 }))
-            setTranscribedPctByDoc(prev => ({ ...prev, [documento.id]: 100 }))
+            setOcrProgressByDoc(prev => {
+              const updated = { ...prev, [documento.id]: 100 }
+              console.log('[OCR][completed] Updated ocrProgressByDoc', { docId: documento.id, progress: 100, allProgress: updated })
+              return updated
+            })
+            setTranscribedPctByDoc(prev => {
+              const updated = { ...prev, [documento.id]: 100 }
+              console.log('[OCR][completed] Updated transcribedPctByDoc', { docId: documento.id, pct: 100, allPct: updated })
+              return updated
+            })
             setOcrEtaByDoc(prev => ({ ...prev, [documento.id]: null }))
             setOcrStatusByDoc(prev => ({ ...prev, [documento.id]: null }))
             persistOcrState()
 
-            if (praticaId) clearDoc(praticaId, documento.id)
+            // NON chiamare clearDoc - mantieni lo stato in memoria per mostrare la badge
+            // clearDoc rimuove solo dal localStorage, ma noi vogliamo mantenere ocrProgressByDoc e transcribedPctByDoc
+
+            // Richiedi ricaricamento documenti per aggiornare ocrStatus nel documento
+            try {
+              window.dispatchEvent(new CustomEvent('app:request-documents'))
+              console.log('[OCR][completed] Dispatched app:request-documents to reload document with ocrStatus=completed')
+            } catch (e) {
+              console.warn('[OCR][completed] Failed to dispatch reload event', e)
+            }
 
             // NON rimuovere il progresso dopo 1.5 secondi - mantieni lo stato "Trascritto!" visibile
             // La label "Trascritto!" verrà mostrata grazie a transcribedPct === 100 o ocrProgressPct === 100

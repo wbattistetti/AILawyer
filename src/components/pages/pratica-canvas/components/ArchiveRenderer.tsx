@@ -371,7 +371,22 @@ export function ArchiveRenderer({
                                         if (!d) return;
                                         await handleOcrCancel(d);
                                     }}
-                                    progressById={ocrProgressByDoc as any}
+                                    progressById={(() => {
+                                      try {
+                                        const docIds = rawDocs.map(d => d.id)
+                                        const progressKeys = Object.keys(ocrProgressByDoc || {})
+                                        const matches = progressKeys.filter(key => docIds.includes(key))
+                                        console.log('[ARCHIVE-RENDERER][OCR-PROGRESS]', {
+                                          compartoId: comparto.id,
+                                          rawDocsCount: rawDocs.length,
+                                          rawDocsIds: docIds,
+                                          progressKeys,
+                                          matches,
+                                          ocrProgressByDoc: JSON.parse(JSON.stringify(ocrProgressByDoc || {}))
+                                        })
+                                      } catch {}
+                                      return ocrProgressByDoc as any
+                                    })()}
                                     etaById={ocrEtaByDoc as any}
                                     statusById={ocrStatusByDoc as any}
                                     cancellingById={ocrCancellingByDoc as any}

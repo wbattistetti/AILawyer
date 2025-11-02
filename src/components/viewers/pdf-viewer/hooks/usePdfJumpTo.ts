@@ -29,26 +29,97 @@ export const usePdfJumpTo = ({
 
 	const goToMatch = async (m: MatchItem) => {
 		setSelectedAnnot(null)
-		try { (pageNav as any).jumpToPage?.(m.page - 1) } catch (e) { }
-		const waitFor = async (cond: () => HTMLElement | null, ms = 3000) => {
+
+		// Helper per aspettare che una condizione sia vera
+		const waitFor = async (cond: () => HTMLElement | null, ms = 5000, desc = 'element') => {
 			const start = Date.now()
 			return new Promise<HTMLElement | null>((resolve) => {
 				const tick = () => {
 					const el = cond()
-					if (el) return resolve(el)
-					if (Date.now() - start > ms) return resolve(null)
+					if (el) {
+						console.log(`[GOTO] ${desc} found after ${Date.now() - start}ms`)
+						return resolve(el)
+					}
+					if (Date.now() - start > ms) {
+						console.warn(`[GOTO] ${desc} timeout after ${ms}ms`)
+						return resolve(null)
+					}
 					requestAnimationFrame(tick)
 				}
 				tick()
 			})
 		}
+
 		const viewer = hostRef.current
-		if (!viewer) { console.warn('[GOTO] host missing'); return }
-		const pageEl = await waitFor(() => (viewer.querySelectorAll('.rpv-core__page-layer')?.[m.page - 1] as HTMLElement) || null)
-		if (!pageEl) { console.warn('[GOTO] page el missing'); return }
-		// ensure text-layer too
-		const textLayer = await waitFor(() => (pageEl.querySelector('.rpv-core__text-layer') as HTMLElement) || pageEl)
-		if (!textLayer) { console.warn('[GOTO] text layer missing'); return }
+		if (!viewer) {
+			console.warn('[GOTO] host missing');
+			return
+		}
+
+		// Passo 1: Chiama jumpToPage e aspetta un attimo per iniziare il rendering
+		console.log('[GOTO] Starting navigation to page', m.page)
+		try {
+			(pageNav as any).jumpToPage?.(m.page - 1)
+			console.log('[GOTO] jumpToPage called')
+		} catch (e) {
+			console.warn('[GOTO] jumpToPage error', e)
+		}
+
+		// Aspetta un po' per permettere al viewer di iniziare a renderizzare la pagina
+		await new Promise(r => setTimeout(r, 100))
+
+		// Passo 2: Aspetta che la pagina sia renderizzata (timeout aumentato per documenti nativi)
+		const pageEl = await waitFor(
+			() => {
+				const layers = viewer.querySelectorAll('.rpv-core__page-layer')
+				const layer = layers[m.page - 1] as HTMLElement | undefined
+				// Verifica che la pagina abbia almeno una dimensione (sia renderizzata)
+				if (layer) {
+					const rect = layer.getBoundingClientRect()
+					if (rect.width > 0 && rect.height > 0) {
+						return layer
+					}
+				}
+				return null
+			},
+			6000, // Timeout aumentato a 6 secondi per documenti nativi
+			'page layer'
+		)
+
+		if (!pageEl) {
+			console.warn('[GOTO] page el missing after timeout');
+			return
+		}
+
+		console.log('[GOTO] Page element found, waiting for text layer...')
+
+		// Passo 3: Per documenti nativi, aspetta che il text layer sia disponibile
+		const textLayer = await waitFor(
+			() => {
+				const layer = pageEl.querySelector('.rpv-core__text-layer') as HTMLElement | null
+				// Per documenti nativi, verifica che il text layer abbia contenuto
+				if (layer) {
+					const hasContent = layer.children.length > 0 || layer.textContent?.trim().length > 0
+					if (hasContent) {
+						return layer
+					}
+				}
+				// Fallback: usa il pageEl stesso se non c'è text layer (caso OCR)
+				return pageEl
+			},
+			4000,
+			'text layer'
+		)
+
+		// Usa textLayer se disponibile, altrimenti pageEl come fallback
+		const effectiveTextLayer = textLayer || pageEl
+
+		if (!textLayer) {
+			console.warn('[GOTO] text layer missing after timeout, using pageEl as fallback')
+		} else {
+			console.log('[GOTO] Text layer found and ready')
+		}
+
 		// one extra RAF to let layout settle
 		await new Promise(r => requestAnimationFrame(() => r(null as any)))
 		// Container scroll deterministico
@@ -111,8 +182,10 @@ export const usePdfJumpTo = ({
 			root = document.createElement('div')
 			root.className = 'ai-overlay-root'
 			Object.assign(root.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '10' })
-			if (!textLayer.style.position || textLayer.style.position === '') textLayer.style.position = 'relative'
-			textLayer.appendChild(root)
+			if (!effectiveTextLayer.style.position || effectiveTextLayer.style.position === '') {
+				effectiveTextLayer.style.position = 'relative'
+			}
+			effectiveTextLayer.appendChild(root)
 			overlayRootsRef.current.set(m.page, root)
 		}
 		setSelectedAnnot({ id: 'sel', page: m.page, type: 'highlight', color: '#fbbf2480', x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct })
