@@ -137,7 +137,10 @@ export function SearchRenderer({ documenti, dockV2Ref, toast }: SearchRendererPr
                 return { id: String(Date.now()), query: q, scope: 'archive' as any, total, groups } as any;
             }}
         >
-            <SearchPanelTree showInput={true} />
+            {/* ✅ Solo risultati ricerca, senza layout split duplicato */}
+            <div className="h-full w-full">
+                <SearchPanelTree showInput={true} />
+            </div>
         </SearchProvider>
     );
 }

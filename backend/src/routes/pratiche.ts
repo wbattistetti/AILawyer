@@ -11,21 +11,21 @@ const praticaCreateSchema = z.object({
 })
 
 const COMPARTI_DEFAULT = [
-  { key: 'parti_anagrafiche', nome: 'O.C.C.C. ANAGRAFICA INQUISITO', ordine: 0 },
-  { key: 'admin_procure', nome: 'FATTO REATI CONTESTATI P.M.', ordine: 1 },
-  { key: 'denuncia_querela', nome: 'INFORMATIVE', ordine: 2 },
-  { key: 'indagini_preliminari', nome: 'FASCICOLO P.M. e GIP', ordine: 3 },
-  { key: 'verbal_arresto_sequestro', nome: 'VERBALI: ARRESTO PERQUISIZIONI SEQUESTRO', ordine: 4 },
-  { key: 'interrogatori_dichiarazioni', nome: 'INTERROGATORI E DICHIARAZIONI', ordine: 5 },
-  { key: 'corrispondenza_pec', nome: 'INTERCETTAZIONI TELEFONICHE', ordine: 6 },
-  { key: 'utenz_scadenze', nome: 'ELENCO UTENZE SCADENZE PROROGHE', ordine: 7 },
-  { key: 'trascriptioni_intercett', nome: 'TRASCRIZIONI INTERCETTAZIONI TELEFONICHE', ordine: 8 },
-  { key: 'atti_interlocutori', nome: 'ATTI INTERLOCUTORI CORRISPONDENZA VARIA', ordine: 9 },
-  { key: 'nomi_citati_frequentazioni', nome: 'NOMI CITATI IN ATTI FREQUENTAZIONI', ordine: 10 },
-  { key: 'contestazioni', nome: 'CONTESTAZIONI P.M./GIP', ordine: 11 },
-  { key: 'raccolta_prove', nome: 'RACCOLTA PROVE OSSERVAZIONI', ordine: 12 },
-  { key: 'mappe_concettuali', nome: 'MAPPE CONCETTUALI GRAFICO', ordine: 13 },
-  { key: 'note_campo_libero', nome: 'NOTE A CAMPO LIBERO', ordine: 14 },
+  { key: 'parti_anagrafiche', nome: 'Parti & Anagrafiche', ordine: 0 },
+  { key: 'admin_procure', nome: 'Admin & Procure', ordine: 1 },
+  { key: 'denuncia_querela', nome: 'Denuncia–Querela / Notizia di reato', ordine: 2 },
+  { key: 'indagini_preliminari', nome: 'Indagini preliminari', ordine: 3 },
+  { key: 'verbal_arresto_sequestro', nome: 'Verbal: Arresto Perquisizioni Sequestro', ordine: 4 },
+  { key: 'interrogatori_dichiarazioni', nome: 'Interrogatori e Dichiarazioni', ordine: 5 },
+  { key: 'corrispondenza_pec', nome: 'Corrispondenza & PEC', ordine: 6 },
+  { key: 'utenz_scadenze', nome: 'Elenco Utenze Scadenze Proroghe', ordine: 7 },
+  { key: 'trascriptioni_intercett', nome: 'Trascrizioni Intercettazioni Telefoniche', ordine: 8 },
+  { key: 'atti_interlocutori', nome: 'Atti Interlocutori Corrispondenza Varia', ordine: 9 },
+  { key: 'nomi_citati_frequentazioni', nome: 'Nomi Citati in Atti Frequentazioni', ordine: 10 },
+  { key: 'contestazioni', nome: 'Contestazioni P.M./GIP', ordine: 11 },
+  { key: 'raccolta_prove', nome: 'Raccolta Prove Osservazioni', ordine: 12 },
+  { key: 'mappe_concettuali', nome: 'Mappe Concettuali Grafico', ordine: 13 },
+  { key: 'note_campo_libero', nome: 'Note a Campo Libero', ordine: 14 },
 ]
 
 // Funzione helper per processare i nomi clienti
@@ -336,6 +336,30 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         orderBy: { ordine: 'asc' },
       })
 
+      // ✅ Mappa dei vecchi nomi ai nuovi (per aggiornare quelli esistenti)
+      const nomeUpdateMap: Record<string, string> = {
+        'O.C.C.C. ANAGRAFICA INQUISITO': 'Parti & Anagrafiche',
+        'FATTO REATI CONTESTATI P.M.': 'Admin & Procure',
+        'INFORMATIVE': 'Denuncia–Querela / Notizia di reato',
+        'FASCICOLO P.M. e GIP': 'Indagini preliminari',
+        'VERBALI: ARRESTO PERQUISIZIONI SEQUESTRO': 'Verbal: Arresto Perquisizioni Sequestro',
+        'INTERROGATORI E DICHIARAZIONI': 'Interrogatori e Dichiarazioni',
+        'INTERCETTAZIONI TELEFONICHE': 'Corrispondenza & PEC',
+        'ELENCO UTENZE SCADENZE PROROGHE': 'Elenco Utenze Scadenze Proroghe',
+        'TRASCRIZIONI INTERCETTAZIONI TELEFONICHE': 'Trascrizioni Intercettazioni Telefoniche',
+        'ATTI INTERLOCUTORI CORRISPONDENZA VARIA': 'Atti Interlocutori Corrispondenza Varia',
+        'NOMI CITATI IN ATTI FREQUENTAZIONI': 'Nomi Citati in Atti Frequentazioni',
+        'CONTESTAZIONI P.M./GIP': 'Contestazioni P.M./GIP',
+        'RACCOLTA PROVE OSSERVAZIONI': 'Raccolta Prove Osservazioni',
+        'MAPPE CONCETTUALI GRAFICO': 'Mappe Concettuali Grafico',
+        'NOTE A CAMPO LIBERO': 'Note a Campo Libero',
+        'Indagini preliminari (PG/PM, 415-bis)': 'Indagini preliminari',
+        'Perizie & Consulenze (CTP/CTU)': 'Perizie e Consulenze',
+        'Prove & Allegati (foto, audio, chat)': 'Prove e Allegati',
+        'Provvedimenti del giudice (GIP/GUP/Trib.)': 'Provvedimenti (GIP GUP Trib)',
+        'Da classificare': 'Parti & Anagrafiche',
+      }
+
       // If no comparti exist, create default ones
       if (comparti.length === 0) {
         await prisma.$transaction(
@@ -350,12 +374,50 @@ export async function praticheRoutes(fastify: FastifyInstance) {
             })
           )
         )
+      } else {
+        // ✅ Aggiorna i nomi vecchi ai nuovi
+        const updates: Promise<any>[] = []
+        for (const comparto of comparti) {
+          const nuovoNome = nomeUpdateMap[comparto.nome]
+          if (nuovoNome && nuovoNome !== comparto.nome) {
+            updates.push(
+              prisma.comparto.update({
+                where: { id: comparto.id },
+                data: { nome: nuovoNome }
+              })
+            )
+          }
+        }
 
-        comparti = await prisma.comparto.findMany({
-          where: { praticaId: request.params.id },
-          orderBy: { ordine: 'asc' },
-        })
+        // ✅ Se esistono comparti ma ne mancano alcuni, aggiungi quelli mancanti
+        const existingKeys = new Set(comparti.map(c => c.key))
+        const missingComparti = COMPARTI_DEFAULT.filter(c => !existingKeys.has(c.key))
+
+        if (missingComparti.length > 0) {
+          for (const comparto of missingComparti) {
+            updates.push(
+              prisma.comparto.create({
+                data: {
+                  praticaId: request.params.id,
+                  key: comparto.key,
+                  nome: comparto.nome,
+                  ordine: comparto.ordine,
+                }
+              })
+            )
+          }
+        }
+
+        if (updates.length > 0) {
+          await prisma.$transaction(updates)
+        }
       }
+
+      // Ricarica tutti i comparti (con nomi aggiornati)
+      comparti = await prisma.comparto.findMany({
+        where: { praticaId: request.params.id },
+        orderBy: { ordine: 'asc' },
+      })
 
       return comparti
     } catch (error) {

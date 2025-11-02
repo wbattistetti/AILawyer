@@ -5,6 +5,7 @@ import { searchPlugin } from '@react-pdf-viewer/search'
 import { zoomPlugin } from '@react-pdf-viewer/zoom'
 import { highlightPlugin } from '@react-pdf-viewer/highlight'
 import { usePdfShellState } from './hooks/usePdfShellState'
+import { usePdfPanelResizer } from './hooks/usePdfPanelResizer'
 import { TopBar } from './components/TopBar'
 import { PdfViewerCore } from './components/PdfViewerCore'
 import { AnnotationOverlays } from './components/AnnotationOverlays'
@@ -73,6 +74,11 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     viewerRef
   })
 
+  // ✅ Hook per il ridimensionamento del pannello di ricerca
+  usePdfPanelResizer({
+    resizingRef: shell.resizingRef,
+    setPanelW: shell.setPanelW
+  })
 
   return (
     <React.Fragment>

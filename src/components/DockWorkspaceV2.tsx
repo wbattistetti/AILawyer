@@ -5,7 +5,7 @@ import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
-import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Archive, Search, User, CreditCard, Calendar, Network } from 'lucide-react'
+import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Archive, Search, User, CreditCard, Calendar, Network, Mail, Image } from 'lucide-react'
 import type { Comparto } from '@/types'
 import { api } from '@/lib/api'
 import type { DrawerType } from '../features/drawers/types'
@@ -281,15 +281,50 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     } catch { }
   }, [model, storageKey])
 
+  // ✅ Funzione per normalizzare i nomi dei comparti (converte vecchi nomi ai nuovi)
+  const normalizeCompartoNome = useCallback((nome: string): string => {
+    // Mappa i vecchi nomi ai nuovi (tutti i possibili nomi vecchi)
+    const nomeMap: Record<string, string> = {
+      // Vecchi nomi completi
+      'O.C.C.C. ANAGRAFICA INQUISITO': 'Parti & Anagrafiche',
+      'FATTO REATI CONTESTATI P.M.': 'Admin & Procure',
+      'INFORMATIVE': 'Denuncia–Querela / Notizia di reato',
+      'FASCICOLO P.M. e GIP': 'Indagini preliminari',
+      'VERBALI: ARRESTO PERQUISIZIONI SEQUESTRO': 'Verbal: Arresto Perquisizioni Sequestro',
+      'INTERROGATORI E DICHIARAZIONI': 'Interrogatori e Dichiarazioni',
+      'INTERCETTAZIONI TELEFONICHE': 'Corrispondenza & PEC',
+      'ELENCO UTENZE SCADENZE PROROGHE': 'Elenco Utenze Scadenze Proroghe',
+      'TRASCRIZIONI INTERCETTAZIONI TELEFONICHE': 'Trascrizioni Intercettazioni Telefoniche',
+      'ATTI INTERLOCUTORI CORRISPONDENZA VARIA': 'Atti Interlocutori Corrispondenza Varia',
+      'NOMI CITATI IN ATTI FREQUENTAZIONI': 'Nomi Citati in Atti Frequentazioni',
+      'CONTESTAZIONI P.M./GIP': 'Contestazioni P.M./GIP',
+      'RACCOLTA PROVE OSSERVAZIONI': 'Raccolta Prove Osservazioni',
+      'MAPPE CONCETTUALI GRAFICO': 'Mappe Concettuali Grafico',
+      'NOTE A CAMPO LIBERO': 'Note a Campo Libero',
+      // Altri possibili nomi vecchi
+      'Indagini preliminari (PG/PM, 415-bis)': 'Indagini preliminari',
+      'Perizie & Consulenze (CTP/CTU)': 'Perizie e Consulenze',
+      'Prove & Allegati (foto, audio, chat)': 'Prove e Allegati',
+      'Provvedimenti del giudice (GIP/GUP/Trib.)': 'Provvedimenti (GIP GUP Trib)',
+      'Da classificare': 'Parti & Anagrafiche', // Vecchio comparto da classificare mappato al primo
+    }
+    return nomeMap[nome] || nome
+  }, [])
+
   // ✅ Carica comparti quando praticaId è disponibile
   useEffect(() => {
     if (!praticaId) return
     api.getComparti(praticaId)
       .then((comparti: Comparto[]) => {
-        setComparti(comparti)
+        // ✅ Normalizza i nomi dei comparti
+        const normalized = comparti.map(c => ({
+          ...c,
+          nome: normalizeCompartoNome(c.nome)
+        }))
+        setComparti(normalized)
       })
       .catch(console.error)
-  }, [praticaId])
+  }, [praticaId, normalizeCompartoNome])
 
   // ✅ Funzioni helper per colori e icone dei cassetti (come in CabinetView)
   const colorFor = useCallback((label?: string): string => {
@@ -310,18 +345,29 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   const iconFor = useCallback((label?: string): React.ReactNode => {
     const s = (label || '').toLowerCase()
-    if (s.includes('da classificare')) return <Boxes className="w-4 h-4" />
-    if (s.includes('admin') || s.includes('procure')) return <Landmark className="w-4 h-4" />
-    if (s.includes('parti') || s.includes('anagrafiche')) return <Users className="w-4 h-4" />
-    if (s.includes('corrispondenza') || s.includes('pec')) return <FileText className="w-4 h-4" />
-    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return <Gavel className="w-4 h-4" />
-    if (s.includes('indagini') || s.includes('preliminari')) return <Shield className="w-4 h-4" />
-    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return <FileText className="w-4 h-4" />
-    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return <Boxes className="w-4 h-4" />
-    if (s.includes('udienze') || s.includes('verbali')) return <Clock className="w-4 h-4" />
-    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return <Gavel className="w-4 h-4" />
-    if (s.includes('cliente') || s === 'a') return <Users className="w-4 h-4" />
-    return <Boxes className="w-4 h-4" />
+    // ✅ Icone 32x32 per i cassetti
+    if (s.includes('da classificare')) return <Boxes size={32} />
+    if (s.includes('admin') || s.includes('procure')) return <Landmark size={32} />
+    if (s.includes('parti') || s.includes('anagrafiche')) return <Users size={32} />
+    if (s.includes('corrispondenza') || s.includes('pec')) return <FileText size={32} />
+    if (s.includes('denuncia') || s.includes('querela') || s.includes('reato')) return <Gavel size={32} />
+    if (s.includes('indagini') || s.includes('preliminari')) return <Shield size={32} />
+    if (s.includes('perizie') || s.includes('consulenze') || s.includes('ctp') || s.includes('ctu')) return <FileText size={32} />
+    if (s.includes('prove') || s.includes('allegati') || s.includes('foto') || s.includes('audio') || s.includes('chat')) return <Boxes size={32} />
+    if (s.includes('udienze') || s.includes('verbali')) return <Clock size={32} />
+    if (s.includes('provvedimenti') || s.includes('giudice') || s.includes('gip') || s.includes('gup') || s.includes('trib')) return <Gavel size={32} />
+    if (s.includes('verbal') || s.includes('arresto') || s.includes('perquisizioni') || s.includes('sequestro')) return <FileText size={32} />
+    if (s.includes('interrogatori') || s.includes('dichiarazioni')) return <FileText size={32} />
+    if (s.includes('utenze') || s.includes('scadenze') || s.includes('proroghe')) return <Calendar size={32} />
+    if (s.includes('trascriptioni') || s.includes('intercettazioni')) return <FileText size={32} />
+    if (s.includes('atti interlocutori') || s.includes('corrispondenza varia')) return <Mail size={32} />
+    if (s.includes('nomi citati') || s.includes('frequentazioni')) return <Users size={32} />
+    if (s.includes('contestazioni')) return <Gavel size={32} />
+    if (s.includes('raccolta prove') || s.includes('osservazioni')) return <Image size={32} />
+    if (s.includes('mappe') || s.includes('concettuali') || s.includes('grafico')) return <Search size={32} />
+    if (s.includes('note') || s.includes('campo libero')) return <FileText size={32} />
+    if (s.includes('cliente') || s === 'a') return <Users size={32} />
+    return <Boxes size={32} />
   }, [])
 
   const typeFor = useCallback((label?: string): DrawerType | undefined => {
@@ -346,15 +392,38 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return null
   }, [])
 
-  // ✅ Crea array di DrawerTabItem dai comparti
+  // ✅ Crea array di DrawerTabItem dai comparti (filtra solo quelli validi)
   const drawerTabs = useMemo<DrawerTabItem[]>(() => {
-    return comparti.map(c => ({
-      id: c.key,
-      label: c.nome,
-      icon: iconFor(c.nome),
-      color: colorFor(c.nome),
-      type: typeFor(c.nome)
-    }))
+    // ✅ Lista delle chiavi valide dei comparti (i 15 nuovi)
+    const validKeys = new Set([
+      'parti_anagrafiche',
+      'admin_procure',
+      'denuncia_querela',
+      'indagini_preliminari',
+      'verbal_arresto_sequestro',
+      'interrogatori_dichiarazioni',
+      'corrispondenza_pec',
+      'utenz_scadenze',
+      'trascriptioni_intercett',
+      'atti_interlocutori',
+      'nomi_citati_frequentazioni',
+      'contestazioni',
+      'raccolta_prove',
+      'mappe_concettuali',
+      'note_campo_libero',
+    ])
+
+    // ✅ Filtra solo i comparti validi e ordina per ordine
+    return comparti
+      .filter(c => validKeys.has(c.key))
+      .sort((a, b) => a.ordine - b.ordine)
+      .map(c => ({
+        id: c.key,
+        label: c.nome,
+        icon: iconFor(c.nome),
+        color: colorFor(c.nome),
+        type: typeFor(c.nome)
+      }))
   }, [comparti, colorFor, iconFor, typeFor])
 
   // ✅ Gestisce il click su una tab del cassetto
@@ -422,19 +491,34 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
 
     // Cerca la tab esistente per questo drawer nel border bottom
-    const existingTabIndex = bottomBorder.children?.findIndex((t: any) => t.config?.drawerId === comparto.id)
+    const existingTabIndex = bottomBorder.children?.findIndex((t: any) => t.config?.drawerId === comparto.id) ?? -1
+    const isCurrentlySelected = existingTabIndex >= 0 && bottomBorder.selected === existingTabIndex
+
     console.log('[DRAWER-TAB-SELECT][TAB-CHECK]', {
       existingTabIndex,
+      isCurrentlySelected,
+      currentSelected: bottomBorder.selected,
       hasChildren: !!bottomBorder.children,
       allTabsIds: bottomBorder.children?.map((t: any) => ({ id: t.id, drawerId: t.config?.drawerId })) || []
     })
 
-    if (existingTabIndex >= 0) {
-      console.log('[DRAWER-TAB-SELECT][SELECT-EXISTING] Selezionando tab esistente nel border', { existingTabIndex })
-      // Seleziona la tab esistente nel border
-      bottomBorder.selected = existingTabIndex
+    // ✅ TOGGLE: Se il cassetto è già aperto e selezionato, chiudilo
+    if (isCurrentlySelected) {
+      console.log('[DRAWER-TAB-SELECT][CLOSE] Chiudendo cassetto già aperto', { existingTabIndex })
+      // Rimuovi tutte le tab dal border (chiudi il pannello)
+      bottomBorder.children = []
+      bottomBorder.selected = undefined
+      setSelectedDrawerId(undefined)
+    } else if (existingTabIndex >= 0) {
+      // ✅ Il cassetto esiste ma non è selezionato: selezionalo e chiudi gli altri
+      console.log('[DRAWER-TAB-SELECT][SELECT-EXISTING] Selezionando tab esistente, chiudendo altre', { existingTabIndex })
+      // Rimuovi tutte le altre tab e mantieni solo quella selezionata
+      bottomBorder.children = [bottomBorder.children[existingTabIndex]]
+      bottomBorder.selected = 0
+      setSelectedDrawerId(drawerId)
     } else {
-      console.log('[DRAWER-TAB-SELECT][CREATE-NEW-TAB] Creando nuova tab nel border...', {
+      // ✅ Crea nuova tab: rimuovi tutte le altre e apri solo questa
+      console.log('[DRAWER-TAB-SELECT][CREATE-NEW-TAB] Creando nuova tab, chiudendo altre...', {
         compartoId: comparto.id,
         compartoNome: comparto.nome,
         drawerKey: drawerId
@@ -455,9 +539,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         }
       }
 
-      if (!bottomBorder.children) bottomBorder.children = []
-      bottomBorder.children.push(newTab)
-      bottomBorder.selected = bottomBorder.children.length - 1
+      // ✅ Sostituisci tutte le tab esistenti con questa nuova (un solo cassetto aperto alla volta)
+      bottomBorder.children = [newTab]
+      bottomBorder.selected = 0
+      setSelectedDrawerId(drawerId)
       console.log('[DRAWER-TAB-SELECT][NEW-TAB-CREATED]', {
         tabId: newTab.id,
         tabConfig: newTab.config,
@@ -1923,12 +2008,13 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       {/* ✅ Striscia cassetti in fondo */}
       {drawerTabs.length > 0 && (
         <div
-          className="border-t border-slate-200 bg-slate-50"
+          className="bg-slate-50 relative"
           style={{
             minHeight: '100px', // ✅ Altezza sufficiente per tab con testo multi-linea
             height: 'auto',
             flexShrink: 0,
-            zIndex: 10
+            zIndex: 10,
+            overflow: 'visible' // ✅ Permetti overflow per mostrare l'icona sopra
           }}
         >
           <DrawerTabStrip

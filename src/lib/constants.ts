@@ -1,14 +1,19 @@
 export const COMPARTI_PENALI = [
-  { key: 'da_classificare', nome: 'Da classificare', ordine: 0 },
+  { key: 'parti_anagrafiche', nome: 'Parti & Anagrafiche', ordine: 0 },
   { key: 'admin_procure', nome: 'Admin & Procure', ordine: 1 },
-  { key: 'parti_anagrafiche', nome: 'Parti & Anagrafiche', ordine: 2 },
-  { key: 'corrispondenza_pec', nome: 'Corrispondenza & PEC', ordine: 3 },
-  { key: 'denuncia_querela', nome: 'Denuncia–Querela / Notizia di reato', ordine: 4 },
-  { key: 'indagini_preliminari', nome: 'Indagini preliminari (PG/PM, 415-bis)', ordine: 5 },
-  { key: 'perizie_consulenze', nome: 'Perizie & Consulenze (CTP/CTU)', ordine: 6 },
-  { key: 'prove_allegati', nome: 'Prove & Allegati (foto, audio, chat)', ordine: 7 },
-  { key: 'udienze_verbali', nome: 'Udienze & Verbali', ordine: 8 },
-  { key: 'provvedimenti_giudice', nome: 'Provvedimenti del giudice (GIP/GUP/Trib.)', ordine: 9 },
+  { key: 'denuncia_querela', nome: 'Denuncia–Querela / Notizia di reato', ordine: 2 },
+  { key: 'indagini_preliminari', nome: 'Indagini preliminari', ordine: 3 },
+  { key: 'verbal_arresto_sequestro', nome: 'Verbal: Arresto Perquisizioni Sequestro', ordine: 4 },
+  { key: 'interrogatori_dichiarazioni', nome: 'Interrogatori e Dichiarazioni', ordine: 5 },
+  { key: 'corrispondenza_pec', nome: 'Corrispondenza & PEC', ordine: 6 },
+  { key: 'utenz_scadenze', nome: 'Elenco Utenze Scadenze Proroghe', ordine: 7 },
+  { key: 'trascriptioni_intercett', nome: 'Trascrizioni Intercettazioni Telefoniche', ordine: 8 },
+  { key: 'atti_interlocutori', nome: 'Atti Interlocutori Corrispondenza Varia', ordine: 9 },
+  { key: 'nomi_citati_frequentazioni', nome: 'Nomi Citati in Atti Frequentazioni', ordine: 10 },
+  { key: 'contestazioni', nome: 'Contestazioni P.M./GIP', ordine: 11 },
+  { key: 'raccolta_prove', nome: 'Raccolta Prove Osservazioni', ordine: 12 },
+  { key: 'mappe_concettuali', nome: 'Mappe Concettuali Grafico', ordine: 13 },
+  { key: 'note_campo_libero', nome: 'Note a Campo Libero', ordine: 14 },
 ]
 
 export const TAG_PENALI = [

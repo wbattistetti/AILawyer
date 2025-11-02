@@ -196,7 +196,7 @@ export function ArchiveRenderer({
             } : undefined}
         >
             {filteredComparti.sort((a, b) => a.ordine - b.ordine).map(comparto => {
-                // Filtra documenti del comparto e deduplica per s3Key per evitare doppioni temporanei
+                // Filtra documenti del comparto e deduplica per evitare doppioni temporanei
                 const rawDocs = documenti.filter(d => d.compartoId === comparto.id)
 
                 // ✅ Prima passa: trova tutti gli s3Key dei documenti reali (non temp)
@@ -208,19 +208,26 @@ export function ArchiveRenderer({
                 })
 
                 // ✅ Seconda passa: filtra documenti, dando priorità ai documenti reali
-                const seen = new Set<string>()
+                // ✅ Usa l'ID come chiave primaria per la deduplicazione, non l's3Key
+                const seenIds = new Set<string>()
+                const seenS3Keys = new Set<string>()
                 const docs = rawDocs.filter(d => {
-                    const key = d.s3Key || d.id
                     const isTemp = d.id.startsWith('temp:')
+
+                    // ✅ Deduplica per ID (ogni documento deve avere un ID univoco)
+                    if (seenIds.has(d.id)) {
+                        return false // ID già visto, escludi
+                    }
+                    seenIds.add(d.id)
 
                     // Se è un documento temp e esiste già un documento reale con lo stesso s3Key, escludi il temp
                     if (isTemp && d.s3Key && realS3Keys.has(d.s3Key)) {
                         return false
                     }
 
-                    // Deduplica normale: se abbiamo già visto questa key, escludi
-                    if (seen.has(key)) return false
-                    seen.add(key)
+                    // ✅ Per documenti reali: se hanno lo stesso s3Key, mantieni solo il primo (ma solo se è lo stesso file caricato due volte)
+                    // ✅ Non deduplicare per s3Key se gli ID sono diversi - potrebbero essere documenti diversi
+                    // ✅ L's3Key potrebbe essere lo stesso se due documenti condividono lo stesso file, ma questo è gestito sopra
                     return true
                 })
                 // Log rimosso per ridurre rumore

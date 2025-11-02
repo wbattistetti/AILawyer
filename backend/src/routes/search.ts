@@ -386,31 +386,40 @@ export async function searchRoutes(fastify: FastifyInstance) {
             note: 'Documento con questo docId non trovato dalla query Prisma. Verifica se esiste nel database e se soddisfa le condizioni OR.'
           })
 
-          // Verifica se il documento esiste comunque (senza filtri OR)
+          // ✅ Verifica se il documento esiste comunque (senza filtri OR) e se ha testo
           try {
             const docExists = await prisma.documento.findUnique({
               where: { id: docId },
               select: {
                 id: true,
                 filename: true,
+                s3Key: true,
                 ocrStatus: true,
                 ocrText: true,
+                ocrLayout: true,
                 hasNativeText: true
               }
             })
 
             if (docExists) {
-              console.warn('[SEARCH][archive][docId-exists-but-not-matched]', {
+              console.warn('[SEARCH][archive][docId-exists-but-filtered]', {
                 docId,
-                docExists: {
-                  filename: docExists.filename,
-                  ocrStatus: docExists.ocrStatus,
-                  hasOcrText: !!docExists.ocrText,
-                  ocrTextLength: docExists.ocrText?.length || 0,
-                  hasNativeText: docExists.hasNativeText
-                },
-                note: 'Il documento esiste ma non soddisfa le condizioni OR della query. Questo spiega perché la ricerca non trova niente!'
+                filename: docExists.filename,
+                ocrStatus: docExists.ocrStatus,
+                hasOcrText: !!docExists.ocrText,
+                ocrTextLength: docExists.ocrText?.length || 0,
+                hasNativeText: docExists.hasNativeText,
+                reason: 'Documento esiste ma non soddisfa i filtri OR (ocrStatus=completed OR hasNativeText=true)'
               })
+
+              // ✅ Se il documento esiste ma è stato filtrato, includilo comunque se ha testo o può averlo
+              if (docExists.ocrText || docExists.hasNativeText || docExists.ocrStatus === 'completed') {
+                console.log('[SEARCH][archive][docId-force-include]', {
+                  docId,
+                  reason: 'Documento ha testo o può averlo, forziamo inclusione'
+                })
+                documenti.push(docExists as any)
+              }
             } else {
               console.warn('[SEARCH][archive][docId-not-exists]', {
                 docId,
@@ -774,7 +783,23 @@ export async function searchRoutes(fastify: FastifyInstance) {
         }
 
         // 4. Per ogni documento DB, cerca in cache prima, poi carica se necessario
+        console.log('[SEARCH][archive][loop-start]', {
+          totalDocs: documenti.length,
+          query: normalizedQ,
+          docId: docId || 'all'
+        })
+
         for (const doc of documenti) {
+          console.log('[SEARCH][archive][processing-doc]', {
+            docId: doc.id.substring(0, 20) + '...',
+            filename: doc.filename,
+            ocrStatus: doc.ocrStatus,
+            hasOcrText: !!doc.ocrText,
+            hasNativeText: doc.hasNativeText,
+            processedCount,
+            maxDocs: maxDocsToProcess
+          })
+
           if (processedCount >= maxDocsToProcess) {
             fastify.log.warn({ msg: '[SEARCH][archive] Max docs limit reached', limit: maxDocsToProcess })
             break
@@ -798,9 +823,64 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 searchableTextLength: searchableText?.length || 0,
                 hasLayout: !!(layout && Array.isArray(layout) && layout.length > 0)
               })
+
+              // ✅ LOG DIAGNOSTICI DETTAGLIATI PER CACHE
+              console.log('[SEARCH][archive][cache-hit-details]', {
+                docId: doc.id.substring(0, 20) + '...',
+                filename: doc.filename,
+                searchableTextType: typeof searchableText,
+                searchableTextIsNull: searchableText === null,
+                searchableTextIsUndefined: searchableText === undefined,
+                searchableTextIsEmpty: searchableText === '',
+                searchableTextLength: searchableText?.length || 0,
+                hasText: !!searchableText && searchableText.length > 0,
+                layoutType: typeof layout,
+                layoutIsArray: Array.isArray(layout),
+                layoutLength: Array.isArray(layout) ? layout.length : 0,
+                cachedObjectKeys: cached ? Object.keys(cached) : [],
+                cachedHasText: !!cached?.text,
+                cachedTextLength: cached?.text?.length || 0
+              })
+
+              // ✅ VERIFICA SE IL TESTO DALLA CACHE È VALIDO
+              if (!searchableText || searchableText.length === 0) {
+                console.warn('[SEARCH][archive][cache-empty-text]', {
+                  docId: doc.id,
+                  filename: doc.filename,
+                  fromCache: true,
+                  searchableTextType: typeof searchableText,
+                  searchableTextLength: searchableText?.length || 0,
+                  cachedObject: cached ? {
+                    hasText: !!cached.text,
+                    textLength: cached.text?.length || 0,
+                    textType: typeof cached.text
+                  } : null,
+                  note: 'Testo dalla cache è vuoto/null. Potrebbe essere nativo - verifico hasNativeText.'
+                })
+                // ✅ NON SALTARE SUBITO - potrebbe essere nativo, verifica dopo
+              }
+
+              // ✅ LOG DOPO IL CACHE-HIT - CONFERMA CHE PROCEDE
+              console.log('[SEARCH][archive][after-cache-hit]', {
+                docId: doc.id.substring(0, 20) + '...',
+                filename: doc.filename,
+                fromCache: true,
+                searchableTextLength: searchableText?.length || 0,
+                layoutType: typeof layout,
+                layoutLength: Array.isArray(layout) ? layout.length : 0,
+                willProceed: true
+              })
             } else {
               // Non in cache: carica dal DB o estrai
-              searchableText = (doc.ocrText || '') as string
+              // ✅ IMPORTANTE: Leggi ocrText correttamente, gestendo anche JSON o null
+              const ocrTextRaw = doc.ocrText
+              searchableText = ''
+
+              if (typeof ocrTextRaw === 'string' && ocrTextRaw.length > 0) {
+                searchableText = ocrTextRaw
+              } else if (ocrTextRaw !== null && ocrTextRaw !== undefined) {
+                searchableText = String(ocrTextRaw)
+              }
 
               // 🔍 LOG: Verifica se ocrText è presente quando viene fatta la ricerca
               console.log('[SEARCH][archive][ocrText-check]', {
@@ -808,19 +888,33 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 filename: doc.filename,
                 ocrStatus: doc.ocrStatus,
                 hasOcrText: !!doc.ocrText,
+                ocrTextType: typeof doc.ocrText,
                 ocrTextLength: doc.ocrText?.length || 0,
                 searchableTextLength: searchableText.length,
-                ocrTextPreview: doc.ocrText ? doc.ocrText.substring(0, 100) : 'null/undefined'
+                ocrTextPreview: searchableText ? searchableText.substring(0, 100) : 'null/undefined',
+                fromCache: false,
+                cacheSize: documentTextCache.size,
+                isInCache: documentTextCache.has(doc.id)
               })
 
-              // Se ocrStatus è 'completed' ma ocrText è null, segnala il problema
+              // ✅ Se ocrStatus è 'completed' ma ocrText è null, PROVA COMUNQUE se haNativeText
               if (doc.ocrStatus === 'completed' && !searchableText) {
                 console.warn('[SEARCH][archive][ocrText-missing]', {
                   docId: doc.id,
                   filename: doc.filename,
-                  note: 'ocrStatus è completed ma ocrText è vuoto/null. Possibile problema nel salvataggio OCR.'
+                  hasNativeText: doc.hasNativeText,
+                  note: 'ocrStatus è completed ma ocrText è vuoto/null. Proverò estrazione se hasNativeText=true.'
                 })
-                continue // Salta questo documento se non ha testo
+
+                // ✅ Non saltare subito: se hasNativeText=true, estraiamo il testo
+                if (!doc.hasNativeText) {
+                  console.log('[SEARCH][archive][skip-no-native]', {
+                    docId: doc.id,
+                    filename: doc.filename,
+                    reason: 'No ocrText and no hasNativeText, skipping'
+                  })
+                  continue // Salta solo se non ha nemmeno native text
+                }
               }
 
               // Se non ha testo e non è nativo, salta
@@ -897,85 +991,112 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 })
                 fastify.log.debug({ msg: '[SEARCH][archive][cache] Added', docId: doc.id, textLength: searchableText.length })
               }
+            }
 
-              // Controlla che searchableText sia valido
-              if (!searchableText || searchableText.length === 0) {
-                console.warn('[SEARCH][archive][skip-empty-text]', {
-                  docId: doc.id,
-                  filename: doc.filename,
-                  searchableTextLength: searchableText?.length || 0,
-                  fromCache,
-                  hasOcrText: !!doc.ocrText,
-                  hasNativeText: doc.hasNativeText
-                })
-                continue
-              }
+            // ✅ CODICE COMUNE PER ENTRAMBI I CASI (cache e non-cache) - FUORI DAL BLOCCO IF/ELSE
+            // ✅ LOG PRIMA DEL CHECK FINALE
+            console.log('[SEARCH][archive][before-text-check]', {
+              docId: doc.id.substring(0, 20) + '...',
+              filename: doc.filename,
+              fromCache,
+              searchableTextType: typeof searchableText,
+              searchableTextLength: searchableText?.length || 0,
+              hasOcrText: !!doc.ocrText,
+              hasNativeText: doc.hasNativeText,
+              willCheck: true
+            })
 
-              // Verifica se ha layout (deve essere fatto DOPO aver caricato layout)
-              const hasLayout = layout && Array.isArray(layout) && layout.length > 0
-
-              console.log('[SEARCH][archive][before-normalize]', {
-                docId: doc.id.substring(0, 20) + '...',
-                hasLayout,
-                searchableTextLength: searchableText.length,
-                layoutPages: layout && Array.isArray(layout) ? layout.length : 0
-              })
-
-              // ✅ STRATEGIA IBRIDA PER OCR:
-              // 1. Cerca SENZA spazi (normalizeForSearch) per trovare TUTTE le occorrenze (incluso "DINARDO", "DI  NARDO", etc.)
-              // 2. Per snippet: usa il layout per mappare la posizione (senza spazi) al testo originale (con spazi)
-              // Per nativo: usa normalize (con spazi) che è più preciso
-              const normalizedText = hasLayout ? normalizeForSearch(searchableText) : normalize(searchableText)
-              const normalizedQForOccurrences = hasLayout ? normalizeForSearch(query) : normalizedQ
-
-              // 🔍 DEBUG: Confronto query vs testo
-              console.log('[DEBUG][SEARCH][COMPARISON]', {
+            // Controlla che searchableText sia valido
+            if (!searchableText || searchableText.length === 0) {
+              console.warn('[SEARCH][archive][skip-empty-text]', {
                 docId: doc.id,
                 filename: doc.filename,
-                query,
-                normalizedQuery: normalizedQ,
-                normalizedQueryForSearch: normalizedQForOccurrences,
-                hasLayout,
-                textSample: searchableText.substring(0, 200),
-                normalizedTextSample: normalizedText.substring(0, 200),
-                queryLength: normalizedQForOccurrences.length,
-                textLength: normalizedText.length,
-                // Cerca manualmente la query
-                containsQuery: normalizedText.includes(normalizedQForOccurrences),
-                indexOfQuery: normalizedText.indexOf(normalizedQForOccurrences),
-                // Mostra dove appare "catania" (case-insensitive)
-                indexOfCatania: normalizedText.indexOf('catania'),
-                // Cerca con spazi
-                indexOfCAtania: normalizedText.indexOf('catania')
+                searchableTextLength: searchableText?.length || 0,
+                fromCache,
+                hasOcrText: !!doc.ocrText,
+                hasNativeText: doc.hasNativeText,
+                searchableTextType: typeof searchableText,
+                searchableTextIsNull: searchableText === null,
+                searchableTextIsUndefined: searchableText === undefined,
+                note: 'SKIPPING DOCUMENT - searchableText is empty/null'
               })
+              continue
+            }
 
-              // Cerca tutte le occorrenze (nessun limite)
-              let startIdx = 0
-              const occurrences: number[] = []
-              while (true) {
-                const idx = normalizedText.indexOf(normalizedQForOccurrences, startIdx)
-                if (idx === -1) break
-                occurrences.push(idx)
-                startIdx = idx + 1
-              }
+            // ✅ LOG DOPO IL CHECK - CONFERMA CHE PROCEDE
+            console.log('[SEARCH][archive][after-text-check]', {
+              docId: doc.id.substring(0, 20) + '...',
+              filename: doc.filename,
+              fromCache,
+              searchableTextLength: searchableText.length,
+              willProceed: true
+            })
 
-              console.log('[DEBUG][SEARCH][OCCURRENCES]', {
-                docId: doc.id,
-                filename: doc.filename,
-                query: normalizedQ,
-                foundOccurrences: occurrences.length,
-                firstOccurrence: occurrences[0],
-                firstOccurrences: occurrences.slice(0, 5),
-                textSample: normalizedText.substring(0, 200),
-                firstOccurrenceContext: occurrences[0] ? normalizedText.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
-              })
+            // Verifica se ha layout (deve essere fatto DOPO aver caricato layout)
+            const hasLayout = layout && Array.isArray(layout) && layout.length > 0
 
-              if (occurrences.length === 0) continue
+            console.log('[SEARCH][archive][before-normalize]', {
+              docId: doc.id.substring(0, 20) + '...',
+              hasLayout,
+              searchableTextLength: searchableText.length,
+              layoutPages: layout && Array.isArray(layout) ? layout.length : 0
+            })
 
-              // ✅ Per ogni occorrenza, trova la pagina e bbox
-              // Conta occorrenze per pagina per mappare correttamente gli snippet
-              const occurrencesPerPage = new Map<number, number>() // page -> count
-              for (let occIdx = 0; occIdx < occurrences.length; occIdx++) {
+            // ✅ STRATEGIA IBRIDA PER OCR:
+            // 1. Cerca SENZA spazi (normalizeForSearch) per trovare TUTTE le occorrenze (incluso "DINARDO", "DI  NARDO", etc.)
+            // 2. Per snippet: usa il layout per mappare la posizione (senza spazi) al testo originale (con spazi)
+            // Per nativo: usa normalize (con spazi) che è più preciso
+            const normalizedText = hasLayout ? normalizeForSearch(searchableText) : normalize(searchableText)
+            const normalizedQForOccurrences = hasLayout ? normalizeForSearch(query) : normalizedQ
+
+            // 🔍 DEBUG: Confronto query vs testo
+            console.log('[DEBUG][SEARCH][COMPARISON]', {
+              docId: doc.id,
+              filename: doc.filename,
+              query,
+              normalizedQuery: normalizedQ,
+              normalizedQueryForSearch: normalizedQForOccurrences,
+              hasLayout,
+              textSample: searchableText.substring(0, 200),
+              normalizedTextSample: normalizedText.substring(0, 200),
+              queryLength: normalizedQForOccurrences.length,
+              textLength: normalizedText.length,
+              // Cerca manualmente la query
+              containsQuery: normalizedText.includes(normalizedQForOccurrences),
+              indexOfQuery: normalizedText.indexOf(normalizedQForOccurrences),
+              // Mostra dove appare "catania" (case-insensitive)
+              indexOfCatania: normalizedText.indexOf('catania'),
+              // Cerca con spazi
+              indexOfCAtania: normalizedText.indexOf('catania')
+            })
+
+            // Cerca tutte le occorrenze (nessun limite)
+            let startIdx = 0
+            const occurrences: number[] = []
+            while (true) {
+              const idx = normalizedText.indexOf(normalizedQForOccurrences, startIdx)
+              if (idx === -1) break
+              occurrences.push(idx)
+              startIdx = idx + 1
+            }
+
+            console.log('[DEBUG][SEARCH][OCCURRENCES]', {
+              docId: doc.id,
+              filename: doc.filename,
+              query: normalizedQ,
+              foundOccurrences: occurrences.length,
+              firstOccurrence: occurrences[0],
+              firstOccurrences: occurrences.slice(0, 5),
+              textSample: normalizedText.substring(0, 200),
+              firstOccurrenceContext: occurrences[0] ? normalizedText.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
+            })
+
+            if (occurrences.length === 0) continue
+
+            // ✅ Per ogni occorrenza, trova la pagina e bbox
+            // Conta occorrenze per pagina per mappare correttamente gli snippet
+            const occurrencesPerPage = new Map<number, number>() // page -> count
+            for (let occIdx = 0; occIdx < occurrences.length; occIdx++) {
                 const charIdx = occurrences[occIdx]
                 console.log('[DEBUG][LOOP][START]', {
                   docId: doc.id,
@@ -1308,7 +1429,6 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   qLen
                 })
               }
-            }
           } catch (error) {
             console.error('[DEBUG][LOOP][ERROR]', {
               docId: doc.id,

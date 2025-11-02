@@ -181,6 +181,36 @@ export function PraticaCanvasPage() {
     return () => { window.removeEventListener('resize', update); try { ro.disconnect() } catch { } }
   }, [pratica])
 
+  // ✅ Funzione per normalizzare i nomi dei comparti (converte vecchi nomi ai nuovi)
+  const normalizeCompartoNome = useCallback((nome: string): string => {
+    // Mappa i vecchi nomi ai nuovi (tutti i possibili nomi vecchi)
+    const nomeMap: Record<string, string> = {
+      // Vecchi nomi completi
+      'O.C.C.C. ANAGRAFICA INQUISITO': 'Parti & Anagrafiche',
+      'FATTO REATI CONTESTATI P.M.': 'Admin & Procure',
+      'INFORMATIVE': 'Denuncia–Querela / Notizia di reato',
+      'FASCICOLO P.M. e GIP': 'Indagini preliminari',
+      'VERBALI: ARRESTO PERQUISIZIONI SEQUESTRO': 'Verbal: Arresto Perquisizioni Sequestro',
+      'INTERROGATORI E DICHIARAZIONI': 'Interrogatori e Dichiarazioni',
+      'INTERCETTAZIONI TELEFONICHE': 'Corrispondenza & PEC',
+      'ELENCO UTENZE SCADENZE PROROGHE': 'Elenco Utenze Scadenze Proroghe',
+      'TRASCRIZIONI INTERCETTAZIONI TELEFONICHE': 'Trascrizioni Intercettazioni Telefoniche',
+      'ATTI INTERLOCUTORI CORRISPONDENZA VARIA': 'Atti Interlocutori Corrispondenza Varia',
+      'NOMI CITATI IN ATTI FREQUENTAZIONI': 'Nomi Citati in Atti Frequentazioni',
+      'CONTESTAZIONI P.M./GIP': 'Contestazioni P.M./GIP',
+      'RACCOLTA PROVE OSSERVAZIONI': 'Raccolta Prove Osservazioni',
+      'MAPPE CONCETTUALI GRAFICO': 'Mappe Concettuali Grafico',
+      'NOTE A CAMPO LIBERO': 'Note a Campo Libero',
+      // Altri possibili nomi vecchi
+      'Indagini preliminari (PG/PM, 415-bis)': 'Indagini preliminari',
+      'Perizie & Consulenze (CTP/CTU)': 'Perizie e Consulenze',
+      'Prove & Allegati (foto, audio, chat)': 'Prove e Allegati',
+      'Provvedimenti del giudice (GIP/GUP/Trib.)': 'Provvedimenti (GIP GUP Trib)',
+      'Da classificare': 'Parti & Anagrafiche', // Vecchio comparto da classificare mappato al primo
+    }
+    return nomeMap[nome] || nome
+  }, [])
+
   // Load pratica data
   useEffect(() => {
     if (!id) return
@@ -193,7 +223,12 @@ export function PraticaCanvasPage() {
           api.getClientiByPratica(id!)
         ])
         setPratica(p)
-        setComparti(c)
+        // ✅ Normalizza i nomi dei comparti
+        const normalizedComparti = c.map(comparto => ({
+          ...comparto,
+          nome: normalizeCompartoNome(comparto.nome)
+        }))
+        setComparti(normalizedComparti)
         setClienti(clientiData.clienti)
         // Clienti caricati
       } catch (error) {
@@ -204,7 +239,7 @@ export function PraticaCanvasPage() {
       }
     }
     load()
-  }, [id, toast, setIsLoading])
+  }, [id, toast, setIsLoading, normalizeCompartoNome])
 
   // Header height measurement removed; content uses CSS grid rows (auto, 1fr)
 

@@ -5,7 +5,7 @@ export function colorFor(nome?: string): string {
     if (key.includes('o.c.c.c') || key.includes('anagrafica') || key.includes('inquisito')) return '#10b981' // emerald
     if (key.includes('fatto') || key.includes('reati') || key.includes('contestati') || key.includes('p.m.')) return '#ef4444' // red
     if (key.includes('informativa')) return '#3b82f6' // blue
-    if (key.includes('fascicolo') || key.includes('gip')) return '#a855f7' // purple
+    if (key.includes('fascicolo') || key.includes('gip') || key.includes('indagini preliminari') || key.includes('preliminari')) return '#a855f7' // purple
     if (key.includes('verbali') || key.includes('arresto') || key.includes('perquisizioni') || key.includes('sequestro')) return '#f97316' // orange
     if (key.includes('interrogatori') || key.includes('dichiarazioni')) return '#0ea5e9' // sky
     if (key.includes('intercettazioni') || key.includes('telefoniche')) return '#6366f1' // indigo
@@ -14,9 +14,11 @@ export function colorFor(nome?: string): string {
     if (key.includes('atti interlocutori') || key.includes('corrispondenza varia')) return '#ec4899' // pink
     if (key.includes('nomi citati') || key.includes('frequentazioni')) return '#22c55e' // green
     if (key.includes('contestazioni')) return '#dc2626' // red-600
-    if (key.includes('raccolta prove') || key.includes('osservazioni')) return '#f59e0b' // amber
+    if (key.includes('raccolta prove') || key.includes('osservazioni') || (key.includes('prove') && key.includes('allegati'))) return '#f59e0b' // amber
     if (key.includes('mappe') || key.includes('concettuali') || key.includes('grafico')) return '#06b6d4' // cyan
     if (key.includes('note') || key.includes('campo libero')) return '#64748b' // slate
+    if (key.includes('perizie') || key.includes('consulenze')) return '#10b981' // emerald
+    if (key.includes('provvedimenti') || key.includes('gup') || key.includes('trib')) return '#6366f1' // indigo
     return '#64748b' // slate
 }
 
@@ -25,7 +27,7 @@ export function iconFor(nome?: string) {
     if (key.includes('o.c.c.c') || key.includes('anagrafica') || key.includes('inquisito')) return Users
     if (key.includes('fatto') || key.includes('reati') || key.includes('contestati') || key.includes('p.m.')) return Gavel
     if (key.includes('informativa')) return FileText
-    if (key.includes('fascicolo') || key.includes('gip')) return Search
+    if (key.includes('fascicolo') || key.includes('gip') || key.includes('indagini preliminari') || key.includes('preliminari')) return Search
     if (key.includes('verbali') || key.includes('arresto') || key.includes('perquisizioni') || key.includes('sequestro')) return FileText
     if (key.includes('interrogatori') || key.includes('dichiarazioni')) return FileText
     if (key.includes('intercettazioni') || key.includes('telefoniche')) return Mail
@@ -34,9 +36,11 @@ export function iconFor(nome?: string) {
     if (key.includes('atti interlocutori') || key.includes('corrispondenza varia')) return Mail
     if (key.includes('nomi citati') || key.includes('frequentazioni')) return Users
     if (key.includes('contestazioni')) return Gavel
-    if (key.includes('raccolta prove') || key.includes('osservazioni')) return Image
+    if (key.includes('raccolta prove') || key.includes('osservazioni') || (key.includes('prove') && key.includes('allegati'))) return Image
     if (key.includes('mappe') || key.includes('concettuali') || key.includes('grafico')) return Search
     if (key.includes('note') || key.includes('campo libero')) return FileText
+    if (key.includes('perizie') || key.includes('consulenze')) return FileText
+    if (key.includes('provvedimenti') || key.includes('gup') || key.includes('trib')) return Gavel
     return FileText
 }
 

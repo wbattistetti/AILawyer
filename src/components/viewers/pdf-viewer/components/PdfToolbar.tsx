@@ -85,33 +85,27 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 				<span className="text-muted-foreground whitespace-nowrap px-1">/ {totalPages || '-'}</span>
 			</div>
 
-			{/* Quick search bar - nascosto quando pannello aperto */}
-			{!showAdvanced && (
-				<div className="flex items-center gap-1 ml-2">
-					<Search size={16} className="text-gray-500" />
-					<input
-						value={searchQ}
-						onChange={(e) => onSearchChange(e.target.value)}
-						onKeyDown={onSearchKeyDown}
-						placeholder="Cerca nel documento"
-						className="w-72 border rounded px-2 py-1"
-					/>
-					<button className="px-2 py-1 border rounded" title="Apri pannello ricerca" onClick={onToggleAdvanced}>
-						<PanelRightOpen size={16} />
+			{/* Pulsante Cerca a destra della toolbar */}
+			<div className="ml-auto flex items-center gap-2">
+				{showAdvanced ? (
+					<button
+						className="px-3 py-1 border rounded bg-blue-100 border-blue-400 hover:bg-blue-200"
+						title="Chiudi pannello ricerca"
+						onClick={onToggleAdvanced}
+					>
+						Chiudi ricerca
 					</button>
-				</div>
-			)}
-
-			{/* Pulsante per chiudere il pannello quando è aperto */}
-			{showAdvanced && (
-				<button
-					className="px-2 py-1 border rounded bg-blue-100 border-blue-400"
-					title="Chiudi pannello ricerca"
-					onClick={onToggleAdvanced}
-				>
-					<PanelRightOpen size={16} className="rotate-180" />
-				</button>
-			)}
+				) : (
+					<button
+						className="px-3 py-1 border rounded bg-white hover:bg-gray-50"
+						title="Apri pannello ricerca"
+						onClick={onToggleAdvanced}
+					>
+						<Search size={16} className="inline-block mr-1" />
+						Cerca
+					</button>
+				)}
+			</div>
 
 			{/* Annotation tools */}
 			<div className="flex items-center gap-2">

@@ -115,6 +115,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     showAdvanced,
     setShowAdvanced,
     panelW,
+    setPanelW,
     resizingRef,
 
     // Viewer state

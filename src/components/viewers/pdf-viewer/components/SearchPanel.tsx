@@ -37,8 +37,29 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
 	return (
 		<React.Fragment>
-			<div onMouseDown={() => { resizingRef.current = true; document.body.style.cursor = 'ew-resize' }} className="w-1.5 cursor-col-resize bg-transparent hover:bg-blue-300" title="Ridimensiona">
-				<GripVertical size={12} className="mx-auto text-gray-400" />
+			{/* ✅ Slider stretto, trasparente, colorato solo al hover */}
+			<div
+				onMouseDown={(e) => {
+					if (e.button !== 0) return
+					e.preventDefault()
+					e.stopPropagation()
+					resizingRef.current = true
+					document.body.style.cursor = 'col-resize'
+					document.body.style.userSelect = 'none'
+				}}
+				className="group cursor-col-resize transition-colors hover:bg-blue-400 bg-transparent flex items-center justify-center"
+				style={{
+					width: '6px',
+					minWidth: '6px',
+					height: '100%',
+					position: 'relative',
+					zIndex: 1000,
+					userSelect: 'none',
+					touchAction: 'none'
+				}}
+				title="Trascina per ridimensionare"
+			>
+				<GripVertical size={12} className="text-transparent group-hover:text-blue-700 transition-colors" />
 			</div>
 			<div className="h-full border-l bg-white flex flex-col" style={{ width: panelW }}>
 				{/* Header pannello ricerca con X per chiudere */}
@@ -54,31 +75,54 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 				</div>
 
 				<SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={true} onSearch={async (q, _scope) => {
-					console.log('[SEARCH][document] Backend search start', { q, docId })
+					console.log('[SEARCH][document] Backend search start', { q, docId, fileUrl: fileUrl?.substring(0, 100) })
 
 					try {
 						// ✅ USA LA STESSA API DELL'ARCHIVIO!
 						const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
 						const response = await fetch(`${apiUrl}/api/search/archive?q=${encodeURIComponent(q)}&docId=${docId}`)
 
-						if (!response.ok) throw new Error('Search failed')
+						if (!response.ok) {
+							console.error('[SEARCH][document] API response not OK', { status: response.status, statusText: response.statusText })
+							throw new Error('Search failed')
+						}
 						const data = await response.json()
 
-						console.log('[SEARCH][document] API response', { total: data.total, matches: data.matches?.length })
+						console.log('[SEARCH][document] API response', {
+							total: data.total,
+							matches: data.matches?.length,
+							sampleMatches: data.matches?.slice(0, 3).map((m: any) => ({
+								page: m.page,
+								snippet: m.snippet?.substring(0, 50),
+								charIdx: m.charIdx
+							}))
+						})
 
 						// Converti i risultati nel formato atteso
 						const found = data.matches || []
 						setMatches(found)
 
-						const docTitle = (fileUrl?.split('/')?.pop() || 'Documento') as string
+						// ✅ Quando scope è 'current', usa title vuoto per nascondere l'header documento
 						const actualDocId = docId || 'current'
-						console.log('[SEARCH][provider][onSearch]', { docId: actualDocId, q, foundCount: found.length })
+						console.log('[SEARCH][provider][onSearch]', {
+							docId: actualDocId,
+							q,
+							foundCount: found.length,
+							scope: 'current'
+						})
 
 						const groups = [{
-							doc: { id: actualDocId, title: docTitle, hash: '', pages: totalPages, kind: 'pdf' as const }, matches: found.map((m: any) => ({
+							doc: {
+								id: actualDocId,
+								title: '', // ✅ Vuoto per scope 'current' - non mostra header documento
+								hash: '',
+								pages: totalPages,
+								kind: 'pdf' as const
+							},
+							matches: found.map((m: any) => ({
 								id: m.id,
 								docId: actualDocId,
-								docTitle,
+								docTitle: '', // Non necessario per scope current
 								kind: 'pdf' as const,
 								page: m.page,
 								q: q,

@@ -96,6 +96,24 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                     <ul className="pl-6 py-1">
                       {node.groups.map(g => {
                         const o = openDocs[g.doc.id] ?? true
+                        // ✅ Quando il titolo del documento è vuoto (scope 'current'), mostra solo i match senza header
+                        if (!g.doc.title || g.doc.title.trim() === '') {
+                          return (
+                            <React.Fragment key={g.doc.id}>
+                              {g.matches.map((m, matchIdx) => (
+                                <li
+                                  key={m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`}
+                                  className={`px-2 py-1 cursor-pointer flex items-start gap-2 ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
+                                  onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
+                                >
+                                  <TypeIcon size={14} className="text-amber-600" />
+                                  {renderSnippet(m.snippet, q)}
+                                </li>
+                              ))}
+                            </React.Fragment>
+                          )
+                        }
+                        // ✅ Quando c'è un titolo (scope 'archive' o 'open'), mostra l'header documento
                         return (
                           <li key={g.doc.id} className="mb-1">
                             <div className="px-2 py-0.5 text-gray-700 font-medium flex items-center gap-2">
