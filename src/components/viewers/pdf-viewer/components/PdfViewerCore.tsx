@@ -8,6 +8,7 @@ import '@react-pdf-viewer/highlight/lib/styles/index.css'
 import { getTextInViewportBox } from '../../../../features/pdf/getTextInViewportBox';
 import { getTextInPdfBox } from '../../../../features/pdf/getTextInPdfBox';
 import { SvgSelectLayer } from '../../../../features/pdf/SvgSelectLayer';
+import { useToast } from '@/hooks/use-toast';
 
 export type PdfViewerHandle = {
 	jumpToPage: (page1Based: number) => void;
@@ -40,31 +41,33 @@ interface PdfViewerCoreProps {
 	docId?: string
 }
 
-export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(function PdfViewerCore({
-	fileUrl,
-	page,
-	onPageChange,
-	scrollMode,
-	pageNav,
-	searchPluginInstance,
-	highlight,
-	zoomPluginInstance,
-	selectMode,
-	selectKind,
-	hostRef,
-	pdfDocRef,
-	scaleRef,
-	setPageInput,
-	setTotalPages,
-	setZoomPct,
-	setExtractPos,
-	setExtractPage,
-	setLastSelection,
-	setExtractOpen,
-	docId
-}, ref) {
+function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerHandle>) {
+	const {
+		fileUrl,
+		page,
+		onPageChange,
+		scrollMode,
+		pageNav,
+		searchPluginInstance,
+		highlight,
+		zoomPluginInstance,
+		selectMode,
+		selectKind,
+		hostRef,
+		pdfDocRef,
+		scaleRef,
+		setPageInput,
+		setTotalPages,
+		setZoomPct,
+		setExtractPos,
+		setExtractPage,
+		setLastSelection,
+		setExtractOpen,
+		docId
+	} = props
 	const [ready, setReady] = useState(false);
 	const queueRef = useRef<Array<() => void>>([]);
+	const { toast } = useToast();
 
 	const execOrQueue = (fn: () => void) => {
 		if (ready) fn();
@@ -149,12 +152,68 @@ export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(fun
 						try { requestAnimationFrame(() => { try { (window as any).__deskewApply?.() } catch { } }) } catch { }
 					}
 				}}
-				renderPage={(p: any) => (
-					<div style={{ position: 'relative', width: '100%', height: '100%' }}>
-						{p.canvasLayer.children}
-						{p.annotationLayer.children}
-						{p.textLayer.children}
-						{selectMode && selectKind === 'OCR' && (
+				renderPage={(p: any) => {
+					const pageNumber = p.pageIndex + 1; // Convert 0-based to 1-based
+
+					const handleDoubleClick = async (e: React.MouseEvent) => {
+						// Evita di copiare se si sta selezionando testo
+						if (window.getSelection()?.toString().trim()) {
+							return;
+						}
+
+						e.preventDefault();
+						e.stopPropagation();
+
+						if (!docId) {
+							toast({
+								title: 'Errore',
+								description: 'Documento non disponibile',
+								variant: 'destructive'
+							});
+							return;
+						}
+
+						try {
+							// Estrai il testo della pagina
+							const { extractPageText } = await import('@/utils/extractPageText');
+							const pageText = await extractPageText(docId, pageNumber);
+
+							if (!pageText || !pageText.trim()) {
+								toast({
+									title: 'Attenzione',
+									description: `Nessun testo OCR disponibile per la pagina ${pageNumber}`,
+									variant: 'destructive'
+								});
+								return;
+							}
+
+							// Copia nella clipboard
+							await navigator.clipboard.writeText(pageText);
+
+							toast({
+								title: 'Testo copiato',
+								description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
+							});
+						} catch (err) {
+							console.error('[PdfViewerCore] Error copying page text:', err);
+							toast({
+								title: 'Errore',
+								description: 'Impossibile copiare il testo della pagina',
+								variant: 'destructive'
+							});
+						}
+					};
+
+					return (
+						<div
+							style={{ position: 'relative', width: '100%', height: '100%' }}
+							onDoubleClick={handleDoubleClick}
+							title="Doppio clic per copiare il testo della pagina nella clipboard"
+						>
+							{p.canvasLayer.children}
+							{p.annotationLayer.children}
+							{p.textLayer.children}
+							{selectMode && selectKind === 'OCR' && (
 							<div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
 								<SvgSelectLayer
 									enabled={true}
@@ -210,8 +269,11 @@ export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(fun
 							</div>
 						)}
 					</div>
-				)}
+					)
+				}}
 			/>
 		</Worker>
 	)
-})
+}
+
+export const PdfViewerCore = forwardRef<PdfViewerHandle, PdfViewerCoreProps>(PdfViewerCoreInner)

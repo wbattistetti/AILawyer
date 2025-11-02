@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
+import { useToast } from '@/hooks/use-toast'
+import { extractPageText } from '@/utils/extractPageText'
 
 export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>(({ showInput=true, showScopeSelector=true, initialQuery })=>{
   const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
+  const { toast } = useToast()
   const [q, setQ] = useState(initialQuery || '')
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
   const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
@@ -226,13 +229,32 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                   })
                                 }
 
-                                return (
+                                  return (
                                   <li
                                     key={matchId}
                                     className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
                                     onMouseEnter={() => setHoveredMatchId(matchId)}
                                     onMouseLeave={() => setHoveredMatchId(null)}
-                                    onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
+                                    onClick={async()=>{
+                                      setSelectedId(m.id)
+                                      // Copia testo pagina nella clipboard
+                                      try {
+                                        const pageText = await extractPageText(m.docId, m.page || 1)
+                                        await navigator.clipboard.writeText(pageText)
+                                        toast({
+                                          title: 'Testo copiato',
+                                          description: `Testo della pagina ${m.page || 1} copiato nella clipboard`,
+                                        })
+                                      } catch (error) {
+                                        console.error('[SEARCH] Error copying page text:', error)
+                                        toast({
+                                          title: 'Errore',
+                                          description: 'Impossibile copiare il testo della pagina',
+                                          variant: 'destructive',
+                                        })
+                                      }
+                                      await navigateTo(m)
+                                    }}
                                   >
                                     <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
@@ -326,7 +348,26 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                       className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
                                       onMouseEnter={() => setHoveredMatchId(matchId)}
                                       onMouseLeave={() => setHoveredMatchId(null)}
-                                      onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
+                                      onClick={async()=>{
+                                      setSelectedId(m.id)
+                                      // Copia testo pagina nella clipboard
+                                      try {
+                                        const pageText = await extractPageText(m.docId, m.page || 1)
+                                        await navigator.clipboard.writeText(pageText)
+                                        toast({
+                                          title: 'Testo copiato',
+                                          description: `Testo della pagina ${m.page || 1} copiato nella clipboard`,
+                                        })
+                                      } catch (error) {
+                                        console.error('[SEARCH] Error copying page text:', error)
+                                        toast({
+                                          title: 'Errore',
+                                          description: 'Impossibile copiare il testo della pagina',
+                                          variant: 'destructive',
+                                        })
+                                      }
+                                      await navigateTo(m)
+                                    }}
                                     >
                                       <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 min-w-0">

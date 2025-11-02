@@ -9,7 +9,7 @@ import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
 
 // Stato OCR in memoria per file locali (non persistito nel database)
 // Map: s3Key -> { progress, status, result?, error? }
-const localOcrProgress = new Map<string, { progress: number; status: string; result?: any; error?: string }>()
+export const localOcrProgress = new Map<string, { progress: number; status: string; result?: any; error?: string }>()
 
 // Funzione per ottenere il risultato OCR di un file locale (per ricerca e altre operazioni)
 export function getLocalOcrResult(s3Key: string): { texts?: string[], layout?: any[], status: string, progress: number } | null {
@@ -25,6 +25,30 @@ export function getLocalOcrResult(s3Key: string): { texts?: string[], layout?: a
         status: progress.status,
         progress: progress.progress
     }
+}
+
+// ✅ Helper per cercare OCR usando prefisso hash (per documenti temp:)
+export function getLocalOcrResultByPrefix(hashPrefix: string): { texts?: string[], layout?: any[], status: string, progress: number, s3Key?: string } | null {
+    // Prima prova con il prefisso esatto
+    let result = getLocalOcrResult(hashPrefix)
+    if (result) {
+        return { ...result, s3Key: hashPrefix }
+    }
+
+    // Poi cerca tutte le chiavi che iniziano con il prefisso
+    const matchingKeys = Array.from(localOcrProgress.keys()).filter(key =>
+        key.startsWith(hashPrefix)
+    )
+
+    if (matchingKeys.length > 0) {
+        const foundKey = matchingKeys[0]
+        result = getLocalOcrResult(foundKey)
+        if (result) {
+            return { ...result, s3Key: foundKey }
+        }
+    }
+
+    return null
 }
 
 const ocrProcessLocalSchema = z.object({
@@ -249,6 +273,32 @@ export async function ocrRoutes(fastify: FastifyInstance) {
 
         fastify.log.debug({ msg: 'OCR progress requested', s3Key, progress: progress.progress, status: progress.status })
         return reply.status(200).send(progress)
+    })
+
+    // Endpoint per ottenere il testo OCR di un file locale (usando hash prefix)
+    fastify.get<{ Params: { hashPrefix: string } }>('/ocr/get-local-text/:hashPrefix', async (request, reply) => {
+        const hashPrefix = decodeURIComponent(request.params.hashPrefix)
+        fastify.log.debug({ msg: 'Get local OCR text requested', hashPrefix })
+
+        const result = getLocalOcrResultByPrefix(hashPrefix)
+
+        if (!result) {
+            fastify.log.warn({ msg: 'OCR result not found', hashPrefix, availableKeys: Array.from(localOcrProgress.keys()).slice(0, 5) })
+            return reply.status(404).send({ error: 'OCR non trovato', hashPrefix })
+        }
+
+        if (result.status !== 'completed' || !result.texts || result.texts.length === 0) {
+            fastify.log.warn({ msg: 'OCR not completed or no text', hashPrefix, status: result.status, hasTexts: !!result.texts })
+            return reply.status(404).send({ error: 'OCR non completato o testo non disponibile', hashPrefix, status: result.status })
+        }
+
+        fastify.log.debug({ msg: 'OCR text returned', hashPrefix, pages: result.texts.length })
+        return reply.status(200).send({
+            texts: result.texts,
+            layout: result.layout,
+            s3Key: result.s3Key,
+            status: result.status
+        })
     })
 
     // Endpoint per cancellare OCR in memoria

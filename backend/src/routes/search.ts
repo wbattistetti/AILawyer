@@ -256,13 +256,24 @@ export async function searchRoutes(fastify: FastifyInstance) {
         let localDocInfo: { s3Key: string; filename: string; text: string; layout?: any[] } | null = null
 
         if (isLocalFile && docId) {
-          // Estrai s3Key da docId (temp:local:timestamp:random -> local:timestamp:random)
-          const s3Key = docId.replace(/^temp:/, '')
-          console.log('[SEARCH][ARCHIVE][LOCAL] Checking local file', { docId, s3Key })
+          // Estrai prefisso hash da docId (temp:e6447792c8231ab2 -> e6447792c8231ab2)
+          const hashPrefix = docId.replace(/^temp:/, '')
+          console.log('[SEARCH][ARCHIVE][LOCAL] Checking local file', { docId, hashPrefix })
 
-          const ocrResult = getLocalOcrResult(s3Key)
+          // ✅ Cerca OCR usando il prefisso dell'hash (l's3Key completo inizia con questo prefisso)
+          // Es: hashPrefix = 'e6447792c8231ab2', s3Key completo = 'e6447792c8231ab22ad3cefc822cb2564b505afa3a3ab98828e7778920c3d050.pdf'
+          const { getLocalOcrResultByPrefix } = await import('./ocr.js')
+          const ocrResultData = getLocalOcrResultByPrefix(hashPrefix)
+          const ocrResult = ocrResultData ? {
+            texts: ocrResultData.texts,
+            layout: ocrResultData.layout,
+            status: ocrResultData.status,
+            progress: ocrResultData.progress
+          } : null
+          const actualS3Key = ocrResultData?.s3Key || hashPrefix
           console.log('[SEARCH][ARCHIVE][LOCAL] OCR result', {
-            s3Key,
+            hashPrefix,
+            actualS3Key,
             hasResult: !!ocrResult,
             hasTexts: !!(ocrResult && ocrResult.texts),
             textsLength: ocrResult?.texts?.length,
@@ -273,18 +284,20 @@ export async function searchRoutes(fastify: FastifyInstance) {
             // File locale con OCR completato: usa testo dalla memoria
             const text = ocrResult.texts.join('\n')
             localDocInfo = {
-              s3Key,
-              filename: s3Key.split(':').pop() || 'documento locale',
+              s3Key: actualS3Key,
+              filename: actualS3Key.split(':').pop() || actualS3Key.split('/').pop() || 'documento locale',
               text,
               layout: ocrResult.layout
             }
-            console.log('[SEARCH][archive][local] Found in memory', { s3Key, textLength: text.length, textStart: text.substring(0, 200) })
-            fastify.log.info({ msg: '[SEARCH][archive][local] Found in memory', s3Key, textLength: text.length })
+            console.log('[SEARCH][archive][local] Found in memory', { s3Key: actualS3Key, textLength: text.length, textStart: text.substring(0, 200) })
+            fastify.log.info({ msg: '[SEARCH][archive][local] Found in memory', s3Key: actualS3Key, textLength: text.length })
           } else {
             // File locale senza OCR: prova a leggere testo nativo dal file
-            console.log('[SEARCH][ARCHIVE][LOCAL] No OCR result, trying native text extraction', { s3Key })
+            console.log('[SEARCH][ARCHIVE][LOCAL] No OCR result, trying native text extraction', { hashPrefix, actualS3Key })
             try {
-              const sanitizedKey = sanitizeFileName(s3Key)
+              // ✅ Usa actualS3Key se disponibile (s3Key completo), altrimenti hashPrefix
+              const s3KeyToUse = actualS3Key !== hashPrefix ? actualS3Key : hashPrefix
+              const sanitizedKey = sanitizeFileName(s3KeyToUse)
               const uploadsDir = path.resolve(process.cwd(), '..', 'uploads')
               const filePath = path.join(uploadsDir, sanitizedKey)
 
@@ -293,29 +306,29 @@ export async function searchRoutes(fastify: FastifyInstance) {
               if (fs.existsSync(filePath)) {
                 const nativeText = await extractNativeText(filePath)
                 console.log('[SEARCH][ARCHIVE][LOCAL] Native text extraction', {
-                  s3Key,
+                  s3Key: s3KeyToUse,
                   hasText: !!nativeText,
                   textLength: nativeText?.length,
                   textStart: nativeText?.substring(0, 200)
                 })
                 if (nativeText) {
                   localDocInfo = {
-                    s3Key,
-                    filename: s3Key.split(':').pop() || 'documento locale',
+                    s3Key: s3KeyToUse,
+                    filename: s3KeyToUse.split(':').pop() || s3KeyToUse.split('/').pop() || 'documento locale',
                     text: nativeText,
                     layout: []
                   }
-                  console.log('[SEARCH][archive][local] Native text extracted', { s3Key, textLength: nativeText.length })
-                  fastify.log.info({ msg: '[SEARCH][archive][local] Native text extracted', s3Key, textLength: nativeText.length })
+                  console.log('[SEARCH][archive][local] Native text extracted', { s3Key: s3KeyToUse, textLength: nativeText.length })
+                  fastify.log.info({ msg: '[SEARCH][archive][local] Native text extracted', s3Key: s3KeyToUse, textLength: nativeText.length })
                 } else {
-                  console.log('[SEARCH][ARCHIVE][LOCAL] No native text found', { s3Key })
+                  console.log('[SEARCH][ARCHIVE][LOCAL] No native text found', { s3Key: s3KeyToUse })
                 }
               } else {
-                console.log('[SEARCH][ARCHIVE][LOCAL] File does not exist', { s3Key, filePath })
+                console.log('[SEARCH][ARCHIVE][LOCAL] File does not exist', { s3Key: s3KeyToUse, filePath })
               }
             } catch (e: any) {
-              console.error('[SEARCH][ARCHIVE][LOCAL] Error extracting native text', { s3Key, error: e?.message, stack: e?.stack })
-              fastify.log.warn({ msg: '[SEARCH][archive][local] Failed to read file', s3Key, error: e?.message })
+              console.error('[SEARCH][ARCHIVE][LOCAL] Error extracting native text', { s3Key: s3KeyToUse, error: e?.message, stack: e?.stack })
+              fastify.log.warn({ msg: '[SEARCH][archive][local] Failed to read file', s3Key: s3KeyToUse, error: e?.message })
             }
           }
         }
@@ -1256,43 +1269,53 @@ export async function searchRoutes(fastify: FastifyInstance) {
                       contextAfter: pageTextNormForSearch.substring(queryPosInNormalized + queryNormForSearch.length, Math.min(pageTextNormForSearch.length, queryPosInNormalized + queryNormForSearch.length + 30))
                     })
 
-                    // Mappa questa posizione al testo originale (con spazi) usando le parole
-                    let charCountNorm = 0
-                    let charCountOriginal = 0
+                    // ✅ CORREZIONE: Mappa direttamente usando la posizione nel testo normalizzato
+                    // queryPosInNormalized è la posizione nel testo normalizzato SENZA spazi (pageTextNormForSearch)
+                    // Dobbiamo mapparla al testo originale CON spazi (pageTextRaw)
+                    //
+                    // Strategia: ricostruisci il mapping carattere per carattere dal testo normalizzato
+                    // al testo originale, ignorando gli spazi nel testo originale
                     let mappedPos = 0
+                    let normCharCount = 0
 
-                    for (let i = 0; i < pageWords.length; i++) {
-                      const w = pageWords[i]
-                      const wText = w.text || ''
-                      const wTextNorm = normalizeForSearch(wText)
-                      const wStartNorm = charCountNorm
-                      const wEndNorm = charCountNorm + wTextNorm.length
+                    // Itera attraverso il testo originale carattere per carattere
+                    for (let i = 0; i < pageTextRaw.length; i++) {
+                      const char = pageTextRaw[i]
+                      const charNorm = normalizeForSearch(char)
 
-                      // Se la query inizia in questa parola o subito dopo
-                      if (queryPosInNormalized >= wStartNorm && queryPosInNormalized <= wEndNorm) {
-                        // Mappa all'inizio della parola che contiene l'inizio della query
-                        mappedPos = charCountOriginal
-                        break
+                      // Se questo carattere non è uno spazio, conta nel testo normalizzato
+                      if (charNorm.length > 0) {
+                        // Se abbiamo raggiunto la posizione della query nel testo normalizzato
+                        if (normCharCount >= queryPosInNormalized) {
+                          mappedPos = i
+                          break
+                        }
+                        normCharCount += charNorm.length
+                      } else {
+                        // È uno spazio: non conta nel testo normalizzato, ma resta nel testo originale
+                        // Se la query inizia esattamente qui nel normalizzato, mappa all'inizio dello spazio
+                        if (normCharCount === queryPosInNormalized) {
+                          mappedPos = i
+                          break
+                        }
                       }
 
-                      charCountNorm += wTextNorm.length
-                      charCountOriginal += wText.length + (i < pageWords.length - 1 ? 1 : 0)
-
-                      // Se abbiamo superato la posizione, usa la parola precedente
-                      if (charCountNorm > queryPosInNormalized && i > 0) {
-                        // Torna indietro di una parola
-                        const prevW = pageWords[i - 1]
-                        const prevWText = prevW.text || ''
-                        mappedPos = charCountOriginal - prevWText.length - 1
+                      // Se abbiamo superato la posizione, usa la posizione corrente
+                      if (normCharCount > queryPosInNormalized) {
+                        mappedPos = i
                         break
                       }
                     }
 
-                    // Se non mappato, usa stima proporzionale
+                    // Fallback: se non mappato, usa stima proporzionale
                     if (mappedPos === 0 && queryPosInNormalized > 0) {
                       const ratio = pageTextRaw.length / Math.max(1, pageTextNormForSearch.length)
                       mappedPos = Math.min(Math.floor(queryPosInNormalized * ratio), pageTextRaw.length - 1)
                     }
+
+                    // Verifica che mappedPos non superi i limiti
+                    mappedPos = Math.min(mappedPos, pageTextRaw.length - 1)
+                    mappedPos = Math.max(0, mappedPos)
 
                     // Estrai snippet dalla posizione mappata
                     snippet = extractLineBasedSnippet(pageTextRaw, mappedPos, 150, true) // isOcr = true
