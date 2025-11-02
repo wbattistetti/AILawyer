@@ -151,39 +151,8 @@ export const api = {
   },
 
   async getDocumentiByPratica(praticaId: string): Promise<Documento[]> {
-    console.log('[LOAD][DOCUMENTI][FRONTEND][START]', { praticaId })
     try {
       const documenti = await fetchApi(`/pratiche/${praticaId}/documenti`)
-
-      // 🔍 LOG: Verifica se ocrText è presente quando vengono caricati i documenti (frontend)
-      const ocrTextStatus = documenti.map((d: Documento) => ({
-        id: d.id.substring(0, 20) + '...',
-        filename: d.filename,
-        ocrStatus: d.ocrStatus,
-        hasOcrText: !!(d as any).ocrText,
-        ocrTextLength: (d as any).ocrText?.length || 0
-      }))
-
-      console.log('[LOAD][DOCUMENTI][FRONTEND][SUCCESS]', {
-        praticaId,
-        count: documenti.length,
-        documenti: documenti.map((d: Documento) => ({
-          id: d.id,
-          filename: d.filename,
-          compartoId: d.compartoId
-        }))
-      })
-
-      console.log('[LOAD][DOCUMENTI][FRONTEND][OCR-TEXT-STATUS]', {
-        praticaId,
-        ocrTextStatus,
-        summary: {
-          total: documenti.length,
-          withOcrText: ocrTextStatus.filter((d: any) => d.hasOcrText).length,
-          completedWithoutText: ocrTextStatus.filter((d: any) => d.ocrStatus === 'completed' && !d.hasOcrText).length
-        }
-      })
-
       return documenti
     } catch (error) {
       console.error('[LOAD][DOCUMENTI][FRONTEND][ERROR]', {
@@ -191,6 +160,18 @@ export const api = {
         error
       })
       throw error
+    }
+  },
+
+  // ✅ Cerca documento esistente per hash (prima di creare tempDoc)
+  async findDocumentByHash(praticaId: string, hash: string): Promise<Documento | null> {
+    try {
+      const documenti = await fetchApi(`/pratiche/${praticaId}/documenti`)
+      const existing = documenti.find((d: Documento) => d.hash === hash)
+      return existing || null
+    } catch (error) {
+      console.error('[FIND][DOCUMENT][BY-HASH][ERROR]', { praticaId, hash, error })
+      return null
     }
   },
 
@@ -265,10 +246,7 @@ export const api = {
     return `${API_BASE}/preview/${encodeURIComponent(s3Key)}.png`
   },
 
-  // Thumbnails by hash (server-generated)
-  getThumbUrl(hash: string) {
-    return `${API_BASE}/thumb/${encodeURIComponent(hash)}.png`
-  },
+  // ❌ Rimossa getThumbUrl - thumbnail generate solo client-side e salvate in thumbnailDataUrl
 
   async getJob(id: string): Promise<Job> {
     return fetchApi(`/jobs/${id}`)

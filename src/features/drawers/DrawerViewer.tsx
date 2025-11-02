@@ -262,13 +262,6 @@ export function DrawerViewer({
 
         lastDataRef.current = dataHash
 
-        console.log('✅ [DRAWER][SYNC][UPDATE] Aggiornando archiveData (dati cambiati)', {
-          documentiCount: data.documenti?.length || 0,
-          uploadsCount: data.uploads?.length || 0,
-          compartiCount: data.comparti?.length || 0,
-          uploadsForThisDrawer: data.uploads?.filter((u: any) => u.compartoId === id).length || 0
-        })
-
         setArchiveData(data)
       }
 
@@ -308,6 +301,7 @@ export function DrawerViewer({
         // ✅ Usa queueMicrotask per evitare warning React
         queueMicrotask(() => {
           const data = (window as any).__archiveData
+
           // ✅ Verifica che i dati essenziali siano presenti
           if (data && Array.isArray(data.comparti) && typeof data.handleFileDrop === 'function') {
             setArchiveData({

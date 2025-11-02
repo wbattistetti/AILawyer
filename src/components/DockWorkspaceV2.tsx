@@ -5,7 +5,7 @@ import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
-import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Archive, Search, User, CreditCard, Calendar, Network, Mail, Image } from 'lucide-react'
+import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Search, User, CreditCard, Calendar, Network, Mail, Image } from 'lucide-react'
 import type { Comparto } from '@/types'
 import { api } from '@/lib/api'
 import type { DrawerType } from '../features/drawers/types'
@@ -81,7 +81,6 @@ const PANEL_BEHAVIORS: Record<string, PanelBehavior> = {
   'graph': 'dockable',
 
   // Pannelli dockable normali (trascinabili e ridimensionabili nel canvas)
-  'archive': 'dockable',
   'persons': 'dockable',
   'contacts': 'dockable',
   'ids': 'dockable',
@@ -110,11 +109,6 @@ const TAB_CONFIGS: Record<string, TabConfig> = {
     icon: FolderOpen,
     colorBase: '#93c5fd', // blue-300 spento
     colorActive: '#3b82f6' // blue-500 vivace
-  },
-  'archive': {
-    icon: Archive,
-    colorBase: '#a78bfa', // violet-300 spento
-    colorActive: '#8b5cf6' // violet-500 vivace
   },
   'search': {
     icon: Search,
@@ -155,7 +149,6 @@ const TAB_CONFIGS: Record<string, TabConfig> = {
 
 type Props = {
   // docs: DocTab[] // Removed unused prop
-  renderArchive: () => React.ReactNode
   renderPersons?: () => React.ReactNode
   renderContacts?: () => React.ReactNode
   renderIds?: () => React.ReactNode
@@ -174,13 +167,11 @@ type Props = {
 export type DockWorkspaceV2Handle = {
   openDoc: (doc: DocTab) => void
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
-  switchToArchive: () => void
 }
 
 function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Handle>) {
   const {
     // docs, // Removed unused prop
-    renderArchive,
     renderPersons,
     renderContacts,
     renderIds,
@@ -228,22 +219,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     if (fn && fn.name !== '') map.set(id, fn)
     else map.delete(id)
   }, [])
-
-  // ✅ Imperative handle per esporre metodi al parent
-  useImperativeHandle(ref, () => ({
-    openDoc: (doc: DocTab) => {
-      // console.log('[IMPERATIVE] openDoc called:', doc)
-      // Implementazione per aprire documento
-    },
-    openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
-      console.log('[IMPERATIVE] openTmpDoc called:', meta)
-      // Implementazione per aprire documento temporaneo
-    },
-    switchToArchive: () => {
-      console.log('[IMPERATIVE] switchToArchive called')
-      // Implementazione per passare all'archivio
-    }
-  }), [])
 
   // ✅ Funzione per forzare aggiornamento tab specifica
   const forceTabUpdate = useCallback((tabId: string) => {
@@ -428,24 +403,16 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ Gestisce il click su una tab del cassetto
   const handleDrawerTabSelect = useCallback((drawerId: string) => {
-    console.log('[DRAWER-TAB-SELECT][START]', { drawerId, compartiCount: comparti.length, drawerTabsCount: drawerTabs.length })
-
     setSelectedDrawerId(drawerId)
 
     // Trova il comparto corrispondente
     const comparto = comparti.find(c => c.key === drawerId)
-    console.log('[DRAWER-TAB-SELECT][COMPARTO]', {
-      found: !!comparto,
-      comparto: comparto ? { id: comparto.id, key: comparto.key, nome: comparto.nome } : null,
-      allCompartiKeys: comparti.map(c => c.key)
-    })
     if (!comparto) {
       console.error('[DRAWER-TAB-SELECT] Comparto non trovato per key:', drawerId)
       return
     }
 
     const drawerTab = drawerTabs.find(t => t.id === drawerId)
-    console.log('[DRAWER-TAB-SELECT][DRAWER-TAB]', { found: !!drawerTab })
     if (!drawerTab) {
       console.error('[DRAWER-TAB-SELECT] DrawerTab non trovato per id:', drawerId)
       return
@@ -458,13 +425,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
 
     const json = modelRef.current.toJson() as any
-    console.log('[DRAWER-TAB-SELECT][LAYOUT-START]', {
-      layoutType: json.layout?.type,
-      hasChildren: !!json.layout?.children,
-      childrenCount: json.layout?.children?.length,
-      hasBorders: !!json.borders,
-      bordersCount: json.borders?.length
-    })
 
     // ✅ STRATEGIA: Usa un border bottom invece del layout column
     // I border sono sempre visibili e posizionati correttamente da FlexLayout
@@ -472,10 +432,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     // Cerca se esiste già un border bottom
     if (!json.borders) json.borders = []
     let bottomBorder = json.borders.find((b: any) => b.location === 'bottom')
-    console.log('[DRAWER-TAB-SELECT][BORDER-SEARCH]', { found: !!bottomBorder })
 
     if (!bottomBorder) {
-      console.log('[DRAWER-TAB-SELECT][BORDER-CREATE] Creando bottom border con drawer tabs...')
       // Crea un border bottom con il drawer tab
       bottomBorder = {
         type: 'border',
@@ -484,46 +442,26 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         children: []
       }
       json.borders.push(bottomBorder)
-    } else {
-      console.log('[DRAWER-TAB-SELECT][BORDER-EXISTS] Border bottom esistente', {
-        childrenCount: bottomBorder.children?.length
-      })
     }
 
     // Cerca la tab esistente per questo drawer nel border bottom
     const existingTabIndex = bottomBorder.children?.findIndex((t: any) => t.config?.drawerId === comparto.id) ?? -1
     const isCurrentlySelected = existingTabIndex >= 0 && bottomBorder.selected === existingTabIndex
 
-    console.log('[DRAWER-TAB-SELECT][TAB-CHECK]', {
-      existingTabIndex,
-      isCurrentlySelected,
-      currentSelected: bottomBorder.selected,
-      hasChildren: !!bottomBorder.children,
-      allTabsIds: bottomBorder.children?.map((t: any) => ({ id: t.id, drawerId: t.config?.drawerId })) || []
-    })
-
     // ✅ TOGGLE: Se il cassetto è già aperto e selezionato, chiudilo
     if (isCurrentlySelected) {
-      console.log('[DRAWER-TAB-SELECT][CLOSE] Chiudendo cassetto già aperto', { existingTabIndex })
       // Rimuovi tutte le tab dal border (chiudi il pannello)
       bottomBorder.children = []
       bottomBorder.selected = undefined
       setSelectedDrawerId(undefined)
     } else if (existingTabIndex >= 0) {
       // ✅ Il cassetto esiste ma non è selezionato: selezionalo e chiudi gli altri
-      console.log('[DRAWER-TAB-SELECT][SELECT-EXISTING] Selezionando tab esistente, chiudendo altre', { existingTabIndex })
       // Rimuovi tutte le altre tab e mantieni solo quella selezionata
       bottomBorder.children = [bottomBorder.children[existingTabIndex]]
       bottomBorder.selected = 0
       setSelectedDrawerId(drawerId)
     } else {
       // ✅ Crea nuova tab: rimuovi tutte le altre e apri solo questa
-      console.log('[DRAWER-TAB-SELECT][CREATE-NEW-TAB] Creando nuova tab, chiudendo altre...', {
-        compartoId: comparto.id,
-        compartoNome: comparto.nome,
-        drawerKey: drawerId
-      })
-
       // Crea nuova tab nel border bottom
       const newTab = {
         type: 'tab',
@@ -543,31 +481,16 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       bottomBorder.children = [newTab]
       bottomBorder.selected = 0
       setSelectedDrawerId(drawerId)
-      console.log('[DRAWER-TAB-SELECT][NEW-TAB-CREATED]', {
-        tabId: newTab.id,
-        tabConfig: newTab.config,
-        selectedIndex: bottomBorder.selected,
-        totalTabs: bottomBorder.children.length
-      })
     }
 
     // Aggiorna il modello
-    console.log('[DRAWER-TAB-SELECT][UPDATE-MODEL] Aggiornando modello...', {
-      layoutType: json.layout?.type,
-      borderBottomChildren: bottomBorder.children?.length,
-      borderBottomSelected: bottomBorder.selected
-    })
-    console.log('[DRAWER-TAB-SELECT][JSON-FULL]', JSON.stringify(json, null, 2))
-
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
-    console.log('[DRAWER-TAB-SELECT][UPDATE-MODEL-DONE] Modello aggiornato, forzando re-render')
   }, [comparti, drawerTabs])
 
   // ✅ Gestisce il drop di file sulla tab della striscia
   const handleDrawerTabDrop = useCallback((files: File[], drawerKey: string) => {
-    console.log('[DRAWER-TAB-DROP][START]', { drawerKey, filesCount: files.length })
     // Trova il comparto corrispondente alla key
     const comparto = comparti.find(c => c.key === drawerKey)
     if (!comparto) {
@@ -676,62 +599,34 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     const json = modelRef.current.toJson() as any
 
-    // ✅ PRIMA: Cerca se esiste già un tabset con archive docked
-    const findArchiveTabset = (node: any): any => {
-      if (node.type === 'tabset' && Array.isArray(node.children)) {
-        const hasArchive = node.children.some((child: any) => child.component === 'archive')
-        if (hasArchive) {
-          console.log('[OPEN-DOC] Trovato tabset con archive docked:', node.id, 'children count:', node.children.length)
-          return node
-        }
-      }
-      if (Array.isArray(node.children)) {
-        for (const child of node.children) {
-          const result = findArchiveTabset(child)
-          if (result) return result
-        }
-      }
-      return null
-    }
+    // ✅ Cerca docTabset esistente o crealo
+    let targetTabset = findById(json.layout, 'docTabset')
+    console.log('[OPEN-DOC] Existing docTabset:', targetTabset ? 'found' : 'not found')
 
-    let targetTabset = findArchiveTabset(json.layout)
-
-    if (targetTabset) {
-      console.log('[OPEN-DOC] Trovato tabset con archive - aggiungo documento allo stesso tabset', {
-        tabsetId: targetTabset.id,
-        currentChildren: targetTabset.children?.length || 0
-      })
-    } else {
-      console.log('[OPEN-DOC] Nessun tabset con archive trovato, cerco docTabset')
-      // ✅ Se non esiste archive tabset, cerca docTabset esistente
+    if (!targetTabset) {
+      console.log('[OPEN-DOC] Creating new docTabset')
+      // ✅ Sostituisci il placeholder con il tabset per documenti
+      const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
+      if (placeholderIndex >= 0) {
+        // Sostituisci il placeholder
+        json.layout.children[placeholderIndex] = {
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        }
+      } else {
+        // Fallback: aggiungi alla fine
+        json.layout.children.push({
+          type: 'tabset',
+          id: 'docTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        })
+      }
       targetTabset = findById(json.layout, 'docTabset')
-      console.log('[OPEN-DOC] Existing docTabset:', targetTabset ? 'found' : 'not found')
-
-      if (!targetTabset) {
-        console.log('[OPEN-DOC] Creating new docTabset')
-        // ✅ Sostituisci il placeholder con il tabset per documenti
-        const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
-        if (placeholderIndex >= 0) {
-          // Sostituisci il placeholder
-          json.layout.children[placeholderIndex] = {
-            type: 'tabset',
-            id: 'docTabset',
-            enableTabStrip: true,
-            weight: 100,
-            children: []
-          }
-        } else {
-          // Fallback: aggiungi alla fine
-          json.layout.children.push({
-            type: 'tabset',
-            id: 'docTabset',
-            enableTabStrip: true,
-            weight: 100,
-            children: []
-          })
-        }
-        targetTabset = findById(json.layout, 'docTabset')
-      }
     }
 
     // Aggiungi il documento al tabset trovato (o creato)
@@ -798,92 +693,9 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     setModel(nextModel)
   }
 
-  const switchToArchive = () => {
-    if (!modelRef.current) return
+  // ✅ switchToArchive rimosso - archivio sostituito dai cassetti in basso
 
-    const json = modelRef.current.toJson() as any
-
-    // ✅ Prima: verifica se esiste già un pannello archive docked nel canvas principale
-    const findArchiveTabs = (node: any): Array<{ tabset: any; index: number }> => {
-      const results: Array<{ tabset: any; index: number }> = []
-      if (node.type === 'tabset' && Array.isArray(node.children)) {
-        node.children.forEach((child: any, index: number) => {
-          if (child.component === 'archive') {
-            results.push({ tabset: node, index })
-          }
-        })
-      }
-      if (Array.isArray(node.children)) {
-        node.children.forEach((child: any) => {
-          results.push(...findArchiveTabs(child))
-        })
-      }
-      return results
-    }
-
-    const archiveTabs = findArchiveTabs(json.layout)
-
-    // Se esiste già un pannello archive docked, aprilo invece di aprire la sidebar
-    if (archiveTabs.length > 0) {
-      // Trovato pannello archive docked esistente, apro quello
-      const firstArchive = archiveTabs[0]
-      firstArchive.tabset.selected = firstArchive.index
-      const nextModel = Model.fromJson(json)
-      modelRef.current = nextModel
-      setModel(nextModel)
-      return
-    }
-
-    // ✅ Se NON esiste un pannello docked, simula il click sulla tab archivio nella sidebar
-    // Questo creerà il pannello docked come se avessi cliccato manualmente
-    const leftBorder = (json.borders || []).find((b: any) => b.location === 'left')
-    if (!leftBorder) return
-
-    const archiveIndex = leftBorder.children?.findIndex((t: any) => t.component === 'archive')
-    if (archiveIndex !== undefined && archiveIndex >= 0) {
-      console.log('📂 [switchToArchive] Nessun pannello docked esistente - simulo click sulla tab archivio nella sidebar')
-
-      // Simula il click sulla tab archivio nella sidebar per creare il pannello docked
-      const archiveTabId = leftBorder.children[archiveIndex].id
-      if (archiveTabId) {
-        // Trova il TabNode corrispondente
-        const archiveTabNode = modelRef.current.getNodeById(archiveTabId) as TabNode | null
-        if (archiveTabNode && archiveTabNode.getType() === 'tab') {
-          const component = (archiveTabNode as any).getComponent()
-          const behavior = PANEL_BEHAVIORS[component]
-
-          if (behavior === 'dockable' && component === 'archive') {
-            const title = ((archiveTabNode as any).getName && (archiveTabNode as any).getName()) || component
-            const sidebarTabId = archiveTabId
-
-            // ✅ SOLUZIONE PULITA: Rimuovi la tab dalla sidebar direttamente
-            leftBorder.children = leftBorder.children.filter((tab: any) => tab.id !== sidebarTabId)
-            leftBorder.selected = -1
-
-            const correctedModel = Model.fromJson(json)
-            modelRef.current = correctedModel
-            setModel(correctedModel)
-
-            // Crea il pannello dockable immediatamente
-            requestAnimationFrame(() => {
-              createDockablePanel(component, title, 'left')
-            })
-
-            return
-          }
-        }
-      }
-
-      // Fallback: se non riesce a simulare il click, apri solo la sidebar
-      leftBorder.selected = archiveIndex
-      const nextModel = Model.fromJson(json)
-      modelRef.current = nextModel
-      setModel(nextModel)
-      onLeftBorderTabChange?.('archive')
-    }
-  }
-
-  useImperativeHandle(ref, () => ({ openDoc, openTmpDoc, switchToArchive }))
+  useImperativeHandle(ref, () => ({ openDoc, openTmpDoc }))
 
   // Helper robusto per applicare/ritirare il fullscreen
   // Al mount: sincronizza lo stato in base alla tab selezionata nel left border
@@ -907,7 +719,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
     const tabId = node.getId()
-    console.log('[FACTORY][CALL]', { component: comp, tabId })
 
     // ✅ STEP 4: Pannelli con fullscreen toggle
     if (comp === 'explorer') {
@@ -943,13 +754,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       )
     }
     // ✅ STEP 4: Pannelli dockable normali (senza fullscreen toggle)
-    if (comp === 'archive') {
-      const node = modelRef.current?.getNodeById(tabId);
-      const nodeJson = node ? (modelRef.current?.toJson() as any) : null;
-      const archiveTabs = nodeJson?.borders?.[0]?.children?.filter((t: any) => t.component === 'archive') || [];
-      // Log rimosso per ridurre rumore;
-      return <div className="w-full h-full overflow-auto bg-slate-50" data-component="archive-container" data-tab-id={tabId}>{renderArchive()}</div>
-    }
     if (comp === 'persons') return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
     if (comp === 'contacts') return <div className="w-full h-full overflow-auto bg-white">{renderContacts ? renderContacts() : null}</div>
     if (comp === 'ids') return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
@@ -1041,17 +845,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       const drawerIcon = drawerTab?.icon
       const drawerColor = drawerTab?.color
 
-      console.log('[FACTORY][DRAWER-CONTENT] Rendering drawer-content', {
-        tabId,
-        drawerId: drawerIdToUse,
-        drawerTitle: cfg.drawerTitle,
-        drawerType: cfg.drawerType,
-        drawerNumber,
-        drawerColor,
-        hasIcon: !!drawerIcon,
-        config: cfg
-      })
-
       return (
         <div className="w-full h-full overflow-hidden bg-white">
           <DrawerViewer
@@ -1082,7 +875,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     // Tab statiche esistenti
     const staticTabs = [
       { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' },
-      { type: 'tab', name: 'Archivio', component: 'archive', id: 'archiveTab' },
       { type: 'tab', name: 'Anagrafiche', component: 'persons', id: 'personsTab' },
       { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' },
       { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' },
@@ -1382,16 +1174,13 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         setTabsOpenState(prev => prev + 1)
 
         // ✅ STEP 5: POI crea il pannello dockable (con ID diverso)
-        // ✅ Per archive e cliente-memoria, verifica se esiste già un pannello docked prima di crearne uno nuovo
-        if (component === 'archive' || component === 'cliente-memoria') {
+        // ✅ Per cliente-memoria, verifica se esiste già un pannello docked prima di crearne uno nuovo
+        if (component === 'cliente-memoria') {
           const json = modelRef.current?.toJson() as any
           if (json) {
             const findExistingTabs = (node: any): boolean => {
               if (node.type === 'tabset' && Array.isArray(node.children)) {
-                if (component === 'archive') {
-                  const hasArchive = node.children.some((child: any) => child.component === 'archive')
-                  if (hasArchive) return true
-                } else if (component === 'cliente-memoria' && clienteId) {
+                if (component === 'cliente-memoria' && clienteId) {
                   // Per cliente-memoria, cerca una tab con lo stesso clienteId nell'ID
                   const hasCliente = node.children.some((child: any) =>
                     child.component === 'cliente-memoria' &&
@@ -1412,9 +1201,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
               const findAndSelectTab = (node: any): boolean => {
                 if (node.type === 'tabset' && Array.isArray(node.children)) {
                   let tabIndex = -1
-                  if (component === 'archive') {
-                    tabIndex = node.children.findIndex((child: any) => child.component === 'archive')
-                  } else if (component === 'cliente-memoria' && clienteId) {
+                  if (component === 'cliente-memoria' && clienteId) {
                     tabIndex = node.children.findIndex((child: any) =>
                       child.component === 'cliente-memoria' &&
                       child.id.includes(clienteId)
@@ -1461,43 +1248,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
       // Se è un pannello dockable, gestisci il posizionamento
       if (behavior === 'dockable') {
-        // ✅ Per archive, NON permettere mai di creare una tab docked nel canvas principale
-        // Se si cerca di trascinare archive nel canvas, apri invece la sidebar
-        if (component === 'archive') {
-          const json = modelRef.current?.toJson() as any
-          if (json) {
-            // Se il drop è nel canvas principale (non nella sidebar), blocca e apri la sidebar
-            if (dropInfo && dropInfo.node) {
-              const targetType = dropInfo.node.getType()
-
-              // Se il target è nel canvas principale (non è un border)
-              if (targetType === 'tabset' || targetType === 'row') {
-                console.log('⚠️ [DockWorkspaceV2] Tentativo di trascinare archive nel canvas principale - apro invece la sidebar')
-                // Apri la sidebar invece di creare un nuovo pannello
-                switchToArchive()
-                return undefined // Blocca completamente la creazione della tab docked
-              }
-            }
-
-            // Cerca anche se esiste già una tab archive docked
-            const findArchiveTabs = (node: any): boolean => {
-              if (node.type === 'tabset' && Array.isArray(node.children)) {
-                const hasArchive = node.children.some((child: any) => child.component === 'archive')
-                if (hasArchive) return true
-              }
-              if (Array.isArray(node.children)) {
-                return node.children.some(findArchiveTabs)
-              }
-              return false
-            }
-
-            if (findArchiveTabs(json.layout)) {
-              console.log('⚠️ [DockWorkspaceV2] Tab archive già docked, blocco drag per evitare duplicati')
-              switchToArchive() // Apri la sidebar invece
-              return undefined // Blocca la creazione di una nuova tab
-            }
-          }
-        }
+        // ✅ Gestione drag per pannelli dockable (archive rimosso - sostituito dai cassetti)
 
         // Permetti il drop solo nel canvas centrale (per altri componenti dockable)
         if (dropInfo && dropInfo.node && dropInfo.node.getType() === 'tabset') {
@@ -1568,15 +1319,15 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         type: 'tabset',
         id: 'dockableTabset',
         enableTabStrip: true,
-        weight: component === 'archive' ? 20 : 60, // Archivio molto più stretto per le miniature
+        weight: 60,
         children: []
       }
 
       // ✅ Gestisci il placeholder: sostituiscilo o posiziona il nuovo tabset
       const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
 
-      if (preferredPosition === 'left' || component === 'archive') {
-        // Posizione a sinistra (default) - Archivio sempre a sinistra
+      if (preferredPosition === 'left') {
+        // Posizione a sinistra (default)
         if (placeholderIndex >= 0) {
           // Sostituisci il placeholder con il nuovo tabset
           json.layout.children[placeholderIndex] = newTabset
@@ -1637,7 +1388,6 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     } else {
       // Tab statiche: mappa componente -> ID tab sidebar
       const staticTabIds: Record<string, string> = {
-        'archive': 'archiveTab',
         'persons': 'personsTab',
         'contacts': 'contactsTab',
         'ids': 'idsTab',
@@ -1832,76 +1582,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   // ✅ Rimossa: l'aggiornamento del modello viene gestito direttamente in handleAction quando necessario
 
   // ✅ Rimuovi tab archive duplicate nel canvas principale
-  useEffect(() => {
-    if (!modelRef.current) return
-
-    const json = modelRef.current.toJson() as any
-    let hasChanges = false
-
-    // Trova tutte le tab archive docked nel canvas principale (non nella sidebar)
-    const findArchiveTabs = (node: any, inBorder: boolean = false): Array<{ tabset: any; index: number; tab: any }> => {
-      const results: Array<{ tabset: any; index: number; tab: any }> = []
-
-      if (node.type === 'tabset' && !inBorder) {
-        // Cerca solo nei tabsets del canvas principale (non nei border)
-        node.children?.forEach((child: any, index: number) => {
-          if (child.component === 'archive') {
-            results.push({ tabset: node, index, tab: child })
-          }
-        })
-      }
-
-      if (node.type === 'border' && node.location === 'left') {
-        // Skip border left - quelle sono nella sidebar
-        inBorder = true
-      }
-
-      if (Array.isArray(node.children)) {
-        node.children.forEach((child: any) => {
-          results.push(...findArchiveTabs(child, inBorder))
-        })
-      }
-
-      return results
-    }
-
-    const archiveTabs = findArchiveTabs(json.layout)
-
-    // Se ci sono più tab archive docked, rimuovi tutte tranne la prima
-    if (archiveTabs.length > 1) {
-      console.warn('⚠️ [DockWorkspaceV2] Trovate tab archive duplicate:', archiveTabs.length, 'Rimuovo duplicati...')
-
-      // Mantieni solo la prima tab, rimuovi le altre
-      for (let i = 1; i < archiveTabs.length; i++) {
-        const { tabset, index } = archiveTabs[i]
-        tabset.children.splice(index, 1)
-        hasChanges = true
-
-        // Se la tab rimossa era selezionata, seleziona la prima tab archive
-        if (tabset.selected === index) {
-          const firstArchiveTab = archiveTabs[0]
-          const firstIndex = firstArchiveTab.tabset.children.findIndex((child: any) => child.component === 'archive')
-          if (firstIndex >= 0) {
-            firstArchiveTab.tabset.selected = firstIndex
-          }
-        }
-
-        // Aggiorna gli indici delle tab successive
-        for (let j = i + 1; j < archiveTabs.length; j++) {
-          if (archiveTabs[j].tabset === tabset && archiveTabs[j].index > index) {
-            archiveTabs[j].index--
-          }
-        }
-      }
-
-      if (hasChanges) {
-        const nextModel = Model.fromJson(json)
-        modelRef.current = nextModel
-        setModel(nextModel)
-        console.log('✅ [DockWorkspaceV2] Tab archive duplicate rimosse')
-      }
-    }
-  }, [model])
+  // ✅ useEffect per rimuovere tab archive duplicate rimosso - archivio sostituito dai cassetti
 
   // ✅ Rimossa: non serve più nascondere/mostrare tab con CSS
   // Le tab vengono gestite direttamente nel modello JSON (rimozione/aggiunta dall'array)
@@ -1952,22 +1633,12 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
       if (bottomBorder) {
         const rect = bottomBorder.getBoundingClientRect()
-        console.log('[DRAWER-BORDER][DOM-CHECK]', {
-          found: true,
-          width: rect.width,
-          height: rect.height,
-          visible: rect.width > 0 && rect.height > 0,
-          computedHeight: window.getComputedStyle(bottomBorder).height,
-        })
 
         // Se ha dimensioni troppo piccole, forza dimensioni minime
         if (rect.height < 200) {
-          console.log('[DRAWER-BORDER][FORCE-SIZE] Forzando dimensioni...')
           bottomBorder.style.height = '350px'
           bottomBorder.style.minHeight = '350px'
         }
-      } else {
-        console.warn('[DRAWER-BORDER][DOM-CHECK]', { found: false })
       }
     }
 

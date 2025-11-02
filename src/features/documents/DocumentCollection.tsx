@@ -464,8 +464,33 @@ export function DocumentCollection({
         <div className="flex-1 overflow-auto" data-component="document-collection-thumbnails">
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
-            {extraNodesTop}
             {items.map(doc => {
+              // ✅ Gestisci Ghost (upload placeholder) come elemento speciale
+              if ((doc as any)._isUploadGhost) {
+                const uploadData = (doc as any)._uploadData
+                const color = uploadData?.compartoColor || '#3b82f6' // Colore di default se non disponibile
+                const dashedStyle = { borderColor: color }
+                const name = doc.filename || ''
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="relative w-full min-w-[12rem] aspect-[3/4] border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden"
+                    style={dashedStyle}
+                  >
+                    {uploadData?.preview ? (
+                      <img src={uploadData.preview} alt={name} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                    ) : null}
+                    <div className="relative z-10 flex flex-col items-center gap-2 p-2 text-center">
+                      <span className="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      <div className="text-xs font-medium">Carico…</div>
+                      <div className="text-[11px] text-neutral-600 line-clamp-2">{name}</div>
+                    </div>
+                  </div>
+                )
+              }
+
+              // ✅ Documento normale
               const meta = (doc as any).meta || {}
               const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
               const headerIcon = isExtract ? <ScanText className="w-4 h-4" /> : <FileText className="w-4 h-4" />
@@ -480,13 +505,14 @@ export function DocumentCollection({
               // NON convertire undefined in false! Passa undefined così com'è
               const hasNativeTextValue = doc.hasNativeText
 
-              // Priorità thumbnail: 1) doc.thumbnailDataUrl dal DB, 2) doc.thumb (server thumb), 3) generazione client
-              // Nota: lazy loading thumbnail dal DB viene gestito da ThumbCardWithLazyThumbnail component
+              // ✅ Priorità thumbnail: 1) doc.thumbnailDataUrl dal DB (client-side generata), 2) generazione client on-demand
+              // ❌ Rimossa generazione backend ridondante (server thumb)
               const thumbnailFromDb = (doc as any).thumbnailDataUrl || undefined
-              const serverThumb = (doc as any).thumb || ''
-              const finalImgSrc = isExtract ? '' : (thumbnailFromDb || serverThumb)
-              const shouldAutoGenerate = isPdf && !thumbnailFromDb && !serverThumb && computedFileUrl
-              const shouldLoadLazyThumbnail = !isExtract && isPdf && !thumbnailFromDb && !serverThumb
+              const finalImgSrc = isExtract ? '' : thumbnailFromDb
+              const isTempDoc = doc.id?.startsWith('temp:')
+              // ✅ Per documenti temporanei, non fare lazy loading dal backend (thumbnail generata client-side)
+              const shouldAutoGenerate = isPdf && !thumbnailFromDb && computedFileUrl
+              const shouldLoadLazyThumbnail = !isExtract && isPdf && !thumbnailFromDb && !isTempDoc
 
               return (
                 <ThumbCardWithLazyThumbnail

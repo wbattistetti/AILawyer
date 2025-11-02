@@ -196,21 +196,12 @@ export function ArchiveRenderer({
             } : undefined}
         >
             {filteredComparti.sort((a, b) => a.ordine - b.ordine).map(comparto => {
-                // Filtra documenti del comparto e deduplica per evitare doppioni temporanei
+                // Filtra documenti del comparto
                 const rawDocs = documenti.filter(d => d.compartoId === comparto.id)
 
-                // ✅ Prima passa: trova tutti gli s3Key dei documenti reali (non temp)
-                const realS3Keys = new Set<string>()
-                rawDocs.forEach(d => {
-                    if (!d.id.startsWith('temp:') && d.s3Key) {
-                        realS3Keys.add(d.s3Key)
-                    }
-                })
-
-                // ✅ Seconda passa: filtra documenti, dando priorità ai documenti reali
-                // ✅ Usa l'ID come chiave primaria per la deduplicazione, non l's3Key
+                // ✅ LOGICA SEMPLIFICATA: Mantieni il documento temporaneo visibile finché non c'è un documento reale
+                // ✅ effettivamente presente nello stesso array che lo sostituisce
                 const seenIds = new Set<string>()
-                const seenS3Keys = new Set<string>()
                 const docs = rawDocs.filter(d => {
                     const isTemp = d.id.startsWith('temp:')
 
@@ -220,17 +211,31 @@ export function ArchiveRenderer({
                     }
                     seenIds.add(d.id)
 
-                    // Se è un documento temp e esiste già un documento reale con lo stesso s3Key, escludi il temp
-                    if (isTemp && d.s3Key && realS3Keys.has(d.s3Key)) {
-                        return false
+                    // ✅ Se è un documento temporaneo, verifica se esiste un documento REALE nello stesso array
+                    // ✅ con lo stesso s3Key. Solo in quel caso escludi il temporaneo.
+                    if (isTemp && d.s3Key) {
+                        const realDocWithSameS3Key = rawDocs.find(rd =>
+                            !rd.id.startsWith('temp:') &&
+                            rd.s3Key === d.s3Key &&
+                            rd.id !== d.id // Deve essere un documento diverso
+                        )
+
+                        if (realDocWithSameS3Key) {
+                            // ✅ Log solo quando viene escluso (situazione critica)
+                            console.log('❌ [ARCHIVE-RENDERER][TEMP-EXCLUDED] Escluso documento temporaneo', {
+                                compartoId: comparto.id,
+                                tempId: d.id,
+                                tempFilename: d.filename,
+                                realId: realDocWithSameS3Key.id,
+                                realFilename: realDocWithSameS3Key.filename
+                            })
+                            return false
+                        }
                     }
 
-                    // ✅ Per documenti reali: se hanno lo stesso s3Key, mantieni solo il primo (ma solo se è lo stesso file caricato due volte)
-                    // ✅ Non deduplicare per s3Key se gli ID sono diversi - potrebbero essere documenti diversi
-                    // ✅ L's3Key potrebbe essere lo stesso se due documenti condividono lo stesso file, ma questo è gestito sopra
                     return true
                 })
-                // Log rimosso per ridurre rumore
+
                 return (
                     <div key={comparto.id} className={hideHeaders ? "" : "border rounded-md overflow-hidden"}>
                         {!hideHeaders && (
@@ -265,73 +270,80 @@ export function ArchiveRenderer({
                                 })}
                             >
                                 <DocumentCollection
-                                    extraNodesTop={(() => {
-                                        const allUploads = uploads || []
-
-                                        const ups = allUploads.filter(u => {
-                                            if (!u || u.compartoId !== comparto.id) return false
-                                            if (u.status === 'error' || u.status === 'completed') return false
-                                            if (u.hasTempDoc) return false
-                                            // ✅ Escludi upload se esiste già un documento (temporaneo o reale) con lo stesso s3Key O stesso file name
-                                            if (u.s3Key && documenti.some(d => d.s3Key === u.s3Key)) return false
-                                            // ✅ Escludi anche se il documento temporaneo ha lo stesso filename nello stesso comparto
-                                            if (u.file?.name && documenti.some(d =>
-                                                d.compartoId === comparto.id &&
-                                                d.filename === u.file.name &&
-                                                d.id.startsWith('temp:')
-                                            )) return false
-                                            return true
-                                        })
-
-                                        if (ups.length === 0) return null
-                                        return ups.map((u, idx) => {
-                                            const color = colorFor(comparto.nome)
-                                            const dashedStyle = { borderColor: color }
-                                            const name = (u.filenameBase || u.file?.name || '').replace(/\.[^.]+$/, '')
-                                            return (
-                                                <div key={`upload-ph-${comparto.id}-${idx}`} className="relative w-full min-w-[12rem] aspect-[3/4] border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden" style={dashedStyle}>
-                                                    {u.preview ? (
-                                                        <img src={u.preview} alt={name} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                                                    ) : null}
-                                                    <div className="relative z-10 flex flex-col items-center gap-2 p-2 text-center">
-                                                        <span className="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                        <div className="text-xs font-medium">Carico…</div>
-                                                        <div className="text-[11px] text-neutral-600 line-clamp-2">{name}</div>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })
-                                    })()}
-                                    items={docs.map(d => {
-                                        const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf');
-                                        const ver = (d as any)?.updatedAt ? `?v=${encodeURIComponent((d as any).updatedAt as any)}` : '';
-                                        const serverThumb = isPdf && d.hash ? `${api.getThumbUrl(d.hash)}${ver}` : '';
-                                        const clientThumb = clientThumbByS3[d.s3Key];
-                                        const thumb = clientThumb || serverThumb || '';
-                                        const localUrl = (d as any).localUrl || undefined
-                                        const docItem = {
-                                            id: d.id,
-                                            filename: d.filename,
-                                            s3Key: d.s3Key,
-                                            mime: d.mime,
-                                            thumb,
-                                            localUrl,
-                                            hasNativeText: d.hasNativeText, // NON convertire undefined in false!
-                                            ocrStatus: d.ocrStatus
-                                        }
-
-                                        // Log solo se hasNativeText è undefined (non dovrebbe succedere dopo salvataggio)
-                                        if (isPdf && docItem.hasNativeText === undefined && comparto.key === 'da_classificare') {
-                                            console.warn('[ARCHIVE][LOAD][MISSING-HASNATIVETEXT]', {
+                                    items={(() => {
+                                        // ✅ Prima tutti i documenti normali
+                                        const docItems = docs.map(d => {
+                                            const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf');
+                                            // ✅ Usa solo thumbnailDataUrl dal DB (client-side generata) o clientThumbByS3 per temp docs
+                                            // ❌ Rimossa generazione backend ridondante (server thumb)
+                                            const thumbnailFromDb = (d as any).thumbnailDataUrl || undefined;
+                                            const clientThumb = clientThumbByS3[d.s3Key];
+                                            const thumb = thumbnailFromDb || clientThumb || '';
+                                            const localUrl = (d as any).localUrl || undefined
+                                            const docItem = {
+                                                id: d.id,
                                                 filename: d.filename,
-                                                docId: d.id,
-                                                hasNativeText: docItem.hasNativeText
-                                            })
-                                        }
+                                                s3Key: d.s3Key,
+                                                mime: d.mime,
+                                                thumb,
+                                                localUrl,
+                                                hasNativeText: d.hasNativeText, // NON convertire undefined in false!
+                                                ocrStatus: d.ocrStatus
+                                            }
 
-                                        return docItem
-                                    })}
+                                            // Log solo se hasNativeText è undefined (non dovrebbe succedere dopo salvataggio)
+                                            if (isPdf && docItem.hasNativeText === undefined && comparto.key === 'da_classificare') {
+                                                console.warn('[ARCHIVE][LOAD][MISSING-HASNATIVETEXT]', {
+                                                    filename: d.filename,
+                                                    docId: d.id,
+                                                    hasNativeText: docItem.hasNativeText
+                                                })
+                                            }
+
+                                            return docItem
+                                        })
+
+                                        // ✅ Poi aggiungi i Ghost (upload placeholders) alla fine
+                                        const allUploads = uploads || []
+                                        const compartoColor = colorFor(comparto.nome)
+                                        const ghostItems = allUploads
+                                            .filter(u => {
+                                                if (!u || u.compartoId !== comparto.id) return false
+                                                if (u.status === 'error' || u.status === 'completed') return false
+                                                if (u.hasTempDoc) return false
+                                                // ✅ Escludi upload se esiste già un documento (temporaneo o reale) con lo stesso s3Key O stesso file name
+                                                if (u.s3Key && documenti.some(d => d.s3Key === u.s3Key)) return false
+                                                // ✅ Escludi anche se il documento temporaneo ha lo stesso filename nello stesso comparto
+                                                if (u.file?.name && documenti.some(d =>
+                                                    d.compartoId === comparto.id &&
+                                                    d.filename === u.file.name &&
+                                                    d.id.startsWith('temp:')
+                                                )) return false
+                                                return true
+                                            })
+                                            .map((u, idx) => ({
+                                                id: `upload-ghost-${comparto.id}-${idx}`,
+                                                filename: (u.filenameBase || u.file?.name || '').replace(/\.[^.]+$/, ''),
+                                                s3Key: u.s3Key || '',
+                                                mime: u.file?.type || '',
+                                                thumb: u.preview || '',
+                                                localUrl: undefined,
+                                                hasNativeText: undefined,
+                                                ocrStatus: 'pending' as const,
+                                                _isUploadGhost: true, // ✅ Flag per distinguere il Ghost
+                                                _uploadData: {
+                                                    ...u,
+                                                    compartoColor // ✅ Aggiungi colore del comparto
+                                                }
+                                            }))
+
+                                        // ✅ Ritorna documenti + Ghost alla fine
+                                        return [...docItems, ...ghostItems]
+                                    })()}
                                     onOpen={(doc) => {
+                                        // ✅ Ignora Ghost (non sono documenti reali)
+                                        if ((doc as any)._isUploadGhost) return
+
                                         const trovato = documenti.find(x => x.id === doc.id);
                                         if (trovato) {
                                             dockV2Ref.current?.openDoc({ id: trovato.id, title: trovato.filename });
@@ -339,12 +351,22 @@ export function ArchiveRenderer({
                                         }
                                     }}
                                     // onDrop gestito dal body dell'accordion per evitare doppi eventi
-                                    onRemove={(doc) => { handleRemoveThumb(doc.id) }}
+                                    onRemove={(doc) => {
+                                        // ✅ Ignora Ghost (non sono documenti reali)
+                                        if ((doc as any)._isUploadGhost) return
+                                        handleRemoveThumb(doc.id)
+                                    }}
                                     onOcr={(doc) => {
+                                        // ✅ Ignora Ghost (non sono documenti reali)
+                                        if ((doc as any)._isUploadGhost) return
+
                                         const d = documenti.find(x => x.id === doc.id);
                                         if (d) handleOcr(d, 'full');
                                     }}
                                     onOcrCancel={async (doc) => {
+                                        // ✅ Ignora Ghost (non sono documenti reali)
+                                        if ((doc as any)._isUploadGhost) return
+
                                         const d = documenti.find(x => x.id === doc.id);
                                         if (!d) return;
                                         await handleOcrCancel(d);

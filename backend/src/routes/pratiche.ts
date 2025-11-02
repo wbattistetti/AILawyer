@@ -436,7 +436,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         where: { praticaId: praticaId },
         orderBy: { createdAt: 'desc' },
         select: {
-          // Escludi thumbnailDataUrl per performance (caricamento lazy)
+          // ✅ INCLUDE thumbnailDataUrl - necessaria per mantenere thumbnail client-side generata
           id: true,
           praticaId: true,
           compartoId: true,
@@ -454,9 +454,10 @@ export async function praticheRoutes(fastify: FastifyInstance) {
           classConfidence: true,
           classWhy: true,
           tags: true,
+          thumbnailDataUrl: true, // ✅ INCLUSO per mantenere thumbnail client-side
+          filePath: true,
           createdAt: true,
           updatedAt: true,
-          // thumbnailDataUrl escluso - carica via /documenti/:id/thumbnail se serve
         }
       })
 

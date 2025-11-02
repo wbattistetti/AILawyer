@@ -36,8 +36,10 @@ export function useEventListeners({
         const broadcastDocs = () => {
             try {
                 const items = documenti.map(d => {
+                    // ✅ Usa solo thumbnailDataUrl dal DB (client-side generata) o clientThumbByS3 per temp docs
+                    // ❌ Rimossa generazione backend ridondante (server thumb)
+                    const thumbnailFromDb = (d as any).thumbnailDataUrl || undefined
                     const clientThumb = clientThumbByS3[d.s3Key]
-                    const serverThumb = d.thumbKey ? `/api/thumbs/${d.thumbKey}` : undefined
                     const isPdf = (d.mime?.includes('pdf') || d.filename.toLowerCase().endsWith('.pdf'))
                     const mkFallbackThumb = (doc: Documento) => {
                         const label = doc.filename?.slice(0, 40) || 'Documento'
@@ -51,7 +53,7 @@ export function useEventListeners({
               </svg>`
                         return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
                     }
-                    const thumb = clientThumb || serverThumb || (isPdf ? `/api/files/local/${d.s3Key}` : mkFallbackThumb(d))
+                    const thumb = thumbnailFromDb || clientThumb || (isPdf ? `/api/files/local/${d.s3Key}` : mkFallbackThumb(d))
                     return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d) }
                 })
                 // Include in-memory pending extracts as virtual items (if any)
@@ -179,32 +181,7 @@ export function useEventListeners({
         }
     }, [documenti, clientThumbByS3, dockV2Ref])
 
-    // Auto-switch to Archive tab when dragging files
-    useEffect(() => {
-        let dragCounter = 0
-
-        const handleDragEnter = (e: DragEvent) => {
-            if (e.dataTransfer?.types?.includes('Files')) {
-                dragCounter++
-                if (dragCounter === 1) {
-                    dockV2Ref.current?.switchToArchive()
-                }
-            }
-        }
-
-        const handleDragLeave = (e: DragEvent) => {
-            if (e.dataTransfer?.types?.includes('Files')) {
-                dragCounter--
-            }
-        }
-
-        document.addEventListener('dragenter', handleDragEnter)
-        document.addEventListener('dragleave', handleDragLeave)
-
-        return () => {
-            document.removeEventListener('dragenter', handleDragEnter)
-            document.removeEventListener('dragleave', handleDragLeave)
-        }
-    }, [dockV2Ref])
+    // ✅ Auto-switch to Archive rimosso - archivio sostituito dai cassetti in basso
+    // ✅ Quando si trascina un file, viene gestito direttamente dal drop sui cassetti
 }
 

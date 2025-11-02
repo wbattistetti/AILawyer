@@ -300,16 +300,6 @@
   stroke: #3b82f6 !important;
 }
 
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"] .dockv2-tab-icon svg,
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"] .dockv2-tab-icon svg * {
-  stroke: var(--tab-color, #a78bfa) !important;
-}
-
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open .dockv2-tab-icon svg,
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open .dockv2-tab-icon svg * {
-  stroke: #8b5cf6 !important;
-}
-
 .dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"] .dockv2-tab-icon svg,
 .dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"] .dockv2-tab-icon svg * {
   stroke: var(--tab-color, #86efac) !important;
@@ -398,17 +388,6 @@
   background-color: transparent !important;
   border-left-color: #3b82f6 !important;
   color: #3b82f6 !important;
-}
-
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"]:not(.dockv2-sidebar-tab-open) {
-  background-color: transparent !important;
-  border-left-color: transparent !important;
-}
-
-.dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="archive"].dockv2-sidebar-tab-open {
-  background-color: transparent !important;
-  border-left-color: #8b5cf6 !important;
-  color: #8b5cf6 !important;
 }
 
 .dockv2-root .flexlayout__border_left .flexlayout__tab[data-tab-component="persons"]:not(.dockv2-sidebar-tab-open) {

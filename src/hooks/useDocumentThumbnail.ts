@@ -11,7 +11,8 @@ export function useDocumentThumbnail(docId: string | undefined, enabled: boolean
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!docId || !enabled || thumbnail) return
+    // ✅ Salta documenti temporanei - la loro thumbnail viene generata client-side
+    if (!docId || !enabled || thumbnail || docId.startsWith('temp:')) return
 
     let cancelled = false
     setLoading(true)
@@ -31,7 +32,6 @@ export function useDocumentThumbnail(docId: string | undefined, enabled: boolean
             setError(err instanceof Error ? err.message : 'Errore nel caricamento thumbnail')
             console.warn('[THUMBNAIL][ERROR]', { docId, error: err })
           }
-          // Rimosso log 404 per ridurre rumore
         }
       })
       .finally(() => {

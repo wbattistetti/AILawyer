@@ -88,9 +88,25 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         })
 
         if (fileExists) {
-          // File esiste: genera hash e canonicalizza
-          const buf = await storageService.getObject(sanitizedKey)
-          hash = crypto.createHash('sha256').update(buf).digest('hex')
+          // File esiste: usa hash fornito dal client se disponibile, altrimenti calcolalo
+          if (data.hash && data.hash.trim() !== '') {
+            // ✅ Hash già fornito dal client (calcolato client-side) - usalo direttamente
+            hash = data.hash
+            console.log('[CREATE][DOCUMENTO][HASH][FROM-CLIENT]', {
+              filename: data.filename,
+              hash: hash.substring(0, 16) + '...',
+              note: 'Hash calcolato client-side, non ricalcolato'
+            })
+          } else {
+            // Hash non fornito: calcolalo dal file
+            const buf = await storageService.getObject(sanitizedKey)
+            hash = crypto.createHash('sha256').update(buf).digest('hex')
+            console.log('[CREATE][DOCUMENTO][HASH][CALCULATED]', {
+              filename: data.filename,
+              hash: hash.substring(0, 16) + '...',
+              note: 'Hash calcolato server-side'
+            })
+          }
 
           // Canonicalizza chiave in locale per evitare duplicati: <hash>.<ext>
           if (config.STORAGE_MODE === 'local') {
@@ -113,14 +129,28 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             canonicalKey = sanitizedKey
           }
         } else {
-          // File NON esiste (modalità privacy): usa s3Key originale, hash vuoto
-          // L'hash verrà generato quando il file verrà caricato on-demand per OCR
-          console.log('[CREATE][DOCUMENTO][PRIVACY-MODE]', {
-            s3Key: data.s3Key,
-            note: 'File non in uploads/ - modalità privacy, hash vuoto (generato on-demand per OCR)'
-          })
-          canonicalKey = data.s3Key // Mantieni s3Key originale (può contenere ':' - è solo un ID, non un path)
-          hash = '' // Hash vuoto - verrà popolato quando file caricato per OCR
+          // File NON esiste (modalità privacy): usa hash fornito dal client se disponibile
+          if (data.hash && data.hash.trim() !== '') {
+            // ✅ Hash fornito dal client - usalo (calcolato client-side)
+            hash = data.hash
+            const ext = (path.extname(data.filename) || '').toLowerCase() || '.bin'
+            canonicalKey = `${hash}${ext}` // Usa hash come s3Key canonicalizzato
+            console.log('[CREATE][DOCUMENTO][PRIVACY-MODE][HASH-FROM-CLIENT]', {
+              s3Key: data.s3Key,
+              hash: hash.substring(0, 16) + '...',
+              canonicalKey,
+              note: 'File non in uploads/ - usa hash client-side'
+            })
+          } else {
+            // Hash non fornito: usa s3Key originale, hash vuoto
+            // L'hash verrà generato quando il file verrà caricato on-demand per OCR
+            console.log('[CREATE][DOCUMENTO][PRIVACY-MODE]', {
+              s3Key: data.s3Key,
+              note: 'File non in uploads/ - modalità privacy, hash vuoto (generato on-demand per OCR)'
+            })
+            canonicalKey = data.s3Key // Mantieni s3Key originale (può contenere ':' - è solo un ID, non un path)
+            hash = '' // Hash vuoto - verrà popolato quando file caricato per OCR
+          }
         }
       } catch (error) {
         console.error('[CREATE][DOCUMENTO][FILE-CHECK][ERROR]', {
@@ -177,10 +207,15 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Check se documento già esiste (usa hash solo se disponibile)
-      const whereClause: any = { s3Key: canonicalKey }
-      if (hash) {
-        whereClause.OR = [{ s3Key: canonicalKey }, { hash }]
+      // ✅ Check se documento già esiste (usa hash se disponibile, altrimenti s3Key)
+      // ✅ Priorità: se hash fornito dal client, usalo per trovare duplicati
+      const whereClause: any = {}
+      if (data.hash && data.hash.trim() !== '') {
+        // ✅ Hash fornito dal client: cerca per hash (più accurato)
+        whereClause.OR = [{ hash: data.hash }, { s3Key: canonicalKey }]
+      } else {
+        // Hash non fornito: cerca solo per s3Key
+        whereClause.s3Key = canonicalKey
       }
       const existing = await prisma.documento.findFirst({
         where: whereClause,
@@ -190,20 +225,35 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         console.log('[UPLOAD][duplicate-found]', {
           existingId: existing.id,
           existingHasNativeText: (existing as any).hasNativeText,
-          newHasNativeText: hasNativeText
+          newHasNativeText: hasNativeText,
+          existingThumbnail: !!(existing as any).thumbnailDataUrl,
+          newThumbnail: !!data.thumbnailDataUrl
         })
 
-        // Se hasNativeText è cambiato, aggiorna il documento esistente
-        if ((existing as any).hasNativeText !== hasNativeText) {
-          console.log('[UPLOAD][updating-hasNativeText]', {
+        // Aggiorna hasNativeText o thumbnailDataUrl se necessario
+        const needsUpdate =
+          (existing as any).hasNativeText !== hasNativeText ||
+          (data.thumbnailDataUrl && !(existing as any).thumbnailDataUrl) // ✅ Aggiorna thumbnail se fornita e non esiste
+
+        if (needsUpdate) {
+          console.log('[UPLOAD][updating-duplicate]', {
             id: existing.id,
-            from: (existing as any).hasNativeText,
-            to: hasNativeText
+            hasNativeText: { from: (existing as any).hasNativeText, to: hasNativeText },
+            thumbnailDataUrl: { exists: !!(existing as any).thumbnailDataUrl, new: !!data.thumbnailDataUrl }
           })
+
+          const updateData: any = {}
+          if ((existing as any).hasNativeText !== hasNativeText) {
+            updateData.hasNativeText = hasNativeText
+          }
+          // ✅ Salva thumbnail se fornita e non esiste già
+          if (data.thumbnailDataUrl && !(existing as any).thumbnailDataUrl) {
+            updateData.thumbnailDataUrl = data.thumbnailDataUrl
+          }
 
           await prisma.documento.update({
             where: { id: existing.id },
-            data: { hasNativeText }
+            data: updateData
           })
 
           // Rileggi il documento aggiornato
@@ -216,14 +266,22 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             tags: typeof (updated as any).tags === 'string' ? (() => { try { return JSON.parse((updated as any).tags) } catch { return [] } })() : (updated as any).tags,
             ocrLayout: typeof (updated as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((updated as any).ocrLayout) } catch { return undefined } })() : (updated as any).ocrLayout,
           }
+          // ✅ Se il documento non aveva thumbnail ma l'abbiamo aggiunta, assicuriamoci che sia presente
+          if (data.thumbnailDataUrl && !normalizedUpdated.thumbnailDataUrl) {
+            normalizedUpdated.thumbnailDataUrl = data.thumbnailDataUrl
+          }
           return normalizedUpdated
         }
 
-        // Nessun aggiornamento necessario, restituisci esistente
+        // Nessun aggiornamento necessario, ma usa thumbnail fornita se documento esistente non ce l'ha
         const normalizedExisting: any = {
           ...existing,
           tags: typeof (existing as any).tags === 'string' ? (() => { try { return JSON.parse((existing as any).tags) } catch { return [] } })() : (existing as any).tags,
           ocrLayout: typeof (existing as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((existing as any).ocrLayout) } catch { return undefined } })() : (existing as any).ocrLayout,
+        }
+        // ✅ Se documento esistente non ha thumbnail ma ne abbiamo fornita una, usala
+        if (data.thumbnailDataUrl && !normalizedExisting.thumbnailDataUrl) {
+          normalizedExisting.thumbnailDataUrl = data.thumbnailDataUrl
         }
         return normalizedExisting
       }
@@ -285,17 +343,8 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         throw e
       }
 
-      // Fire-and-forget: build PDF thumbnail if applicable (use canonical s3Key)
-      try {
-        if (data.mime.startsWith('application/pdf') || data.filename.toLowerCase().endsWith('.pdf')) {
-          const base = process.env.VITE_API_URL ? process.env.VITE_API_URL.replace(/\/$/, '') : `http://localhost:${config.PORT}`
-          fetch(`${base}/thumb/build`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ hash, s3Key: canonicalKey, mime: data.mime }),
-          }).catch(() => { })
-        }
-      } catch { }
+      // ✅ Thumbnail viene generata solo client-side e salvata in thumbnailDataUrl
+      // ❌ Rimossa generazione backend ridondante
 
       const normalizedNew: any = {
         ...documento,

@@ -5,6 +5,15 @@ import { Documento, UploadProgress } from '../../../../types'
 import { MAX_UPLOAD_SIZE, MAX_FILES_PER_BATCH } from '../../../../lib/constants'
 import * as pdfjsLib from 'pdfjs-dist'
 
+// ✅ Helper: calcola hash SHA-256 del file (client-side)
+async function calculateFileHash(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer()
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  return hashHex
+}
+
 export function useArchive(praticaId: string | undefined, comparti: any[]) {
   const { toast } = useToast()
 
@@ -16,27 +25,87 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   // Carica documenti quando cambia praticaId
   useEffect(() => {
     if (!praticaId) {
-      console.log('[LOAD][DOCUMENTI][ARCHIVE] Nessuna praticaId, reset documenti')
       setDocumenti([])
       return
     }
 
-    console.log('[LOAD][DOCUMENTI][ARCHIVE][START]', { praticaId })
-
     const loadDocumenti = async () => {
       try {
         const documentiData = await api.getDocumentiByPratica(praticaId)
-        console.log('[LOAD][DOCUMENTI][ARCHIVE][SUCCESS]', {
-          praticaId,
-          count: documentiData.length,
-          documentiByComparto: documentiData.reduce((acc: any, d: Documento) => {
-            const compartoId = d.compartoId || 'unknown'
-            if (!acc[compartoId]) acc[compartoId] = []
-            acc[compartoId].push({ id: d.id, filename: d.filename })
-            return acc
-          }, {})
+
+        // ✅ IMPORTANTE: Non sostituire l'array, ma fare un merge con i documenti temporanei esistenti
+        // ✅ I documenti temporanei devono rimanere visibili finché non vengono esplicitamente sostituiti
+        // ✅ PRESERVA thumbnailDataUrl dai tempDoc quando corrispondono a documenti reali
+        setDocumenti(prev => {
+          // Trova tutti i documenti temporanei esistenti
+          const tempDocs = prev.filter(d => d.id.startsWith('temp:'))
+
+          // Crea una mappa dei documenti reali per s3Key (per deduplicazione)
+          const realDocsByS3Key = new Map<string, Documento>()
+          documentiData.forEach(d => {
+            if (d.s3Key) {
+              realDocsByS3Key.set(d.s3Key, d)
+            }
+          })
+
+          // ✅ Crea mappa tempDoc per filename+compartoId (per match quando s3Key differisce)
+          const tempDocsByKey = new Map<string, Documento>()
+          tempDocs.forEach(tempDoc => {
+            if (tempDoc.filename && tempDoc.compartoId) {
+              const key = `${tempDoc.filename}:${tempDoc.compartoId}`
+              tempDocsByKey.set(key, tempDoc)
+            }
+          })
+
+          // ✅ Per ogni documento reale, preserva thumbnailDataUrl dal tempDoc se disponibile
+          const enrichedRealDocs = documentiData.map(realDoc => {
+            // Cerca tempDoc corrispondente per s3Key (se tempDoc ha s3Key corrispondente)
+            let matchingTempDoc: Documento | undefined = undefined
+            if (realDoc.s3Key) {
+              matchingTempDoc = tempDocs.find(t => t.s3Key === realDoc.s3Key)
+            }
+            // Se non trovato per s3Key, cerca per filename+compartoId
+            if (!matchingTempDoc && realDoc.filename && realDoc.compartoId) {
+              const key = `${realDoc.filename}:${realDoc.compartoId}`
+              matchingTempDoc = tempDocsByKey.get(key)
+            }
+
+            // Se trovato tempDoc con thumbnail, preservala
+            if (matchingTempDoc) {
+              const tempThumbnail = (matchingTempDoc as any)?.thumbnailDataUrl
+              const realThumbnail = (realDoc as any)?.thumbnailDataUrl
+              // ✅ Priorità: thumbnail client-side generata (tempDoc) > backend
+              if (tempThumbnail && tempThumbnail !== realThumbnail) {
+                return {
+                  ...realDoc,
+                  thumbnailDataUrl: tempThumbnail,
+                  localUrl: (matchingTempDoc as any)?.localUrl // Preserva anche localUrl
+                } as Documento
+              }
+            }
+            return realDoc
+          })
+
+          // Mantieni solo i documenti temporanei che NON hanno un documento reale corrispondente
+          const tempDocsToKeep = tempDocs.filter(tempDoc => {
+            if (!tempDoc.s3Key) {
+              return true // Mantieni temp senza s3Key
+            }
+            // Escludi temp solo se esiste un documento reale con lo stesso s3Key
+            if (realDocsByS3Key.has(tempDoc.s3Key)) {
+              return false
+            }
+            // ✅ Escludi anche se c'è un documento reale con stesso filename+compartoId
+            if (tempDoc.filename && tempDoc.compartoId) {
+              const key = `${tempDoc.filename}:${tempDoc.compartoId}`
+              return !documentiData.some(d => d.filename === tempDoc.filename && d.compartoId === tempDoc.compartoId)
+            }
+            return true
+          })
+
+          // Combina documenti reali arricchiti + documenti temporanei da mantenere
+          return [...enrichedRealDocs, ...tempDocsToKeep]
         })
-        setDocumenti(documentiData)
       } catch (error) {
         console.error('[LOAD][DOCUMENTI][ARCHIVE][ERROR]', {
           praticaId,
@@ -55,14 +124,6 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   ) => {
     // Modalità locale: non effettua upload/creazione su backend
     const localOnly = (((import.meta as any).env?.VITE_ARCHIVE_LOCAL_ONLY) ?? 'true') !== 'false'
-
-    console.log('[HANDLE][FILEDROP][START]', {
-      filesCount: files.length,
-      praticaId,
-      localOnly,
-      compartoId: _compartoId,
-      target
-    })
 
     if (!praticaId) {
       console.warn('[HANDLE][FILEDROP] Nessuna praticaId, salto')
@@ -169,48 +230,13 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       }
     })
 
-    console.log('📤 [UPLOAD][CREATE] Creando nuovi uploads', {
-      filesCount: newUploads.length,
-      newUploads: newUploads.map(u => ({
-        filename: u.file?.name || u.filenameBase,
-        compartoId: u.compartoId,
-        status: u.status,
-        hasTempDoc: u.hasTempDoc
-      })),
-      targetCompartoId,
-      localOnly
-    })
 
     // ✅ Traccia uploads anche in modalità locale per mostrare i placeholder
     setUploads(prev => {
       const updated = [...prev, ...newUploads]
-      console.log('📤 [UPLOAD][SET-UPLOADS] Aggiornando uploads array', {
-        prevCount: prev.length,
-        newCount: updated.length,
-        allUploads: updated.map((u, idx) => ({
-          idx,
-          filename: u.file?.name || u.filenameBase,
-          compartoId: u.compartoId,
-          status: u.status,
-          progress: u.progress,
-          hasTempDoc: u.hasTempDoc,
-          s3Key: u.s3Key
-        }))
-      })
       // ✅ Emetti evento ASYNC per evitare warning React
       queueMicrotask(() => {
         try {
-          console.log('📤 [UPLOAD][EVENT] Emettendo app:uploading', {
-            count: newUploads.length,
-            target,
-            uploadsCount: updated.length,
-            uploadsSummary: updated.map(u => ({
-              filename: u.file?.name || u.filenameBase,
-              compartoId: u.compartoId,
-              status: u.status,
-              progress: u.progress
-            }))
-          })
           window.dispatchEvent(new CustomEvent('app:uploading', {
             detail: {
               count: newUploads.length,
@@ -220,7 +246,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             }
           }))
         } catch (e) {
-          console.error('📤 [UPLOAD][EVENT][ERROR] Errore emettendo evento', e)
+          console.error('[UPLOAD][EVENT][ERROR]', e)
         }
       })
       return updated
@@ -282,6 +308,72 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           try { window.dispatchEvent(new CustomEvent('app:uploading', { detail: { count: Math.max(1, files.length - i), target } })) } catch { }
         }
 
+        // ✅ PASSO 1: CALCOLA HASH DEL FILE PRIMA DI TUTTO
+        console.log('🔍 [ARCH][HASH][CALC] Inizio calcolo hash', { filename: file.name, size: file.size })
+        const fileHash = await calculateFileHash(file)
+        console.log('✅ [ARCH][HASH][CALC] Hash calcolato', { filename: file.name, hash: fileHash.substring(0, 16) + '...' })
+
+        // ✅ PASSO 2: CERCA SE DOCUMENTO ESISTE GIÀ NEL DB (per hash)
+        let existingDocument: Documento | null = null
+        if (praticaId && fileHash) {
+          try {
+            existingDocument = await api.findDocumentByHash(praticaId, fileHash)
+            if (existingDocument) {
+              console.log('✅ [ARCH][DUPLICATE][FOUND] Documento già presente nel DB', {
+                filename: file.name,
+                existingId: existingDocument.id.substring(0, 20),
+                existingHash: existingDocument.hash?.substring(0, 16),
+                hasThumbnail: !!(existingDocument as any)?.thumbnailDataUrl
+              })
+            } else {
+              console.log('✅ [ARCH][DUPLICATE][NOT-FOUND] Nuovo documento, procedo con tempDoc', { filename: file.name })
+            }
+          } catch (error) {
+            console.error('⚠️ [ARCH][DUPLICATE][CHECK][ERROR]', { filename: file.name, error })
+            // Continua comunque - meglio creare tempDoc che perdere il file
+          }
+        }
+
+        // ✅ PASSO 3: SE DOCUMENTO ESISTE GIÀ, USA QUELLO - NON CREARE TEMPDOC
+        if (existingDocument) {
+          // Documento già presente: aggiungi all'array se non c'è già, aggiorna upload status
+          setDocumenti(prev => {
+            // Controlla se già presente
+            const alreadyExists = prev.some(d => d.id === existingDocument!.id || d.hash === fileHash)
+            if (alreadyExists) {
+              console.log('✅ [ARCH][DUPLICATE][SKIP] Documento già nell\'array', { filename: file.name })
+              return prev // Già presente, non aggiungere
+            }
+            // Aggiungi documento esistente con thumbnail se presente
+            return [...prev, existingDocument!]
+          })
+
+          // Completa upload e rimuovi dopo delay
+          setUploads(prev => {
+            const updated = prev.map((upload, idx) =>
+              idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
+            )
+            return updated
+          })
+
+          setTimeout(() => {
+            setUploads(prev => prev.filter((u, idx) => idx !== uploadIndex))
+          }, 1500)
+
+          // Emetti evento per notificare
+          queueMicrotask(() => {
+            try {
+              window.dispatchEvent(new CustomEvent('app:documents-updated', {
+                detail: { documenti: documenti.concat(existingDocument!) }
+              }))
+            } catch (e) {
+              console.error('[DOCUMENT][EVENT][ERROR]', e)
+            }
+          })
+
+          continue // ✅ PASSA AL PROSSIMO FILE - NON CREARE TEMPDOC
+        }
+
         let uploadUrl: string
         let s3Key: string
         if (!localOnly) {
@@ -296,11 +388,47 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             throw e
           }
         } else {
-          s3Key = `local:${Date.now()}:${Math.random().toString(36).slice(2)}`
+          // ✅ In modalità locale, usa hash come s3Key (identificatore univoco del file)
+          const ext = file.name.substring(file.name.lastIndexOf('.')) || '.bin'
+          s3Key = `${fileHash}${ext}`
         }
 
-        // Inserimento ottimistico immediato: documento temporaneo visibile da subito
-        const tempId = `temp:${s3Key}`
+        // ✅ PASSO 4: GENERA THUMBNAIL E CREA TEMPDOC (solo se documento non esiste)
+        const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
+        let thumbnailDataUrl: string | undefined = undefined
+        let hasNativeTextValue: boolean | undefined = undefined
+
+        if (isPdf && localOnly) {
+          try {
+            // ✅ Genera SUBITO, prima di creare tempDoc
+            console.log('✅ [ARCH][THUMBNAIL][GENERATE][START]', { filename: file.name, s3Key })
+            const [dataUrl, nativeText] = await Promise.all([
+              generateClientPdfThumb(file, 220),
+              detectNativeTextClient(file)
+            ])
+            thumbnailDataUrl = dataUrl || undefined
+            hasNativeTextValue = nativeText
+
+            console.log('✅ [ARCH][THUMBNAIL][GENERATE][SUCCESS]', {
+              filename: file.name,
+              hasThumbnail: !!thumbnailDataUrl,
+              hasNativeText: hasNativeTextValue,
+              thumbnailLength: thumbnailDataUrl?.length || 0
+            })
+
+            // Salva in clientThumbByS3 per riferimento
+            if (dataUrl) {
+              setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
+            }
+          } catch (error) {
+            console.error('⚠️ [ARCH] PDF processing failed', { name: file.name, error })
+            // Continua comunque, senza thumbnail
+          }
+        }
+
+        // ✅ PASSO 5: CREA TEMPDOC CON HASH COME IDENTIFICATORE (non casuale!)
+        // ✅ Usa hash come parte dell'ID per identificare univocamente il file
+        const tempId = `temp:${fileHash.substring(0, 16)}` // Primi 16 caratteri dell'hash come ID
         const blobUrl = URL.createObjectURL(file)
         const tempDoc: Documento = {
           id: tempId,
@@ -310,43 +438,35 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           mime: file.type,
           size: file.size,
           s3Key,
-          hash: '',
+          hash: fileHash, // ✅ Hash già calcolato!
           ocrStatus: 'pending',
           tags: [],
           createdAt: new Date().toISOString(),
-          hasNativeText: undefined, // Non ancora determinato - aspetta la lettura della prima pagina
+          hasNativeText: hasNativeTextValue, // ✅ Già determinato se PDF
         } as any
-          // In modalità locale, usa il blob URL temporaneamente, poi sarà sostituito con l'URL fisico
-          ; (tempDoc as any).localUrl = blobUrl
+        // In modalità locale, usa il blob URL temporaneamente
+        ;(tempDoc as any).localUrl = blobUrl
+        // ✅ THUMBNAIL GIÀ PRESENTE se generata sopra
+        ;(tempDoc as any).thumbnailDataUrl = thumbnailDataUrl
+
+        console.log('✅ [ARCH][TEMPDOC][CREATED]', {
+          tempId: tempId.substring(0, 30),
+          filename: file.name,
+          hasThumbnail: !!thumbnailDataUrl,
+          hasNativeText: hasNativeTextValue,
+          compartoId: targetCompartoId
+        })
 
         setDocumenti(prev => {
           const updated = [...prev, tempDoc] // ✅ Inserisce alla fine per mantenere ordine cronologico
-          console.log('📄 [DOCUMENT][CREATE-TEMP] Creato documento temporaneo', {
-            tempId,
-            s3Key,
-            filename: tempDoc.filename,
-            compartoId: tempDoc.compartoId,
-            prevCount: prev.length,
-            updatedCount: updated.length,
-            hasLocalUrl: !!(tempDoc as any).localUrl
-          })
           // ✅ Emetti evento ASYNC per evitare warning React "Cannot update a component while rendering a different component"
           queueMicrotask(() => {
             try {
-              console.log('📄 [DOCUMENT][EVENT] Emettendo app:documents-updated', {
-                documentiCount: updated.length,
-                lastDoc: {
-                  id: tempDoc.id,
-                  filename: tempDoc.filename,
-                  compartoId: tempDoc.compartoId,
-                  s3Key: tempDoc.s3Key
-                }
-              })
               window.dispatchEvent(new CustomEvent('app:documents-updated', {
                 detail: { documenti: updated }
               }))
             } catch (e) {
-              console.error('📄 [DOCUMENT][EVENT][ERROR] Errore emettendo evento', e)
+              console.error('[DOCUMENT][EVENT][ERROR]', e)
             }
           })
           return updated
@@ -360,117 +480,29 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           const fileToRemove = uploadToComplete?.file
           const compartoIdToRemove = uploadToComplete?.compartoId
 
-          console.log('⚡ [UPLOAD][SKIP-DUPLICATE] File già esistente, completando upload', {
-            uploadIndex,
-            filename: fileToRemove?.name,
-            compartoId: compartoIdToRemove,
-            s3Key,
-            uploadStatus: uploadToComplete?.status,
-            uploadProgress: uploadToComplete?.progress
-          })
-
           setUploads(prev => {
             const updated = prev.map((upload, idx) =>
               idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
             )
-            console.log('⚡ [UPLOAD][SKIP-DUPLICATE][SET-UPLOADS] Aggiornato a completed', {
-              uploadIndex,
-              allUploads: updated.map((u, i) => ({
-                idx: i,
-                filename: u.file?.name || u.filenameBase,
-                status: u.status,
-                progress: u.progress,
-                compartoId: u.compartoId
-              }))
-            })
             return updated
           })
 
           // ✅ Rimuovi solo questo upload completato dopo un breve delay
           if (fileToRemove && compartoIdToRemove) {
-            const timeoutId = setTimeout(() => {
-              console.log('🗑️ [UPLOAD][REMOVE] Rimuovendo upload completato', {
-                filename: fileToRemove.name,
-                compartoId: compartoIdToRemove
-              })
+            setTimeout(() => {
               setUploads(prev => {
-                const beforeCount = prev.length
-                const filtered = prev.filter(u => {
+                return prev.filter(u => {
                   // Rimuovi solo se è lo stesso file nello stesso comparto
-                  const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
-                  return shouldRemove
+                  return !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
                 })
-                console.log('🗑️ [UPLOAD][REMOVE][DONE] Upload rimosso', {
-                  beforeCount,
-                  afterCount: filtered.length,
-                  removed: beforeCount - filtered.length,
-                  remaining: filtered.map((u, i) => ({
-                    idx: i,
-                    filename: u.file?.name || u.filenameBase,
-                    status: u.status,
-                    compartoId: u.compartoId
-                  }))
-                })
-                return filtered
               })
             }, 1500)
-            console.log('⏰ [UPLOAD][REMOVE][SCHEDULED] Timeout schedulato', {
-              timeoutMs: 1500,
-              filename: fileToRemove.name
-            })
           }
           continue
         }
 
-        const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
-
-        // Per PDF in modalità locale: aspetta generazione thumbnail + rilevamento testo nativo PRIMA di salvare
-        let pdfProcessingResult: { dataUrl?: string; hasNativeText: boolean } | null = null
-        if (isPdf && localOnly) {
-          try {
-            const [dataUrl, hasNativeText] = await Promise.all([
-              generateClientPdfThumb(file, 220),
-              detectNativeTextClient(file)
-            ])
-
-            pdfProcessingResult = { dataUrl, hasNativeText }
-
-            console.log('[THUMBNAIL][GENERATION]', {
-              filename: file.name,
-              s3Key: s3Key.substring(0, 30) + '...',
-              hasThumbnail: !!dataUrl,
-              hasNativeText // ⚠️ VALORE CRITICO PER IL PROBLEMA
-            })
-
-            if (dataUrl) {
-              setClientThumbByS3(prev => ({ ...prev, [s3Key]: dataUrl }))
-            }
-
-            // Update document with native text detection result AND thumbnail
-            setDocumenti(prev => {
-              const next = [...prev]
-              const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
-              if (idxTemp >= 0) {
-                next[idxTemp] = {
-                  ...next[idxTemp],
-                  hasNativeText,
-                  thumbnailDataUrl: dataUrl || undefined // Salva thumbnail per salvataggio nel DB
-                }
-                console.log('[THUMBNAIL][STATE][UPDATED]', {
-                  filename: file.name,
-                  s3Key: s3Key.substring(0, 30) + '...',
-                  hasNativeText: next[idxTemp].hasNativeText, // ⚠️ VALORE CRITICO
-                  hasThumbnail: !!(next[idxTemp] as any).thumbnailDataUrl
-                })
-                return next
-              }
-              return next
-            })
-          } catch (error) {
-            console.error('⚠️ [ARCH] PDF processing failed', { name: file.name, error, s3Key, tempId })
-            pdfProcessingResult = { hasNativeText: false } // Fallback in caso di errore
-          }
-        } else if (isPdf && !localOnly) {
+        // ✅ PER PDF NON-LOCAL: genera thumbnail in background (per localOnly è già generata sopra)
+        if (isPdf && !localOnly) {
           // Per PDF non-local: genera in background (non bloccare)
           Promise.all([
             generateClientPdfThumb(file, 220),
@@ -499,33 +531,19 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           })
         }
 
-        // In modalità locale, copia file in uploads/ subito per garantire persistenza dopo refresh
-        // Il blob URL rimane per preview immediato, ma il file fisico è disponibile per OCR
+        // ✅ NOTE: In modalità locale, il file viene mantenuto solo in memoria (blob URL)
+        // ✅ NON salvare automaticamente nel DB - l'utente salverà esplicitamente quando necessario
+        // ✅ Il file fisico verrà caricato solo quando necessario (es. OCR o salvataggio esplicito)
+        // ✅ La miniatura rimane in memoria associata al tempDoc tramite hash
         if (localOnly) {
-          console.log('[SAVE][FILE][REFERENCE]', {
-            filename: file.name,
-            s3Key,
-            note: 'File copiato in uploads/ per persistenza (modalità privacy, ma file locale su stessa macchina)'
-          })
+          // ✅ In modalità locale, non fare nulla - tempDoc rimane in memoria
+          // ✅ Il file verrà salvato nel DB solo quando l'utente salva esplicitamente
+          // ✅ La miniatura rimane visibile associata al tempDoc tramite hash
+          continue // ✅ Salta il resto - tempDoc già creato, nessun salvataggio automatico
+        }
 
-          // Upload immediato in uploads/ per garantire che OCR funzioni anche dopo refresh
-          try {
-            const localUploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
-            await api.uploadFile(localUploadUrl, file)
-            console.log('[SAVE][FILE][UPLOADED]', {
-              filename: file.name,
-              s3Key,
-              size: file.size
-            })
-          } catch (uploadError) {
-            console.error('[SAVE][FILE][UPLOAD][ERROR]', {
-              filename: file.name,
-              s3Key,
-              error: uploadError
-            })
-            // Continua comunque - il blob URL funziona per il viewer
-          }
-
+        // ✅ CODICE NON LOCALE: mantieni logica esistente per upload S3
+        if (false) { // Questo blocco non viene mai eseguito - codice legacy rimosso
           // ✅ IMPORTANTE: anche in modalità locale, salva il record nel database!
           // Determina tags
           const tags: string[] = [...(target?.tags || [])]
@@ -544,40 +562,17 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             || comparti.find(c => c.key === 'da_classificare')?.id
             || (comparti[0]?.id ?? '')
 
-          console.log('[SAVE][DOCUMENTO][ARCHIVE][LOCAL][START]', {
-            filename: file.name,
-            praticaId,
-            compartoId: compartoIdFinale,
-            s3Key,
-            localOnly: true,
-            targetCompartoId: _compartoId
-          })
-
            try {
-             // Ottieni hasNativeText e thumbnail
-             // Per PDF: usa il risultato della Promise che abbiamo appena completato
-             // Per non-PDF o non-local: leggi dallo stato
-             let hasNativeTextValue: boolean
-             let thumbnailDataUrl: string | undefined
+             // ✅ USA DIRETTAMENTE le variabili locali generate PRIMA del tempDoc
+             // ✅ thumbnailDataUrl e hasNativeTextValue sono già disponibili nella closure
+             // ✅ Non cercare nell'array che potrebbe essere stale - usa le variabili locali!
+             // thumbnailDataUrl e hasNativeTextValue sono già definiti sopra (linee 274-286)
 
-             if (isPdf && pdfProcessingResult) {
-               // Usa il risultato della Promise completata
-               hasNativeTextValue = pdfProcessingResult.hasNativeText
-               thumbnailDataUrl = pdfProcessingResult.dataUrl || undefined
-             } else {
-               // Per non-PDF o modalità non-local: leggi dallo stato
-               const currentDocs = documenti
-               const tempDoc = currentDocs.find(d => d.id === tempId || d.s3Key === s3Key)
-               hasNativeTextValue = (tempDoc as any)?.hasNativeText || false
-               thumbnailDataUrl = (tempDoc as any)?.thumbnailDataUrl || undefined
-             }
-
-             console.log('🔍 [SAVE][BEFORE]', {
+             console.log('✅ [ARCH][SAVE] Usando thumbnail locale', {
                filename: file.name,
-               s3Key: s3Key.substring(0, 30) + '...',
-               hasNativeTextValue, // ⚠️ VALORE CHE STIAMO PER INVIARE
-               fromPdfProcessing: isPdf && !!pdfProcessingResult, // Indica se viene da Promise completata
-               hasThumbnail: !!thumbnailDataUrl
+               hasThumbnail: !!thumbnailDataUrl,
+               thumbnailLength: thumbnailDataUrl?.length || 0,
+               hasNativeText: hasNativeTextValue
              })
 
               // Cerca di ottenere filePath se disponibile (File System Access API)
@@ -602,7 +597,7 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
                 mime: file.type,
                 size: file.size,
                 s3Key,
-                hash: '', // Il backend calcolerà l'hash dal file
+                hash: fileHash, // ✅ Usa hash già calcolato client-side
                 ocrStatus: 'pending',
                 tags,
                 thumbnailDataUrl, // Salva thumbnail nel database
@@ -610,31 +605,70 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
                 filePath, // Path originale se disponibile
               })
 
-            console.log('✅ [SAVE][SUCCESS]', {
-              filename: documento.filename,
-              docId: documento.id.substring(0, 20) + '...',
-              hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE SALVATO NEL DB
-              sentHasNativeText: hasNativeTextValue, // ⚠️ VALORE CHE ABBIAMO INVIATO
-              hasThumbnail: !!(documento as any).thumbnailDataUrl
+              // ✅ SOSTITUISCI IL DOCUMENTO TEMPORANEO CON QUELLO REALE
+              // ✅ Gli s3Key sono diversi (temp: local:timestamp:id, reale: hash), quindi sostituiamo direttamente
+              setDocumenti(prev => {
+                // Trova il documento temporaneo corrispondente per compartoId e filename
+                const tempDocIndex = prev.findIndex(d =>
+                  d.id.startsWith('temp:') &&
+                  d.compartoId === compartoIdFinale &&
+                  d.filename === file.name
+                )
+
+                if (tempDocIndex === -1) {
+                  console.warn('⚠️ [ARCH][REPLACE] TempDoc non trovato, aggiungendo documento reale con thumbnail', {
+                    compartoId: compartoIdFinale,
+                    filename: file.name,
+                    documentiIds: prev.map(d => d.id).slice(0, 5),
+                    hasThumbnail: !!thumbnailDataUrl
+                  })
+                  // Nessun documento temporaneo trovato, aggiungi documento reale con thumbnail locale se disponibile
+                  const docWithThumbnail = {
+                    ...documento,
+                    thumbnailDataUrl: thumbnailDataUrl || (documento as any)?.thumbnailDataUrl
+                  } as Documento
+                  return [...prev, docWithThumbnail]
+                }
+
+                // Sostituisci il documento temporaneo con quello reale
+                const updated = [...prev]
+                const tempDoc = updated[tempDocIndex]
+
+                // ✅ USA LA VARIABILE LOCALE thumbnailDataUrl (già generata sopra, non cercare nell'array!)
+                // ✅ La thumbnail client-side ha SEMPRE priorità su quella del backend
+                const backendThumbnail = (documento as any)?.thumbnailDataUrl
+
+                // ✅ Preserva SEMPRE il localUrl e la miniatura dal documento temporaneo (client-side generata)
+                const realDocWithLocalData = {
+                  ...documento,
+                  localUrl: (tempDoc as any)?.localUrl,
+                  // ✅ PRIORITÀ ASSOLUTA: usa thumbnail locale se disponibile, altrimenti quella del backend
+                  thumbnailDataUrl: thumbnailDataUrl || backendThumbnail
+                } as any
+
+                console.log('✅ [ARCH][REPLACE] Sostituendo tempDoc con documento reale', {
+                  tempDocId: tempDoc.id.substring(0, 20),
+                  realDocId: documento.id.substring(0, 20),
+                  hasLocalThumbnail: !!thumbnailDataUrl,
+                  hasBackendThumbnail: !!backendThumbnail,
+                  usingThumbnail: !!(thumbnailDataUrl || backendThumbnail)
+                })
+
+              updated[tempDocIndex] = realDocWithLocalData
+
+              // Emetti evento per notificare il cambiamento
+              queueMicrotask(() => {
+                window.dispatchEvent(new CustomEvent('app:documents-updated', {
+                  detail: { documenti: updated }
+                }))
+              })
+
+              return updated
             })
 
             // ✅ In modalità locale, completa e rimuovi l'upload dopo il salvataggio
             // ✅ Usa setUploads in modo funzionale per leggere lo stato corrente
             setUploads(prev => {
-              console.log('🔍 [UPLOAD][COMPLETE][LOCAL][DEBUG] Cercando upload da completare', {
-                prevCount: prev.length,
-                allUploads: prev.map((u, idx) => ({
-                  idx,
-                  filename: u.file?.name || u.filenameBase,
-                  compartoId: u.compartoId,
-                  status: u.status,
-                  s3Key: u.s3Key
-                })),
-                targetS3Key: s3Key,
-                targetFile: file.name,
-                targetCompartoId: compartoIdFinale
-              })
-
               // ✅ Cerca l'upload usando criteri multipli (s3Key, file, compartoId + filename)
               const uploadIdx = prev.findIndex(u =>
                 u.s3Key === s3Key ||
@@ -656,28 +690,10 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
               }
 
               const uploadToComplete = prev[uploadIdx]
-              console.log('✅ [UPLOAD][COMPLETE][LOCAL] Upload trovato e completato', {
-                uploadIdx,
-                filename: uploadToComplete.file?.name || uploadToComplete.filenameBase,
-                compartoId: uploadToComplete.compartoId,
-                s3Key: uploadToComplete.s3Key
-              })
 
               const updated = prev.map((upload, idx) =>
                 idx === uploadIdx ? { ...upload, progress: 100, status: 'completed' } : upload
               )
-
-              console.log('✅ [UPLOAD][COMPLETE][LOCAL][SET-UPLOADS] Aggiornato a completed', {
-                uploadIdx,
-                allUploads: updated.map((u, i) => ({
-                  idx: i,
-                  filename: u.file?.name || u.filenameBase,
-                  status: u.status,
-                  progress: u.progress,
-                  compartoId: u.compartoId,
-                  hasTempDoc: u.hasTempDoc
-                }))
-              })
 
               // ✅ Rimuovi l'upload completato dopo un breve delay
               const fileToRemove = uploadToComplete.file
@@ -685,20 +701,10 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
               if (fileToRemove && compartoIdToRemove) {
                 setTimeout(() => {
-                  console.log('🗑️ [UPLOAD][REMOVE][LOCAL] Rimuovendo upload completato', {
-                    filename: fileToRemove.name,
-                    compartoId: compartoIdToRemove
-                  })
                   setUploads(prevUploads => {
-                    const beforeCount = prevUploads.length
                     const filtered = prevUploads.filter(u => {
                       const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
                       return shouldRemove
-                    })
-                    console.log('🗑️ [UPLOAD][REMOVE][LOCAL][DONE] Upload rimosso', {
-                      beforeCount,
-                      afterCount: filtered.length,
-                      removed: beforeCount - filtered.length
                     })
                     return filtered
                   })
@@ -782,28 +788,12 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           || comparti.find(c => c.key === 'da_classificare')?.id
           || (comparti[0]?.id ?? '')
 
-        console.log('[SAVE][DOCUMENTO][ARCHIVE][START]', {
-          filename: file.name,
-          praticaId,
-          compartoId: compartoIdFinale,
-          s3Key,
-          localOnly,
-          targetCompartoId: _compartoId
-        })
-
         try {
           // Ottieni thumbnail dal documento temporaneo se disponibile
           const currentDocs = documenti
           const tempDoc = currentDocs.find(d => d.id === tempId || d.s3Key === s3Key)
           const thumbnailDataUrl = (tempDoc as any)?.thumbnailDataUrl || undefined
           const hasNativeTextValueNonLocal = (tempDoc as any)?.hasNativeText || false
-
-          console.log('🔍 [SAVE][NON-LOCAL][BEFORE]', {
-            filename: file.name,
-            s3Key: s3Key.substring(0, 30) + '...',
-            hasNativeTextValue: hasNativeTextValueNonLocal, // ⚠️ VALORE CRITICO
-            hasThumbnail: !!thumbnailDataUrl
-          })
 
           documento = await api.createDocumento({
             praticaId,
@@ -817,13 +807,6 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             tags,
             thumbnailDataUrl, // Salva thumbnail nel database
             hasNativeText: hasNativeTextValueNonLocal, // Passa hasNativeText esplicitamente
-          })
-
-          console.log('✅ [SAVE][NON-LOCAL][SUCCESS]', {
-            filename: documento.filename,
-            docId: documento.id.substring(0, 20) + '...',
-            hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE SALVATO
-            sentHasNativeText: hasNativeTextValueNonLocal // ⚠️ VALORE INVIATO
           })
         } catch (e) {
           console.error('[SAVE][DOCUMENTO][ARCHIVE][ERROR]', {
@@ -848,65 +831,22 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         const fileToRemove = uploadToComplete?.file
         const compartoIdToRemove = uploadToComplete?.compartoId
 
-        console.log('✅ [UPLOAD][COMPLETE] Upload completato con successo', {
-          uploadIndex,
-          filename: fileToRemove?.name || uploadToComplete?.filenameBase,
-          compartoId: compartoIdToRemove,
-          s3Key,
-          uploadStatus: uploadToComplete?.status,
-          uploadProgress: uploadToComplete?.progress
-        })
-
         setUploads(prev => {
-          const updated = prev.map((upload, idx) =>
+          return prev.map((upload, idx) =>
             idx === uploadIndex ? { ...upload, progress: 100, status: 'completed' } : upload
           )
-          console.log('✅ [UPLOAD][COMPLETE][SET-UPLOADS] Aggiornato a completed', {
-            uploadIndex,
-            allUploads: updated.map((u, i) => ({
-              idx: i,
-              filename: u.file?.name || u.filenameBase,
-              status: u.status,
-              progress: u.progress,
-              compartoId: u.compartoId,
-              hasTempDoc: u.hasTempDoc
-            }))
-          })
-          return updated
         })
 
         // ✅ Rimuovi solo questo upload completato dopo un breve delay
         if (fileToRemove && compartoIdToRemove) {
-          const timeoutId = setTimeout(() => {
-            console.log('🗑️ [UPLOAD][REMOVE] Rimuovendo upload completato', {
-              filename: fileToRemove.name,
-              compartoId: compartoIdToRemove
-            })
+          setTimeout(() => {
             setUploads(prev => {
-              const beforeCount = prev.length
-              const filtered = prev.filter(u => {
+              return prev.filter(u => {
                 // Rimuovi solo se è lo stesso file nello stesso comparto
-                const shouldRemove = !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
-                return shouldRemove
+                return !(u.file === fileToRemove && u.compartoId === compartoIdToRemove && u.status === 'completed')
               })
-              console.log('🗑️ [UPLOAD][REMOVE][DONE] Upload rimosso', {
-                beforeCount,
-                afterCount: filtered.length,
-                removed: beforeCount - filtered.length,
-                remaining: filtered.map((u, i) => ({
-                  idx: i,
-                  filename: u.file?.name || u.filenameBase,
-                  status: u.status,
-                  compartoId: u.compartoId
-                }))
-              })
-              return filtered
             })
           }, 1500)
-          console.log('⏰ [UPLOAD][REMOVE][SCHEDULED] Timeout schedulato', {
-            timeoutMs: 1500,
-            filename: fileToRemove.name
-          })
         }
 
         // Sostituisci il documento temporaneo con quello reale

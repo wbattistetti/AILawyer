@@ -52,13 +52,9 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   // ✅ Gestisce la ricerca di documenti
   const handleSearch = React.useCallback(async () => {
     const query = searchQuery.trim()
-    if (!query) {
-      console.log('[DRAWER-SEARCH] Query vuota, ignorata')
-      return
-    }
+    if (!query) return
 
     setIsSearching(true)
-    console.log('[DRAWER-SEARCH][START]', { query, itemsCount: items.length })
 
     try {
       // ✅ Accedi ai dati globali esposti da PraticaCanvasPage
@@ -76,22 +72,12 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
       }
 
       if (!archiveData || !Array.isArray(archiveData.documenti) || !Array.isArray(archiveData.comparti)) {
-        console.warn('[DRAWER-SEARCH] Dati archivio non validi', {
-          hasDocumenti: !!archiveData.documenti,
-          isDocumentiArray: Array.isArray(archiveData.documenti),
-          hasComparti: !!archiveData.comparti,
-          isCompartiArray: Array.isArray(archiveData.comparti)
-        })
+        console.warn('[DRAWER-SEARCH] Dati archivio non validi')
         return
       }
 
       const documenti: Documento[] = archiveData.documenti
       const comparti: Comparto[] = archiveData.comparti
-
-      console.log('[DRAWER-SEARCH][DATA]', {
-        documentiCount: documenti.length,
-        compartiCount: comparti.length
-      })
 
       // ✅ Normalizza la query per ricerca case-insensitive
       const normalizedQuery = query.toLowerCase().trim()
@@ -104,58 +90,25 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
                normalizedFilename.includes(normalizedQuery)
       })
 
-      console.log('[DRAWER-SEARCH][MATCH]', {
-        matchedDoc: matchedDoc ? {
-          id: matchedDoc.id,
-          filename: matchedDoc.filename,
-          compartoId: matchedDoc.compartoId
-        } : null
-      })
-
       if (matchedDoc && matchedDoc.compartoId) {
         // ✅ Trova il comparto corrispondente
         const comparto = comparti.find(c => c.id === matchedDoc.compartoId)
         if (comparto) {
-          console.log('[DRAWER-SEARCH][COMPARTO]', {
-            compartoId: comparto.id,
-            compartoKey: comparto.key,
-            compartoNome: comparto.nome
-          })
-
           // ✅ Trova il drawerItem corrispondente usando comparto.key (che corrisponde a drawerItem.id)
           const drawerItem = items.find(item => item.id === comparto.key)
 
           if (drawerItem) {
-            console.log('[DRAWER-SEARCH][FOUND]', {
-              filename: matchedDoc.filename,
-              compartoId: comparto.id,
-              compartoKey: comparto.key,
-              drawerId: drawerItem.id,
-              drawerLabel: drawerItem.label
-            })
             // ✅ Apri il cassetto trovato
             onSelect(drawerItem.id)
             setShowSearchBox(false)
             setSearchQuery('')
             return
           } else {
-            console.warn('[DRAWER-SEARCH] DrawerItem non trovato', {
-              compartoKey: comparto.key,
-              availableDrawerIds: items.map(i => i.id)
-            })
+            console.warn('[DRAWER-SEARCH] DrawerItem non trovato per comparto.key:', comparto.key)
           }
         } else {
-          console.warn('[DRAWER-SEARCH] Comparto non trovato', {
-            compartoId: matchedDoc.compartoId,
-            availableCompartoIds: comparti.map(c => c.id)
-          })
+          console.warn('[DRAWER-SEARCH] Comparto non trovato per compartoId:', matchedDoc.compartoId)
         }
-      } else {
-        console.log('[DRAWER-SEARCH][NOT-FOUND]', {
-          query,
-          searchedDocuments: documenti.length,
-          sampleFilenames: documenti.slice(0, 5).map(d => d.filename)
-        })
       }
     } catch (error) {
       console.error('[DRAWER-SEARCH][ERROR]', error)
@@ -228,17 +181,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     // ✅ Se ci sono 15+ cassetti, riduci ulteriormente il minimo per farli stare tutti
     const minWidth = items.length >= 15 ? 45 : 60
 
-    console.log('[DRAWER-TABS][WIDTH] Calcolo larghezza uniforme', {
-      availableWidth,
-      gap,
-      totalGaps,
-      totalPadding,
-      availableForDrawers,
-      drawerWidth,
-      itemsCount: items.length,
-      minWidth
-    })
-
     return Math.max(minWidth, drawerWidth)
   }, [availableWidth, items.length, getGapBetweenDrawers])
 
@@ -274,7 +216,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
       }
     }
 
-    console.log('[DRAWER-TABS][TEXT-LINES]', { label, width, textWidth, lines })
     return lines
   }, [])
 
@@ -290,7 +231,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
       }
     })
 
-    console.log('[DRAWER-TABS][MAX-LINES] Numero massimo righe:', max)
     return max
   }, [items, uniformTabWidth, calculateTextLines])
 
@@ -301,33 +241,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     const headerHeight = Math.max(NUMBER_HEIGHT, ICON_HEIGHT) + ICON_TEXT_GAP
     const totalHeight = (PADDING_Y * 2) + headerHeight + textHeight
 
-    console.log('[DRAWER-TABS][HEIGHT] Calcolo altezza uniforme', {
-      maxLines,
-      textHeight,
-      headerHeight,
-      paddingY: PADDING_Y * 2,
-      totalHeight
-    })
-
     return Math.max(90, totalHeight) // minimo 90px
   }, [maxLines])
-
-  // ✅ Log per debugging
-  React.useEffect(() => {
-    console.log('[DRAWER-SEARCH][STATE]', {
-      showSearchIcon,
-      showSearchBox,
-      itemsCount: items.length,
-      containerRef: !!containerRef.current,
-      containerWidth: containerRef.current?.offsetWidth,
-      containerHeight: containerRef.current?.offsetHeight,
-      containerTop: containerRef.current?.offsetTop,
-      containerLeft: containerRef.current?.offsetLeft,
-      uniformTabWidth,
-      uniformTabHeight,
-      maxLines
-    })
-  }, [showSearchIcon, showSearchBox, items.length, uniformTabWidth, uniformTabHeight, maxLines])
 
   return (
     <div
@@ -338,16 +253,9 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         overflow: 'visible' // ✅ Permetti overflow per mostrare l'icona sopra
       }}
       onMouseEnter={() => {
-        console.log('[DRAWER-SEARCH][MOUSE-ENTER] Mostrando icona ricerca')
         setShowSearchIcon(true)
       }}
       onMouseLeave={(e) => {
-        console.log('[DRAWER-SEARCH][MOUSE-LEAVE]', {
-          showSearchBox,
-          relatedTarget: e.relatedTarget,
-          currentTarget: e.currentTarget,
-          target: e.target
-        })
         // ✅ Verifica se il mouse sta andando verso l'icona o la search box
         // ✅ IMPORTANTE: relatedTarget può essere Window o null, non sempre un HTMLElement
         const relatedTarget = e.relatedTarget
@@ -355,7 +263,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
           const isGoingToSearch = relatedTarget.closest('[data-search-icon]') ||
                                    relatedTarget.closest('[data-search-box]')
           if (isGoingToSearch) {
-            console.log('[DRAWER-SEARCH][MOUSE-LEAVE] Mouse sta andando verso search, mantengo visibile')
             return // Non nascondere, il mouse sta andando verso la search
           }
         }
@@ -376,14 +283,9 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             zIndex: 20
           }}
           onMouseEnter={() => {
-            console.log('[DRAWER-SEARCH][ICON-MOUSE-ENTER] Mantenendo icona visibile')
             setShowSearchIcon(true)
           }}
           onMouseLeave={(e) => {
-            console.log('[DRAWER-SEARCH][ICON-MOUSE-LEAVE]', {
-              relatedTarget: e.relatedTarget,
-              showSearchBox
-            })
             // ✅ Se non c'è la search box aperta e il mouse non va verso i cassetti, nascondi
             // ✅ IMPORTANTE: relatedTarget può essere Window o null, non sempre un HTMLElement
             const relatedTarget = e.relatedTarget
@@ -395,20 +297,10 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             }
           }}
         >
-          {(() => {
-            console.log('[DRAWER-SEARCH][RENDER] Rendendo search UI', {
-              showSearchBox,
-              showSearchIcon,
-              itemsCount: items.length,
-              position: { left: '8px', bottom: '8px' }
-            })
-            return null
-          })()}
           {!showSearchBox ? (
             <button
               data-search-icon="true"
               onClick={() => {
-                console.log('[DRAWER-SEARCH][CLICK] Aprendo search box')
                 setShowSearchBox(true)
               }}
               className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-slate-300 shadow-md hover:bg-slate-50 transition-colors"
@@ -429,7 +321,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
                 zIndex: 21
               }}
               onMouseEnter={() => {
-                console.log('[DRAWER-SEARCH][BOX-MOUSE-ENTER] Mantenendo box aperto')
                 setShowSearchIcon(true)
               }}
             >
@@ -449,7 +340,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
               )}
               <button
                 onClick={() => {
-                  console.log('[DRAWER-SEARCH][CLOSE] Chiudendo search box')
                   setShowSearchBox(false)
                   setSearchQuery('')
                 }}
@@ -476,7 +366,6 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
           <button
             key={item.id}
             onClick={() => {
-              console.log('[DRAWER-TAB-STRIP][CLICK]', { itemId: item.id, itemLabel: item.label })
               onSelect(item.id)
             }}
             onDragOver={(e) => handleDragOver(e, item.id)}
@@ -494,14 +383,14 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             `}
             style={{
               // ✅ Bordino sottile completo con angoli arrotondati (come cassetti)
-              border: `1px solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderRadius: '8px', // ✅ Angoli arrotondati
+              // ✅ Usa proprietà non-shorthand per evitare conflitti con borderBottom
+              borderTop: `${isSelected ? '3px' : '1px'} solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
+              borderLeft: `1px solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
+              borderRight: `1px solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
               borderBottom: 'none', // ✅ Nessun bordo in basso (si attacca alla strip)
+              borderRadius: '8px', // ✅ Angoli arrotondati
               borderBottomLeftRadius: '0', // ✅ Angoli in basso senza arrotondamento
               borderBottomRightRadius: '0',
-              // ✅ Bordo top più spesso se selezionato
-              borderTopWidth: isSelected ? '3px' : '1px',
-              borderTopColor: isSelected ? item.color : undefined,
               // ✅ Larghezza uniforme per tutti i cassetti
               width: `${uniformTabWidth}px`,
               // ✅ Altezza uniforme calcolata in base al numero massimo di righe
