@@ -98,3 +98,79 @@
 }
 
 /* Debug labels removed - PDF centering working! */
+
+/* Vertical slider for search context expansion - VERSIONE MIGLIORATA */
+.slider-vertical {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  cursor: grab;
+}
+
+.slider-vertical:active {
+  cursor: grabbing;
+}
+
+.slider-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #3b82f6; /* Blu invece di rosso - più chiaro */
+  border: 2px solid white;
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+}
+
+.slider-vertical::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.15);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.slider-vertical::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  border: 2px solid white;
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+}
+
+.slider-vertical::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.15);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.slider-vertical::-webkit-slider-runnable-track {
+  width: 3px;
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+.slider-vertical::-moz-range-track {
+  width: 3px;
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+/* Ensure vertical orientation */
+.slider-vertical[style*="writing-mode"] {
+  transform: rotate(0deg);
+}
+
+/* Fallback for browsers that don't support writing-mode */
+@supports not (writing-mode: bt-lr) {
+  .slider-vertical {
+    transform: rotate(-90deg);
+    transform-origin: center;
+  }
+}

@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react'
-import { Search as SearchIcon, FileText, Type as TypeIcon } from 'lucide-react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
 
 export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>(({ showInput=true, showScopeSelector=true, initialQuery })=>{
@@ -10,6 +10,12 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
   const lastScrolledQuery = useRef<string | null>(null)
+
+  // Stato per gestire contesti espansi e slider
+  const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
+  const [contextLines, setContextLines] = useState<Record<string, number>>({}) // matchId -> righe (0-10)
+  const [hoveredMatchId, setHoveredMatchId] = useState<string | null>(null)
+  const [loadingContext, setLoadingContext] = useState<Record<string, boolean>>({})
 
   // Auto-scroll al nodo appena cercato (solo UNA volta per query)
   useEffect(() => {
@@ -33,6 +39,107 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   }
   const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
   const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
+
+  // Funzione per recuperare contesto espanso dal backend
+  const fetchExpandedContext = useCallback(async (
+    matchId: string,
+    docId: string,
+    charIdx: number | undefined,
+    lines: number
+  ) => {
+    // Validazione: charIdx deve essere presente e valido
+    if (charIdx === undefined || charIdx < 0) {
+      console.warn('[SEARCH][context] Invalid charIdx', { matchId, docId, charIdx })
+      return
+    }
+
+    // Validazione: lines deve essere nel range valido
+    if (lines < 0 || lines > 10) {
+      console.warn('[SEARCH][context] Invalid lines value', { matchId, docId, lines })
+      return
+    }
+
+    // Reset: rimuovi testo espanso se lines === 0
+    if (lines === 0) {
+      setExpandedTexts(prev => {
+        const next = { ...prev }
+        delete next[matchId]
+        return next
+      })
+      setContextLines(prev => {
+        const next = { ...prev }
+        delete next[matchId]
+        return next
+      })
+      setLoadingContext(prev => {
+        const next = { ...prev }
+        delete next[matchId]
+        return next
+      })
+      return
+    }
+
+    // Evita chiamate duplicate
+    if (loadingContext[matchId]) {
+      return
+    }
+
+    setLoadingContext(prev => ({ ...prev, [matchId]: true }))
+
+    try {
+      const url = `/api/search/context?docId=${encodeURIComponent(docId)}&charIdx=${charIdx}&linesBefore=${lines}&linesAfter=${lines}`
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Errore sconosciuto' }))
+        console.error('[SEARCH][context] Fetch failed', {
+          matchId,
+          docId,
+          charIdx,
+          lines,
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        })
+        return
+      }
+
+      const data = await response.json()
+
+      // Validazione risposta
+      if (!data || typeof data !== 'object') {
+        console.error('[SEARCH][context] Invalid response format', { matchId, docId, data })
+        return
+      }
+
+      if (data.expandedText && typeof data.expandedText === 'string') {
+        setExpandedTexts(prev => ({ ...prev, [matchId]: data.expandedText }))
+        setContextLines(prev => ({ ...prev, [matchId]: lines }))
+      } else {
+        console.warn('[SEARCH][context] Missing or invalid expandedText', { matchId, docId, data })
+      }
+    } catch (error) {
+      console.error('[SEARCH][context] Error fetching context', {
+        matchId,
+        docId,
+        charIdx,
+        lines,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      })
+    } finally {
+      setLoadingContext(prev => {
+        const next = { ...prev }
+        delete next[matchId]
+        return next
+      })
+    }
+  }, [loadingContext])
 
   const renderSnippet = (snippet: string, query?: string) => {
     // Usa la query passata come parametro o fallback a initialQuery
@@ -100,16 +207,86 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                         if (!g.doc.title || g.doc.title.trim() === '') {
                           return (
                             <React.Fragment key={g.doc.id}>
-                              {g.matches.map((m, matchIdx) => (
-                                <li
-                                  key={m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`}
-                                  className={`px-2 py-1 cursor-pointer flex items-start gap-2 ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
-                                  onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
-                                >
-                                  <TypeIcon size={14} className="text-amber-600" />
-                                  {renderSnippet(m.snippet, q)}
-                                </li>
-                              ))}
+                              {g.matches.map((m, matchIdx) => {
+                                const matchId = m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`
+                                const isHovered = hoveredMatchId === matchId
+                                const hasExpanded = !!expandedTexts[matchId]
+                                const currentLines = contextLines[matchId] || 0
+                                const isLoading = loadingContext[matchId] || false
+                                const displayText = expandedTexts[matchId] || m.snippet
+
+                                // Debug log per verificare che il testo espanso venga mostrato
+                                if (hasExpanded) {
+                                  console.log('[SEARCH][CONTEXT] Rendering expanded text', {
+                                    matchId,
+                                    expandedLength: expandedTexts[matchId].length,
+                                    originalSnippetLength: m.snippet.length,
+                                    currentLines,
+                                    displayTextPreview: displayText.substring(0, 100)
+                                  })
+                                }
+
+                                return (
+                                  <li
+                                    key={matchId}
+                                    className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
+                                    onMouseEnter={() => setHoveredMatchId(matchId)}
+                                    onMouseLeave={() => setHoveredMatchId(null)}
+                                    onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
+                                  >
+                                    <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      {renderSnippet(displayText, q)}
+                                      {isLoading && (
+                                        <span className="text-xs text-gray-400 italic ml-1">Caricamento...</span>
+                                      )}
+                                    </div>
+                                    {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
+                                      <div
+                                        className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-white/98 border border-gray-300 rounded-sm shadow-lg z-10"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                      >
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            if (m.charIdx !== undefined && m.charIdx >= 0) {
+                                              fetchExpandedContext(matchId, m.docId, m.charIdx, 0)
+                                            }
+                                          }}
+                                          className="w-7 h-7 flex items-center justify-center hover:bg-blue-50 rounded mb-2 transition-colors group"
+                                          title="Reset: torna al contesto minimo (1 riga)"
+                                          type="button"
+                                        >
+                                          <RotateCcw size={14} className="text-gray-600 group-hover:text-blue-600 transition-colors" />
+                                        </button>
+                                        <div
+                                          className="flex flex-col items-center flex-1 mb-2 relative"
+                                          title={`Trascina per espandere il contesto: ${currentLines === 0 ? 'minimo' : `${currentLines} righe`} di contesto sopra e sotto`}
+                                        >
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="10"
+                                            step="1"
+                                            value={currentLines}
+                                            onChange={(e) => {
+                                              const lines = parseInt(e.target.value, 10)
+                                              if (!isNaN(lines) && m.charIdx !== undefined && m.charIdx >= 0) {
+                                                fetchExpandedContext(matchId, m.docId, m.charIdx, lines)
+                                              }
+                                            }}
+                                            className="slider-vertical flex-1 cursor-grab active:cursor-grabbing"
+                                            style={{ writingMode: 'bt-lr', width: '24px' }}
+                                          />
+                                        </div>
+                                        <span className="text-xs text-gray-600 mt-1 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                          {currentLines}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </li>
+                                )
+                              })}
                             </React.Fragment>
                           )
                         }
@@ -124,16 +301,86 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                             </div>
                             {o && (
                               <ul className="pl-4">
-                                {g.matches.map((m, matchIdx) => (
-                                  <li
-                                    key={m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`}
-                                    className={`px-2 py-1 cursor-pointer flex items-start gap-2 ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
-                                    onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
-                                  >
-                                    <TypeIcon size={14} className="text-amber-600" />
-                                    {renderSnippet(m.snippet, q)}
-                                  </li>
-                                ))}
+                                {g.matches.map((m, matchIdx) => {
+                                  const matchId = m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`
+                                  const isHovered = hoveredMatchId === matchId
+                                  const hasExpanded = !!expandedTexts[matchId]
+                                  const currentLines = contextLines[matchId] || 0
+                                  const isLoading = loadingContext[matchId] || false
+                                  const displayText = expandedTexts[matchId] || m.snippet
+
+                                  // Debug log per verificare che il testo espanso venga mostrato
+                                  if (hasExpanded) {
+                                    console.log('[SEARCH][CONTEXT] Rendering expanded text', {
+                                      matchId,
+                                      expandedLength: expandedTexts[matchId].length,
+                                      originalSnippetLength: m.snippet.length,
+                                      currentLines,
+                                      displayTextPreview: displayText.substring(0, 100)
+                                    })
+                                  }
+
+                                  return (
+                                    <li
+                                      key={matchId}
+                                      className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
+                                      onMouseEnter={() => setHoveredMatchId(matchId)}
+                                      onMouseLeave={() => setHoveredMatchId(null)}
+                                      onClick={async()=>{ setSelectedId(m.id); await navigateTo(m) }}
+                                    >
+                                      <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                      <div className="flex-1 min-w-0">
+                                        {renderSnippet(displayText, q)}
+                                        {isLoading && (
+                                          <span className="text-xs text-gray-400 italic ml-1">Caricamento...</span>
+                                        )}
+                                      </div>
+                                      {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
+                                        <div
+                                          className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-white/98 border border-gray-300 rounded-sm shadow-lg z-10"
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                        >
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              if (m.charIdx !== undefined && m.charIdx >= 0) {
+                                                fetchExpandedContext(matchId, m.docId, m.charIdx, 0)
+                                              }
+                                            }}
+                                            className="w-7 h-7 flex items-center justify-center hover:bg-blue-50 rounded mb-2 transition-colors group"
+                                            title="Reset: torna al contesto minimo (1 riga)"
+                                            type="button"
+                                          >
+                                            <RotateCcw size={14} className="text-gray-600 group-hover:text-blue-600 transition-colors" />
+                                          </button>
+                                          <div
+                                            className="flex flex-col items-center flex-1 mb-2 relative"
+                                            title={`Trascina per espandere il contesto: ${currentLines === 0 ? 'minimo' : `${currentLines} righe`} di contesto sopra e sotto`}
+                                          >
+                                            <input
+                                              type="range"
+                                              min="0"
+                                              max="10"
+                                              step="1"
+                                              value={currentLines}
+                                              onChange={(e) => {
+                                                const lines = parseInt(e.target.value, 10)
+                                                if (!isNaN(lines) && m.charIdx !== undefined && m.charIdx >= 0) {
+                                                  fetchExpandedContext(matchId, m.docId, m.charIdx, lines)
+                                                }
+                                              }}
+                                              className="slider-vertical flex-1 cursor-grab active:cursor-grabbing"
+                                              style={{ writingMode: 'bt-lr', width: '24px' }}
+                                            />
+                                          </div>
+                                          <span className="text-xs text-gray-600 mt-1 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                            {currentLines}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </li>
+                                  )
+                                })}
                               </ul>
                             )}
                           </li>

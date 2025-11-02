@@ -1480,5 +1480,186 @@ export async function searchRoutes(fastify: FastifyInstance) {
       }
     }
   )
+
+  // Endpoint per recuperare contesto espanso di un match
+  fastify.get('/search/context', async (request, reply) => {
+    try {
+      const { docId, charIdx, linesBefore, linesAfter } = request.query as {
+        docId?: string
+        charIdx?: string
+        linesBefore?: string
+        linesAfter?: string
+      }
+
+      if (!docId || charIdx === undefined) {
+        return reply.status(400).send({ error: 'docId e charIdx sono richiesti' })
+      }
+
+      const charPosition = parseInt(charIdx, 10)
+      const linesBeforeNum = parseInt(linesBefore || '0', 10)
+      const linesAfterNum = parseInt(linesAfter || '0', 10)
+
+      if (isNaN(charPosition) || charPosition < 0) {
+        return reply.status(400).send({ error: 'charIdx deve essere un numero >= 0' })
+      }
+
+      if (isNaN(linesBeforeNum) || isNaN(linesAfterNum) || linesBeforeNum < 0 || linesAfterNum < 0) {
+        return reply.status(400).send({ error: 'linesBefore e linesAfter devono essere numeri >= 0' })
+      }
+
+      // Carica testo del documento (da cache o DB)
+      let searchableText = ''
+      let fromCache = false
+
+      // Prova cache
+      const cached = documentTextCache.get(docId)
+      if (cached && cached.text) {
+        searchableText = cached.text
+        fromCache = true
+      } else {
+        // Carica dal DB
+        const doc = await prisma.documento.findUnique({
+          where: { id: docId },
+          select: {
+            id: true,
+            filename: true,
+            s3Key: true,
+            ocrText: true,
+            hasNativeText: true,
+            ocrStatus: true
+          }
+        })
+
+        if (!doc) {
+          return reply.status(404).send({ error: 'Documento non trovato' })
+        }
+
+        // Leggi ocrText
+        const ocrTextRaw = doc.ocrText
+        if (typeof ocrTextRaw === 'string' && ocrTextRaw.length > 0) {
+          searchableText = ocrTextRaw
+        } else if (ocrTextRaw !== null && ocrTextRaw !== undefined) {
+          searchableText = String(ocrTextRaw)
+        }
+
+        // Se non ha testo e haNativeText, estrai ora
+        if (!searchableText && doc.hasNativeText) {
+          try {
+            const pdfPath = storageService.getLocalPath(doc.s3Key)
+            searchableText = await extractNativeText(pdfPath)
+
+            if (searchableText) {
+              // Salva nel DB
+              await prisma.documento.update({
+                where: { id: doc.id },
+                data: { ocrText: searchableText }
+              })
+
+              // Salva in cache
+              documentTextCache.set(doc.id, {
+                text: searchableText,
+                layout: [],
+                hasNativeText: true,
+                timestamp: Date.now()
+              })
+            }
+          } catch (extractError) {
+            fastify.log.error({
+              msg: '[SEARCH][context] Extraction failed',
+              docId,
+              error: (extractError as Error).message
+            })
+          }
+        }
+
+        // Salva in cache se non era già presente
+        if (searchableText && !fromCache) {
+          documentTextCache.set(docId, {
+            text: searchableText,
+            layout: [],
+            hasNativeText: doc.hasNativeText || false,
+            timestamp: Date.now()
+          })
+        }
+      }
+
+      if (!searchableText || searchableText.length === 0) {
+        return reply.status(404).send({ error: 'Testo del documento non disponibile' })
+      }
+
+      // Verifica bounds
+      if (charPosition >= searchableText.length) {
+        return reply.status(400).send({ error: 'charIdx fuori dai limiti del documento' })
+      }
+
+      // Estrai contesto: n righe prima e dopo charPosition
+      // Trova inizio della riga che contiene charPosition
+      let startPos = charPosition
+      while (startPos > 0 && searchableText[startPos - 1] !== '\n' && searchableText[startPos - 1] !== '\r') {
+        startPos--
+      }
+
+      // Trova la fine della riga che contiene charPosition
+      let endPos = charPosition
+      while (endPos < searchableText.length && searchableText[endPos] !== '\n' && searchableText[endPos] !== '\r') {
+        endPos++
+      }
+
+      // Vai indietro di linesBeforeNum righe
+      let linesBeforeCount = 0
+      let contextStart = startPos
+      while (linesBeforeCount < linesBeforeNum && contextStart > 0) {
+        // Salta caratteri di fine riga
+        while (contextStart > 0 && (searchableText[contextStart - 1] === '\n' || searchableText[contextStart - 1] === '\r')) {
+          contextStart--
+        }
+        if (contextStart <= 0) break
+
+        // Trova inizio riga precedente
+        let prevStart = contextStart - 1
+        while (prevStart > 0 && searchableText[prevStart - 1] !== '\n' && searchableText[prevStart - 1] !== '\r') {
+          prevStart--
+        }
+
+        contextStart = prevStart
+        linesBeforeCount++
+      }
+
+      // Vai avanti di linesAfterNum righe
+      let linesAfterCount = 0
+      let contextEnd = endPos
+      while (linesAfterCount < linesAfterNum && contextEnd < searchableText.length) {
+        // Salta caratteri di fine riga
+        while (contextEnd < searchableText.length && (searchableText[contextEnd] === '\n' || searchableText[contextEnd] === '\r')) {
+          contextEnd++
+        }
+        if (contextEnd >= searchableText.length) break
+
+        // Trova fine riga successiva
+        let nextEnd = contextEnd
+        while (nextEnd < searchableText.length && searchableText[nextEnd] !== '\n' && searchableText[nextEnd] !== '\r') {
+          nextEnd++
+        }
+
+        contextEnd = nextEnd
+        linesAfterCount++
+      }
+
+      // Estrai testo espanso
+      const expandedText = searchableText.slice(contextStart, contextEnd).trim()
+
+      return {
+        expandedText,
+        charPosition,
+        contextStart,
+        contextEnd,
+        linesBefore: linesBeforeCount,
+        linesAfter: linesAfterCount
+      }
+    } catch (error: any) {
+      fastify.log.error({ msg: '[SEARCH][context] Error', error: error?.message, stack: error?.stack })
+      return reply.status(500).send({ error: 'Errore durante il recupero del contesto', details: error?.message })
+    }
+  })
 }
 
