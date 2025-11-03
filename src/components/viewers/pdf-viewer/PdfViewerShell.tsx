@@ -1,11 +1,7 @@
 import React, { useRef } from 'react'
-import { scrollModePlugin } from '@react-pdf-viewer/scroll-mode'
-import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation'
-import { searchPlugin } from '@react-pdf-viewer/search'
-import { zoomPlugin } from '@react-pdf-viewer/zoom'
-import { highlightPlugin } from '@react-pdf-viewer/highlight'
 import { usePdfShellState } from './hooks/usePdfShellState'
 import { usePdfPanelResizer } from './hooks/usePdfPanelResizer'
+import { usePdfPlugins } from './hooks/usePdfPlugins'
 import { TopBar } from './components/TopBar'
 import { PdfViewerCore } from './components/PdfViewerCore'
 import { AnnotationOverlays } from './components/AnnotationOverlays'
@@ -42,6 +38,17 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
 
+  // Plugin management
+  const plugins = usePdfPlugins()
+
+  // Unified state management
+  const shell = usePdfShellState({
+    hostRef,
+    fileUrl,
+    docId,
+    onPageChange,
+    viewerRef
+  })
 
   // Zoom hook integration
   const { containerRef: zoomContainerRef } = useCleanPdfZoom({
@@ -52,26 +59,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       }
     },
     getCurrentScale: () => shell?.scaleRef?.current || 1
-  })
-
-  // Use useRef for plugins instead of useMemo to avoid React Hooks rules violation
-  const scrollModeRef = useRef(scrollModePlugin()) // ✅ RIPRISTINATO: Necessario per scroll funzionante
-  const pageNavRef = useRef(pageNavigationPlugin())
-  const searchRef = useRef(searchPlugin())
-  const zoomRef = useRef(zoomPlugin())
-  const highlightRef = useRef(highlightPlugin({
-    renderHighlights: () => {
-      return React.createElement(React.Fragment)
-    }
-  }))
-
-  // Unified state management
-  const shell = usePdfShellState({
-    hostRef,
-    fileUrl,
-    docId,
-    onPageChange,
-    viewerRef
   })
 
   // ✅ Hook per il ridimensionamento del pannello di ricerca
@@ -138,11 +125,11 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
               fileUrl={fileUrl}
               page={page}
               onPageChange={onPageChange}
-              scrollMode={scrollModeRef.current}
-              pageNav={pageNavRef.current}
-              searchPluginInstance={searchRef.current}
-              highlight={highlightRef.current}
-              zoomPluginInstance={zoomRef.current}
+              scrollMode={plugins.scrollMode}
+              pageNav={plugins.pageNav}
+              searchPluginInstance={plugins.search}
+              highlight={plugins.highlight}
+              zoomPluginInstance={plugins.zoom}
               selectMode={true}
               selectKind="NATIVE"
               hostRef={hostRef}
