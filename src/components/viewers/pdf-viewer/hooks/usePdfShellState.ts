@@ -72,6 +72,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   const { goToMatch } = usePdfJumpTo({
     docId,
     hostRef,
+    viewerRef,
     overlayRootsRef,
     setSelectedAnnot: viewerState.setSelectedAnnot,
     areas,
@@ -148,20 +149,9 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
     // Functions
     jumpToPage: (page: number) => {
-      console.log('[JUMP] jumpToPage called with page:', page);
-      console.log('[JUMP] viewerRef.current:', viewerRef.current);
-      console.log('[JUMP] isReady:', viewerRef.current?.isReady?.());
-      console.log('[JUMP] hostRef.current:', hostRef.current);
-
-      if (viewerRef.current?.isReady?.()) {
-        console.log('[JUMP] Viewer is ready, calling jumpToPage');
+      if (viewerRef.current?.jumpToPage) {
         viewerRef.current.jumpToPage(page);
-      } else {
-        console.warn('[JUMP] Viewer not ready, retrying in 200ms');
-        setTimeout(() => {
-          console.log('[JUMP] Retry - isReady:', viewerRef.current?.isReady?.());
-          viewerRef.current?.jumpToPage?.(page);
-        }, 200);
+        onPageChange?.(page);
       }
     },
     goToMatch,

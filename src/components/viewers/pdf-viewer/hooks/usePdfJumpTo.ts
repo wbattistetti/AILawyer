@@ -4,8 +4,7 @@ import type { MatchItem } from './usePdfSearch'
 export interface UsePdfJumpToProps {
 	docId?: string
 	hostRef: React.MutableRefObject<HTMLDivElement | null>
-	pageNav: any
-	searchPluginInstance: any
+	viewerRef: React.RefObject<any> // PdfViewerHandle
 	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
 	setSelectedAnnot: (annot: any) => void
 	areas: Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>
@@ -17,8 +16,7 @@ export interface UsePdfJumpToProps {
 export const usePdfJumpTo = ({
 	docId,
 	hostRef,
-	pageNav,
-	searchPluginInstance,
+	viewerRef,
 	overlayRootsRef,
 	setSelectedAnnot,
 	areas,
@@ -30,6 +28,11 @@ export const usePdfJumpTo = ({
 	const goToMatch = async (m: MatchItem) => {
 		setSelectedAnnot(null)
 
+		// Usa viewerRef per saltare alla pagina
+		if (viewerRef.current?.jumpToPage) {
+			viewerRef.current.jumpToPage(m.page);
+		}
+
 		// Helper per aspettare che una condizione sia vera
 		const waitFor = async (cond: () => HTMLElement | null, ms = 5000, desc = 'element') => {
 			const start = Date.now()
@@ -37,11 +40,9 @@ export const usePdfJumpTo = ({
 				const tick = () => {
 					const el = cond()
 					if (el) {
-						console.log(`[GOTO] ${desc} found after ${Date.now() - start}ms`)
 						return resolve(el)
 					}
 					if (Date.now() - start > ms) {
-						console.warn(`[GOTO] ${desc} timeout after ${ms}ms`)
 						return resolve(null)
 					}
 					requestAnimationFrame(tick)
@@ -52,21 +53,11 @@ export const usePdfJumpTo = ({
 
 		const viewer = hostRef.current
 		if (!viewer) {
-			console.warn('[GOTO] host missing');
 			return
 		}
 
-		// Passo 1: Chiama jumpToPage e aspetta un attimo per iniziare il rendering
-		console.log('[GOTO] Starting navigation to page', m.page)
-		try {
-			(pageNav as any).jumpToPage?.(m.page - 1)
-			console.log('[GOTO] jumpToPage called')
-		} catch (e) {
-			console.warn('[GOTO] jumpToPage error', e)
-		}
-
-		// Aspetta un po' per permettere al viewer di iniziare a renderizzare la pagina
-		await new Promise(r => setTimeout(r, 100))
+		// Aspetta che viewer salti alla pagina
+		await new Promise(r => setTimeout(r, 300))
 
 		// Passo 2: Aspetta che la pagina sia renderizzata (timeout aumentato per documenti nativi)
 		const pageEl = await waitFor(
@@ -124,27 +115,83 @@ export const usePdfJumpTo = ({
 		await new Promise(r => requestAnimationFrame(() => r(null as any)))
 		// Container scroll deterministico
 		const sc = viewer.querySelector('.rpv-core__viewer') as HTMLElement | null
-		if (!sc) { console.warn('[GOTO] .rpv-core__viewer missing'); return }
-		const pr0 = pageEl.getBoundingClientRect(); const scr0 = sc.getBoundingClientRect()
+		if (!sc) {
+			console.warn('[GOTO] .rpv-core__viewer missing');
+			return
+		}
+		console.log('[GOTO] Scroll container found:', {
+			scrollHeight: sc.scrollHeight,
+			clientHeight: sc.clientHeight,
+			scrollTop: sc.scrollTop
+		})
+
+		const pr0 = pageEl.getBoundingClientRect();
+		const scr0 = sc.getBoundingClientRect()
 		const pageTop = sc.scrollTop + (pr0.top - scr0.top) - 20
+		console.log('[GOTO] Initial scroll calculation:', {
+			pageElTop: pr0.top,
+			scrollContainerTop: scr0.top,
+			currentScrollTop: sc.scrollTop,
+			calculatedPageTop: pageTop
+		})
 		sc.scrollTo({ top: Math.max(0, pageTop), behavior: 'auto' })
+
 		const pr = pageEl.getBoundingClientRect()
 		const scr = sc.getBoundingClientRect()
+		console.log('[GOTO] Match coordinates:', {
+			x0Pct: m.x0Pct,
+			y0Pct: m.y0Pct,
+			x1Pct: m.x1Pct,
+			y1Pct: m.y1Pct,
+			pageWidth: pr.width,
+			pageHeight: pr.height
+		})
+
 		const yAbs = pr.top + (m.y0Pct ?? 0) * pr.height
 		const yAbsBottom = pr.top + (m.y1Pct ?? 0) * pr.height
 		const xAbs = pr.left + (m.x0Pct ?? 0) * pr.width
 		const xAbsRight = pr.left + (m.x1Pct ?? 0) * pr.width
+		console.log('[GOTO] Calculated absolute positions:', {
+			yAbs,
+			yAbsBottom,
+			xAbs,
+			xAbsRight,
+			viewportTop: scr.top,
+			viewportBottom: scr.bottom,
+			viewportLeft: scr.left,
+			viewportRight: scr.right
+		})
+
 		let newTop = sc.scrollTop
 		let newLeft = sc.scrollLeft
 		if (yAbs < scr.top + 24 || yAbsBottom > scr.bottom - 24) {
 			const desiredTop = sc.scrollTop + (yAbs - scr.top) - Math.floor(sc.clientHeight * 0.3)
 			newTop = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, desiredTop))
+			console.log('[GOTO] Vertical scroll needed:', {
+				yAbs,
+				viewportTop: scr.top,
+				desiredTop,
+				finalTop: newTop
+			})
 		}
 		if (xAbs < scr.left + 24 || xAbsRight > scr.right - 24) {
 			const desiredLeft = sc.scrollLeft + (xAbs - scr.left) - Math.floor(sc.clientWidth * 0.4)
 			newLeft = Math.max(0, Math.min(sc.scrollWidth - sc.clientWidth, desiredLeft))
+			console.log('[GOTO] Horizontal scroll needed:', {
+				xAbs,
+				viewportLeft: scr.left,
+				desiredLeft,
+				finalLeft: newLeft
+			})
 		}
+		console.log('[GOTO] Final scroll values:', {
+			fromTop: sc.scrollTop,
+			toTop: newTop,
+			fromLeft: sc.scrollLeft,
+			toLeft: newLeft
+		})
 		sc.scrollTo({ top: newTop, left: newLeft, behavior: 'smooth' })
+		console.log('[GOTO] Scroll executed')
 
 		// Disegna il bbox ricevuto (diagnostica) e prova a raffinarlo alla parola usando le highlight native
 		try {
@@ -199,8 +246,8 @@ export const usePdfJumpTo = ({
 			if (!detail || (detail.docId && detail.docId !== (docId || 'current'))) { return }
 			try {
 				const m = detail.match || {}
-				if (typeof m.page === 'number') {
-					try { (pageNav as any).jumpToPage?.(Math.max(0, m.page - 1)) } catch { }
+				if (typeof m.page === 'number' && viewerRef.current?.jumpToPage) {
+					viewerRef.current.jumpToPage(m.page);
 				}
 				// If we have a viewport box (normalized), scroll precisely to it and draw highlight
 				if (m && m.x0Pct != null && m.y0Pct != null && m.x1Pct != null && m.y1Pct != null) {
@@ -239,10 +286,6 @@ export const usePdfJumpTo = ({
 				}
 				// If we received a range (startPage-endPage), log it for debugging
 			} catch { }
-			try {
-				(searchPluginInstance as any).clearHighlights?.()
-					; (searchPluginInstance as any).highlight?.({ keyword: detail.q })
-			} catch (e) { console.warn('[GOTO][event] highlight error', e) }
 			// Disegna subito il rettangolo OCR esatto (se ho il bbox)
 			try {
 				const m = detail?.match
@@ -253,50 +296,7 @@ export const usePdfJumpTo = ({
 					})
 				}
 			} catch { }
-			// Attendi un attimo per consentire agli highlight nativi (keyword) di comparire
-			await new Promise(r => setTimeout(r, 120))
-			const waitForHighlights = async (ms = 1200) => new Promise<HTMLElement[] | null>((resolve) => {
-				const start = Date.now()
-				const tick = () => {
-					const nodes = Array.from(document.querySelectorAll('.rpv-search__highlight')) as HTMLElement[]
-					if (nodes.length > 0) return resolve(nodes)
-					if (Date.now() - start > ms) return resolve(null)
-					requestAnimationFrame(tick)
-				}
-				tick()
-			})
-			const nodes = await waitForHighlights()
-			if (nodes && nodes.length) {
-				// Map bbox → nearest highlight
-				const m = detail.match
-				if (m && m.x0Pct != null) {
-					const viewer = hostRef.current
-					const layers = viewer?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | null
-					const pageLayer = layers ? layers[m.page - 1] : null
-					if (pageLayer) {
-						const pr = pageLayer.getBoundingClientRect()
-						const targetX = pr.left + ((m.x0Pct + m.x1Pct) / 2) * pr.width
-						const targetY = pr.top + ((m.y0Pct + m.y1Pct) / 2) * pr.height
-						let bestIdx = -1; let bestD = Infinity
-						nodes.forEach((n, idx) => {
-							const r = n.getBoundingClientRect(); const cx = (r.left + r.right) / 2; const cy = (r.top + r.bottom) / 2
-							const d = Math.hypot(cx - targetX, cy - targetY)
-							if (d < bestD) { bestD = d; bestIdx = idx }
-						})
-						if (bestIdx >= 0) {
-							try { (searchPluginInstance as any).jumpToMatch?.(bestIdx); return } catch { }
-						}
-					}
-				}
-				// If ord exists and within range, use it
-				if (detail?.match?.ord != null && detail.match.ord < nodes.length) {
-					try { (searchPluginInstance as any).jumpToMatch?.(detail.match.ord); return } catch { }
-				}
-				// Fallback: first idx containing query
-				const idx = Math.max(0, nodes.findIndex(n => (n.textContent || '').toLowerCase().includes(String(detail.q).toLowerCase())))
-				try { (searchPluginInstance as any).jumpToMatch?.(idx); return } catch { }
-			}
-			// ultimate fallback
+			// ultimate fallback - usa goToMatch per navigare
 			const mi = detail.match ? { id: detail.match.id, page: detail.match.page, snippet: detail.match.snippet, x0Pct: detail.match.x0Pct, x1Pct: detail.match.x1Pct, y0Pct: detail.match.y0Pct, y1Pct: detail.match.y1Pct, charIdx: detail.match.charIdx, qLen: detail.match.qLength } : null
 			if (mi) { await (goToMatch as any)(mi) }
 		}

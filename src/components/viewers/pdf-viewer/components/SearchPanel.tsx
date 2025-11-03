@@ -14,7 +14,6 @@ interface SearchPanelProps {
 	fileUrl: string
 	totalPages: number
 	setMatches: (matches: any[]) => void
-	searchPluginInstance: any
 	goToMatch: (match: any) => Promise<void>
 	searchCacheRef: React.MutableRefObject<Map<string, any[]>>
 }
@@ -29,7 +28,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 	fileUrl,
 	totalPages,
 	setMatches,
-	searchPluginInstance,
 	goToMatch,
 	searchCacheRef
 }) => {
@@ -141,9 +139,36 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 					}
 				}} adapterFactory={() => ({
 					goToMatch: async (m: any) => {
-						try { (searchPluginInstance as any).clearHighlights?.(); (searchPluginInstance as any).highlight?.({ keyword: m.q }) } catch { }
+						console.log('[SEARCH][adapter] goToMatch called with match:', {
+							id: m.id,
+							page: m.page,
+							docId: m.docId,
+							snippet: m.snippet?.substring(0, 50),
+							hasGoToMatch: typeof goToMatch === 'function',
+							x0Pct: m.x0Pct,
+							y0Pct: m.y0Pct,
+							x1Pct: m.x1Pct,
+							y1Pct: m.y1Pct
+						})
 						const mi = { id: m.id, page: m.page, snippet: m.snippet, x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct, charIdx: m.charIdx, qLen: m.qLength } as any
-						await (goToMatch as any)(mi)
+						console.log('[SEARCH][adapter] Match coordinates check:', {
+							originalX0Pct: m.x0Pct,
+							originalY0Pct: m.y0Pct,
+							originalX1Pct: m.x1Pct,
+							originalY1Pct: m.y1Pct,
+							miX0Pct: mi.x0Pct,
+							miY0Pct: mi.y0Pct,
+							miX1Pct: mi.x1Pct,
+							miY1Pct: mi.y1Pct,
+							page: mi.page
+						})
+						console.log('[SEARCH][adapter] Calling goToMatch with:', { page: mi.page, hasPage: typeof mi.page === 'number' })
+						try {
+							await (goToMatch as any)(mi)
+							console.log('[SEARCH][adapter] goToMatch completed')
+						} catch (error) {
+							console.error('[SEARCH][adapter] goToMatch error:', error)
+						}
 						// disegna rettangoli sugli hit correnti (dalla cache dell'ultima ricerca)
 						try {
 							const cacheKey = `${fileUrl}::${(m.q || '').toLowerCase()}::${docId || 'no-doc'}`

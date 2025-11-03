@@ -205,7 +205,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           fileUrl={fileUrl}
           totalPages={shell.totalPages}
           setMatches={shell.setMatches}
-          searchPluginInstance={searchRef.current}
           goToMatch={shell.goToMatch}
           searchCacheRef={shell.searchCacheRef}
         />
