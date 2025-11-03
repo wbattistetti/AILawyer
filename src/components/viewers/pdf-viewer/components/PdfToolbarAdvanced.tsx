@@ -22,7 +22,7 @@ interface PdfToolbarAdvancedProps {
 	hostRef: React.RefObject<HTMLElement>
 	showAdvanced: boolean
 	setShowAdvanced: (show: boolean) => void
-	
+
 	// Functions
 	estimateSkewForPage: (page: number) => Promise<number>
 	persistSkew: (angles: Record<number, number>) => void
@@ -55,7 +55,7 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 	zoomTo
 }) => {
 	return (
-		<div className="flex items-center justify-between p-2 border-b bg-gray-50">
+		<div className="flex items-center justify-between p-2 border-b bg-gray-50 flex-shrink-0">
 			<div className="flex items-center gap-2">
 				{/* Pulsante per aprire il pannello quando è chiuso */}
 				{!showAdvanced && (
@@ -65,18 +65,18 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 						</button>
 					</div>
 				)}
-				
+
 				{/* Pulsante per chiudere il pannello quando è aperto */}
 				{showAdvanced && (
-					<button 
-						className="px-2 py-1 border rounded bg-blue-100 border-blue-400" 
-						title="Chiudi pannello ricerca" 
+					<button
+						className="px-2 py-1 border rounded bg-blue-100 border-blue-400"
+						title="Chiudi pannello ricerca"
 						onClick={()=>setShowAdvanced(false)}
 					>
 						<PanelRightOpen size={16} className="rotate-180" />
 					</button>
 				)}
-				
+
 				<div className="flex items-center gap-2">
 					<button className={`px-2 py-1 rounded border ${tool==='highlight'?'bg-yellow-100 border-yellow-400':''}`} title="Evidenzia" onClick={()=>setTool(tool==='highlight'?'none':'highlight')}>
 						<Highlighter size={16} />
@@ -116,7 +116,7 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 					>Raddrizza</button>
 				</div>
 			</div>
-			
+
 			<div className="w-full md:w-auto md:ml-auto flex items-center gap-2 justify-start md:justify-end flex-wrap">
 				<div className="flex items-center gap-1">
 					<label className="text-xs text-gray-600">Selezione</label>

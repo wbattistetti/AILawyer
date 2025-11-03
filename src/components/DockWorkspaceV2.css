@@ -119,6 +119,26 @@
   color: #333;
 }
 
+/* ✅ Fix DEFINITIVO: flexlayout__tab non deve scrollare (scrollbar gialla sbagliata) */
+/* ✅ IMPORTANTE: Solo per document tabs, NON per drawer tabs */
+.dockv2-root .flexlayout__tabset:not([id="drawerContentTabset"]) .flexlayout__tab {
+  overflow: hidden !important; /* ✅ Blocca scrollbar gialla sbagliata */
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  position: relative !important;
+}
+
+/* ✅ Fix: flexlayout__tab_content deve avere altezza limitata e flex column */
+.dockv2-root .flexlayout__tabset:not([id="drawerContentTabset"]) .flexlayout__tab_content {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
 .dockv2-root .flexlayout__tab:active {
   cursor: grabbing;
 }
@@ -160,6 +180,8 @@
 .dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab {
   height: 100% !important;
   min-height: 250px !important;
+  overflow: visible !important; /* ✅ Drawer tabs devono mostrare contenuto */
+  max-height: none !important; /* ✅ Rimuovi limitazione per drawer */
 }
 
 .dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab_content {

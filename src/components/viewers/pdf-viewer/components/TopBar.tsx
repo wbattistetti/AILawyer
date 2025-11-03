@@ -25,7 +25,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onCloseSearchPanel
 }) => {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-white">
+    <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-white flex-shrink-0">
       <div className="flex items-center gap-1">
         <input
           className="w-16 border rounded px-1 py-0.5 text-center"

@@ -3,7 +3,6 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
-import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
 import { usePageRegistry } from '../viewers/usePageRegistry'
 import { useToast } from '../../hooks/use-toast'
@@ -25,7 +24,7 @@ import { Explorer, useExplorer } from '../../features/explorer'
 import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
-import { PdfViewerManager } from './pratica-canvas/components/PdfViewerManager'
+import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
 import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
 import { useWorkspaceManager } from './pratica-canvas/hooks/useWorkspaceManager';
 import { useEventListeners } from './pratica-canvas/hooks/useEventListeners';
@@ -238,17 +237,18 @@ export function PraticaCanvasPage() {
 
   // Reusable viewer for a documento with Verify mode toggle
   const renderDocViewer = (doc: Documento) => (
-    <PdfViewerManager
-      doc={doc}
+    <PdfViewerShell
+      fileUrl={(doc as any).localUrl || api.getLocalFileUrl(doc.s3Key)}
+      page={syncPage || 1}
+      lines={null}
+      docId={doc.id}
       praticaId={id || ''}
-      syncPage={syncPage}
-      setSyncPage={(page) => {
+      onPageChange={(page) => {
         console.log('[CANVAS] setSyncPage called with:', page);
         setSyncPage(page);
       }}
-      verifyEnabled={false} // Verify mode is removed
-      setVerifyEnabled={() => { }} // Verify mode is removed
-      verifyLinesByPage={{} as any} // Verify mode is removed
+      docName={doc.filename}
+      hasNativeText={doc.hasNativeText}
     />
   )
 
