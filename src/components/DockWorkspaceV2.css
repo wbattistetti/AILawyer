@@ -17,9 +17,26 @@
   z-index: 100 !important;
 }
 
+/* ✅ Fix RADICALE: Forza FlexLayout a rispettare i confini del container flex */
 .dockv2-root .flexlayout__layout {
   background: #fff;
+  height: 100% !important;
+  width: 100% !important;
+  position: relative !important; /* ✅ Usa relative invece di absolute per rispettare flex */
+  overflow: hidden !important; /* ✅ IMPORTANTE: No scroll a livello layout */
 }
+
+/* ✅ Fix: Disabilita scroll su row e splitter di FlexLayout */
+.dockv2-root .flexlayout__row {
+  overflow: hidden !important; /* ✅ No scroll a livello row */
+}
+
+.dockv2-root .flexlayout__splitter {
+  overflow: hidden !important;
+}
+
+/* ✅ Fix RADICALE: Il container che contiene LayoutAny deve avere altezza esplicita */
+/* NOTA: Questo viene gestito inline nello style del componente, ma aggiungiamo qui per sicurezza */
 
 /* ✅ STEP 1: Mostra sempre le tab nella sidebar, nascondi solo il contenuto quando nessun tab è selezionato */
 .dockv2-root .flexlayout__border_left .flexlayout__border_tabset_content {
@@ -496,4 +513,109 @@
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
+}
+
+/* ✅ Fix RADICALE: Impedisci ai tabset di estendersi oltre la striscia dei cassetti */
+.dockv2-root .flexlayout__tabset {
+  overflow: hidden !important;
+  max-height: 100% !important;
+  height: 100% !important; /* ✅ Forza altezza 100% del parent, non dello schermo */
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+/* ✅ Fix: Disabilita scroll a livello tabset_content */
+.dockv2-root .flexlayout__tabset_content {
+  overflow: hidden !important; /* ✅ IMPORTANTE: No scroll qui, solo nei contenuti interni */
+}
+
+/* ✅ Fix RADICALE: Limita l'altezza dei contenuti dei tab e passa flex ai figli */
+.dockv2-root .flexlayout__tab_content {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  /* ✅ IMPORTANTE: Assicura che l'altezza sia limitata al parent, non allo schermo */
+}
+
+/* ✅ Fix: Container principale del tab content - deve essere flex e nascondere overflow */
+.dockv2-root .flexlayout__tab_content > div {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+/* ✅ Fix: Container flex-col che contengono toolbar devono nascondere overflow */
+.dockv2-root .flexlayout__tab_content div.flex.flex-col.flex-1.min-w-0 {
+  overflow: hidden !important;
+}
+
+/* ✅ Fix PRIORITÀ ALTA: Elementi con overflow-auto devono scrollare e rispettare i limiti flexbox */
+.dockv2-root .flexlayout__tab_content div[class*="overflow-auto"] {
+  overflow: auto !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+  flex: 1 !important;
+}
+
+/* ✅ Fix SPECIFICO: Container PDF viewer (quello con relative) */
+.dockv2-root .flexlayout__tab_content div.flex-1.overflow-auto.relative.min-h-0 {
+  overflow: auto !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+  flex: 1 !important;
+}
+
+/* ✅ Fix SPECIFICO: Container risultati ricerca (quello dentro SearchPanelTree) */
+.dockv2-root .flexlayout__tab_content div.flex.flex-1.flex-col.text-sm > div.flex-1.overflow-auto.min-h-0 {
+  overflow: auto !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+  flex: 1 !important;
+}
+
+/* ✅ Fix: react-pdf-viewer deve avere altezza 100% per contenere il contenuto */
+.dockv2-root .flexlayout__tab_content .rpv-core__viewer {
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+/* ✅ Animazione strip cassetti - si alza dal fondo */
+.dockv2-root .drawer-strip-container {
+  background: #f8fafc;
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+  transform-origin: bottom;
+}
+
+.dockv2-root .drawer-strip-container.drawer-strip-hidden {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.dockv2-root .drawer-strip-container.drawer-strip-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* ✅ Zona hover inferiore - invisibile ma interattiva */
+.dockv2-root .drawer-strip-hover-zone {
+  background: transparent;
+}
+
+/* ✅ Linguetta "Cassetti" - animazione leggera */
+.dockv2-root .drawer-strip-tab {
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.dockv2-root .drawer-strip-tab:hover > div {
+  background: rgba(241, 245, 249, 1) !important;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15) !important;
+  transform: translateY(-2px);
 }

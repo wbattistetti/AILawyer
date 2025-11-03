@@ -138,7 +138,8 @@ export function SearchRenderer({ documenti, dockV2Ref, toast }: SearchRendererPr
             }}
         >
             {/* ✅ Solo risultati ricerca, senza layout split duplicato */}
-            <div className="h-full w-full">
+            {/* ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET */}
+            <div className="flex flex-col flex-1 w-full min-h-0">
                 <SearchPanelTree showInput={true} />
             </div>
         </SearchProvider>

@@ -61,7 +61,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 			>
 				<GripVertical size={12} className="text-transparent group-hover:text-blue-700 transition-colors" />
 			</div>
-			<div className="h-full border-l bg-white flex flex-col" style={{ width: panelW }}>
+			<div className="h-full border-l bg-white flex flex-col overflow-hidden" style={{ width: panelW }}>
 				{/* Header pannello ricerca con X per chiudere */}
 				<div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
 					<h3 className="font-semibold text-sm">Risultati ricerca</h3>

@@ -13,6 +13,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
   const lastScrolledQuery = useRef<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Stato per gestire contesti espansi e slider
   const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
@@ -33,6 +34,17 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
       }
     }
   }, [results.length, initialQuery])
+
+  // Auto-focus sull'input quando il pannello viene mostrato
+  useEffect(() => {
+    if (showInput && inputRef.current) {
+      // Piccolo delay per assicurarsi che il DOM sia pronto
+      const timeoutId = setTimeout(() => {
+        inputRef.current?.focus()
+      }, 50)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [showInput])
 
   const onSubmit = () => {
     if (q.trim()) {
@@ -162,12 +174,13 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
     )
   }
 
+  // ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET
   return (
-    <div className="flex h-full w-full flex-col text-sm">
+    <div className="flex flex-1 w-full flex-col text-sm">
       {showInput && (
         <div className="p-2 border-b flex items-center gap-2">
           <SearchIcon size={16} className="text-slate-600" />
-          <input list="search-history" value={q} onChange={(e)=>setQ(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }} className="flex-1 border rounded px-2 py-1" placeholder="Cerca..." />
+          <input ref={inputRef} list="search-history" value={q} onChange={(e)=>setQ(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }} className="flex-1 border rounded px-2 py-1" placeholder="Cerca..." />
           <datalist id="search-history">
             {history.map(h => <option key={h} value={h} />)}
           </datalist>
@@ -182,7 +195,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
         </div>
       )}
       {busy && <div className="p-2 text-gray-500">Indicizzazione/ricerca in corso…</div>}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         {results.length===0 ? (
           <div className="p-3 text-muted-foreground">Nessun risultato</div>
         ) : (

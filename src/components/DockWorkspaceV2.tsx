@@ -213,6 +213,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [selectedDrawerId, setSelectedDrawerId] = useState<string | undefined>(undefined)
 
+  // ✅ State per la visibilità della strip dei cassetti (nascosta di default)
+  const [isDrawerStripVisible, setIsDrawerStripVisible] = useState(false)
+  const drawerStripTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
   const registerToggle = useCallback((id: string, fn: () => void) => {
     if (!id) return
     const map = fullscreenTogglesRef.current
@@ -790,7 +794,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
     if (comp === 'doc') {
       const cfg = (node.getConfig() || {}) as { docId?: string }
-      return <div className="w-full h-full overflow-hidden bg-white">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">Apri un documento dall'Archivio</div>}</div>
+      // ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET
+      return <div className="w-full flex-1 overflow-hidden bg-white min-h-0 flex flex-col">{cfg.docId ? renderDoc(cfg.docId) : <div className="p-4 text-sm text-muted-foreground">Apri un documento dall'Archivio</div>}</div>
     }
     if (comp === 'tmpdoc') {
       const cfg = (node.getConfig() || {}) as { meta?: { id: string; title: string; content?: string; text?: string; source?: { docId?: string; page?: number; title?: string; x0Pct?: number; x1Pct?: number; y0Pct?: number; y1Pct?: number } } }
@@ -1655,14 +1660,58 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
   }, [selectedDrawerId, model])
 
+  // ✅ Cleanup timeout strip quando componente smontato
+  useEffect(() => {
+    return () => {
+      if (drawerStripTimeoutRef.current) {
+        clearTimeout(drawerStripTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  // ✅ Helper function per nascondere la strip solo se nessun drawer è aperto
+  const handleHideDrawerStrip = useCallback(() => {
+    // ✅ NON nascondere se un drawer è aperto - la strip rimane visibile
+    if (selectedDrawerId !== undefined) {
+      return
+    }
+
+    // ✅ Nascondi solo se nessun drawer è aperto
+    drawerStripTimeoutRef.current = setTimeout(() => {
+      setIsDrawerStripVisible(false)
+    }, 500) // ✅ Delay più lungo per evitare nascondimenti accidentali
+  }, [selectedDrawerId])
+
+  // ✅ Mantieni la strip visibile se un drawer è aperto
+  useEffect(() => {
+    if (selectedDrawerId !== undefined && !isDrawerStripVisible) {
+      // ✅ Se un drawer viene aperto, mostra la strip
+      if (drawerStripTimeoutRef.current) {
+        clearTimeout(drawerStripTimeoutRef.current)
+        drawerStripTimeoutRef.current = null
+      }
+      setIsDrawerStripVisible(true)
+    }
+  }, [selectedDrawerId, isDrawerStripVisible])
+
   return (
     <div
       ref={layoutRootRef}
       className="dockv2-root"
       style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative', display: 'flex', flexDirection: 'column' }}
     >
-      {/* Layout principale - con padding bottom per la striscia */}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      {/* Layout principale - ora occupa sempre il 100% perché la strip è fixed */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          height: '100%', // ✅ Sempre 100% - la strip non ruba spazio
+          position: 'relative',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
         <LayoutAny
           key={`layout-${tabsOpenState}`}
           model={model}
@@ -1676,16 +1725,98 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         />
       </div>
 
-      {/* ✅ Striscia cassetti in fondo */}
+      {/* ✅ Zona hover inferiore per attivare la strip */}
       {drawerTabs.length > 0 && (
         <div
-          className="bg-slate-50 relative"
+          className="drawer-strip-hover-zone"
           style={{
-            minHeight: '100px', // ✅ Altezza sufficiente per tab con testo multi-linea
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '50px',
+            zIndex: 99,
+            pointerEvents: isDrawerStripVisible ? 'none' : 'auto',
+          }}
+          onMouseEnter={() => {
+            if (drawerStripTimeoutRef.current) {
+              clearTimeout(drawerStripTimeoutRef.current)
+              drawerStripTimeoutRef.current = null
+            }
+            setIsDrawerStripVisible(true)
+          }}
+          onMouseLeave={() => {
+            handleHideDrawerStrip()
+          }}
+        />
+      )}
+
+      {/* ✅ Linguetta "Cassetti" al centro del fondo */}
+      {drawerTabs.length > 0 && !isDrawerStripVisible && (
+        <div
+          className="drawer-strip-tab"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 101,
+            pointerEvents: 'auto',
+          }}
+          onMouseEnter={() => {
+            if (drawerStripTimeoutRef.current) {
+              clearTimeout(drawerStripTimeoutRef.current)
+              drawerStripTimeoutRef.current = null
+            }
+            setIsDrawerStripVisible(true)
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(241, 245, 249, 0.95)',
+              borderTopLeftRadius: '8px',
+              borderTopRightRadius: '8px',
+              border: '1px solid #cbd5e1',
+              borderBottom: 'none',
+              padding: '6px 20px',
+              fontSize: '13px',
+              fontWeight: 500,
+              color: '#475569',
+              cursor: 'pointer',
+              boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Cassetti
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Striscia cassetti in fondo - position fixed, si alza con animazione */}
+      {drawerTabs.length > 0 && (
+        <div
+          className={`drawer-strip-container ${isDrawerStripVisible ? 'drawer-strip-visible' : 'drawer-strip-hidden'}`}
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            minHeight: '100px',
             height: 'auto',
-            flexShrink: 0,
-            zIndex: 10,
-            overflow: 'visible' // ✅ Permetti overflow per mostrare l'icona sopra
+            zIndex: 100,
+            overflow: 'visible',
+            pointerEvents: isDrawerStripVisible ? 'auto' : 'none',
+            background: '#f8fafc',
+          }}
+          onMouseEnter={() => {
+            if (drawerStripTimeoutRef.current) {
+              clearTimeout(drawerStripTimeoutRef.current)
+              drawerStripTimeoutRef.current = null
+            }
+            setIsDrawerStripVisible(true)
+          }}
+          onMouseLeave={() => {
+            handleHideDrawerStrip()
           }}
         >
           <DrawerTabStrip

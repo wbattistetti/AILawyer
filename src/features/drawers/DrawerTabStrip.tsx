@@ -21,6 +21,7 @@ type Props = {
 
 export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop }: Props) {
   const [draggedOverId, setDraggedOverId] = React.useState<string | null>(null)
+  const [hoveredDrawerId, setHoveredDrawerId] = React.useState<string | null>(null)
   const [showSearchIcon, setShowSearchIcon] = React.useState(false)
   const [showSearchBox, setShowSearchBox] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -155,7 +156,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   }
 
   // ✅ Costanti per il calcolo
-  const FONT_SIZE = 14 // px
+  const MAX_FONT_SIZE = 14 // px - limite massimo
+  const MIN_FONT_SIZE = 8 // px - limite minimo per leggibilità
   const LINE_HEIGHT = 1.3 // relativo al font size
   // ✅ Gap dinamico: più piccolo se ci sono molti cassetti (per farli stare tutti)
   const getGapBetweenDrawers = React.useMemo(() => {
@@ -184,7 +186,54 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     return Math.max(minWidth, drawerWidth)
   }, [availableWidth, items.length, getGapBetweenDrawers])
 
-  // ✅ Calcola il numero di righe necessarie per ogni label
+  // ✅ Trova la parola più lunga tra tutte le labels
+  const longestWord = React.useMemo(() => {
+    if (items.length === 0) return ''
+
+    let longest = ''
+    items.forEach(item => {
+      const words = item.label.split(/\s+/)
+      words.forEach(word => {
+        if (word.length > longest.length) {
+          longest = word
+        }
+      })
+    })
+    return longest
+  }, [items])
+
+  // ✅ Calcola il font size ottimale che permette alla parola più lunga di stare nella larghezza disponibile
+  const optimalFontSize = React.useMemo(() => {
+    if (!uniformTabWidth || longestWord === '') return MAX_FONT_SIZE
+
+    // Larghezza disponibile per il testo (larghezza cassetto - padding laterale)
+    const availableTextWidth = uniformTabWidth - (PADDING_X * 2)
+
+    // Crea un canvas temporaneo per misurare il testo
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    if (!context) return MAX_FONT_SIZE
+
+    // Prova font size da MAX_FONT_SIZE verso il basso fino a trovare quello che ci sta
+    let fontSize = MAX_FONT_SIZE
+    while (fontSize >= MIN_FONT_SIZE) {
+      context.font = `medium ${fontSize}px sans-serif` // medium = font-medium
+      const metrics = context.measureText(longestWord)
+
+      if (metrics.width <= availableTextWidth) {
+        // Questo font size va bene, è il massimo possibile
+        return fontSize
+      }
+
+      // Prova font size più piccolo
+      fontSize -= 0.5 // ✅ Incrementi di 0.5px per precisione
+    }
+
+    // Se nemmeno MIN_FONT_SIZE ci sta, restituisci comunque il minimo
+    return MIN_FONT_SIZE
+  }, [uniformTabWidth, longestWord])
+
+  // ✅ Calcola il numero di righe necessarie per ogni label usando il font size ottimale
   const calculateTextLines = React.useCallback((label: string, width: number): number => {
     // Larghezza disponibile per il testo (larghezza cassetto - padding laterale)
     const textWidth = width - (PADDING_X * 2)
@@ -194,8 +243,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     const context = canvas.getContext('2d')
     if (!context) return 1
 
-    context.font = `medium ${FONT_SIZE}px sans-serif` // medium = font-medium
-    const lineHeightPx = FONT_SIZE * LINE_HEIGHT
+    context.font = `medium ${optimalFontSize}px sans-serif` // medium = font-medium, usa font size ottimale
+    const lineHeightPx = optimalFontSize * LINE_HEIGHT
 
     // Dividi il testo in parole
     const words = label.split(/\s+/)
@@ -217,7 +266,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     }
 
     return lines
-  }, [])
+  }, [optimalFontSize])
 
   // ✅ Calcola il numero massimo di righe tra tutti i cassetti
   const maxLines = React.useMemo(() => {
@@ -234,15 +283,15 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     return max
   }, [items, uniformTabWidth, calculateTextLines])
 
-  // ✅ Calcola l'altezza uniforme per tutti i cassetti
+  // ✅ Calcola l'altezza uniforme per tutti i cassetti usando il font size ottimale
   const uniformTabHeight = React.useMemo(() => {
     // Altezza = padding top + numero/icona + gap + (righe testo * line height) + padding bottom
-    const textHeight = maxLines * (FONT_SIZE * LINE_HEIGHT)
+    const textHeight = maxLines * (optimalFontSize * LINE_HEIGHT)
     const headerHeight = Math.max(NUMBER_HEIGHT, ICON_HEIGHT) + ICON_TEXT_GAP
     const totalHeight = (PADDING_Y * 2) + headerHeight + textHeight
 
     return Math.max(90, totalHeight) // minimo 90px
-  }, [maxLines])
+  }, [maxLines, optimalFontSize])
 
   return (
     <div
@@ -360,13 +409,23 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
       {items.map((item, index) => {
         const isSelected = item.id === selectedId
         const isDraggedOver = draggedOverId === item.id
+        const isHovered = hoveredDrawerId === item.id
         const tabNumber = index + 1
+
+        // ✅ Determina lo stato di highlight: selezionato > hover > dragged > normale
+        const isHighlighted = isSelected || isHovered || isDraggedOver
 
         return (
           <button
             key={item.id}
             onClick={() => {
               onSelect(item.id)
+            }}
+            onMouseEnter={() => {
+              setHoveredDrawerId(item.id)
+            }}
+            onMouseLeave={() => {
+              setHoveredDrawerId(null)
             }}
             onDragOver={(e) => handleDragOver(e, item.id)}
             onDragLeave={handleDragLeave}
@@ -375,18 +434,20 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
               flex flex-col items-center justify-start gap-1.5 px-2 py-2.5
               transition-all flex-shrink-0
               ${isSelected
-                ? 'bg-white shadow-sm'
+                ? 'bg-white shadow-md'
+                : isHovered
+                ? 'bg-slate-100 shadow-lg'
                 : isDraggedOver
                 ? 'bg-blue-50 shadow-md'
-                : 'bg-slate-50 hover:bg-slate-100'
+                : 'bg-slate-50'
               }
             `}
             style={{
               // ✅ Bordino sottile completo con angoli arrotondati (come cassetti)
               // ✅ Usa proprietà non-shorthand per evitare conflitti con borderBottom
-              borderTop: `${isSelected ? '3px' : '1px'} solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderLeft: `1px solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderRight: `1px solid ${isSelected ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
+              borderTop: `${isSelected || isHovered ? '3px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
+              borderLeft: `${isSelected || isHovered ? '2px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
+              borderRight: `${isSelected || isHovered ? '2px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
               borderBottom: 'none', // ✅ Nessun bordo in basso (si attacca alla strip)
               borderRadius: '8px', // ✅ Angoli arrotondati
               borderBottomLeftRadius: '0', // ✅ Angoli in basso senza arrotondamento
@@ -396,15 +457,17 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
               // ✅ Altezza uniforme calcolata in base al numero massimo di righe
               height: `${uniformTabHeight}px`,
               minHeight: `${uniformTabHeight}px`,
+              // ✅ Transform leggero quando hover per effetto "sollevamento"
+              transform: isHovered && !isSelected ? 'translateY(-2px)' : 'translateY(0)',
             }}
           >
             {/* ✅ Numero e icona sulla stessa riga (numero a sinistra) */}
             <div className="flex items-center gap-1.5 w-full justify-center">
-              <span className={`text-xs font-semibold leading-none ${isSelected ? 'text-slate-700' : 'text-slate-500'}`}>
+              <span className={`text-xs font-semibold leading-none ${isSelected ? 'text-slate-700' : isHovered ? 'text-slate-700' : 'text-slate-500'}`}>
                 {tabNumber}.
               </span>
               {item.icon && (
-                <span className="flex-shrink-0" style={{ color: item.color }}>
+                <span className="flex-shrink-0" style={{ color: isHovered || isSelected ? item.color : item.color, opacity: isHovered || isSelected ? 1 : 0.8 }}>
                   {React.isValidElement(item.icon) && typeof item.icon.type !== 'string'
                     ? React.cloneElement(item.icon as React.ReactElement<any>, { size: 32, className: 'w-8 h-8', style: { width: '32px', height: '32px' } })
                     : item.icon}
@@ -414,12 +477,13 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
 
             {/* Descrizione multi-linea wrappata */}
             <span
-              className={`text-xs font-medium text-center leading-tight ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}
+              className={`text-xs font-medium text-center leading-tight ${isSelected ? 'text-slate-900' : isHovered ? 'text-slate-800' : 'text-slate-600'}`}
               style={{
-                fontSize: '14px', // ✅ Font size 14px
-                wordBreak: 'break-word',
-                hyphens: 'auto',
-                lineHeight: '1.3',
+                fontSize: `${optimalFontSize}px`, // ✅ Font size ottimale calcolato
+                wordBreak: 'normal', // ✅ NON spezzare parole
+                overflowWrap: 'normal', // ✅ Wrappare solo agli spazi
+                hyphens: 'none', // ✅ Nessuna sillabazione automatica
+                lineHeight: LINE_HEIGHT,
               }}
             >
               {item.label}

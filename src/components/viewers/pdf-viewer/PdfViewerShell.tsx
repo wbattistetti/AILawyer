@@ -80,11 +80,12 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     setPanelW: shell.setPanelW
   })
 
+  // ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET
   return (
     <React.Fragment>
-      <div className="flex h-full w-full">
+      <div className="flex flex-1 w-full min-h-0 overflow-hidden">
         {/* Left: toolbar + viewer */}
-        <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <TopBar
             totalPages={shell.totalPages}
             pageInput={shell.pageInput}
@@ -123,12 +124,13 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             zoomTo={shell.zoomTo}
           />
 
+          {/* ✅ Fix: overflow-auto invece di overflow-hidden per scrollbar indipendente del PDF */}
           <div
             ref={(el) => {
               hostRef.current = el
               if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
             }}
-            className="flex-1 overflow-hidden relative"
+            className="flex-1 overflow-auto relative min-h-0"
             style={{ ['--scale-factor' as any]: String(shell.scaleRef?.current || 1) }}
           >
             <PdfViewerCore

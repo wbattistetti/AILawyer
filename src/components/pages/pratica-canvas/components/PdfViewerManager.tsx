@@ -23,8 +23,9 @@ export function PdfViewerManager({
   verifyLinesByPage
 }: PdfViewerManagerProps) {
 
+  // ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET
   return (
-    <div className="flex-1 overflow-hidden flex flex-col h-full">
+    <div className="flex-1 overflow-hidden flex flex-col min-h-0">
       <div className="border-b px-2 py-1 text-sm flex items-center gap-2">
         <button
           className={`px-2 py-1 rounded ${verifyEnabled ? 'bg-blue-100 text-blue-700' : 'hover:bg-muted'}`}

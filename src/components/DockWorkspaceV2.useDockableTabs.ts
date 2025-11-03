@@ -101,36 +101,34 @@ export function useDockableTabs(clienti: Cliente[] = []) {
     const isDocked = useCallback((component: string, id?: string): boolean => {
         const key = getDockedKey(component, id)
         return dockedTabs.has(key)
-    }, [dockedTabs, getDockedKey])
+    }, [getDockedKey, dockedTabs])
 
     /**
      * Filtra le tab della sidebar rimuovendo quelle docked.
      */
     const filterSidebarTabs = useCallback((tabs: any[]): any[] => {
         return tabs.filter(tab => {
-            if (tab.component === 'cliente-memoria') {
-                const clienteId = extractClienteIdFromSidebarTab(tab.id || '')
-                return !isDocked('cliente-memoria', clienteId || undefined)
-            }
-            return !isDocked(tab.component)
+            const component = tab.component || tab.type
+            const id = tab.id ? extractClienteIdFromSidebarTab(tab.id) : undefined
+            return !isDocked(component, id || undefined)
         })
     }, [isDocked, extractClienteIdFromSidebarTab])
 
     /**
-     * Aggiunge le tab mancanti alla sidebar (quelle che non sono docked).
+     * Aggiunge le tab mancanti alla sidebar.
      */
-    const addMissingSidebarTabs = useCallback((currentTabs: any[]): any[] => {
-        const result = [...currentTabs]
+    const addMissingSidebarTabs = useCallback((existingTabs: any[]): any[] => {
+        const result = [...existingTabs]
 
         // Tab statiche standard
         const staticTabs = [
             { component: 'search', id: 'searchTab', name: 'Search' },
-            { component: 'persons', id: 'personsTab', name: '?LaAnagrafiche' },
+            { component: 'persons', id: 'personsTab', name: 'Anagrafiche' },
             { component: 'events', id: 'eventsTab', name: 'Eventi' },
         ]
 
         staticTabs.forEach(staticTab => {
-            const exists = result.some(t => t.id === staticTab.id)
+            const exists = result.some((t: any) => t.id === staticTab.id)
             if (!exists && !isDocked(staticTab.component)) {
                 result.push({
                     type: 'tab',
@@ -144,7 +142,7 @@ export function useDockableTabs(clienti: Cliente[] = []) {
         // Tab cliente dinamiche
         clienti.forEach(cliente => {
             const clienteTabId = `cliente-${cliente.id}-tab`
-            const exists = result.some(t => t.id === clienteTabId)
+            const exists = result.some((t: any) => t.id === clienteTabId)
             if (!exists && !isDocked('cliente-memoria', cliente.id)) {
                 result.push({
                     type: 'tab',
