@@ -1,4 +1,14 @@
-export type CellType = 'reato-contestato' | 'fatto' | 'atto'
+export type CellType =
+    | 'reato-contestato'
+    | 'fatto'
+    | 'atto'
+    | 'elementi-prova'
+    | 'verbale-arresto'
+    | 'verbale-sequestro'
+    | 'verbale-perquisizione'
+    | 'interrogatorio'
+    | 'dichiarazioni-testi'
+    | 'intercettazioni'
 
 export interface ExtractData {
     content: string

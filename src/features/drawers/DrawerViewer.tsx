@@ -29,11 +29,37 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       try {
         const arr = (e?.detail?.items || []) as Array<any>
 
+        console.log('[DRAWER-VIEWER][DOCS-RECEIVED]', {
+          drawerId: id,
+          drawerTitle: title,
+          totalItemsRicevuti: arr.length,
+          itemsConCompartoId: arr.filter((x: any) => x.compartoId).length,
+          itemsSenzaCompartoId: arr.filter((x: any) => !x.compartoId && !x.id.startsWith('temp:')).length,
+          itemsMatchingCompartoId: arr.filter((x: any) => x.compartoId === id).length,
+          itemsSample: arr.slice(0, 5).map((x: any) => ({
+            id: x.id,
+            filename: x.filename,
+            compartoId: x.compartoId,
+            match: x.compartoId === id
+          }))
+        })
+
         // ✅ PRIMA: Filtra per compartoId se id è fornito e corrisponde a un compartoId
         let filtered = arr
         if (id) {
           // Se id è un compartoId valido, filtra i documenti per quel comparto
           filtered = arr.filter((x: any) => x.compartoId === id)
+
+          console.log('[DRAWER-VIEWER][FILTER-BY-COMPARTO]', {
+            drawerId: id,
+            primaFiltro: arr.length,
+            dopoFiltro: filtered.length,
+            itemsFiltrati: filtered.map((x: any) => ({
+              id: x.id,
+              filename: x.filename,
+              compartoId: x.compartoId
+            }))
+          })
         }
 
         // ✅ POI: Se il cassetto ha un titolo che identifica una collezione speciale, filtra per tag corrispondente
@@ -49,8 +75,21 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
           return
         }
 
+        console.log('[DRAWER-VIEWER][FINAL-ITEMS]', {
+          drawerId: id,
+          drawerTitle: title,
+          finalItemsCount: filtered.length,
+          finalItems: filtered.map((x: any) => ({
+            id: x.id,
+            filename: x.filename,
+            compartoId: x.compartoId
+          }))
+        })
+
         setItems(filtered)
-      } catch { }
+      } catch (e) {
+        console.error('[DRAWER-VIEWER][ERROR]', { drawerId: id, error: e })
+      }
     }
 
     const onUploading = (e: any) => {

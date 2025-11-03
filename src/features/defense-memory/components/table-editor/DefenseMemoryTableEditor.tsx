@@ -356,7 +356,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         Totale righe: {getRowCount()} |
                         Reati contestati: {rows.filter(r => r.cellType === 'reato-contestato').length} |
                         Fatti: {rows.filter(r => r.cellType === 'fatto').length} |
-                        Atti: {rows.filter(r => r.cellType === 'atto').length}
+                        Atti: {rows.filter(r => r.cellType === 'atto').length} |
+                        Elementi di prova: {rows.filter(r => r.cellType === 'elementi-prova').length} |
+                        Verbali: {rows.filter(r => ['verbale-arresto', 'verbale-sequestro', 'verbale-perquisizione'].includes(r.cellType)).length} |
+                        Altri: {rows.filter(r => !['reato-contestato', 'fatto', 'atto', 'elementi-prova', 'verbale-arresto', 'verbale-sequestro', 'verbale-perquisizione'].includes(r.cellType)).length}
                     </span>
                     <span>
                         Ultimo aggiornamento: {new Date(tableData.lastUpdated).toLocaleString('it-IT')}

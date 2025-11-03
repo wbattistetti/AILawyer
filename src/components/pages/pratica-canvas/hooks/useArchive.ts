@@ -33,6 +33,34 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
       try {
         const documentiData = await api.getDocumentiByPratica(praticaId)
 
+          console.log('[LOAD][DOCUMENTI][BACKEND-RESPONSE]', {
+          praticaId,
+          totalDocumenti: documentiData.length,
+          documentiConCompartoId: documentiData.filter(d => d.compartoId).length,
+          documentiPerComparto: documentiData.reduce((acc, d) => {
+            const compId = d.compartoId || 'NO-COMPARTO'
+            acc[compId] = (acc[compId] || 0) + 1
+            return acc
+          }, {} as Record<string, number>),
+          documentiConCompartoId: documentiData.map(d => ({
+            id: d.id,
+            filename: d.filename,
+            compartoId: d.compartoId,
+            ocrStatus: d.ocrStatus,
+            hasOcrText: !!d.ocrText,
+            ocrTextLength: d.ocrText?.length || 0,
+            ocrConfidence: d.ocrConfidence,
+            s3Key: d.s3Key?.substring(0, 20) + '...'
+          })),
+          ocrStatusBreakdown: {
+            pending: documentiData.filter(d => d.ocrStatus === 'pending').length,
+            processing: documentiData.filter(d => d.ocrStatus === 'processing').length,
+            completed: documentiData.filter(d => d.ocrStatus === 'completed').length,
+            failed: documentiData.filter(d => d.ocrStatus === 'failed').length,
+            low_confidence: documentiData.filter(d => d.ocrStatus === 'low_confidence').length
+          }
+        })
+
         // ✅ IMPORTANTE: Non sostituire l'array, ma fare un merge con i documenti temporanei esistenti
         // ✅ I documenti temporanei devono rimanere visibili finché non vengono esplicitamente sostituiti
         // ✅ PRESERVA thumbnailDataUrl dai tempDoc quando corrispondono a documenti reali
@@ -104,7 +132,27 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           })
 
           // Combina documenti reali arricchiti + documenti temporanei da mantenere
-          return [...enrichedRealDocs, ...tempDocsToKeep]
+          const finalDocs = [...enrichedRealDocs, ...tempDocsToKeep]
+
+          console.log('[LOAD][DOCUMENTI][MERGE-RESULT]', {
+            praticaId,
+            totalFinale: finalDocs.length,
+            documentiReali: enrichedRealDocs.length,
+            tempDocsMantenuti: tempDocsToKeep.length,
+            documentiPerCompartoFinale: finalDocs.reduce((acc, d) => {
+              const compId = d.compartoId || 'NO-COMPARTO'
+              acc[compId] = (acc[compId] || 0) + 1
+              return acc
+            }, {} as Record<string, number>),
+            documentiFinali: finalDocs.map(d => ({
+              id: d.id,
+              filename: d.filename,
+              compartoId: d.compartoId,
+              isTemp: d.id.startsWith('temp:')
+            }))
+          })
+
+          return finalDocs
         })
       } catch (error) {
         console.error('[LOAD][DOCUMENTI][ARCHIVE][ERROR]', {
@@ -124,6 +172,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
   ) => {
     // Modalità locale: non effettua upload/creazione su backend
     const localOnly = (((import.meta as any).env?.VITE_ARCHIVE_LOCAL_ONLY) ?? 'true') !== 'false'
+
+    console.log('[HANDLE][FILEDROP][START]', {
+      filesCount: files.length,
+      _compartoId,
+      target: target ? { type: target.type, id: target.id, title: target.title } : null,
+      localOnly,
+      praticaId,
+      envValue: (import.meta as any).env?.VITE_ARCHIVE_LOCAL_ONLY
+    })
 
     if (!praticaId) {
       console.warn('[HANDLE][FILEDROP] Nessuna praticaId, salto')
@@ -532,14 +589,110 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
         }
 
         // ✅ NOTE: In modalità locale, il file viene mantenuto solo in memoria (blob URL)
-        // ✅ NON salvare automaticamente nel DB - l'utente salverà esplicitamente quando necessario
+        // ✅ MA dobbiamo comunque salvare il record nel database per persistenza
         // ✅ Il file fisico verrà caricato solo quando necessario (es. OCR o salvataggio esplicito)
         // ✅ La miniatura rimane in memoria associata al tempDoc tramite hash
         if (localOnly) {
-          // ✅ In modalità locale, non fare nulla - tempDoc rimane in memoria
-          // ✅ Il file verrà salvato nel DB solo quando l'utente salva esplicitamente
-          // ✅ La miniatura rimane visibile associata al tempDoc tramite hash
-          continue // ✅ Salta il resto - tempDoc già creato, nessun salvataggio automatico
+          console.log('[HANDLE][FILEDROP][LOCAL-ONLY][SAVE-DOC]', {
+            filename: file.name,
+            compartoId: _compartoId,
+            tempId,
+            s3Key,
+            praticaId,
+            nota: 'In modalità localOnly, salvo comunque il record nel DB (senza upload S3)'
+          })
+
+          // ✅ In modalità locale, salva comunque il record nel database
+          // ✅ Determina tags
+          const tags: string[] = [...(target?.tags || [])]
+          if (target?.type === 'drawer') {
+            const key = (target.title || '').toLowerCase()
+            if (tags.length === 0) {
+              if (key.includes('sequestro')) tags.push('verbale_sequestro', 'verbale')
+              else if (key.includes('arresto')) tags.push('verbale_arresto', 'verbale')
+              else if (key.includes('verbali') || key.includes('verbale')) tags.push('verbale')
+              else if (key.includes('intercett')) tags.push('intercettazioni')
+              else if (key.includes('reati')) tags.push('reati')
+            }
+          }
+
+          const compartoIdFinale = (_compartoId && comparti.find(c => c.id === _compartoId)?.id)
+            || comparti.find(c => c.key === 'da_classificare')?.id
+            || (comparti[0]?.id ?? '')
+
+          console.log('[HANDLE][FILEDROP][LOCAL-ONLY][COMPARTO-ID]', {
+            _compartoId,
+            compartoIdFinale,
+            filename: file.name
+          })
+
+          try {
+            const documento = await api.createDocumento({
+              praticaId,
+              compartoId: compartoIdFinale,
+              filename: file.name,
+              mime: file.type,
+              size: file.size,
+              s3Key, // Usa s3Key temporaneo (local:timestamp:id)
+              hash: fileHash, // ✅ Usa hash già calcolato client-side
+              ocrStatus: 'pending',
+              tags,
+              thumbnailDataUrl, // ✅ Salva thumbnail nel database
+              hasNativeText: hasNativeTextValue, // Passa hasNativeText esplicitamente
+            })
+
+            console.log('[HANDLE][FILEDROP][LOCAL-ONLY][DOC-CREATO]', {
+              documentoId: documento.id,
+              compartoIdSalvato: (documento as any).compartoId,
+              compartoIdFinale,
+              match: (documento as any).compartoId === compartoIdFinale,
+              filename: file.name
+            })
+
+            // ✅ Sostituisci tempDoc con documento reale (mantieni blob URL)
+            setDocumenti(prev => {
+              const next = [...prev]
+              const idxTemp = next.findIndex(d => d.id === tempId || d.s3Key === s3Key)
+              if (idxTemp >= 0) {
+                const existingBlobUrl = (next[idxTemp] as any).localUrl || blobUrl
+                next[idxTemp] = {
+                  ...(documento as any),
+                  localUrl: existingBlobUrl, // Mantieni blob URL
+                  thumbnailDataUrl: thumbnailDataUrl || (documento as any)?.thumbnailDataUrl, // Preserva thumbnail locale
+                  hasNativeText: hasNativeTextValue,
+                  _sourceFile: file // Salva riferimento al file per upload on-demand
+                } as any
+                return next
+              }
+              return [...prev, documento as any]
+            })
+
+            // ✅ Completa upload
+            setUploads(prev => {
+              const uploadIdx = prev.findIndex(u =>
+                u.s3Key === s3Key ||
+                (u.file === file) ||
+                (u.compartoId === compartoIdFinale && u.file?.name === file.name)
+              )
+              if (uploadIdx >= 0) {
+                return prev.map((upload, idx) =>
+                  idx === uploadIdx ? { ...upload, progress: 100, status: 'completed' } : upload
+                )
+              }
+              return prev
+            })
+
+            try { window.dispatchEvent(new CustomEvent('app:request-documents')) } catch { }
+          } catch (e) {
+            console.error('[HANDLE][FILEDROP][LOCAL-ONLY][ERROR]', {
+              filename: file.name,
+              compartoId: compartoIdFinale,
+              error: (e as any)?.message || e
+            })
+            // Non bloccare - tempDoc rimane visibile
+          }
+
+          continue // ✅ Salta la parte di upload S3 (non necessario in modalità locale)
         }
 
         // ✅ CODICE NON LOCALE: mantieni logica esistente per upload S3
@@ -788,6 +941,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           || comparti.find(c => c.key === 'da_classificare')?.id
           || (comparti[0]?.id ?? '')
 
+        console.log('[SAVE][DOCUMENTO][COMPARTO-ID]', {
+          _compartoId,
+          compartoIdFinale,
+          compartiTotali: comparti.length,
+          compartiKeys: comparti.map(c => ({ id: c.id, key: c.key, nome: c.nome })),
+          filename: file.name,
+          s3Key
+        })
+
         try {
           // Ottieni thumbnail dal documento temporaneo se disponibile
           const currentDocs = documenti
@@ -807,6 +969,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             tags,
             thumbnailDataUrl, // Salva thumbnail nel database
             hasNativeText: hasNativeTextValueNonLocal, // Passa hasNativeText esplicitamente
+          })
+
+          console.log('[SAVE][DOCUMENTO][CREATO]', {
+            documentoId: documento.id,
+            compartoIdSalvato: (documento as any).compartoId,
+            compartoIdFinaleInviato: compartoIdFinale,
+            matchCompartoId: (documento as any).compartoId === compartoIdFinale,
+            filename: file.name,
+            s3Key
           })
         } catch (e) {
           console.error('[SAVE][DOCUMENTO][ARCHIVE][ERROR]', {

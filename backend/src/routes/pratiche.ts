@@ -464,11 +464,18 @@ export async function praticheRoutes(fastify: FastifyInstance) {
       console.log('[LOAD][DOCUMENTI][FOUND]', {
         praticaId,
         count: documentiRaw.length,
+        documentiConCompartoId: documentiRaw.filter((d: any) => d.compartoId).length,
+        documentiSenzaCompartoId: documentiRaw.filter((d: any) => !d.compartoId).length,
+        documentiPerComparto: documentiRaw.reduce((acc: any, d: any) => {
+          const compId = d.compartoId || 'NO-COMPARTO'
+          acc[compId] = (acc[compId] || 0) + 1
+          return acc
+        }, {}),
         documenti: documentiRaw.map((d: any) => ({
-          id: d.id,
+          id: d.id.substring(0, 20) + '...',
           filename: d.filename,
-          compartoId: d.compartoId,
-          s3Key: d.s3Key
+          compartoId: d.compartoId || 'NULL',
+          s3Key: d.s3Key?.substring(0, 20) + '...'
         }))
       })
 

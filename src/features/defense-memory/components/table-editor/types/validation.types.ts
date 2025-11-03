@@ -41,6 +41,95 @@ export const VALIDATION_RULES: CellTypeValidationRules = {
       validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
       required: true
     }
+  ],
+  'elementi-prova': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'verbale-arresto': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'contestationDate',
+      validator: (value: string) => !value ? 'Data ordinanza obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'eventDate',
+      validator: (value: string) => !value ? 'Data esecuzione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'verbale-sequestro': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'contestationDate',
+      validator: (value: string) => !value ? 'Data ordinanza obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'eventDate',
+      validator: (value: string) => !value ? 'Data esecuzione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'verbale-perquisizione': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'contestationDate',
+      validator: (value: string) => !value ? 'Data ordinanza obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'eventDate',
+      validator: (value: string) => !value ? 'Data esecuzione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'interrogatorio': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'contestationDate',
+      validator: (value: string) => !value ? 'Data ordinanza obbligatoria' : null,
+      required: true
+    },
+    {
+      field: 'eventDate',
+      validator: (value: string) => !value ? 'Data esecuzione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'dichiarazioni-testi': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    }
+  ],
+  'intercettazioni': [
+    {
+      field: 'description',
+      validator: (value: string) => value.trim().length === 0 ? 'Descrizione obbligatoria' : null,
+      required: true
+    }
   ]
 }
 

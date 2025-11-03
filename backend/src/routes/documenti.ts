@@ -7,9 +7,183 @@ import { storageService } from '../lib/storage.js'
 import { DocumentoCreateInput } from '../types/index.js'
 import { detectNativeText } from '../lib/detectNativeText.js'
 import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
+import { classificationService } from '../services/classification.js'
 import crypto from 'crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+
+// ✅ Helper function per classificazione automatica (condivisa tra worker e inline)
+async function applyClassificationAfterOcr(documentId: string, ocrText: string, filename: string, ocrConfidence: number) {
+  try {
+    const isLowConfidence = ocrConfidence < config.OCR_CONFIDENCE_THRESHOLD
+
+    if (isLowConfidence) {
+      console.log('[CLASSIFICATION][SKIP] OCR confidence troppo bassa', {
+        documentId,
+        filename,
+        ocrConfidence,
+        threshold: config.OCR_CONFIDENCE_THRESHOLD
+      })
+      return
+    }
+
+    const classResult = classificationService.classify(ocrText, filename)
+
+    console.log('[CLASSIFICATION][RESULT]', {
+      documentId,
+      filename,
+      classCompartoKey: classResult.compartoKey,
+      classConfidence: classResult.confidence,
+      confidenceThreshold: config.CLASSIFY_CONFIDENCE_THRESHOLD,
+      willMove: classResult.confidence >= config.CLASSIFY_CONFIDENCE_THRESHOLD
+    })
+
+    // Only move document if classification confidence is high enough
+    if (classResult.confidence >= config.CLASSIFY_CONFIDENCE_THRESHOLD) {
+      const documento = await prisma.documento.findUnique({
+        where: { id: documentId },
+        include: {
+          pratica: { include: { comparti: true } },
+          comparto: true
+        },
+      })
+
+      if (documento) {
+        const currentComparto = documento.comparto
+        const isInDaClassificare = currentComparto?.key === 'da_classificare'
+
+        console.log('[CLASSIFICATION][CHECK]', {
+          documentId,
+          filename,
+          currentCompartoKey: currentComparto?.key,
+          currentCompartoId: currentComparto?.id,
+          currentCompartoNome: currentComparto?.nome,
+          isInDaClassificare,
+          classResultCompartoKey: classResult.compartoKey,
+          classConfidence: classResult.confidence
+        })
+
+        if (isInDaClassificare) {
+          console.log('[CLASSIFICATION][MOVE] Documento in da_classificare, provo a spostarlo', {
+            documentId,
+            targetCompartoKey: classResult.compartoKey
+          })
+
+          const targetComparto = documento.pratica.comparti.find(c => c.key === classResult.compartoKey)
+
+          if (targetComparto) {
+            console.log('[CLASSIFICATION][MOVE-OK] Spostando documento', {
+              documentId,
+              fromCompartoId: currentComparto?.id,
+              fromCompartoKey: currentComparto?.key,
+              toCompartoId: targetComparto.id,
+              toCompartoKey: targetComparto.key,
+              toCompartoNome: targetComparto.nome
+            })
+
+            await prisma.documento.update({
+              where: { id: documentId },
+              data: {
+                compartoId: targetComparto.id,
+                classConfidence: classResult.confidence,
+                classWhy: classResult.why,
+                tags: JSON.stringify(classResult.tags),
+              },
+            })
+
+            console.log('[CLASSIFICATION][MOVE-DONE] Documento spostato con successo', {
+              documentId,
+              newCompartoId: targetComparto.id
+            })
+          } else {
+            console.log('[CLASSIFICATION][MOVE-FAIL] Target comparto non trovato', {
+              documentId,
+              suggestedKey: classResult.compartoKey
+            })
+
+            await prisma.documento.update({
+              where: { id: documentId },
+              data: {
+                classConfidence: classResult.confidence,
+                classWhy: classResult.why,
+                tags: JSON.stringify(classResult.tags),
+              },
+            })
+          }
+        } else {
+          console.log('[CLASSIFICATION][KEEP] Documento già in comparto specifico, NON sposto', {
+            documentId,
+            filename,
+            currentCompartoId: currentComparto?.id,
+            currentCompartoKey: currentComparto?.key,
+            currentCompartoNome: currentComparto?.nome,
+            suggestedCompartoKey: classResult.compartoKey,
+            classConfidence: classResult.confidence,
+            nota: 'Documento rimane nel comparto assegnato dall\'utente'
+          })
+
+          await prisma.documento.update({
+            where: { id: documentId },
+            data: {
+              classConfidence: classResult.confidence,
+              classWhy: classResult.why,
+              tags: JSON.stringify(classResult.tags),
+            },
+          })
+
+          // ✅ Verifica che compartoId sia rimasto invariato
+          const verifyDoc = await prisma.documento.findUnique({
+            where: { id: documentId },
+            select: { compartoId: true }
+          })
+
+          console.log('[CLASSIFICATION][KEEP-VERIFY] Verifica compartoId invariato', {
+            documentId,
+            compartoIdPrima: currentComparto?.id,
+            compartoIdDopo: verifyDoc?.compartoId,
+            match: currentComparto?.id === verifyDoc?.compartoId
+          })
+        }
+      }
+    } else {
+      console.log('[CLASSIFICATION][LOW-CONFIDENCE] Confidence classificazione troppo bassa, salvo solo info', {
+        documentId,
+        classConfidence: classResult.confidence,
+        threshold: config.CLASSIFY_CONFIDENCE_THRESHOLD
+      })
+
+      await prisma.documento.update({
+        where: { id: documentId },
+        data: {
+          classConfidence: classResult.confidence,
+          classWhy: classResult.why,
+          tags: JSON.stringify([...classResult.tags, 'needs_review']),
+        },
+      })
+    }
+
+    // ✅ Verifica finale compartoId dopo classificazione
+    const finalDoc = await prisma.documento.findUnique({
+      where: { id: documentId },
+      include: { comparto: { select: { id: true, key: true, nome: true } } }
+    })
+
+    console.log('[CLASSIFICATION][COMPLETED] Classificazione completata', {
+      documentId,
+      filename,
+      finalCompartoId: finalDoc?.compartoId,
+      finalCompartoKey: finalDoc?.comparto?.key,
+      finalCompartoNome: finalDoc?.comparto?.nome
+    })
+  } catch (error) {
+    console.error('[CLASSIFICATION][ERROR] Errore durante classificazione', {
+      documentId,
+      filename,
+      error: (error as Error).message
+    })
+    // Non bloccare - la classificazione è opzionale
+  }
+}
 
 const documentoCreateSchema = z.object({
   praticaId: z.string(),
@@ -306,6 +480,15 @@ export async function documentiRoutes(fastify: FastifyInstance) {
           hasThumbnail: !!data.thumbnailDataUrl
         })
 
+        console.log('[BACKEND][CREATE][COMPARTO-ID]', {
+          filename: data.filename,
+          compartoIdRicevuto: data.compartoId,
+          effectiveCompartoId,
+          compartoIdSalvato: effectiveCompartoId,
+          matchCompartoId: data.compartoId === effectiveCompartoId,
+          praticaId: data.praticaId
+        })
+
         documento = await prisma.documento.create({
           data: {
             ...data,
@@ -323,6 +506,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         console.log('✅ [BACKEND][CREATE][SUCCESS]', {
           filename: documento.filename,
           docId: documento.id.substring(0, 20) + '...',
+          compartoIdSalvato: (documento as any).compartoId,
           hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE EFFETTIVAMENTE SALVATO NEL DB
           hasThumbnail: !!(documento as any).thumbnailDataUrl
         })
@@ -714,7 +898,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                     }
                     return t
                   })
-                  const ocrText = texts.join('\n\f\n')
+                  const ocrTextFallback = texts.join('\n\f\n')
                   const lens = texts.map(t => t.length)
                   const allEmpty = lens.every(n => n === 0)
                   if (allEmpty) {
@@ -722,8 +906,15 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                     await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: 'OCR: nessun testo riconosciuto (controlla tessdata e DPI)' } })
                     return
                   }
-                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText, ocrConfidence: result.avgConfidence, ocrLayout: JSON.stringify(result.layout) } })
+                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText: ocrTextFallback, ocrConfidence: result.avgConfidence, ocrLayout: JSON.stringify(result.layout) } })
                 }
+
+                // ✅ Applica classificazione automatica dopo OCR completato (ocrText è disponibile da try o catch)
+                const finalDoc = await prisma.documento.findUnique({ where: { id: documento.id }, select: { ocrText: true } })
+                if (finalDoc && (finalDoc as any).ocrText) {
+                  await applyClassificationAfterOcr(documento.id, (finalDoc as any).ocrText, documento.filename, result.avgConfidence)
+                }
+
                 await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })
                 fastify.log.info({ msg: 'OCR inline finished (fallback)', jobId: job.id })
               } catch (e2: any) {
@@ -835,7 +1026,7 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                   }
                   return t
                 })
-                const ocrText = texts.join('\n\f\n')
+                const ocrTextFallback = texts.join('\n\f\n')
                 const lens = texts.map(t => t.length)
                 const allEmpty = lens.every(n => n === 0)
                 if (allEmpty) {
@@ -847,12 +1038,19 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                   where: { id: documento.id },
                   data: {
                     ocrStatus: 'completed',
-                    ocrText,
+                    ocrText: ocrTextFallback,
                     ocrConfidence: result.avgConfidence,
                     ocrLayout: JSON.stringify(result.layout),
                   },
                 })
               }
+
+              // ✅ Applica classificazione automatica dopo OCR completato (leggo ocrText dal DB)
+              const finalDoc = await prisma.documento.findUnique({ where: { id: documento.id }, select: { ocrText: true, ocrConfidence: true } })
+              if (finalDoc && (finalDoc as any).ocrText && (finalDoc as any).ocrConfidence) {
+                await applyClassificationAfterOcr(documento.id, (finalDoc as any).ocrText, documento.filename, (finalDoc as any).ocrConfidence)
+              }
+
               await prisma.job.update({ where: { id: job.id }, data: { status: 'completed', progress: 100, result: JSON.stringify({ ok: true }) } })
               fastify.log.info({ msg: 'OCR inline finished', jobId: job.id })
             } catch (e: any) {

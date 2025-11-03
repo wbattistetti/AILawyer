@@ -240,10 +240,12 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                       // Copia testo pagina nella clipboard
                                       try {
                                         const pageText = await extractPageText(m.docId, m.page || 1)
-                                        await navigator.clipboard.writeText(pageText)
+                                        const pageNumber = m.page || 1
+                                        const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
+                                        await navigator.clipboard.writeText(textWithPageInfo)
                                         toast({
                                           title: 'Testo copiato',
-                                          description: `Testo della pagina ${m.page || 1} copiato nella clipboard`,
+                                          description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
                                         })
                                       } catch (error) {
                                         console.error('[SEARCH] Error copying page text:', error)
@@ -353,10 +355,12 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                       // Copia testo pagina nella clipboard
                                       try {
                                         const pageText = await extractPageText(m.docId, m.page || 1)
-                                        await navigator.clipboard.writeText(pageText)
+                                        const pageNumber = m.page || 1
+                                        const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
+                                        await navigator.clipboard.writeText(textWithPageInfo)
                                         toast({
                                           title: 'Testo copiato',
-                                          description: `Testo della pagina ${m.page || 1} copiato nella clipboard`,
+                                          description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
                                         })
                                       } catch (error) {
                                         console.error('[SEARCH] Error copying page text:', error)

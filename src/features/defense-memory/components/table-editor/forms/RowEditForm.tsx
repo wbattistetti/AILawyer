@@ -13,11 +13,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createEmptyRow } from '../utils/tableSerialization'
 
-const CELL_TYPE_OPTIONS: { value: CellType; label: string }[] = [
-    { value: 'reato-contestato', label: 'Reato contestato' },
-    { value: 'fatto', label: 'Fatto' },
-    { value: 'atto', label: 'Atto' }
+import { getCellTypeLabel } from '../utils/cellTypeConfig'
+
+const ALL_CELL_TYPES: CellType[] = [
+    'reato-contestato',
+    'elementi-prova',
+    'verbale-arresto',
+    'verbale-sequestro',
+    'verbale-perquisizione',
+    'interrogatorio',
+    'dichiarazioni-testi',
+    'intercettazioni',
+    'atto',
+    'fatto'
 ]
+
+const CELL_TYPE_OPTIONS: { value: CellType; label: string }[] = ALL_CELL_TYPES
+    .sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b)))
+    .map(type => ({
+        value: type,
+        label: getCellTypeLabel(type)
+    }))
 
 export const RowEditForm: React.FC<RowEditFormProps> = ({
     row,

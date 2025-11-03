@@ -54,7 +54,34 @@ export function useEventListeners({
                         return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
                     }
                     const thumb = thumbnailFromDb || clientThumb || (isPdf ? `/api/files/local/${d.s3Key}` : mkFallbackThumb(d))
-                    return { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d) }
+                    const item = { id: d.id, filename: d.filename, s3Key: d.s3Key, mime: d.mime, thumb, tags: getTags(d), compartoId: d.compartoId }
+
+                    // Log solo per documenti senza compartoId (per debug)
+                    if (!d.compartoId && !d.id.startsWith('temp:')) {
+                      console.warn('[BROADCAST][DOCUMENTO-SENZA-COMPARTO-ID]', {
+                        id: d.id,
+                        filename: d.filename,
+                        s3Key: d.s3Key?.substring(0, 20)
+                      })
+                    }
+
+                    return item
+                })
+
+                console.log('[BROADCAST][DOCUMENTI][EVENT]', {
+                  totalItems: items.length,
+                  itemsConCompartoId: items.filter(i => i.compartoId).length,
+                  itemsSenzaCompartoId: items.filter(i => !i.compartoId && !i.id.startsWith('temp:')).length,
+                  itemsPerComparto: items.reduce((acc, i) => {
+                    const compId = i.compartoId || 'NO-COMPARTO'
+                    acc[compId] = (acc[compId] || 0) + 1
+                    return acc
+                  }, {} as Record<string, number>),
+                  primi3Items: items.slice(0, 3).map(i => ({
+                    id: i.id,
+                    filename: i.filename,
+                    compartoId: i.compartoId
+                  }))
                 })
                 // Include in-memory pending extracts as virtual items (if any)
                 try {

@@ -40,7 +40,14 @@ export function useOcr(praticaId: string | undefined) {
     if (!praticaId) return
 
     try {
-      console.log('[OCR] queue request', documento.id, documento.filename)
+      console.log('[OCR][QUEUE-REQUEST]', {
+        documentoId: documento.id,
+        filename: documento.filename,
+        compartoId: documento.compartoId,
+        praticaId,
+        mode,
+        limitPages
+      })
 
       // Determina se è un file locale (modalità privacy)
       // Può essere: 1) documento temporaneo (temp:) o 2) documento salvato con s3Key "local:..."

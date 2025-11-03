@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { Calendar as CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
+import { getCellTypeLabel, getDateFieldsConfig } from '../utils/cellTypeConfig'
 
 // Lista di atti comuni nel sistema giudiziario
 const ATTI_COMUNI = [
@@ -264,15 +265,17 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
         }
     }
 
-    // Converter per mostrare label tipo
+    // Converter per mostrare label tipo - usa helper centralizzato
     const getTypeLabel = (type: CellType) => {
-        const labels: Record<CellType, string> = {
-            'reato-contestato': 'Reato contestato',
-            'fatto': 'Fatto',
-            'atto': 'Atto'
-        }
-        return labels[type] || type
+        return getCellTypeLabel(type)
     }
+
+    // Configurazione date per questo tipo
+    const dateConfig = cellType ? getDateFieldsConfig(cellType) : null
+
+    // Determina se il tipo usa combobox o textarea per la descrizione
+    const usesCombobox = cellType === 'reato-contestato' || cellType === 'atto'
+    const usesTextarea = !usesCombobox && cellType !== undefined
 
     const handleDateChange = (field: 'contestationDate' | 'eventDate', date: Date | undefined) => {
         if (date) {
@@ -322,9 +325,20 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         <SelectValue placeholder="Seleziona tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                        {['atto', 'fatto', 'reato-contestato'].sort().map(type => (
+                        {([
+                            'reato-contestato',
+                            'elementi-prova',
+                            'verbale-arresto',
+                            'verbale-sequestro',
+                            'verbale-perquisizione',
+                            'interrogatorio',
+                            'dichiarazioni-testi',
+                            'intercettazioni',
+                            'atto',
+                            'fatto'
+                        ] as CellType[]).sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))).map(type => (
                             <SelectItem key={type} value={type}>
-                                {getTypeLabel(type as CellType)}
+                                {getCellTypeLabel(type)}
                             </SelectItem>
                         ))}
                     </SelectContent>
@@ -353,9 +367,20 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            {['atto', 'fatto', 'reato-contestato'].sort().map(type => (
+                            {([
+                                'reato-contestato',
+                                'elementi-prova',
+                                'verbale-arresto',
+                                'verbale-sequestro',
+                                'verbale-perquisizione',
+                                'interrogatorio',
+                                'dichiarazioni-testi',
+                                'intercettazioni',
+                                'atto',
+                                'fatto'
+                            ] as CellType[]).sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))).map(type => (
                                 <SelectItem key={type} value={type}>
-                                    {getTypeLabel(type as CellType)}
+                                    {getCellTypeLabel(type)}
                                 </SelectItem>
                             ))}
                         </SelectContent>
@@ -422,7 +447,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                 }}
                             />
                         )}
-                        {cellType === 'fatto' && (
+                        {usesTextarea && (
                             <Textarea
                                 ref={descriptionTextareaRef}
                                 value={description}
@@ -469,13 +494,13 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                 )}
             </div>
 
-            {/* Date - solo per Reato e Fatto */}
-            {cellType === 'reato-contestato' && (
+            {/* Date - renderizzate dinamicamente in base al tipo */}
+            {dateConfig && dateConfig.showContestationDate && (
                 <>
-                    {/* Data contestazione - label allineata a destra con gap uniforme */}
+                    {/* Data principale - label allineata a destra con gap uniforme */}
                     <div className="flex items-center gap-3">
                         <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
-                            Data Contestazione:
+                            {dateConfig.contestationDateLabel}:
                         </span>
                         {isContestationDateEditing ? (
                             <Popover open={contestationDateOpen} onOpenChange={(open) => {
@@ -532,12 +557,13 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         )}
                     </div>
 
-                    {/* Data evento - label allineata a destra con gap uniforme */}
-                    <div className="flex items-center gap-3">
-                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
-                            Data Fatto:
-                        </span>
-                        {isEventDateEditing ? (
+                    {/* Data secondaria - label allineata a destra con gap uniforme */}
+                    {dateConfig.showEventDate && (
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                                {dateConfig.eventDateLabel}:
+                            </span>
+                            {isEventDateEditing ? (
                             <Popover open={eventDateOpen} onOpenChange={(open) => {
                                 setEventDateOpen(open)
                                 if (!open) {
@@ -591,65 +617,8 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <span className="text-xs text-red-500">{getFieldError('eventDate')}</span>
                         )}
                     </div>
-                </>
-            )}
-
-            {cellType === 'fatto' && (
-                <div className="flex items-center gap-3">
-                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
-                        Data Fatto:
-                    </span>
-                    {isContestationDateEditing ? (
-                        <Popover open={contestationDateOpen} onOpenChange={(open) => {
-                            setContestationDateOpen(open)
-                            if (!open) {
-                                handleContestationDateBlur()
-                            }
-                        }}>
-                            <PopoverTrigger asChild>
-                                <button
-                                    type="button"
-                                    disabled={readOnly}
-                                    className={cn(
-                                        "inline-flex items-center justify-start text-left font-normal rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground h-8 whitespace-nowrap",
-                                        !contestationDate && "text-muted-foreground"
-                                    )}
-                                >
-                                    <CalendarIcon className="mr-1 h-3 w-3" />
-                                    {contestationDate ? (
-                                        format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })
-                                    ) : (
-                                        <span>Seleziona data</span>
-                                    )}
-                                </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                    mode="single"
-                                    selected={contestationDate ? new Date(contestationDate) : undefined}
-                                    onSelect={(date) => {
-                                        handleDateChange('contestationDate', date)
-                                        setContestationDateOpen(false)
-                                    }}
-                                    disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                                    initialFocus
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    ) : (
-                        <button
-                            onClick={handleContestationDateLabelClick}
-                            disabled={readOnly}
-                            className={cn(
-                                "px-2 py-1 text-xs rounded border border-transparent",
-                                "hover:bg-gray-100 hover:border-gray-300 transition-colors",
-                                readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
-                            )}
-                        >
-                            {contestationDate ? format(new Date(contestationDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
-                        </button>
                     )}
-                </div>
+                </>
             )}
         </div>
     )
