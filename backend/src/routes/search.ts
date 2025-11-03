@@ -3,6 +3,7 @@ import { prisma } from '../lib/database'
 import { storageService } from '../lib/storage'
 import { extractNativeText } from '../lib/extractNativeText'
 import { getLocalOcrResult } from './ocr.js'
+import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js'
 import path from 'path'
 import fs from 'fs'
@@ -471,26 +472,24 @@ export async function searchRoutes(fastify: FastifyInstance) {
         // 3. Cerca nel file locale se presente
         if (localDocInfo) {
           try {
-            // Usa normalizeForSearch per rimuovere tutti gli spazi (gestisce OCR con spazi tra lettere)
-            const normalizedTextForSearch = normalizeForSearch(localDocInfo.text)
-            const normalizedQueryForSearch = normalizeForSearch(query)
-
-            // Mantieni anche il testo normalizzato normale per snippet (preserva spazi)
+            // ✅ CORREZIONE: Usa normalize (mantiene spazi) per cercare nel testo ricostruito
+            // Il testo locale è già ricostruito correttamente, non serve rimuovere spazi
             const normalizedText = normalize(localDocInfo.text)
+            const normalizedQueryForSearch = normalizedQ
 
             console.log('[SEARCH][LOCAL][NORMALIZE]', {
               originalTextSample: localDocInfo.text.substring(0, 150),
               normalizedTextSample: normalizedText.substring(0, 150),
-              normalizedForSearchSample: normalizedTextForSearch.substring(0, 150),
               query,
               normalizedQ,
               normalizedQueryForSearch
             })
 
+            // Cerca direttamente nel testo normalizzato (con spazi)
             const occurrences: number[] = []
             let startIdx = 0
             while (true) {
-              const idx = normalizedTextForSearch.indexOf(normalizedQueryForSearch, startIdx)
+              const idx = normalizedText.indexOf(normalizedQueryForSearch, startIdx)
               if (idx === -1) break
               occurrences.push(idx)
               startIdx = idx + 1
@@ -500,8 +499,8 @@ export async function searchRoutes(fastify: FastifyInstance) {
               totalOccurrences: occurrences.length,
               firstOccurrence: occurrences[0],
               firstOccurrences: occurrences.slice(0, 5),
-              normalizedTextForSearchStart: normalizedTextForSearch.substring(0, 200),
-              firstOccurrenceContext: occurrences[0] ? normalizedTextForSearch.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
+              normalizedTextStart: normalizedText.substring(0, 200),
+              firstOccurrenceContext: occurrences[0] ? normalizedText.substring(Math.max(0, occurrences[0] - 50), occurrences[0] + 100) : null
             })
 
             if (occurrences.length > 0) {
@@ -509,180 +508,101 @@ export async function searchRoutes(fastify: FastifyInstance) {
               const layout = localDocInfo.layout || []
               const hasLayout = layout.length > 0
 
-              // LOG DIAGNOSTICO SOLO ALL'INIZIO
-              console.log('[SEARCH][LOCAL][DIAGNOSTIC]', {
-                totalOccurrences: occurrences.length,
-                firstOccurrenceCharIdx: occurrences[0],
-                query,
-                normalizedQueryForSearch,
-                originalTextStart200: localDocInfo.text.substring(0, 200),
-                normalizedForSearchStart200: normalizedTextForSearch.substring(0, 200),
-                queryAtStartIndex: normalizedTextForSearch.indexOf(normalizedQueryForSearch),
-                hasLayout
-              })
-
-              // OTTIMIZZAZIONE: crea array di mapping UNA SOLA VOLTA prima del loop
-              // mappingArray[charIdx] = posizione nel testo originale
-              const maxCharIdx = Math.max(...occurrences)
-              const mappingArray: number[] = new Array(maxCharIdx + 1).fill(0)
-              let nonSpaceCount = 0
-
-              console.log('[SEARCH][LOCAL][BUILD-MAPPING]', {
-                textLength: localDocInfo.text.length,
-                maxCharIdx,
-                buildingMapping: true
-              })
-
-              for (let i = 0; i < localDocInfo.text.length; i++) {
-                const char = localDocInfo.text[i]
-                const normalizedChar = normalizeForSearch(char)
-                if (normalizedChar.length > 0) {
-                  nonSpaceCount += normalizedChar.length
-                  // Salva la posizione originale per ogni charIdx raggiunto
-                  if (nonSpaceCount <= maxCharIdx) {
-                    mappingArray[nonSpaceCount] = i + 1
-                  }
-                }
-              }
-
-              // Riempiamo i buchi nell'array (se un charIdx non è stato mappato, usa il valore precedente)
-              let lastMapped = 0
-              for (let idx = 0; idx <= maxCharIdx; idx++) {
-                if (mappingArray[idx] > 0) {
-                  lastMapped = mappingArray[idx]
-                } else if (lastMapped > 0) {
-                  mappingArray[idx] = lastMapped
-                }
-              }
-
-              console.log('[SEARCH][LOCAL][MAPPING-BUILT]', {
-                mappingSize: mappingArray.length,
-                firstFew: mappingArray.slice(0, 50).filter(v => v > 0),
-                lastMapped
-              })
-
+              // ✅ CORREZIONE: Gli indici corrispondono direttamente al testo normalizzato (con spazi)
+              // Non serve più il mapping complesso
               for (let occIdx = 0; occIdx < occurrences.length; occIdx++) {
-                // charIdx è la posizione nel testo SENZA spazi (normalizedTextForSearch)
-                const charIdx = occurrences[occIdx]
-
-                // LOG DETTAGLIATO PER LA PRIMA OCCORRENZA
-                if (occIdx === 0) {
-                  console.log('🔍🔍🔍 [SEARCH][LOCAL][FIRST-OCCURENCE-START] 🔍🔍🔍', {
-                    occIdx: 0,
-                    charIdx,
-                    totalOccurrences: occurrences.length,
-                    query: normalizedQueryForSearch,
-                    contextAround: normalizedTextForSearch.substring(Math.max(0, charIdx - 100), charIdx + 100)
-                  })
-                }
-
-                // OTTIMIZZATO: lookup O(1) invece di loop O(n)
-                const mappedCharIdx = mappingArray[charIdx] || 0
-
-                if (occIdx === 0) {
-                  console.log('[SEARCH][LOCAL][FIRST-MAP]', {
-                    charIdx,
-                    mappedCharIdx,
-                    originalTextAtMappedIdx: localDocInfo.text.substring(Math.max(0, mappedCharIdx - 30), mappedCharIdx + 100)
-                  })
-                }
+                const charIdx = occurrences[occIdx] // Posizione nel testo normalizzato (CON spazi)
 
                 let foundPage = 1
                 let pageTextRaw = localDocInfo.text
                 let pageTextNormalized = normalizedText
                 let accumulatedNormalized = 0
-                let accumulatedMapped = 0
 
                 if (hasLayout) {
-                  // Calcola accumulated sul testo normalizzato per allineamento corretto
+                  // ✅ CORREZIONE: Usa testo già ricostruito da localDocInfo.text
+                  const pagesText = localDocInfo.text.split(/\n\f\n/g)
+
+                  // Calcola accumulated sul testo normalizzato (con spazi)
                   for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
                     const pageMeta = layout[pageIdx] || {}
                     const words = pageMeta.words || []
-                    const pageText = words.map((w: any) => w.text || '').join(' ')
-                    const pageTextNorm = normalize(pageText)
-                    const pageTextNormForSearch = normalizeForSearch(pageText)
-                    const pageLen = pageText.length
-                    const pageLenNormForSearch = pageTextNormForSearch.length
 
-                    if (charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNormForSearch) {
+                    let pageText: string
+                    if (pagesText[pageIdx] && pagesText[pageIdx].trim()) {
+                      pageText = pagesText[pageIdx]
+                    } else {
+                      // Fallback: ricostruisci
+                      const width = pageMeta.width || pageMeta.imgW || 0
+                      const height = pageMeta.height || pageMeta.imgH || 0
+                      if (width && height && words.length > 0) {
+                        const wordsWithCoords = words
+                          .filter((w: any) => w && w.text && w.text.trim())
+                          .map((w: any) => ({
+                            text: String(w.text || '').trim(),
+                            x0: w.x0 || 0,
+                            y0: w.y0 || 0,
+                            x1: w.x1 || 0,
+                            y1: w.y1 || 0
+                          }))
+                        if (wordsWithCoords.length > 0) {
+                          pageText = reconstructTextFromGeometry(wordsWithCoords, width, height)
+                        } else {
+                          pageText = words.map((w: any) => w.text || '').join(' ')
+                        }
+                      } else {
+                        pageText = words.map((w: any) => w.text || '').join(' ')
+                      }
+                    }
+
+                    const pageTextNorm = normalize(pageText)
+                    const pageLenNorm = pageTextNorm.length
+
+                    if (charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNorm) {
                       foundPage = pageIdx + 1
                       pageTextRaw = pageText
                       pageTextNormalized = pageTextNorm
                       break
                     }
-                    accumulatedNormalized += pageLenNormForSearch
-                    accumulatedMapped += pageLen
+                    accumulatedNormalized += pageLenNorm
                   }
                 } else {
-                  // Per PDF nativo senza layout: usa l'intero testo
                   foundPage = Math.floor(charIdx / 2000) + 1
                   pageTextNormalized = normalizedText
                   pageTextRaw = localDocInfo.text
                   accumulatedNormalized = 0
-                  accumulatedMapped = 0
                 }
 
-                // Usa mappedCharIdx per estrarre snippet dal testo originale
-                // Utilizza extractLineBasedSnippet per mostrare righe complete
-                // Passa hasLayout come isOcr: se ha layout, è OCR; altrimenti è nativo
-                const localCharIdxMapped = mappedCharIdx - accumulatedMapped
-                let snippet = extractLineBasedSnippet(pageTextRaw, localCharIdxMapped, 300, hasLayout)
+                // ✅ CORREZIONE: charIdx corrisponde direttamente al testo normalizzato, usa direttamente
+                const localCharIdxInPage = charIdx - accumulatedNormalized
+                let snippet = extractLineBasedSnippet(pageTextRaw, localCharIdxInPage, 300, hasLayout)
 
                 // VERIFICA CRITICA: lo snippet DEVE contenere la query cercata
-                // Se non la contiene, significa che la mappatura è errata - cerca nelle righe adiacenti
-                let snippetNormalizedForSearch = normalizeForSearch(snippet)
-                if (!snippetNormalizedForSearch.includes(normalizedQueryForSearch)) {
-                  // La mappatura potrebbe essere imprecisa - cerca la query nelle righe vicine
-                  // Estrai un contesto più ampio (500 caratteri prima e dopo) e cerca la query
-                  const searchStart = Math.max(0, localCharIdxMapped - 500)
-                  const searchEnd = Math.min(pageTextRaw.length, localCharIdxMapped + 500)
+                const queryNorm = normalize(query)
+                let snippetNormalized = normalize(snippet)
+                if (!snippetNormalized.includes(queryNorm)) {
+                  // Cerca nelle righe vicine
+                  const searchStart = Math.max(0, localCharIdxInPage - 500)
+                  const searchEnd = Math.min(pageTextRaw.length, localCharIdxInPage + 500)
                   const context = pageTextRaw.slice(searchStart, searchEnd)
-                  const contextNormalized = normalizeForSearch(context)
-                  const queryPosInContext = contextNormalized.indexOf(normalizedQueryForSearch)
+                  const contextNormalized = normalize(context)
+                  const queryPosInContext = contextNormalized.indexOf(queryNorm)
 
                   if (queryPosInContext >= 0) {
-                    // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
                     const correctPos = searchStart + queryPosInContext
                     snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300, hasLayout)
-                    snippetNormalizedForSearch = normalizeForSearch(snippet)
-
-                    // LOG per debug
-                    if (occIdx === 0) {
-                      console.log('[SEARCH][LOCAL][SNIPPET-CORRECTED]', {
-                        originalMapped: localCharIdxMapped,
-                        correctedPos: correctPos,
-                        snippet: snippet.substring(0, 150)
-                      })
-                    }
+                    snippetNormalized = normalize(snippet)
                   }
 
-                  // Se ancora non contiene la query, salta questo risultato
-                  if (!snippetNormalizedForSearch.includes(normalizedQueryForSearch)) {
+                  if (!snippetNormalized.includes(queryNorm)) {
                     console.log('[SEARCH][LOCAL][SNIPPET-FILTER]', {
                       occIdx,
                       charIdx,
-                      mappedCharIdx,
-                      localCharIdxMapped,
+                      localCharIdxInPage,
                       snippet: snippet.substring(0, 100),
                       skipped: true
                     })
-                    continue // Salta questo risultato - snippet non contiene la query
+                    continue
                   }
-                }
-
-                // LOG SOLO PER LA PRIMA OCCORRENZA
-                if (occIdx === 0) {
-                  console.log('[SEARCH][LOCAL][FIRST-SNIPPET]', {
-                    occIdx: 0,
-                    charIdx,
-                    mappedCharIdx,
-                    localCharIdxMapped,
-                    snippetLength: snippet.length,
-                    snippet: snippet.substring(0, 200),
-                    query: normalizedQueryForSearch,
-                    queryInSnippet: snippetNormalizedForSearch.includes(normalizedQueryForSearch),
-                    snippetNormalized: snippetNormalizedForSearch.substring(0, 150)
-                  })
                 }
 
                 // Bbox approssimativa
@@ -690,17 +610,17 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 if (hasLayout && layout[foundPage - 1]) {
                   const pageWords = layout[foundPage - 1].words || []
                   const matchingWords: any[] = []
-                  let charCountNormForSearch = 0
+                  let charCountNorm = 0
                   for (const w of pageWords) {
                     const wText = w.text || ''
-                    const wTextNormForSearch = normalizeForSearch(wText)
-                    const wStart = charCountNormForSearch
-                    const wEnd = charCountNormForSearch + wTextNormForSearch.length
+                    const wTextNorm = normalize(wText)
+                    const wStart = charCountNorm
+                    const wEnd = charCountNorm + wTextNorm.length
 
-                    if (wEnd >= charIdx && wStart < charIdx + normalizedQueryForSearch.length) {
+                    if (wEnd >= localCharIdxInPage && wStart < localCharIdxInPage + queryNorm.length) {
                       matchingWords.push(w)
                     }
-                    charCountNormForSearch += wTextNormForSearch.length
+                    charCountNorm += wTextNorm.length + 1 // +1 per lo spazio
                   }
 
                   if (matchingWords.length > 0) {
@@ -718,60 +638,34 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   }
                 }
 
-                // Deduplicazione: verifica se abbiamo già visto questo snippet
-                // Per OCR: usa una finestra di contesto attorno alla parola cercata (evita snippet troppo lunghi e quasi identici)
-                // Per nativo: usa l'intero snippet normalizzato
+                // Deduplicazione
                 let snippetKey: string
-                if (hasLayout) {
-                  // OCR: estrai finestra di contesto (50 caratteri prima e dopo la parola cercata nello snippet)
-                  const snippetNormalized = normalizeForSearch(snippet)
-                  const queryNormalized = normalizedQueryForSearch
-                  const queryPos = snippetNormalized.indexOf(queryNormalized)
-                  if (queryPos >= 0) {
-                    const contextStart = Math.max(0, queryPos - 50)
-                    const contextEnd = Math.min(snippetNormalized.length, queryPos + queryNormalized.length + 50)
-                    snippetKey = snippetNormalized.slice(contextStart, contextEnd)
-                  } else {
-                    snippetKey = snippetNormalized.substring(0, 100) // Fallback: primi 100 caratteri
-                  }
+                const snippetNorm = normalize(snippet)
+                const queryPos = snippetNorm.indexOf(queryNorm)
+                if (queryPos >= 0) {
+                  const contextStart = Math.max(0, queryPos - 50)
+                  const contextEnd = Math.min(snippetNorm.length, queryPos + queryNorm.length + 50)
+                  snippetKey = snippetNorm.slice(contextStart, contextEnd)
                 } else {
-                  // Nativo: usa l'intero snippet normalizzato
-                  snippetKey = normalizeForSearch(snippet)
+                  snippetKey = snippetNorm.substring(0, 100)
                 }
 
                 if (seenSnippets.has(snippetKey)) {
-                  // Snippet già presente - salta (evita duplicati)
-                  if (occIdx === 0) {
-                    console.log('[SEARCH][LOCAL][FIRST-DUPLICATE]', {
-                      occIdx: 0,
-                      snippetKey: snippetKey.substring(0, 100),
-                      snippet: snippet.substring(0, 150),
-                      skipped: true
-                    })
-                  }
                   continue
                 }
                 seenSnippets.add(snippetKey)
 
-                if (occIdx === 0) {
-                  console.log('[SEARCH][LOCAL][FIRST-ADDED]', {
-                    occIdx: 0,
-                    snippetKey: snippetKey.substring(0, 100),
-                    snippet: snippet.substring(0, 150)
-                  })
-                }
-
                 allMatches.push({
-                  id: `${docId}-${foundPage}-${charIdx}`, // ID unico: docId-page-charIdx
+                  id: `${docId}-${foundPage}-${charIdx}`,
                   docId: docId!,
                   filename: localDocInfo.filename,
                   page: foundPage,
-                  snippet: snippet, // extractLineBasedSnippet già gestisce i puntini
+                  snippet: snippet,
                   x0Pct,
                   y0Pct,
                   x1Pct,
                   y1Pct,
-                  charIdx: localCharIdxMapped,
+                  charIdx: charIdx, // Usa charIdx diretto (posizione nel testo normalizzato)
                   qLen: query.length
                 })
               }
@@ -1055,12 +949,11 @@ export async function searchRoutes(fastify: FastifyInstance) {
               layoutPages: layout && Array.isArray(layout) ? layout.length : 0
             })
 
-            // ✅ STRATEGIA IBRIDA PER OCR:
-            // 1. Cerca SENZA spazi (normalizeForSearch) per trovare TUTTE le occorrenze (incluso "DINARDO", "DI  NARDO", etc.)
-            // 2. Per snippet: usa il layout per mappare la posizione (senza spazi) al testo originale (con spazi)
-            // Per nativo: usa normalize (con spazi) che è più preciso
-            const normalizedText = hasLayout ? normalizeForSearch(searchableText) : normalize(searchableText)
-            const normalizedQForOccurrences = hasLayout ? normalizeForSearch(query) : normalizedQ
+            // ✅ CORREZIONE: Usa sempre normalize (mantiene spazi) per cercare nel testo ricostruito
+            // Il testo OCR ricostruito ha già spazi corretti, quindi non serve rimuoverli
+            // normalize normalizza solo maiuscole/minuscole e accenti, mantenendo spazi e newline
+            const normalizedText = normalize(searchableText)
+            const normalizedQForOccurrences = normalizedQ
 
             // 🔍 DEBUG: Confronto query vs testo
             console.log('[DEBUG][SEARCH][COMPARISON]', {
@@ -1129,13 +1022,46 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 let pageTextNormalized = ''
 
                 if (hasLayout) {
-                  // ✅ Trova pagina usando normalizeForSearch (SENZA spazi) per OCR
+                  // ✅ CORREZIONE: Usa doc.ocrText già ricostruito invece di ricostruirlo da words
+                  // Splitta il testo per pagina usando il separatore standard
+                  const pagesText = searchableText.split(/\n\f\n/g)
+
+                  // ✅ CORREZIONE: Trova pagina usando normalize (CON spazi) - gli indici corrispondono direttamente
                   for (let pageIdx = 0; pageIdx < layout.length; pageIdx++) {
                     const pageMeta = layout[pageIdx] || {}
                     const words = pageMeta.words || []
-                    const pageText = words.map((w: any) => w.text || '').join(' ')
-                    const pageTextNormForSearch = normalizeForSearch(pageText) // SENZA spazi per cercare
-                    const pageLenNorm = pageTextNormForSearch.length
+
+                    // Usa il testo già salvato se disponibile, altrimenti ricostruisci correttamente
+                    let pageText: string
+                    if (pagesText[pageIdx] && pagesText[pageIdx].trim()) {
+                      // Usa il testo già ricostruito e salvato (con righe corrette)
+                      pageText = pagesText[pageIdx]
+                    } else {
+                      // Fallback: ricostruisci usando la stessa funzione usata durante il salvataggio
+                      const width = pageMeta.width || pageMeta.imgW || 0
+                      const height = pageMeta.height || pageMeta.imgH || 0
+                      if (width && height && words.length > 0) {
+                        const wordsWithCoords = words
+                          .filter((w: any) => w && w.text && w.text.trim())
+                          .map((w: any) => ({
+                            text: String(w.text || '').trim(),
+                            x0: w.x0 || 0,
+                            y0: w.y0 || 0,
+                            x1: w.x1 || 0,
+                            y1: w.y1 || 0
+                          }))
+                        if (wordsWithCoords.length > 0) {
+                          pageText = reconstructTextFromGeometry(wordsWithCoords, width, height)
+                        } else {
+                          pageText = words.map((w: any) => w.text || '').join(' ')
+                        }
+                      } else {
+                        pageText = words.map((w: any) => w.text || '').join(' ')
+                      }
+                    }
+
+                    const pageTextNorm = normalize(pageText) // CON spazi - corrisponde al testo ricostruito
+                    const pageLenNorm = pageTextNorm.length
 
                     console.log('[DEBUG][LOOP][PAGE-CHECK]', {
                       docId: doc.id,
@@ -1146,14 +1072,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
                       charIdx,
                       inRange: charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNorm,
                       pageTextStart: pageText.substring(0, 100),
-                      pageTextNormStart: pageTextNormForSearch.substring(0, 100)
+                      pageTextNormStart: pageTextNorm.substring(0, 100),
+                      usingReconstructed: !!(pagesText[pageIdx] && pagesText[pageIdx].trim())
                     })
 
                     if (charIdx >= accumulatedNormalized && charIdx < accumulatedNormalized + pageLenNorm) {
                       foundPage = pageIdx + 1
                       pageWords = words
-                      pageTextRaw = pageText // Testo originale CON spazi per snippet
-                      pageTextNormalized = normalize(pageText) // Normalizzato CON spazi per snippet
+                      pageTextRaw = pageText // Testo originale ricostruito (con spazi)
+                      pageTextNormalized = pageTextNorm // Normalizzato CON spazi
                       const localCharIdxInPage = charIdx - accumulatedNormalized
 
                       // Conta quante occorrenze ci sono già state trovate in questa pagina (PRIMA di incrementare)
@@ -1166,17 +1093,16 @@ export async function searchRoutes(fastify: FastifyInstance) {
                         charIdx,
                         foundPage,
                         accumulatedNormalized,
-                        occurrenceIndexInPage, // Quale occorrenza in questa pagina (0-based)
+                        occurrenceIndexInPage,
                         pageTextRawLength: pageTextRaw.length,
                         pageTextNormalizedLength: pageTextNormalized.length,
-                        pageTextNormForSearchLength: pageTextNormForSearch.length,
                         pageTextRawStart: pageTextRaw.substring(0, 150),
                         pageTextNormStart: pageTextNormalized.substring(0, 150),
-                        localCharIdxInPage // Posizione nel testo SENZA spazi
+                        localCharIdxInPage // Posizione nel testo normalizzato (CON spazi)
                       })
                       break
                     }
-                    accumulatedNormalized += pageLenNorm // NO +1, perché non ci sono spazi nel testo normalizzato
+                    accumulatedNormalized += pageLenNorm // Accumula lunghezza pagina normalizzata (con spazi)
                   }
                 } else {
                   // PDF nativo senza layout: usa l'intero testo, non una finestra scorrevole
@@ -1222,103 +1148,25 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   hasLayout
                 })
 
-                // ✅ SNIPPET: trova tutte le occorrenze nella pagina e usa quella corrispondente
+                // ✅ SNIPPET: usa direttamente localCharIdx - gli indici corrispondono già al testo normalizzato
                 let snippet = ''
                 if (hasLayout && pageTextRaw.length > 0) {
-                  // Normalizza pageTextRaw SENZA spazi e trova TUTTE le occorrenze della query nella pagina
-                  const pageTextNormForSearch = normalizeForSearch(pageTextRaw)
-                  const queryNormForSearch = normalizeForSearch(query)
-
-                  // Trova tutte le occorrenze nella pagina
-                  const pageOccurrences: number[] = []
-                  let searchStart = 0
-                  while (true) {
-                    const pos = pageTextNormForSearch.indexOf(queryNormForSearch, searchStart)
-                    if (pos === -1) break
-                    pageOccurrences.push(pos)
-                    searchStart = pos + 1
-                  }
-
-                  console.log('[DEBUG][LOOP][OCCURRENCES-IN-PAGE]', {
-                    docId: doc.id,
-                    occIndex: occIdx,
-                    foundPage,
-                    occurrencesInPage: pageOccurrences.length,
-                    occurrenceIndexInPage: (occurrencesPerPage.get(foundPage)! - 1),
-                    queryNormForSearch,
-                    pageTextNormForSearchLen: pageTextNormForSearch.length,
-                    pageTextNormForSearchPreview: pageTextNormForSearch.substring(0, 200),
-                    firstOccurrencePos: pageOccurrences[0] || -1
-                  })
-
-                  // Usa l'indice dell'occorrenza corrente nella pagina (0-based)
-                  const occurrenceIndexInPage = occurrencesPerPage.get(foundPage)! - 1 // -1 perché abbiamo già incrementato
-                  const targetOccurrenceIndex = Math.min(occurrenceIndexInPage, pageOccurrences.length - 1)
-
-                  if (pageOccurrences.length > 0 && targetOccurrenceIndex >= 0) {
-                    // Posizione nel testo normalizzato (senza spazi)
-                    const queryPosInNormalized = pageOccurrences[targetOccurrenceIndex]
-
-                    console.log('[DEBUG][LOOP][TARGET-OCCURRENCE]', {
-                      docId: doc.id,
-                      occIndex: occIdx,
-                      targetOccurrenceIndex,
-                      queryPosInNormalized,
-                      contextBefore: pageTextNormForSearch.substring(Math.max(0, queryPosInNormalized - 30), queryPosInNormalized),
-                      queryAtPos: pageTextNormForSearch.substring(queryPosInNormalized, queryPosInNormalized + queryNormForSearch.length),
-                      contextAfter: pageTextNormForSearch.substring(queryPosInNormalized + queryNormForSearch.length, Math.min(pageTextNormForSearch.length, queryPosInNormalized + queryNormForSearch.length + 30))
-                    })
-
-                    // ✅ CORREZIONE: Mappa direttamente usando la posizione nel testo normalizzato
-                    // queryPosInNormalized è la posizione nel testo normalizzato SENZA spazi (pageTextNormForSearch)
-                    // Dobbiamo mapparla al testo originale CON spazi (pageTextRaw)
-                    //
-                    // Strategia: ricostruisci il mapping carattere per carattere dal testo normalizzato
-                    // al testo originale, ignorando gli spazi nel testo originale
-                    let mappedPos = 0
-                    let normCharCount = 0
-
-                    // Itera attraverso il testo originale carattere per carattere
-                    for (let i = 0; i < pageTextRaw.length; i++) {
-                      const char = pageTextRaw[i]
-                      const charNorm = normalizeForSearch(char)
-
-                      // Se questo carattere non è uno spazio, conta nel testo normalizzato
-                      if (charNorm.length > 0) {
-                        // Se abbiamo raggiunto la posizione della query nel testo normalizzato
-                        if (normCharCount >= queryPosInNormalized) {
-                          mappedPos = i
-                          break
-                        }
-                        normCharCount += charNorm.length
-                      } else {
-                        // È uno spazio: non conta nel testo normalizzato, ma resta nel testo originale
-                        // Se la query inizia esattamente qui nel normalizzato, mappa all'inizio dello spazio
-                        if (normCharCount === queryPosInNormalized) {
-                          mappedPos = i
-                          break
-                        }
-                      }
-
-                      // Se abbiamo superato la posizione, usa la posizione corrente
-                      if (normCharCount > queryPosInNormalized) {
-                        mappedPos = i
-                        break
-                      }
+                  // ✅ CORREZIONE: localCharIdx è già nel testo normalizzato CON spazi, usa direttamente
+                  // Verifica che localCharIdx sia valido
+                  if (localCharIdx >= 0 && localCharIdx < pageTextNormalized.length) {
+                    // Estrai snippet direttamente dalla posizione nel testo normalizzato
+                    // Ma dobbiamo mappare al testo raw (può avere piccole differenze nella normalizzazione)
+                    // Per semplicità, usa localCharIdx direttamente - normalize mantiene la struttura
+                    snippet = extractLineBasedSnippet(pageTextRaw, localCharIdx, 150, true) // isOcr = true
+                  } else {
+                    // Fallback: se localCharIdx è fuori range, cerca la query nella pagina
+                    const queryNorm = normalize(query)
+                    const queryPos = pageTextNormalized.indexOf(queryNorm)
+                    if (queryPos >= 0) {
+                      snippet = extractLineBasedSnippet(pageTextRaw, queryPos, 150, true)
+                    } else {
+                      snippet = extractLineBasedSnippet(pageTextRaw, 0, 150, true)
                     }
-
-                    // Fallback: se non mappato, usa stima proporzionale
-                    if (mappedPos === 0 && queryPosInNormalized > 0) {
-                      const ratio = pageTextRaw.length / Math.max(1, pageTextNormForSearch.length)
-                      mappedPos = Math.min(Math.floor(queryPosInNormalized * ratio), pageTextRaw.length - 1)
-                    }
-
-                    // Verifica che mappedPos non superi i limiti
-                    mappedPos = Math.min(mappedPos, pageTextRaw.length - 1)
-                    mappedPos = Math.max(0, mappedPos)
-
-                    // Estrai snippet dalla posizione mappata
-                    snippet = extractLineBasedSnippet(pageTextRaw, mappedPos, 150, true) // isOcr = true
                   }
                 } else {
                   // Per documenti nativi, pageTextRaw contiene il testo completo
@@ -1340,26 +1188,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 }
 
                 // VERIFICA CRITICA: lo snippet DEVE contenere la query cercata
-                // Applica la stessa logica di correzione usata per i file locali
-                const normalizedQForSearch = normalizeForSearch(query)
-                let snippetNormalizedForSearch = normalizeForSearch(snippet)
-                if (!snippetNormalizedForSearch.includes(normalizedQForSearch)) {
-                  // La mappatura potrebbe essere imprecisa - cerca la query nelle righe vicine
-                  const searchStart = Math.max(0, (typeof localCharIdx === 'number' ? localCharIdx : 0) - 500)
-                  const searchEnd = Math.min(pageTextRaw.length, (typeof localCharIdx === 'number' ? localCharIdx : 0) + 500)
+                // Usa normalize (non normalizeForSearch) per verificare - corrisponde al testo ricostruito
+                const queryNorm = normalize(query)
+                let snippetNormalized = normalize(snippet)
+                if (!snippetNormalized.includes(queryNorm)) {
+                  // La posizione potrebbe essere imprecisa - cerca la query nelle righe vicine
+                  const searchStart = Math.max(0, localCharIdx - 500)
+                  const searchEnd = Math.min(pageTextRaw.length, localCharIdx + 500)
                   const context = pageTextRaw.slice(searchStart, searchEnd)
-                  const contextNormalized = normalizeForSearch(context)
-                  const queryPosInContext = contextNormalized.indexOf(normalizedQForSearch)
+                  const contextNormalized = normalize(context)
+                  const queryPosInContext = contextNormalized.indexOf(queryNorm)
 
                   if (queryPosInContext >= 0) {
                     // Trovata! Estrai lo snippet dalla posizione corretta nel contesto
                     const correctPos = searchStart + queryPosInContext
-                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300, hasLayout) // Passa hasLayout come isOcr
-                    snippetNormalizedForSearch = normalizeForSearch(snippet)
+                    snippet = extractLineBasedSnippet(pageTextRaw, correctPos, 300, hasLayout)
+                    snippetNormalized = normalize(snippet)
                   }
 
                   // Se ancora non contiene la query, salta questo risultato
-                  if (!snippetNormalizedForSearch.includes(normalizedQForSearch)) {
+                  if (!snippetNormalized.includes(queryNorm)) {
                     console.log('[SEARCH][DB][SNIPPET-FILTER]', {
                       docId: doc.id,
                       charIdx,
@@ -1412,24 +1260,23 @@ export async function searchRoutes(fastify: FastifyInstance) {
                 })
 
                 // Deduplicazione: verifica se abbiamo già visto questo snippet
-                // Per OCR: usa una finestra di contesto attorno alla parola cercata (evita snippet troppo lunghi e quasi identici)
-                // Per nativo: usa l'intero snippet normalizzato
+                // Usa normalize (non normalizeForSearch) per corrispondere al testo ricostruito
                 let snippetKey: string
                 if (hasLayout) {
                   // OCR: estrai finestra di contesto (50 caratteri prima e dopo la parola cercata nello snippet)
-                  const snippetNormalized = normalizeForSearch(snippet)
-                  const queryNormalized = normalizeForSearch(query)
-                  const queryPos = snippetNormalized.indexOf(queryNormalized)
+                  const snippetNorm = normalize(snippet)
+                  const queryNorm = normalize(query)
+                  const queryPos = snippetNorm.indexOf(queryNorm)
                   if (queryPos >= 0) {
                     const contextStart = Math.max(0, queryPos - 50)
-                    const contextEnd = Math.min(snippetNormalized.length, queryPos + queryNormalized.length + 50)
-                    snippetKey = snippetNormalized.slice(contextStart, contextEnd)
+                    const contextEnd = Math.min(snippetNorm.length, queryPos + queryNorm.length + 50)
+                    snippetKey = snippetNorm.slice(contextStart, contextEnd)
                   } else {
-                    snippetKey = snippetNormalized.substring(0, 100) // Fallback: primi 100 caratteri
+                    snippetKey = snippetNorm.substring(0, 100) // Fallback: primi 100 caratteri
                   }
                 } else {
                   // Nativo: usa l'intero snippet normalizzato
-                  snippetKey = normalizeForSearch(snippet)
+                  snippetKey = normalize(snippet)
                 }
 
                 if (seenSnippets.has(snippetKey)) {
