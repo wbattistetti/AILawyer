@@ -26,6 +26,13 @@ export const usePdfJumpTo = ({
 }: UsePdfJumpToProps) => {
 
 	const goToMatch = async (m: MatchItem) => {
+		// ✅ LOG CRITICO: verifica il valore di page prima di tutto
+		if (typeof m.page !== 'number' || m.page < 1) {
+			console.error('[GOTO] ❌ INVALID PAGE NUMBER:', { page: m.page, match: m })
+			return
+		}
+		console.log('[GOTO] ▶ Jumping to page:', m.page, { id: m.id, snippet: m.snippet?.substring(0, 30) })
+
 		setSelectedAnnot(null)
 
 		// Usa viewerRef per saltare alla pagina
@@ -82,8 +89,6 @@ export const usePdfJumpTo = ({
 			return
 		}
 
-		console.log('[GOTO] Page element found, waiting for text layer...')
-
 		// Passo 3: Per documenti nativi, aspetta che il text layer sia disponibile
 		const textLayer = await waitFor(
 			() => {
@@ -105,12 +110,6 @@ export const usePdfJumpTo = ({
 		// Usa textLayer se disponibile, altrimenti pageEl come fallback
 		const effectiveTextLayer = textLayer || pageEl
 
-		if (!textLayer) {
-			console.warn('[GOTO] text layer missing after timeout, using pageEl as fallback')
-		} else {
-			console.log('[GOTO] Text layer found and ready')
-		}
-
 		// one extra RAF to let layout settle
 		await new Promise(r => requestAnimationFrame(() => r(null as any)))
 		// Container scroll deterministico
@@ -119,86 +118,45 @@ export const usePdfJumpTo = ({
 			console.warn('[GOTO] .rpv-core__viewer missing');
 			return
 		}
-		console.log('[GOTO] Scroll container found:', {
-			scrollHeight: sc.scrollHeight,
-			clientHeight: sc.clientHeight,
-			scrollTop: sc.scrollTop
-		})
 
 		const pr0 = pageEl.getBoundingClientRect();
 		const scr0 = sc.getBoundingClientRect()
 		const pageTop = sc.scrollTop + (pr0.top - scr0.top) - 20
-		console.log('[GOTO] Initial scroll calculation:', {
-			pageElTop: pr0.top,
-			scrollContainerTop: scr0.top,
-			currentScrollTop: sc.scrollTop,
-			calculatedPageTop: pageTop
-		})
 		sc.scrollTo({ top: Math.max(0, pageTop), behavior: 'auto' })
 
 		const pr = pageEl.getBoundingClientRect()
 		const scr = sc.getBoundingClientRect()
-		console.log('[GOTO] Match coordinates:', {
-			x0Pct: m.x0Pct,
-			y0Pct: m.y0Pct,
-			x1Pct: m.x1Pct,
-			y1Pct: m.y1Pct,
-			pageWidth: pr.width,
-			pageHeight: pr.height
-		})
 
-		const yAbs = pr.top + (m.y0Pct ?? 0) * pr.height
-		const yAbsBottom = pr.top + (m.y1Pct ?? 0) * pr.height
-		const xAbs = pr.left + (m.x0Pct ?? 0) * pr.width
-		const xAbsRight = pr.left + (m.x1Pct ?? 0) * pr.width
-		console.log('[GOTO] Calculated absolute positions:', {
-			yAbs,
-			yAbsBottom,
-			xAbs,
-			xAbsRight,
-			viewportTop: scr.top,
-			viewportBottom: scr.bottom,
-			viewportLeft: scr.left,
-			viewportRight: scr.right
-		})
+		// ✅ Le coordinate arrivano dal backend come percentuali 0-100, convertiamo in 0-1
+		const y0Normalized = (m.y0Pct ?? 0) / 100
+		const y1Normalized = (m.y1Pct ?? 0) / 100
+		const x0Normalized = (m.x0Pct ?? 0) / 100
+		const x1Normalized = (m.x1Pct ?? 0) / 100
+
+		const yAbs = pr.top + y0Normalized * pr.height
+		const yAbsBottom = pr.top + y1Normalized * pr.height
+		const xAbs = pr.left + x0Normalized * pr.width
+		const xAbsRight = pr.left + x1Normalized * pr.width
 
 		let newTop = sc.scrollTop
 		let newLeft = sc.scrollLeft
 		if (yAbs < scr.top + 24 || yAbsBottom > scr.bottom - 24) {
 			const desiredTop = sc.scrollTop + (yAbs - scr.top) - Math.floor(sc.clientHeight * 0.3)
 			newTop = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, desiredTop))
-			console.log('[GOTO] Vertical scroll needed:', {
-				yAbs,
-				viewportTop: scr.top,
-				desiredTop,
-				finalTop: newTop
-			})
 		}
 		if (xAbs < scr.left + 24 || xAbsRight > scr.right - 24) {
 			const desiredLeft = sc.scrollLeft + (xAbs - scr.left) - Math.floor(sc.clientWidth * 0.4)
 			newLeft = Math.max(0, Math.min(sc.scrollWidth - sc.clientWidth, desiredLeft))
-			console.log('[GOTO] Horizontal scroll needed:', {
-				xAbs,
-				viewportLeft: scr.left,
-				desiredLeft,
-				finalLeft: newLeft
-			})
 		}
-		console.log('[GOTO] Final scroll values:', {
-			fromTop: sc.scrollTop,
-			toTop: newTop,
-			fromLeft: sc.scrollLeft,
-			toLeft: newLeft
-		})
 		sc.scrollTo({ top: newTop, left: newLeft, behavior: 'smooth' })
-		console.log('[GOTO] Scroll executed')
 
 		// Disegna il bbox ricevuto (diagnostica) e prova a raffinarlo alla parola usando le highlight native
 		try {
-			const x0Pct = Math.max(0, Math.min(1, m.x0Pct ?? 0))
-			const y0Pct = Math.max(0, Math.min(1, m.y0Pct ?? 0))
-			const x1Pct = Math.max(0, Math.min(1, m.x1Pct ?? 1))
-			const y1Pct = Math.max(0, Math.min(1, m.y1Pct ?? 1))
+			// ✅ Le coordinate arrivano come 0-100, convertiamo in 0-1 per le annotazioni
+			const x0Pct = Math.max(0, Math.min(1, (m.x0Pct ?? 0) / 100))
+			const y0Pct = Math.max(0, Math.min(1, (m.y0Pct ?? 0) / 100))
+			const x1Pct = Math.max(0, Math.min(1, (m.x1Pct ?? 100) / 100))
+			const y1Pct = Math.max(0, Math.min(1, (m.y1Pct ?? 100) / 100))
 			// drawOcrRects([{ page: m.page, x0Pct, y0Pct, x1Pct, y1Pct }], 'rgba(59,130,246,1)') // Ora gestito dal componente OcrInspector
 			// Trova highlight native nella pagina corrente
 			const nodes = Array.from(document.querySelectorAll('.rpv-search__highlight')) as HTMLElement[]
@@ -235,7 +193,67 @@ export const usePdfJumpTo = ({
 			effectiveTextLayer.appendChild(root)
 			overlayRootsRef.current.set(m.page, root)
 		}
-		setSelectedAnnot({ id: 'sel', page: m.page, type: 'highlight', color: '#fbbf2480', x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct })
+
+		// ✅ Disegna rettangolo azzurrino semi-trasparente sulla posizione del match
+		// Le coordinate arrivano come 0-100 dal backend, ma le annotazioni usano 0-1
+		const annotX0 = (m.x0Pct ?? 0) / 100
+		const annotY0 = (m.y0Pct ?? 0) / 100
+		const annotX1 = (m.x1Pct ?? 100) / 100
+		const annotY1 = (m.y1Pct ?? 100) / 100
+
+
+		// ✅ Delay per sincronizzare overlay - aspetta che il root sia pronto
+		setTimeout(() => {
+			const root = overlayRootsRef.current.get(m.page)
+			if (!root) {
+				console.warn('[GOTO][HIGHLIGHT] Root overlay non ancora pronto, riprovo...', {
+					page: m.page,
+					allRoots: Array.from(overlayRootsRef.current.keys())
+				})
+				// Retry dopo altri 100ms
+				setTimeout(() => {
+					const retryRoot = overlayRootsRef.current.get(m.page)
+					if (retryRoot) {
+						setSelectedAnnot({
+							id: 'sel',
+							page: m.page,
+							type: 'highlight',
+							color: 'rgba(96, 165, 250, 0.4)',
+							x0Pct: annotX0,
+							x1Pct: annotX1,
+							y0Pct: annotY0,
+							y1Pct: annotY1
+						})
+					} else {
+						console.error('[GOTO][HIGHLIGHT] Root overlay non disponibile dopo retry', {
+							page: m.page,
+							allRoots: Array.from(overlayRootsRef.current.keys())
+						})
+					}
+				}, 100)
+				return
+			}
+
+			setSelectedAnnot({
+				id: 'sel',
+				page: m.page,
+				type: 'highlight',
+				color: 'rgba(96, 165, 250, 0.4)',
+				x0Pct: annotX0,
+				x1Pct: annotX1,
+				y0Pct: annotY0,
+				y1Pct: annotY1
+			})
+		}, 100)
+
+		// ✅ Rimuovi eventuali rettangoli di debug rimasti da navigazioni precedenti
+		setTimeout(() => {
+			const debugRoot = overlayRootsRef.current.get(m.page)
+			if (debugRoot) {
+				const existingDebug = debugRoot.querySelectorAll('.debug-test-rect, .debug-match-rect, .debug-word-rect')
+				existingDebug.forEach(el => el.remove())
+			}
+		}, 200)
 	}
 
 	// Jump-to handler from outside (drawer/tmpdoc)

@@ -27,41 +27,14 @@ export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, o
   const sidebarRef = useRef<HTMLDivElement>(null)
   const [hoveredTabId, setHoveredTabId] = React.useState<string | null>(null)
 
-  // ✅ Log per verificare se la sidebar è aperta e renderizzata
-  React.useEffect(() => {
-    if (sidebarRef.current) {
-      const computed = window.getComputedStyle(sidebarRef.current)
-      const inline = sidebarRef.current.style
-      console.log('[SidebarArchivi] SIDEBAR STATE', {
-        isOpen,
-        tabsCount: tabs.length,
-        sidebarRefCurrent: sidebarRef.current !== null,
-        computedOpacity: computed.opacity,
-        inlineOpacity: inline.opacity || 'not set',
-        computedVisibility: computed.visibility,
-        inlineVisibility: inline.visibility || 'not set',
-        computedTransform: computed.transform,
-        inlineTransform: inline.transform || 'not set',
-        computedPointerEvents: computed.pointerEvents,
-      })
-
-      // ✅ Listener globale per verificare se il mouse si muove sopra la sidebar
-      if (isOpen) {
-        const handleMouseMove = (e: MouseEvent) => {
-          if (sidebarRef.current && sidebarRef.current.contains(e.target as Node)) {
-            console.log('[SidebarArchivi] 🖱️ GLOBAL MOUSE MOVE over sidebar', {
-              target: (e.target as HTMLElement).tagName,
-              targetClass: (e.target as HTMLElement).className,
-              x: e.clientX,
-              y: e.clientY,
-            })
-          }
-        }
-        document.addEventListener('mousemove', handleMouseMove)
-        return () => document.removeEventListener('mousemove', handleMouseMove)
-      }
-    }
-  }, [isOpen, tabs.length])
+  // Log rimosso (troppo rumoroso)
+  // React.useEffect(() => {
+  //   if (sidebarRef.current) {
+  //     const computed = window.getComputedStyle(sidebarRef.current)
+  //     const inline = sidebarRef.current.style
+  //     console.log('[SidebarArchivi] SIDEBAR STATE', { ... })
+  //   }
+  // }, [isOpen, tabs.length])
 
   // ✅ Calcola larghezza dinamica: testo più lungo misurato + 15px x 2
   const sidebarWidth = React.useMemo(() => {

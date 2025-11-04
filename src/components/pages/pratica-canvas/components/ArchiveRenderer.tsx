@@ -376,14 +376,7 @@ export function ArchiveRenderer({
                                         const docIds = rawDocs.map(d => d.id)
                                         const progressKeys = Object.keys(ocrProgressByDoc || {})
                                         const matches = progressKeys.filter(key => docIds.includes(key))
-                                        console.log('[ARCHIVE-RENDERER][OCR-PROGRESS]', {
-                                          compartoId: comparto.id,
-                                          rawDocsCount: rawDocs.length,
-                                          rawDocsIds: docIds,
-                                          progressKeys,
-                                          matches,
-                                          ocrProgressByDoc: JSON.parse(JSON.stringify(ocrProgressByDoc || {}))
-                                        })
+                                        // Log disabled (too noisy)
                                       } catch {}
                                       return ocrProgressByDoc as any
                                     })()}

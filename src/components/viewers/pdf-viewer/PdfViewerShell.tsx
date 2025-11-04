@@ -9,6 +9,7 @@ import { ContextMenu } from './components/ContextMenu'
 import { OcrInspector } from './components/OcrInspector'
 import { ExtractDialog } from './components/ExtractDialog'
 import { PdfUnifiedToolbar } from './components/PdfUnifiedToolbar'
+import { OcrLayoutDebug } from './components/OcrLayoutDebug'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 
 interface PdfViewerShellProps {
@@ -299,6 +300,13 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         persistentSelections={shell.persistentSelections}
         setPersistentSelections={shell.setPersistentSelections}
         overlayRootsRef={shell.overlayRootsRef}
+      />
+
+      {/* Debug: mostra prima parola di ogni pagina */}
+      <OcrLayoutDebug
+        docId={docId}
+        overlayRootsRef={shell.overlayRootsRef}
+        enabled={true}
       />
 
       <ExtractDialog

@@ -294,12 +294,8 @@ export function useOcr(praticaId: string | undefined) {
             }
           }
 
-          console.log('[OCR] progress response', {
-            status: progress.status,
-            progress: progress.progress,
-            result: progress.result,
-            isLocal
-          })
+          // Log rimosso (troppo rumoroso)
+          // console.log('[OCR] progress response', { ... })
 
           const elapsedMs = progress.result?.elapsedMs || 0
 
@@ -324,14 +320,8 @@ export function useOcr(praticaId: string | undefined) {
             ? Math.max(0, Math.min(100, Math.round(progress.progress || 0)))
             : (total > 0 ? Math.floor((done / total) * 100) : Math.round(progress.progress || 0))
 
-          console.log('[OCR] computed percent', {
-            done,
-            total,
-            progressFromBackend: progress.progress,
-            computedPercent: percent,
-            meta,
-            status: progress.status
-          })
+          // Log rimosso (troppo rumoroso)
+          // console.log('[OCR] computed percent', { ... })
 
           const isCancelling = !!ocrCancellingByDoc[documento.id]
           const hasFrozen = typeof transcribedPctByDoc[documento.id] === 'number'
@@ -339,12 +329,8 @@ export function useOcr(praticaId: string | undefined) {
           if (!isCancelling && !hasFrozen) {
             setOcrProgressByDoc(prev => {
               const updated = { ...prev, [documento.id]: percent }
-              console.log('[OCR][UPDATE-PROGRESS]', {
-                docId: documento.id,
-                percent,
-                prevProgress: prev[documento.id],
-                allProgress: updated
-              })
+              // Log rimosso (troppo rumoroso)
+              // console.log('[OCR][UPDATE-PROGRESS]', { ... })
               return updated
             })
 

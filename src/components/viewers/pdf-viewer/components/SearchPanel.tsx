@@ -139,33 +139,15 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 					}
 				}} adapterFactory={() => ({
 					goToMatch: async (m: any) => {
-						console.log('[SEARCH][adapter] goToMatch called with match:', {
-							id: m.id,
-							page: m.page,
-							docId: m.docId,
-							snippet: m.snippet?.substring(0, 50),
-							hasGoToMatch: typeof goToMatch === 'function',
-							x0Pct: m.x0Pct,
-							y0Pct: m.y0Pct,
-							x1Pct: m.x1Pct,
-							y1Pct: m.y1Pct
-						})
+						// ✅ LOG CRITICO: verifica page prima di passarlo
+						if (typeof m.page !== 'number' || m.page < 1) {
+							console.error('[SEARCH][adapter] ❌ INVALID PAGE IN MATCH:', { page: m.page, match: m })
+							return
+						}
+
 						const mi = { id: m.id, page: m.page, snippet: m.snippet, x0Pct: m.x0Pct, x1Pct: m.x1Pct, y0Pct: m.y0Pct, y1Pct: m.y1Pct, charIdx: m.charIdx, qLen: m.qLength } as any
-						console.log('[SEARCH][adapter] Match coordinates check:', {
-							originalX0Pct: m.x0Pct,
-							originalY0Pct: m.y0Pct,
-							originalX1Pct: m.x1Pct,
-							originalY1Pct: m.y1Pct,
-							miX0Pct: mi.x0Pct,
-							miY0Pct: mi.y0Pct,
-							miX1Pct: mi.x1Pct,
-							miY1Pct: mi.y1Pct,
-							page: mi.page
-						})
-						console.log('[SEARCH][adapter] Calling goToMatch with:', { page: mi.page, hasPage: typeof mi.page === 'number' })
 						try {
 							await (goToMatch as any)(mi)
-							console.log('[SEARCH][adapter] goToMatch completed')
 						} catch (error) {
 							console.error('[SEARCH][adapter] goToMatch error:', error)
 						}

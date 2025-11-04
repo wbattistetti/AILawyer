@@ -73,7 +73,6 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind }: UsePdfOverla
                     Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
                     textLayer.appendChild(over)
                     overlayRootsRef.current.set(pageNum, over)
-                    console.log('[OVERLAY-ROOT][CREATE]', { pageNum, hasOver: !!over })
                     added++
                 }
                 let sel = selectRootsRef.current.get(pageNum)

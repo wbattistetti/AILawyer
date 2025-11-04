@@ -432,6 +432,21 @@ export async function praticheRoutes(fastify: FastifyInstance) {
     console.log('[LOAD][DOCUMENTI][START]', { praticaId })
 
     try {
+      // ✅ DEBUG: Verifica se il documento "Arresto Di Nardo.pdf" esiste e quale praticaId ha
+      const debugDoc = await prisma.documento.findFirst({
+        where: { filename: { contains: 'Arresto Di Nardo' } },
+        select: { id: true, filename: true, praticaId: true, compartoId: true }
+      })
+      if (debugDoc) {
+        console.log('[LOAD][DOCUMENTI][DEBUG] Documento trovato:', {
+          docId: debugDoc.id.substring(0, 20) + '...',
+          filename: debugDoc.filename,
+          praticaId: debugDoc.praticaId,
+          requestedPraticaId: praticaId,
+          match: debugDoc.praticaId === praticaId
+        })
+      }
+
       const documentiRaw = await prisma.documento.findMany({
         where: { praticaId: praticaId },
         orderBy: { createdAt: 'desc' },
@@ -461,7 +476,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         }
       })
 
-      console.log('[LOAD][DOCUMENTI][FOUND]', {
+      console.log('[LOAD][DOCUMENTI][BACKEND][FOUND]', {
         praticaId,
         count: documentiRaw.length,
         documentiConCompartoId: documentiRaw.filter((d: any) => d.compartoId).length,
@@ -475,7 +490,10 @@ export async function praticheRoutes(fastify: FastifyInstance) {
           id: d.id.substring(0, 20) + '...',
           filename: d.filename,
           compartoId: d.compartoId || 'NULL',
-          s3Key: d.s3Key?.substring(0, 20) + '...'
+          ocrStatus: d.ocrStatus,
+          hasOcrLayout: !!d.ocrLayout,
+          ocrLayoutType: typeof d.ocrLayout,
+          createdAt: d.createdAt
         }))
       })
 

@@ -244,7 +244,7 @@ export function PraticaCanvasPage() {
       docId={doc.id}
       praticaId={id || ''}
       onPageChange={(page) => {
-        console.log('[CANVAS] setSyncPage called with:', page);
+        // Log rimosso (troppo rumoroso)
         setSyncPage(page);
       }}
       docName={doc.filename}
@@ -659,33 +659,15 @@ export function PraticaCanvasPage() {
             pmGiudice: pratica.pmGiudice || undefined
           }
 
-          console.log('[SAVE][PRATICA][FRONTEND][START]', {
-            praticaId: id,
-            dataToSave,
-            pratica: {
-              id: pratica.id,
-              numeroRuolo: pratica.numeroRuolo,
-              foro: pratica.foro,
-              pmGiudice: pratica.pmGiudice
-            }
-          })
+          // Log rimosso (troppo rumoroso)
 
           try {
             // Salva i dati modificati della pratica
             const updated = await api.updatePratica(id, dataToSave)
 
-            console.log('[SAVE][PRATICA][FRONTEND][SUCCESS]', {
-              praticaId: id,
-              updatedPratica: {
-                id: updated.id,
-                numeroRuolo: updated.numeroRuolo,
-                foro: updated.foro,
-                pmGiudice: updated.pmGiudice
-              }
-            })
+            // Log rimosso (troppo rumoroso)
 
             // Ricarica i dati aggiornati
-            console.log('[SAVE][PRATICA][FRONTEND][REFRESH] Ricarico dati pratica...')
             await handleRefreshHook(id)
 
             toast({

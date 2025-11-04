@@ -68,21 +68,7 @@ export function useEventListeners({
                     return item
                 })
 
-                console.log('[BROADCAST][DOCUMENTI][EVENT]', {
-                  totalItems: items.length,
-                  itemsConCompartoId: items.filter(i => i.compartoId).length,
-                  itemsSenzaCompartoId: items.filter(i => !i.compartoId && !i.id.startsWith('temp:')).length,
-                  itemsPerComparto: items.reduce((acc, i) => {
-                    const compId = i.compartoId || 'NO-COMPARTO'
-                    acc[compId] = (acc[compId] || 0) + 1
-                    return acc
-                  }, {} as Record<string, number>),
-                  primi3Items: items.slice(0, 3).map(i => ({
-                    id: i.id,
-                    filename: i.filename,
-                    compartoId: i.compartoId
-                  }))
-                })
+                // Log rimosso (troppo rumoroso)
                 // Include in-memory pending extracts as virtual items (if any)
                 try {
                     const pendingRaw = (window as any).__pendingExtracts as Array<any> | undefined

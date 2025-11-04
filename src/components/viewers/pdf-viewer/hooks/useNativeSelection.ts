@@ -665,7 +665,7 @@ export const useNativeSelection = ({
 		document.addEventListener('mousemove', onDragMove, true)
 		document.addEventListener('keydown', onKey, true)
 
-		try { console.log('[NATIVE][bind] listeners attached') } catch { }
+		// Log rimosso (troppo rumoroso)
 
 		return () => {
 			if (timer) window.clearTimeout(timer)

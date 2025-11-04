@@ -710,16 +710,17 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   }
 
                   if (matchingWords.length > 0) {
-                    const xs = matchingWords.map(w => w.x0Pct).filter((x: number) => typeof x === 'number')
-                    const ys = matchingWords.map(w => w.y0Pct).filter((y: number) => typeof y === 'number')
-                    const x1s = matchingWords.map(w => w.x1Pct).filter((x: number) => typeof x === 'number')
-                    const y1s = matchingWords.map(w => w.y1Pct).filter((y: number) => typeof y === 'number')
+                    // ✅ Le coordinate nel layout sono già normalizzate 0-1, convertiamo in 0-100
+                    const xs = matchingWords.map(w => w.x0).filter((x: number) => typeof x === 'number')
+                    const ys = matchingWords.map(w => w.y0).filter((y: number) => typeof y === 'number')
+                    const x1s = matchingWords.map(w => w.x1).filter((x: number) => typeof x === 'number')
+                    const y1s = matchingWords.map(w => w.y1).filter((y: number) => typeof y === 'number')
 
                     if (xs.length > 0) {
-                      x0Pct = Math.min(...xs)
-                      y0Pct = Math.min(...ys)
-                      x1Pct = Math.max(...x1s)
-                      y1Pct = Math.max(...y1s)
+                      x0Pct = Math.min(...xs) * 100  // 0-1 → 0-100
+                      y0Pct = Math.min(...ys) * 100
+                      x1Pct = Math.max(...x1s) * 100
+                      y1Pct = Math.max(...y1s) * 100
                     }
                   }
                 }
@@ -811,15 +812,72 @@ export async function searchRoutes(fastify: FastifyInstance) {
             if (cached) {
               // Usa cache (veloce!)
               searchableText = cached.text
-              layout = cached.layout
+              layout = cached.layout || []
               fromCache = true
               fastify.log.debug({ msg: '[SEARCH][archive][cache] Hit', docId: doc.id })
 
               console.log('[SEARCH][archive][cache-hit]', {
                 docId: doc.id.substring(0, 20) + '...',
                 searchableTextLength: searchableText?.length || 0,
-                hasLayout: !!(layout && Array.isArray(layout) && layout.length > 0)
+                hasLayout: !!(layout && Array.isArray(layout) && layout.length > 0),
+                cachedLayoutIsEmpty: !layout || (Array.isArray(layout) && layout.length === 0)
               })
+
+              // ✅ FIX CRITICO: Se il layout in cache è vuoto, ricarica dal DB
+              // (potrebbe essere stato aggiunto dopo il primo salvataggio in cache)
+              if (!layout || (Array.isArray(layout) && layout.length === 0)) {
+                console.log('[OCR][CACHE] Cache layout is empty, reloading from DB', {
+                  docId: doc.id.substring(0, 20) + '...',
+                  cachedLayoutType: typeof cached.layout,
+                  cachedLayoutIsArray: Array.isArray(cached.layout),
+                  cachedLayoutLength: Array.isArray(cached.layout) ? cached.layout.length : 0,
+                  hasOcrLayout: !!doc.ocrLayout,
+                  ocrLayoutType: typeof doc.ocrLayout,
+                  ocrLayoutLength: typeof doc.ocrLayout === 'string' ? doc.ocrLayout.length : 0
+                })
+
+                if (doc.ocrLayout) {
+                  layout = typeof doc.ocrLayout === 'string'
+                    ? (() => {
+                        try {
+                          const parsed = JSON.parse(doc.ocrLayout)
+                          console.log('[OCR][CACHE] Reloaded layout from DB and parsed', {
+                            docId: doc.id.substring(0, 20) + '...',
+                            parsedPages: Array.isArray(parsed) ? parsed.length : 0,
+                            firstPageHasWords: Array.isArray(parsed) && parsed.length > 0 ? !!parsed[0]?.words : false,
+                            firstPageWordsCount: Array.isArray(parsed) && parsed.length > 0 ? parsed[0]?.words?.length || 0 : 0
+                          })
+                          return parsed
+                        } catch (e) {
+                          console.error('[OCR][CACHE] Parse error during reload', {
+                            docId: doc.id.substring(0, 20) + '...',
+                            error: e instanceof Error ? e.message : String(e),
+                            rawLayoutPreview: typeof doc.ocrLayout === 'string' ? doc.ocrLayout.substring(0, 500) : null
+                          })
+                          return []
+                        }
+                      })()
+                    : (doc.ocrLayout || [])
+
+                  // Aggiorna la cache con il layout appena caricato
+                  documentTextCache.set(doc.id, {
+                    ...cached,
+                    layout: layout
+                  })
+
+                  console.log('[OCR][CACHE] Cache updated with reloaded layout', {
+                    docId: doc.id.substring(0, 20) + '...',
+                    layoutPages: Array.isArray(layout) ? layout.length : 0,
+                    firstPageHasWords: Array.isArray(layout) && layout.length > 0 ? !!layout[0]?.words : false,
+                    firstPageWordsCount: Array.isArray(layout) && layout.length > 0 ? layout[0]?.words?.length || 0 : 0
+                  })
+                } else {
+                  console.log('[OCR][CACHE] No ocrLayout in DB to reload', {
+                    docId: doc.id.substring(0, 20) + '...',
+                    hasOcrLayout: false
+                  })
+                }
+              }
 
               // ✅ LOG DIAGNOSTICI DETTAGLIATI PER CACHE
               console.log('[SEARCH][archive][cache-hit-details]', {
@@ -973,9 +1031,69 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
               // Carica layout se disponibile
               if (!fromCache && doc.ocrLayout) {
+                const rawLayout = doc.ocrLayout
+                console.log('[OCR][LOAD] Raw layout from DB (before parsing)', {
+                  docId: doc.id.substring(0, 20) + '...',
+                  hasOcrLayout: !!rawLayout,
+                  ocrLayoutType: typeof rawLayout,
+                  ocrLayoutLength: typeof rawLayout === 'string' ? rawLayout.length : 0,
+                  firstChars: typeof rawLayout === 'string' ? rawLayout.substring(0, 200) : null
+                })
+
                 layout = typeof doc.ocrLayout === 'string'
-                  ? (() => { try { return JSON.parse(doc.ocrLayout) } catch { return [] } })()
+                  ? (() => {
+                      try {
+                        const parsed = JSON.parse(doc.ocrLayout)
+                        console.log('[OCR][LOAD] Layout parsed successfully', {
+                          docId: doc.id.substring(0, 20) + '...',
+                          parsedType: typeof parsed,
+                          parsedIsArray: Array.isArray(parsed),
+                          parsedLength: Array.isArray(parsed) ? parsed.length : 0,
+                          pagesWithWords: Array.isArray(parsed) ? parsed.map((p: any, i: number) => ({
+                            pageNum: i + 1,
+                            hasWords: !!p?.words,
+                            wordsCount: p?.words?.length || 0,
+                            firstWordSample: p?.words?.[0] ? {
+                              text: p.words[0].text?.substring(0, 20),
+                              x0: p.words[0].x0,
+                              y0: p.words[0].y0
+                            } : null
+                          })) : null
+                        })
+                        return parsed
+                      } catch (parseError) {
+                        console.error('[OCR][LOAD] Layout parse error', {
+                          docId: doc.id.substring(0, 20) + '...',
+                          error: parseError instanceof Error ? parseError.message : String(parseError),
+                          rawLayoutPreview: typeof doc.ocrLayout === 'string' ? doc.ocrLayout.substring(0, 500) : null
+                        })
+                        return []
+                      }
+                    })()
                   : (doc.ocrLayout || [])
+
+                console.log('[OCR][LOAD] Final layout after parsing', {
+                  docId: doc.id.substring(0, 20) + '...',
+                  layoutType: typeof layout,
+                  layoutIsArray: Array.isArray(layout),
+                  layoutLength: Array.isArray(layout) ? layout.length : 0,
+                  firstPageSample: Array.isArray(layout) && layout.length > 0 ? {
+                    hasWords: !!layout[0]?.words,
+                    wordsCount: layout[0]?.words?.length || 0,
+                    firstWord: layout[0]?.words?.[0] ? {
+                      text: layout[0].words[0].text?.substring(0, 20),
+                      x0: layout[0].words[0].x0,
+                      y0: layout[0].words[0].y0
+                    } : null
+                  } : null
+                })
+              } else if (!fromCache) {
+                console.log('[BBOX][DEBUG] No ocrLayout in DB', {
+                  docId: doc.id.substring(0, 20) + '...',
+                  hasOcrLayout: !!doc.ocrLayout,
+                  ocrLayoutValue: doc.ocrLayout,
+                  fromCache
+                })
               }
 
               // Salva in cache per le prossime ricerche (sia testo estratto che DB)
@@ -1032,6 +1150,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
             // Verifica se ha layout (deve essere fatto DOPO aver caricato layout)
             const hasLayout = layout && Array.isArray(layout) && layout.length > 0
 
+            console.log('[SEARCH][archive][layout-check]', {
+              docId: doc.id.substring(0, 20) + '...',
+              hasLayout,
+              searchableTextLength: searchableText.length,
+              layoutPages: layout && Array.isArray(layout) ? layout.length : 0,
+              layoutType: typeof layout,
+              layoutIsArray: Array.isArray(layout),
+              layoutSample: layout && Array.isArray(layout) && layout.length > 0 ? {
+                page0: {
+                  hasWords: !!layout[0]?.words,
+                  wordsCount: layout[0]?.words?.length || 0,
+                  firstWord: layout[0]?.words?.[0] ? {
+                    text: layout[0].words[0].text,
+                    x0: layout[0].words[0].x0,
+                    y0: layout[0].words[0].y0
+                  } : null
+                }
+              } : null
+            })
+
             console.log('[SEARCH][archive][before-normalize]', {
               docId: doc.id.substring(0, 20) + '...',
               hasLayout,
@@ -1041,7 +1179,58 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
             // ✅ NUOVO APPROCCIO SEMPLICE: Cerca riga per riga nelle pagine
             // 1. Dividi testo in pagine
-            const pagesText = searchableText.split(/\n\f\n/g)
+            let pagesText = searchableText.split(/\n\f\n/g)
+
+            // ✅ Se il testo nativo non ha separatori, rigeneralo con i separatori corretti
+            if (pagesText.length === 1 && doc.hasNativeText && !hasLayout && searchableText.length > 10000) {
+              console.warn('[SEARCH] ⚠️ PDF NATIVO SENZA SEPARATORI - Rigenero testo:', {
+                docId: doc.id.substring(0, 20) + '...',
+                textLength: searchableText.length
+              })
+
+              try {
+                // Rigenera il testo con i separatori corretti
+                const pdfPath = storageService.getLocalPath(doc.s3Key)
+                const regeneratedText = await extractNativeText(pdfPath)
+
+                if (regeneratedText && regeneratedText.includes('\n\f\n')) {
+                  // Salva il nuovo testo nel database
+                  await prisma.documento.update({
+                    where: { id: doc.id },
+                    data: { ocrText: regeneratedText }
+                  })
+
+                  // Aggiorna la cache
+                  documentTextCache.set(doc.id, {
+                    text: regeneratedText,
+                    layout: layout || [],
+                    hasNativeText: true,
+                    timestamp: Date.now()
+                  })
+
+                  // Usa il nuovo testo
+                  searchableText = regeneratedText
+                  pagesText = regeneratedText.split(/\n\f\n/g)
+
+                  console.log('[SEARCH] ✅ Testo rigenerato e salvato:', {
+                    numPages: pagesText.length,
+                    textLength: regeneratedText.length
+                  })
+                } else {
+                  console.error('[SEARCH] ❌ Testo rigenerato senza separatori:', {
+                    docId: doc.id,
+                    hasSeparators: regeneratedText?.includes('\n\f\n')
+                  })
+                }
+              } catch (regenerateError) {
+                console.error('[SEARCH] ❌ Errore nella rigenerazione:', {
+                  docId: doc.id,
+                  error: (regenerateError as Error).message
+                })
+                // Non continuare se non possiamo rigenerare
+                continue
+              }
+            }
 
             // 2. Crea pattern regex (già gestisce \s+ tra le parole)
             const searchPattern = createSearchPattern(query)
@@ -1050,7 +1239,8 @@ export async function searchRoutes(fastify: FastifyInstance) {
               docId: doc.id.substring(0, 20) + '...',
               totalPages: pagesText.length,
               pattern: searchPattern.toString(),
-              query
+              query,
+              isNative: doc.hasNativeText && !hasLayout
             })
 
             let totalMatchesFound = 0
@@ -1075,40 +1265,297 @@ export async function searchRoutes(fastify: FastifyInstance) {
                   // ✅ MATCH! Aggiungi questa riga ai risultati
                   totalMatchesFound++
 
-                  // Calcola bbox approssimativa se abbiamo layout
+                  // ✅ Calcola bbox PRECISA cercando le parole esatte nel layout SOLO per questa riga
                   let x0Pct = 0, y0Pct = 0, x1Pct = 100, y1Pct = 100
+
+                  console.log('[BBOX][CALC] Starting bbox calculation', {
+                    pageIdx,
+                    lineIdx,
+                    line: line.substring(0, 50),
+                    hasLayout,
+                    layoutExists: !!layout[pageIdx],
+                    layoutLength: layout?.length,
+                    layoutIsArray: Array.isArray(layout),
+                    layoutType: typeof layout,
+                    pageIdxType: typeof pageIdx,
+                    query,
+                    layoutSample: Array.isArray(layout) && layout[pageIdx] ? {
+                      hasWords: !!layout[pageIdx].words,
+                      wordsCount: layout[pageIdx].words?.length || 0,
+                      firstWord: layout[pageIdx].words?.[0]
+                    } : 'NO_PAGE_LAYOUT',
+                    // ✅ DEBUG AGGIUNTIVO: Verifica layout per tutte le pagine
+                    allLayoutPages: Array.isArray(layout) ? layout.map((p: any, i: number) => ({
+                      pageNum: i,
+                      hasWords: !!p?.words,
+                      wordsCount: p?.words?.length || 0
+                    })) : 'NOT_ARRAY'
+                  })
+
                   if (hasLayout && layout[pageIdx]) {
-                    // Cerca parole nella riga per calcolare bbox
                     const pageWords = layout[pageIdx].words || []
-                    const matchingWords: any[] = []
 
-                    // Trova tutte le parole che potrebbero essere in questa riga
-                    // (approssimazione: cerca parole che contengono parti della query)
-                    const queryWords = query.toLowerCase().split(/\s+/)
-                    for (const word of pageWords) {
-                      const wordText = (word.text || '').toLowerCase()
-                      if (queryWords.some(qw => wordText.includes(qw))) {
-                        matchingWords.push(word)
+                    console.log('[BBOX][CALC] Layout found for page', {
+                      pageIdx,
+                      pageWordsCount: pageWords.length
+                    })
+
+                    // 1. Dividi la query in parole (normalizzate)
+                    const queryWords = normalize(query).split(/\s+/).filter(w => w.length > 0)
+
+                    console.log('[BBOX][CALC] Query words extracted', {
+                      query,
+                      queryWords,
+                      pageWordsCount: pageWords.length,
+                      firstFewWords: pageWords.slice(0, 10).map((w: any) => ({
+                        text: w.text,
+                        normalized: normalize(w.text || ''),
+                        x0: w.x0,
+                        y0: w.y0
+                      }))
+                    })
+
+                    // 2. Filtra le parole che matchano esattamente la query
+                    const allMatchedWords: any[] = []
+                    for (const qw of queryWords) {
+                      const matched = pageWords.filter((w: any) => {
+                        const wordTextNormalized = normalize(w.text || '')
+                        const matches = wordTextNormalized === qw
+                        return matches
+                      })
+                      allMatchedWords.push(...matched)
+
+                      console.log('[BBOX][CALC] Matching query word', {
+                        queryWord: qw,
+                        matchedCount: matched.length,
+                        matchedWords: matched.slice(0, 5).map((w: any) => ({
+                          text: w.text,
+                          normalized: normalize(w.text || ''),
+                          x0: w.x0,
+                          y0: w.y0
+                        }))
+                      })
+                    }
+
+                    console.log('[BBOX][CALC] All matched words in page', {
+                      queryWords,
+                      totalMatched: allMatchedWords.length,
+                      firstFew: allMatchedWords.slice(0, 5).map((w: any) => ({
+                        text: w.text,
+                        y0: w.y0,
+                        x0: w.x0
+                      }))
+                    })
+
+                    // 3. Raggruppa le parole matchate per riga (basandosi su y0)
+                    // Soglia verticale: parole con y0 simile appartengono alla stessa riga
+                    const VERTICAL_THRESHOLD = 0.01 // 1% di altezza pagina
+                    const lines: Array<Array<any>> = []
+
+                    for (const word of allMatchedWords) {
+                      let foundLine = false
+                      for (const line of lines) {
+                        if (line.length > 0) {
+                          const firstWordY = line[0].y0 || 0
+                          const wordY = word.y0 || 0
+                          if (Math.abs(wordY - firstWordY) <= VERTICAL_THRESHOLD) {
+                            line.push(word)
+                            foundLine = true
+                            break
+                          }
+                        }
+                      }
+                      if (!foundLine) {
+                        lines.push([word])
                       }
                     }
 
+                    // 4. Ordina le righe per posizione verticale
+                    lines.forEach(line => {
+                      line.sort((a, b) => (a.x0 || 0) - (b.x0 || 0))
+                    })
+                    lines.sort((a, b) => {
+                      const aY = a[0]?.y0 || 0
+                      const bY = b[0]?.y0 || 0
+                      return aY - bY
+                    })
+
+                    console.log('[BBOX][CALC] Words grouped by lines', {
+                      totalLines: lines.length,
+                      lines: lines.map((line, idx) => ({
+                        lineIdx: idx,
+                        wordCount: line.length,
+                        words: line.map(w => w.text),
+                        y0: line[0]?.y0,
+                        x0: line[0]?.x0,
+                        x1: line[line.length - 1]?.x1
+                      }))
+                    })
+
+                    // 5. Trova la sequenza PRECISA di parole matchate che corrisponde alla query
+                    // Invece di includere tutte le parole della riga, includiamo solo quelle che matchano la query
+                    let matchingWords: any[] = []
+
+                    // Cerca la riga che contiene tutte le parole della query e trova la sequenza migliore
+                    for (const lineWords of lines) {
+                      const lineTexts = lineWords.map(w => normalize(w.text || '')).join(' ')
+                      const hasAllQueryWords = queryWords.every(qw => lineTexts.includes(qw))
+
+                      if (hasAllQueryWords) {
+                        // ✅ Trova la sequenza PRECISA di parole matchate nell'ordine della query
+                        // Cerca la sequenza più lunga di parole consecutive che matchano la query
+                        const matchedSequence: any[] = []
+                        let queryWordIdx = 0
+
+                        for (const word of lineWords) {
+                          const normalizedWord = normalize(word.text || '')
+                          // Se questa parola matcha la query word corrente, aggiungila
+                          if (queryWordIdx < queryWords.length && normalizedWord === queryWords[queryWordIdx]) {
+                            matchedSequence.push(word)
+                            queryWordIdx++
+                          } else if (queryWordIdx > 0 && queryWordIdx < queryWords.length) {
+                            // Se abbiamo già iniziato una sequenza ma questa parola non matcha, controlla se matcha la prossima
+                            if (normalizedWord === queryWords[queryWordIdx]) {
+                              matchedSequence.push(word)
+                              queryWordIdx++
+                            } else {
+                              // Reset se la sequenza si interrompe
+                              matchedSequence.length = 0
+                              queryWordIdx = 0
+                              // Riprova da questa parola
+                              if (normalizedWord === queryWords[0]) {
+                                matchedSequence.push(word)
+                                queryWordIdx = 1
+                              }
+                            }
+                          } else if (queryWordIdx === 0 && normalizedWord === queryWords[0]) {
+                            // Inizia una nuova sequenza
+                            matchedSequence.push(word)
+                            queryWordIdx = 1
+                          }
+                        }
+
+                        // Se abbiamo trovato una sequenza completa, usala
+                        if (matchedSequence.length >= queryWords.length) {
+                          matchingWords = matchedSequence
+                          console.log('[BBOX][CALC] Found precise matching sequence', {
+                            lineIdx: lines.indexOf(lineWords),
+                            sequenceWordCount: matchingWords.length,
+                            queryWordCount: queryWords.length,
+                            sequenceWords: matchingWords.map(w => w.text),
+                            queryWords,
+                            allLineWords: lineWords.map(w => w.text)
+                          })
+                          break
+                        } else {
+                          // Se la sequenza non è completa, prova a trovare tutte le parole matchate in ordine
+                          // (non necessariamente consecutive)
+                          const allMatchedInOrder: any[] = []
+                          let qwIdx = 0
+                          for (const word of lineWords) {
+                            const normalizedWord = normalize(word.text || '')
+                            if (qwIdx < queryWords.length && normalizedWord === queryWords[qwIdx]) {
+                              allMatchedInOrder.push(word)
+                              qwIdx++
+                            }
+                          }
+                          if (allMatchedInOrder.length === queryWords.length) {
+                            matchingWords = allMatchedInOrder
+                            console.log('[BBOX][CALC] Found all matching words in order (not consecutive)', {
+                              lineIdx: lines.indexOf(lineWords),
+                              wordCount: matchingWords.length,
+                              words: matchingWords.map(w => w.text)
+                            })
+                            break
+                          }
+                        }
+                      }
+                    }
+
+                    // Fallback: se non troviamo una sequenza precisa, prendiamo tutte le parole matchate della prima riga
+                    if (matchingWords.length === 0 && lines.length > 0) {
+                      // Filtra solo le parole che matchano la query
+                      const firstLine = lines[0]
+                      const filteredWords = firstLine.filter((w: any) => {
+                        const normalizedWord = normalize(w.text || '')
+                        return queryWords.some(qw => normalizedWord === qw)
+                      })
+                      matchingWords = filteredWords.length > 0 ? filteredWords : firstLine
+                      console.log('[BBOX][CALC] Using fallback: filtered matching words from first line', {
+                        originalCount: firstLine.length,
+                        filteredCount: filteredWords.length,
+                        finalCount: matchingWords.length,
+                        words: matchingWords.map(w => w.text)
+                      })
+                    }
+
+                    console.log('[BBOX][CALC] Final matching words for this line', {
+                      totalMatchingWords: matchingWords.length,
+                      matchingWords: matchingWords.map(w => ({
+                        text: w.text,
+                        x0: w.x0,
+                        y0: w.y0,
+                        x1: w.x1,
+                        y1: w.y1
+                      })),
+                      lineText: line.substring(0, 50)
+                    })
+
+                    // 6. Calcola bbox che racchiude SOLO le parole matchate di questa riga
                     if (matchingWords.length > 0) {
-                      const xs = matchingWords.map(w => w.x0Pct).filter((x: number) => typeof x === 'number')
-                      const ys = matchingWords.map(w => w.y0Pct).filter((y: number) => typeof y === 'number')
-                      const x1s = matchingWords.map(w => w.x1Pct).filter((x: number) => typeof x === 'number')
-                      const y1s = matchingWords.map(w => w.y1Pct).filter((y: number) => typeof y === 'number')
+                      // ✅ Le coordinate nel layout sono già normalizzate 0-1, convertiamo in 0-100
+                      const xs = matchingWords.map(w => w.x0).filter((x: number) => typeof x === 'number' && !isNaN(x))
+                      const ys = matchingWords.map(w => w.y0).filter((y: number) => typeof y === 'number' && !isNaN(y))
+                      const x1s = matchingWords.map(w => w.x1).filter((x: number) => typeof x === 'number' && !isNaN(x))
+                      const y1s = matchingWords.map(w => w.y1).filter((y: number) => typeof y === 'number' && !isNaN(y))
 
-                      if (xs.length > 0) {
-                        x0Pct = Math.min(...xs)
-                        y0Pct = Math.min(...ys)
-                        x1Pct = Math.max(...x1s)
-                        y1Pct = Math.max(...y1s)
+                      console.log('[BBOX][CALC] Coordinate arrays', {
+                        xs: xs.slice(0, 10),
+                        ys: ys.slice(0, 10),
+                        x1s: x1s.slice(0, 10),
+                        y1s: y1s.slice(0, 10),
+                        xsLength: xs.length,
+                        ysLength: ys.length,
+                        x1sLength: x1s.length,
+                        y1sLength: y1s.length
+                      })
+
+                      if (xs.length > 0 && ys.length > 0 && x1s.length > 0 && y1s.length > 0) {
+                        x0Pct = Math.min(...xs) * 100  // 0-1 → 0-100
+                        y0Pct = Math.min(...ys) * 100
+                        x1Pct = Math.max(...x1s) * 100
+                        y1Pct = Math.max(...y1s) * 100
+
+                        console.log('[BBOX][CALC] Final bbox calculated', {
+                          x0Pct,
+                          y0Pct,
+                          x1Pct,
+                          y1Pct,
+                          width: x1Pct - x0Pct,
+                          height: y1Pct - y0Pct
+                        })
+                      } else {
+                        console.warn('[BBOX][CALC] Invalid coordinate arrays', {
+                          xsValid: xs.length > 0,
+                          ysValid: ys.length > 0,
+                          x1sValid: x1s.length > 0,
+                          y1sValid: y1s.length > 0
+                        })
                       }
+                    } else {
+                      console.warn('[BBOX][CALC] No matching words found, using default bbox (0,0,100,100)')
                     }
+                  } else {
+                    console.warn('[BBOX][CALC] No layout available', {
+                      hasLayout,
+                      layoutExists: !!layout[pageIdx],
+                      layoutType: typeof layout,
+                      layoutIsArray: Array.isArray(layout)
+                    })
                   }
 
                   // ✅ Aggiungi direttamente ai risultati - NESSUNA deduplicazione
-                  allMatches.push({
+                  const matchResult = {
                     id: `${doc.id}-${pageIdx + 1}-${lineIdx}`, // ID unico: docId-page-line
                     docId: doc.id,
                     filename: doc.filename,
@@ -1120,7 +1567,24 @@ export async function searchRoutes(fastify: FastifyInstance) {
                     y1Pct,
                     charIdx: 0, // Non più necessario con questo approccio
                     qLen: query.length
+                  }
+
+                  const isDefaultBbox = matchResult.x0Pct === 0 && matchResult.y0Pct === 0 && matchResult.x1Pct === 100 && matchResult.y1Pct === 100
+                  console.log('[BBOX][CALC] Final match result', {
+                    matchId: matchResult.id,
+                    page: matchResult.page,
+                    snippet: matchResult.snippet.substring(0, 50),
+                    coordinates: {
+                      x0Pct: matchResult.x0Pct,
+                      y0Pct: matchResult.y0Pct,
+                      x1Pct: matchResult.x1Pct,
+                      y1Pct: matchResult.y1Pct
+                    },
+                    isDefaultBbox,
+                    hasLayout: hasLayout && !!layout[pageIdx]
                   })
+
+                  allMatches.push(matchResult)
                 }
               }
             }

@@ -20,26 +20,11 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	setPersistentSelections,
 	overlayRootsRef
 }) => {
-	// Log quando cambiano le selezioni persistenti
-	useEffect(() => {
-		console.log('🟡 [AnnotationOverlays] persistentSelections aggiornate:', {
-			count: persistentSelections.length,
-			selections: persistentSelections.map(s => ({ id: s.id, page: s.page }))
-		})
-	}, [persistentSelections])
-
-	// Wrapper per setPersistentSelections con logging
-	const setPersistentSelectionsWithLog = (selections: PersistentSelection[] | ((prev: PersistentSelection[]) => PersistentSelection[])) => {
-		console.log('🟡 [AnnotationOverlays] setPersistentSelections chiamato:', {
-			isFunction: typeof selections === 'function',
-			currentCount: persistentSelections.length
-		})
-		setPersistentSelections(selections)
-	}
 	const [hoveredSelectionId, setHoveredSelectionId] = useState<string | null>(null)
 	const [draggingSelectionId, setDraggingSelectionId] = useState<string | null>(null)
 	const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null)
 	const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
+
 
 	// Track mouse position during drag
 	useEffect(() => {
@@ -92,32 +77,54 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 
 	return (
 		<>
-			{allAnnotations.map(a => {
+			{allAnnotations.map((a, idx) => {
 				const root = overlayRootsRef.current.get(a.page)
 				if (a.id === 'draft') {
 				}
-				if (!root) return null
+
+				if (!root) {
+					if (a.id === 'sel') {
+						console.warn('[ANNOT WARNING] Root overlay non trovato per pagina:', a.page, {
+							allRoots: Array.from(overlayRootsRef.current.keys()),
+							annotId: a.id,
+							annotPage: a.page
+						})
+					}
+					return null
+				}
+
 				const left = `${a.x0Pct * 100}%`
 				const top = `${a.y0Pct * 100}%`
 				const width = `${(a.x1Pct - a.x0Pct) * 100}%`
 				const height = `${Math.max(0.01, (a.y1Pct - a.y0Pct)) * 100}%`
-				const style: React.CSSProperties = { position: 'absolute', left, top, width, height, pointerEvents: 'none' }
+
 				let node: React.ReactNode = null
-				if (a.type === 'highlight') node = <div style={{ ...style, background: a.color, borderRadius: 2 }} />
-				if (a.type === 'underline') node = <div style={{ ...style, height: 2, background: a.color }} />
-				if (a.type === 'strike') node = <div style={{ ...style, height: 2, background: a.color }} />
-				if (a.type === 'comment') node = <div style={{ ...style, width: 12, height: 12, background: '#f59e0b', borderRadius: 2 }} title={a.text} />
-				return createPortal(node, root)
+				if (a.type === 'highlight') {
+					node = (
+						<div
+							style={{
+								position: 'absolute',
+								left,
+								top,
+								width,
+								height,
+								pointerEvents: 'none',
+								background: a.color ?? 'rgba(96, 165, 250, 0.4)',
+								borderRadius: 2
+							}}
+						/>
+					)
+				}
+				if (a.type === 'underline') node = <div style={{ position: 'absolute', left, top, width, height: 2, background: a.color, pointerEvents: 'none' }} />
+				if (a.type === 'strike') node = <div style={{ position: 'absolute', left, top, width, height: 2, background: a.color, pointerEvents: 'none' }} />
+				if (a.type === 'comment') node = <div style={{ position: 'absolute', left, top, width: 12, height: 12, background: '#f59e0b', borderRadius: 2, pointerEvents: 'none' }} title={a.text} />
+				return <React.Fragment key={`${a.id}-${a.page}-${idx}`}>{createPortal(node, root)}</React.Fragment>
 			})}
 
 			{/* Render persistent selections with interactivity */}
 			{persistentSelections.map(selection => {
 				const root = overlayRootsRef.current.get(selection.page)
-				if (!root) {
-					console.log('🟡 [AnnotationOverlays] Nessun root trovato per pagina:', selection.page)
-					return null
-				}
-				console.log('🟡 [AnnotationOverlays] Rendering rettangolo persistente:', selection.id, 'su pagina:', selection.page)
+				if (!root) return null
 
 				const left = `${selection.x0Pct * 100}%`
 				const top = `${selection.y0Pct * 100}%`
@@ -165,7 +172,7 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					/>
 				)
 
-				return createPortal(node, root)
+				return <React.Fragment key={selection.id}>{createPortal(node, root)}</React.Fragment>
 			})}
 
 			{/* Custom cursor label when hovering over persistent selection */}

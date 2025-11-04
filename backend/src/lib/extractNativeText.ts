@@ -29,7 +29,7 @@ async function extractWithPdfJs(pdfPath: string): Promise<string> {
   })
   const pdfDoc = await loadingTask.promise
 
-  let fullText = ''
+  const pages: string[] = []
 
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum)
@@ -66,7 +66,7 @@ async function extractWithPdfJs(pdfPath: string): Promise<string> {
         return acc + ' ' + str
       }, '')
 
-    fullText += pageText + '\n'
+    pages.push(pageText)
 
     if (pageNum % 10 === 0) {
       console.log('[EXTRACT][native-text][progress]', { filename, page: pageNum, totalPages: pdfDoc.numPages })
@@ -74,7 +74,8 @@ async function extractWithPdfJs(pdfPath: string): Promise<string> {
   }
 
   await pdfDoc.cleanup()
-  return fullText.trim()
+  // ✅ Usa lo stesso separatore dell'OCR: \n\f\n
+  return pages.join('\n\f\n')
 }
 
 export async function extractNativeText(pdfPath: string): Promise<string> {
@@ -84,26 +85,49 @@ export async function extractNativeText(pdfPath: string): Promise<string> {
   try {
     console.log('[EXTRACT][native-text][START]', { filename, path: pdfPath, method: 'poppler-pdftotext' })
 
-    const { stdout } = await execa(bin('pdftotext'), [
-      '-layout',   // Preserva layout (gestisce meglio spacing)
-      '-nopgbrk',  // Non aggiungere page breaks
-      pdfPath,
-      '-'          // Output su stdout
-    ], {
-      maxBuffer: 1024 * 1024 * 100, // 100MB buffer
-      shell: false,
-      windowsHide: true
+    // ✅ PRIMA: ottieni il numero di pagine dal PDF
+    const buffer = await fs.readFile(pdfPath)
+    const uint8Array = new Uint8Array(buffer)
+    const loadingTask = getDocument({
+      data: uint8Array,
+      disableWorker: true,
+      isEvalSupported: false,
+      useWorkerFetch: false
     })
+    const pdfDoc = await loadingTask.promise
+    const numPages = pdfDoc.numPages
+    await pdfDoc.cleanup()
 
-    const extractedLength = stdout.trim().length
+    // ✅ Estrai testo pagina per pagina con pdftotext
+    const pages: string[] = []
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const { stdout } = await execa(bin('pdftotext'), [
+        '-layout',   // Preserva layout (gestisce meglio spacing)
+        '-f', String(pageNum),  // Pagina iniziale
+        '-l', String(pageNum),  // Pagina finale
+        pdfPath,
+        '-'          // Output su stdout
+      ], {
+        maxBuffer: 1024 * 1024 * 100, // 100MB buffer
+        shell: false,
+        windowsHide: true
+      })
+      pages.push(stdout.trim())
+    }
+
+    // ✅ Usa lo stesso separatore dell'OCR: \n\f\n
+    const fullText = pages.join('\n\f\n')
+
+    const extractedLength = fullText.length
     console.log('[EXTRACT][native-text][SUCCESS]', {
       filename,
       method: 'poppler-pdftotext',
       extractedLength,
-      preview: stdout.substring(0, 100)
+      numPages: pages.length,
+      preview: fullText.substring(0, 100)
     })
 
-    return stdout.trim()
+    return fullText
   } catch (error) {
     // FALLBACK: se pdftotext fallisce, usa pdf.js (metodo originale)
     console.warn('[EXTRACT][native-text][FALLBACK]', {

@@ -201,6 +201,7 @@ const documentoCreateSchema = z.object({
 })
 
 const documentoUpdateSchema = z.object({
+  praticaId: z.string().optional(), // ✅ Permette di spostare documento tra pratiche
   compartoId: z.string().optional(),
   tags: z.array(z.string()).optional(),
   ocrStatus: z.string().optional(),
@@ -220,6 +221,8 @@ export async function documentiRoutes(fastify: FastifyInstance) {
       console.log('[CREATE][DOCUMENTO][START]', {
         filename: data.filename,
         praticaId: data.praticaId,
+        praticaIdType: typeof data.praticaId,
+        praticaIdLength: data.praticaId?.length,
         compartoId: data.compartoId,
         s3Key: data.s3Key,
         mime: data.mime,
@@ -506,6 +509,9 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         console.log('✅ [BACKEND][CREATE][SUCCESS]', {
           filename: documento.filename,
           docId: documento.id.substring(0, 20) + '...',
+          praticaIdRicevuto: data.praticaId,
+          praticaIdSalvato: (documento as any).praticaId,
+          praticaIdMatch: data.praticaId === (documento as any).praticaId,
           compartoIdSalvato: (documento as any).compartoId,
           hasNativeText: (documento as any).hasNativeText, // ⚠️ VALORE EFFETTIVAMENTE SALVATO NEL DB
           hasThumbnail: !!(documento as any).thumbnailDataUrl
@@ -642,7 +648,34 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         const pageIdx = pageParam != null && pageParam >= 1 ? pageParam - 1 : 0
         const pageMeta = layout[pageIdx] || {}
         const words = pageMeta.words || []
-        const sample = words.slice(0, 10).map((w: any) => ({
+
+        // ✅ ORDINA le parole per posizione visiva PRIMA di prendere il sample
+        const pageWidth = pageMeta.width || pageMeta.imgW || 1
+        const pageHeight = pageMeta.height || pageMeta.imgH || 1
+
+        // ✅ NON FILTRARE: solo ordina tutte le parole per posizione visiva
+        // Le coordinate sono in PIXEL (da Tesseract), quindi usiamo soglia in pixel
+        const sortedWords = [...words].sort((a: any, b: any) => {
+          const yDiff = (a.y0 || 0) - (b.y0 || 0)
+          // Soglia per considerare stessa riga: 1% dell'altezza pagina IN PIXEL
+          const threshold = pageHeight * 0.01
+          if (Math.abs(yDiff) > threshold) {
+            return yDiff  // Ordina per Y (dall'alto in basso)
+          }
+          return (a.x0 || 0) - (b.x0 || 0)  // Stessa riga: ordina per X (da sinistra)
+        })
+
+        // ✅ DEBUG: Verifica cosa è stato ordinato
+        console.log(`[LAYOUT_DIAGNOSTIC] Page ${pageIdx + 1}: Total words=${words.length}, Sorted words=${sortedWords.length}`)
+        if (sortedWords.length > 0) {
+          console.log(`[LAYOUT_DIAGNOSTIC] Page ${pageIdx + 1}: First 5 sorted words:`, sortedWords.slice(0, 5).map((w: any) => ({
+            text: w.text,
+            y0: w.y0,
+            x0: w.x0
+          })))
+        }
+
+        const sample = sortedWords.slice(0, 10).map((w: any) => ({
           text: w.text,
           x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1,
           w: w.x1 - w.x0, h: w.y1 - w.y0
@@ -884,7 +917,43 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                     await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: 'OCR: nessun testo riconosciuto (controlla tessdata e DPI)' } })
                     return
                   }
-                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText, ocrConfidence: result.avgConfidence, ocrLayout: JSON.stringify(result.layout) } })
+                  const layoutJson = JSON.stringify(result.layout)
+                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText, ocrConfidence: result.avgConfidence, ocrLayout: layoutJson } })
+
+                  // ✅ LOG: Verifica che il layout sia stato salvato correttamente
+                  console.log('[OCR][SAVE] Layout saved to DB', {
+                    docId: documento.id.substring(0, 20) + '...',
+                    filename: documento.filename,
+                    hasLayout: !!result.layout,
+                    layoutType: typeof result.layout,
+                    layoutIsArray: Array.isArray(result.layout),
+                    layoutLength: Array.isArray(result.layout) ? result.layout.length : 0,
+                    layoutPagesWithWords: Array.isArray(result.layout) ? result.layout.map((p: any, i: number) => ({
+                      pageNum: i + 1,
+                      hasWords: !!p?.words,
+                      wordsCount: p?.words?.length || 0,
+                      firstWordSample: p?.words?.[0] ? {
+                        text: p.words[0].text?.substring(0, 20),
+                        x0: p.words[0].x0,
+                        y0: p.words[0].y0
+                      } : null
+                    })) : null,
+                    jsonStringified: typeof layoutJson === 'string',
+                    jsonLength: layoutJson.length
+                  })
+
+                  // Verifica che sia stato effettivamente salvato nel DB
+                  const verifyDoc = await prisma.documento.findUnique({
+                    where: { id: documento.id },
+                    select: { ocrLayout: true, ocrStatus: true }
+                  })
+                  console.log('[OCR][VERIFY] Layout verification after save', {
+                    docId: documento.id.substring(0, 20) + '...',
+                    hasOcrLayout: !!verifyDoc?.ocrLayout,
+                    ocrLayoutType: typeof verifyDoc?.ocrLayout,
+                    ocrLayoutLength: typeof verifyDoc?.ocrLayout === 'string' ? verifyDoc.ocrLayout.length : 0,
+                    ocrStatus: verifyDoc?.ocrStatus
+                  })
                 } catch (e) {
                   const pagesArr: any[] = Array.isArray((result as any).pages) ? (result as any).pages : []
                   const layoutArr: any[] = Array.isArray((result as any).layout) ? (result as any).layout : []
@@ -906,7 +975,20 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                     await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: 'OCR: nessun testo riconosciuto (controlla tessdata e DPI)' } })
                     return
                   }
-                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText: ocrTextFallback, ocrConfidence: result.avgConfidence, ocrLayout: JSON.stringify(result.layout) } })
+                  const layoutJson = JSON.stringify(result.layout)
+                  await prisma.documento.update({ where: { id: documento.id }, data: { ocrStatus: 'completed', ocrText: ocrTextFallback, ocrConfidence: result.avgConfidence, ocrLayout: layoutJson } })
+
+                  // ✅ LOG: Verifica che il layout sia stato salvato correttamente (catch block)
+                  console.log('[OCR][SAVE] Layout saved to DB (catch)', {
+                    docId: documento.id.substring(0, 20) + '...',
+                    filename: documento.filename,
+                    hasLayout: !!result.layout,
+                    layoutType: typeof result.layout,
+                    layoutIsArray: Array.isArray(result.layout),
+                    layoutLength: Array.isArray(result.layout) ? result.layout.length : 0,
+                    jsonStringified: typeof layoutJson === 'string',
+                    jsonLength: layoutJson.length
+                  })
                 }
 
                 // ✅ Applica classificazione automatica dopo OCR completato (ocrText è disponibile da try o catch)
@@ -1003,15 +1085,33 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                   await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: 'OCR: nessun testo riconosciuto (controlla tessdata e DPI)' } })
                   return
                 }
+                const layoutJson = JSON.stringify(result.layout)
                 await prisma.documento.update({
                   where: { id: documento.id },
                   data: {
                     ocrStatus: 'completed',
                     ocrText,
                     ocrConfidence: result.avgConfidence,
-                    ocrLayout: JSON.stringify(result.layout),
+                    ocrLayout: layoutJson,
                     ...(Array.isArray((result as any).pages) && (result as any).pages.ocrPdfKey ? { ocrPdfKey: (result as any).pages.ocrPdfKey } : {}),
                   },
+                })
+
+                // ✅ LOG: Verifica che il layout sia stato salvato correttamente (OCRmyPDF)
+                console.log('[OCR][SAVE] Layout saved to DB (OCRmyPDF)', {
+                  docId: documento.id.substring(0, 20) + '...',
+                  filename: documento.filename,
+                  hasLayout: !!result.layout,
+                  layoutType: typeof result.layout,
+                  layoutIsArray: Array.isArray(result.layout),
+                  layoutLength: Array.isArray(result.layout) ? result.layout.length : 0,
+                  layoutPagesWithWords: Array.isArray(result.layout) ? result.layout.map((p: any, i: number) => ({
+                    pageNum: i + 1,
+                    hasWords: !!p?.words,
+                    wordsCount: p?.words?.length || 0
+                  })) : null,
+                  jsonStringified: typeof layoutJson === 'string',
+                  jsonLength: layoutJson.length
                 })
               } catch (e) {
                 const pagesArr: any[] = Array.isArray((result as any).pages) ? (result as any).pages : []
@@ -1034,14 +1134,27 @@ export async function documentiRoutes(fastify: FastifyInstance) {
                   await prisma.job.update({ where: { id: job.id }, data: { status: 'failed', error: 'OCR: nessun testo riconosciuto (controlla tessdata e DPI)' } })
                   return
                 }
+                const layoutJson = JSON.stringify(result.layout)
                 await prisma.documento.update({
                   where: { id: documento.id },
                   data: {
                     ocrStatus: 'completed',
                     ocrText: ocrTextFallback,
                     ocrConfidence: result.avgConfidence,
-                    ocrLayout: JSON.stringify(result.layout),
+                    ocrLayout: layoutJson,
                   },
+                })
+
+                // ✅ LOG: Verifica che il layout sia stato salvato correttamente (OCRmyPDF catch)
+                console.log('[OCR][SAVE] Layout saved to DB (OCRmyPDF catch)', {
+                  docId: documento.id.substring(0, 20) + '...',
+                  filename: documento.filename,
+                  hasLayout: !!result.layout,
+                  layoutType: typeof result.layout,
+                  layoutIsArray: Array.isArray(result.layout),
+                  layoutLength: Array.isArray(result.layout) ? result.layout.length : 0,
+                  jsonStringified: typeof layoutJson === 'string',
+                  jsonLength: layoutJson.length
                 })
               }
 

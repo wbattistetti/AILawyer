@@ -797,7 +797,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ STEP 1: Apri doc come tab orizzontale nel canvas principale
   const openDoc = (doc: DocTab) => {
-    console.log('[OPEN-DOC] Opening document:', doc)
+    // Log rimosso (troppo rumoroso)
+    // console.log('[OPEN-DOC] Opening document:', doc)
 
     // Assicura struttura base
     ensureBaseStructure()
@@ -813,7 +814,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     })
 
     if (exists) {
-      console.log('[OPEN-DOC] Document already exists, skipping')
+      // Log rimosso (troppo rumoroso)
       return // Documento già aperto
     }
 
@@ -821,10 +822,10 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
     // ✅ Cerca docTabset esistente o crealo
     let targetTabset = findById(json.layout, 'docTabset')
-    console.log('[OPEN-DOC] Existing docTabset:', targetTabset ? 'found' : 'not found')
+    // Log rimosso (troppo rumoroso)
 
     if (!targetTabset) {
-      console.log('[OPEN-DOC] Creating new docTabset')
+      // Log rimosso (troppo rumoroso)
       // ✅ Sostituisci il placeholder con il tabset per documenti
       const placeholderIndex = json.layout.children.findIndex((child: any) => child.id === 'placeholder')
       if (placeholderIndex >= 0) {
@@ -859,7 +860,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     })
     targetTabset.selected = targetTabset.children.length - 1
 
-    console.log('[OPEN-DOC] Final targetTabset children count:', targetTabset.children.length)
+    // Log rimosso (troppo rumoroso)
 
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel

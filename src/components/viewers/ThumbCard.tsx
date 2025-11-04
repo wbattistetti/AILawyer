@@ -250,26 +250,12 @@ export function ThumbCard({
             !(typeof transcribedPct === 'number' && transcribedPct >= 100) &&
             ocrStatus !== 'completed'
 
-          if (typeof ocrProgressPct === 'number' || ocrProgressPct !== undefined) {
-            try {
-              console.log('[THUMBCARD][OCR-OVERLAY]', {
-                title,
-                ocrProgressPct,
-                transcribedPct,
-                ocrStatus,
-                ocrCancelling,
-                shouldShowOverlay,
-                checks: {
-                  notCancelling: !ocrCancelling,
-                  isNumber: typeof ocrProgressPct === 'number',
-                  isPositive: typeof ocrProgressPct === 'number' && ocrProgressPct >= 0,
-                  lessThan100: typeof ocrProgressPct === 'number' && ocrProgressPct < 100,
-                  notTranscribed100: !(typeof transcribedPct === 'number' && transcribedPct >= 100),
-                  notCompleted: ocrStatus !== 'completed'
-                }
-              })
-            } catch {}
-          }
+          // Log rimosso (troppo rumoroso)
+          // if (typeof ocrProgressPct === 'number' || ocrProgressPct !== undefined) {
+          //   try {
+          //     console.log('[THUMBCARD][OCR-OVERLAY]', { ... })
+          //   } catch {}
+          // }
 
           return shouldShowOverlay && (
             <OcrProgressOverlay

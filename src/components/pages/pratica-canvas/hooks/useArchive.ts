@@ -31,34 +31,19 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
 
     const loadDocumenti = async () => {
       try {
+        console.log('[LOAD][DOCUMENTI][FRONTEND][START]', { praticaId })
         const documentiData = await api.getDocumentiByPratica(praticaId)
 
-          console.log('[LOAD][DOCUMENTI][BACKEND-RESPONSE]', {
+        console.log('[LOAD][DOCUMENTI][FRONTEND][SUCCESS]', {
           praticaId,
-          totalDocumenti: documentiData.length,
-          documentiConCompartoId: documentiData.filter(d => d.compartoId).length,
-          documentiPerComparto: documentiData.reduce((acc, d) => {
-            const compId = d.compartoId || 'NO-COMPARTO'
-            acc[compId] = (acc[compId] || 0) + 1
-            return acc
-          }, {} as Record<string, number>),
-          documentiConCompartoId: documentiData.map(d => ({
-            id: d.id,
+          documentiCount: documentiData.length,
+          documenti: documentiData.map(d => ({
+            id: d.id.substring(0, 20) + '...',
             filename: d.filename,
             compartoId: d.compartoId,
             ocrStatus: d.ocrStatus,
-            hasOcrText: !!d.ocrText,
-            ocrTextLength: d.ocrText?.length || 0,
-            ocrConfidence: d.ocrConfidence,
-            s3Key: d.s3Key?.substring(0, 20) + '...'
-          })),
-          ocrStatusBreakdown: {
-            pending: documentiData.filter(d => d.ocrStatus === 'pending').length,
-            processing: documentiData.filter(d => d.ocrStatus === 'processing').length,
-            completed: documentiData.filter(d => d.ocrStatus === 'completed').length,
-            failed: documentiData.filter(d => d.ocrStatus === 'failed').length,
-            low_confidence: documentiData.filter(d => d.ocrStatus === 'low_confidence').length
-          }
+            hasOcrLayout: !!d.ocrLayout
+          }))
         })
 
         // ✅ IMPORTANTE: Non sostituire l'array, ma fare un merge con i documenti temporanei esistenti
@@ -134,23 +119,8 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           // Combina documenti reali arricchiti + documenti temporanei da mantenere
           const finalDocs = [...enrichedRealDocs, ...tempDocsToKeep]
 
-          console.log('[LOAD][DOCUMENTI][MERGE-RESULT]', {
-            praticaId,
-            totalFinale: finalDocs.length,
-            documentiReali: enrichedRealDocs.length,
-            tempDocsMantenuti: tempDocsToKeep.length,
-            documentiPerCompartoFinale: finalDocs.reduce((acc, d) => {
-              const compId = d.compartoId || 'NO-COMPARTO'
-              acc[compId] = (acc[compId] || 0) + 1
-              return acc
-            }, {} as Record<string, number>),
-            documentiFinali: finalDocs.map(d => ({
-              id: d.id,
-              filename: d.filename,
-              compartoId: d.compartoId,
-              isTemp: d.id.startsWith('temp:')
-            }))
-          })
+          // Log rimosso (troppo rumoroso)
+          // console.log('[LOAD][DOCUMENTI][MERGE-RESULT]', { ... })
 
           return finalDocs
         })
@@ -599,6 +569,8 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
             tempId,
             s3Key,
             praticaId,
+            praticaIdType: typeof praticaId,
+            praticaIdLength: praticaId?.length,
             nota: 'In modalità localOnly, salvo comunque il record nel DB (senza upload S3)'
           })
 
@@ -627,6 +599,15 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
           })
 
           try {
+            console.log('[HANDLE][FILEDROP][LOCAL-ONLY][BEFORE-CREATE]', {
+              filename: file.name,
+              praticaId,
+              praticaIdType: typeof praticaId,
+              praticaIdValue: praticaId,
+              compartoIdFinale,
+              s3Key
+            })
+
             const documento = await api.createDocumento({
               praticaId,
               compartoId: compartoIdFinale,
@@ -639,6 +620,14 @@ export function useArchive(praticaId: string | undefined, comparti: any[]) {
               tags,
               thumbnailDataUrl, // ✅ Salva thumbnail nel database
               hasNativeText: hasNativeTextValue, // Passa hasNativeText esplicitamente
+            })
+
+            console.log('[HANDLE][FILEDROP][LOCAL-ONLY][AFTER-CREATE]', {
+              documentoId: documento.id,
+              documentoPraticaId: (documento as any).praticaId,
+              expectedPraticaId: praticaId,
+              match: (documento as any).praticaId === praticaId,
+              filename: file.name
             })
 
             console.log('[HANDLE][FILEDROP][LOCAL-ONLY][DOC-CREATO]', {
