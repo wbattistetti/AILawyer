@@ -3,6 +3,7 @@ import { Layout, Model, TabNode, IJsonModel, Actions } from 'flexlayout-react'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
+import { SidebarArchivi } from './SidebarArchivi'
 // baselineGraph removed - no longer needed
 import 'flexlayout-react/style/light.css'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Search, User, CreditCard, Calendar, Network, Mail, Image } from 'lucide-react'
@@ -162,6 +163,7 @@ type Props = {
   // Props per tab cliente
   clienti?: Array<{ id: string; nome: string; cognome: string }>
   renderClienteMemoria?: (clienteId: string) => React.ReactNode
+  headerHeight?: number // ✅ Altezza header per posizionare sidebar
 }
 
 export type DockWorkspaceV2Handle = {
@@ -216,6 +218,220 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   // ✅ State per la visibilità della strip dei cassetti (nascosta di default)
   const [isDrawerStripVisible, setIsDrawerStripVisible] = useState(false)
   const drawerStripTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // ✅ State per la sidebar archivi (chiusa di default)
+  const [isArchiveSidebarOpen, setIsArchiveSidebarOpen] = useState(false)
+  const [selectedArchiveTabId, setSelectedArchiveTabId] = useState<string | null>(null)
+  const archiveSidebarTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // ✅ Prepara le tab per SidebarArchivi
+  const archiveTabs = useMemo(() => {
+    const staticTabs = [
+      { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' },
+      { type: 'tab', name: 'Anagrafiche', component: 'persons', id: 'personsTab' },
+      { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' },
+      { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' },
+      { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' },
+      { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }
+    ]
+
+    // Helper per determinare genere dal nome italiano (desinenze tipiche)
+    const getGenderFromName = (nome: string): 'M' | 'F' | null => {
+      if (!nome || nome.trim().length === 0) return null
+
+      const nomeLower = nome.toLowerCase().trim()
+
+      // Nomi femminili comuni italiani
+      const knownFemale = new Set([
+        'maria', 'giulia', 'anna', 'chiara', 'silvia', 'francesca', 'valentina',
+        'federica', 'alessia', 'roberta', 'luisa', 'sara', 'martina', 'elena',
+        'laura', 'cristina', 'paola', 'elisa', 'simona', 'monica', 'stefania'
+      ])
+
+      // Nomi maschili comuni che finiscono in 'a' (eccezioni)
+      const knownMale = new Set([
+        'luca', 'andrea', 'nicola', 'elias', 'matteo', 'gianluca', 'francesco',
+        'diego', 'emanuele', 'michele', 'gabriele', 'daniele', 'raffaele'
+      ])
+
+      // Controlla lista nomi noti
+      if (knownFemale.has(nomeLower)) return 'F'
+      if (knownMale.has(nomeLower)) return 'M'
+
+      // Desinenze tipicamente femminili italiane
+      const femaleEndings = ['ia', 'ea', 'ina', 'etta', 'ella', 'essa', 'ona', 'isa']
+      // Desinenze tipicamente maschili italiane
+      const maleEndings = ['o', 'io', 'eo', 'ino', 'etto', 'ello', 'one', 'e', 'i']
+
+      // Controlla desinenze femminili (più specifiche)
+      for (const ending of femaleEndings) {
+        if (nomeLower.endsWith(ending)) {
+          return 'F'
+        }
+      }
+
+      // Controlla desinenze maschili
+      for (const ending of maleEndings) {
+        if (nomeLower.endsWith(ending)) {
+          return 'M'
+        }
+      }
+
+      // Se finisce in 'a' e non è nelle eccezioni → femmina
+      if (nomeLower.endsWith('a') && nomeLower.length > 2) {
+        return 'F'
+      }
+
+      // Default: maschio (per nomi di genere indefinito o non riconosciuto)
+      return 'M'
+    }
+
+    const clienteTabs = clienti.map(cliente => {
+      const gender = getGenderFromName(cliente.nome)
+      return {
+        type: 'tab',
+        name: `${cliente.nome} ${cliente.cognome}`,
+        component: 'cliente-memoria',
+        id: `cliente-${cliente.id}-tab`,
+        gender
+      }
+    })
+
+    // ✅ Clienti in cima, poi staticTabs ordinate alfabeticamente
+    const allTabs = [...clienteTabs, ...staticTabs.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase().trim()
+      const nameB = (b.name || '').toLowerCase().trim()
+      return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
+    })]
+
+    const tabs = allTabs.map(tab => {
+      const config = TAB_CONFIGS[tab.component]
+      if (!config) return null
+
+      // Per clienti, usa volto stilizzato basato su genere dal nome (solo viso con occhi e bocca)
+      let icon = React.createElement(config.icon)
+      if (tab.component === 'cliente-memoria' && 'gender' in tab) {
+        const gender = (tab as any).gender
+        // Volto stilizzato: solo cerchio viso con occhi e bocca (NO spalle/corpo)
+        if (gender === 'M') {
+          // Maschio: volto stilizzato maschile
+          icon = (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+              <path d="M9 15c1 1.5 3 1.5 4 0" strokeWidth="2" />
+            </svg>
+          )
+        } else if (gender === 'F') {
+          // Femmina: volto stilizzato femminile (bocca sorridente)
+          icon = (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+              <path d="M8 14c1 1.5 3 1.5 4 1.5s3 0 4-1.5" strokeWidth="1.5" />
+            </svg>
+          )
+        } else {
+          // Genere indefinito: usa maschio come default
+          icon = (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+              <path d="M9 15c1 1.5 3 1.5 4 0" strokeWidth="2" />
+            </svg>
+          )
+        }
+      }
+
+      return {
+        id: tab.id,
+        component: tab.component,
+        name: tab.name,
+        icon,
+        colorBase: config.colorBase,
+        colorActive: config.colorActive
+      }
+    }).filter(Boolean) as Array<{
+      id: string
+      component: string
+      name: string
+      icon: React.ReactNode
+      colorBase: string
+      colorActive: string
+    }>
+
+    return tabs
+  }, [clienti])
+
+  // ✅ Handler per selezione tab archivi - apre il pannello corrispondente
+  const handleArchiveTabSelect = useCallback((component: string, tabId: string) => {
+    setSelectedArchiveTabId(tabId)
+
+    // Cerca se esiste già un tabset per i pannelli dockable
+    const json = modelRef.current?.toJson() as any
+    if (!json) return
+
+    // Cerca un tabset esistente o crealo
+    let targetTabset = findById(json.layout, 'centerTabset')
+    if (!targetTabset) {
+      const placeholderIndex = json.layout.children?.findIndex((child: any) => child.id === 'placeholder')
+      if (placeholderIndex >= 0) {
+        json.layout.children[placeholderIndex] = {
+          type: 'tabset',
+          id: 'centerTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        }
+      } else {
+        json.layout.children = json.layout.children || []
+        json.layout.children.push({
+          type: 'tabset',
+          id: 'centerTabset',
+          enableTabStrip: true,
+          weight: 100,
+          children: []
+        })
+      }
+      targetTabset = findById(json.layout, 'centerTabset')
+    }
+
+    if (!targetTabset) return
+
+    // Cerca se la tab esiste già
+    targetTabset.children = targetTabset.children || []
+    const existingIndex = targetTabset.children.findIndex((t: any) => t.id === tabId)
+
+    if (existingIndex >= 0) {
+      // Tab esistente: selezionala
+      targetTabset.selected = existingIndex
+    } else {
+      // Crea nuova tab
+      const newTab: any = { type: 'tab', name: archiveTabs.find(t => t.id === tabId)?.name || component, component, id: tabId }
+
+      // Per tab cliente-memoria, aggiungi config
+      if (component === 'cliente-memoria') {
+        const clienteId = tabId.match(/^cliente-([^-]+)-tab$/)?.[1]
+        if (clienteId) {
+          const cliente = clienti.find(c => c.id === clienteId)
+          if (cliente) {
+            newTab.config = { clienteId }
+            newTab.name = `${cliente.nome} ${cliente.cognome}`
+          }
+        }
+      }
+
+      targetTabset.children.push(newTab)
+      targetTabset.selected = targetTabset.children.length - 1
+    }
+
+    const nextModel = Model.fromJson(json)
+    modelRef.current = nextModel
+    setModel(nextModel)
+  }, [archiveTabs, clienti])
 
   const registerToggle = useCallback((id: string, fn: () => void) => {
     if (!id) return
@@ -948,7 +1164,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         ]
       },
       borders: [
-        { type: 'border', location: 'left', size: 320, selected: -1, children: allTabs } as any
+        // ✅ Border left rimosso - sostituito da SidebarArchivi
       ]
     } as IJsonModel
   }
@@ -1694,18 +1910,131 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
   }, [selectedDrawerId, isDrawerStripVisible])
 
+  // ✅ Handler per nascondere sidebar archivi (come handleHideDrawerStrip)
+  const handleHideArchiveSidebar = useCallback(() => {
+    if (selectedArchiveTabId !== null) {
+      return // Non nascondere se una tab è selezionata
+    }
+    archiveSidebarTimeoutRef.current = setTimeout(() => {
+      setIsArchiveSidebarOpen(false)
+    }, 500)
+  }, [selectedArchiveTabId])
+
+  // ✅ Mantieni la sidebar visibile quando mouse è sopra (cancella timeout)
+  const handleArchiveSidebarMouseEnter = useCallback(() => {
+    if (archiveSidebarTimeoutRef.current) {
+      clearTimeout(archiveSidebarTimeoutRef.current)
+      archiveSidebarTimeoutRef.current = null
+    }
+  }, [])
+
+  // ✅ Calcola font size ottimale dei cassetti PRIMA di calcolare la larghezza
+  const drawerOptimalFontSize = useMemo(() => {
+    if (drawerTabs.length === 0) return 14
+
+    const MAX_FONT_SIZE = 14
+    const MIN_FONT_SIZE = 8
+    const PADDING_X = 8
+
+    // Trova la parola più lunga tra tutte le labels dei cassetti
+    let longestWord = ''
+    drawerTabs.forEach(item => {
+      const words = item.label.split(/\s+/)
+      words.forEach(word => {
+        if (word.length > longestWord.length) {
+          longestWord = word
+        }
+      })
+    })
+
+    if (longestWord === '') return MAX_FONT_SIZE
+
+    // Calcola larghezza uniforme cassetti (stesso calcolo di DrawerTabStrip)
+    const availableWidth = window.innerWidth
+    const gap = drawerTabs.length >= 15 ? 8 : 12
+    const totalGaps = (drawerTabs.length - 1) * gap
+    const totalPadding = PADDING_X * 2
+    const availableForDrawers = availableWidth - totalPadding
+    const uniformTabWidth = drawerTabs.length > 0
+      ? Math.max(drawerTabs.length >= 15 ? 45 : 60, (availableForDrawers - totalGaps) / drawerTabs.length)
+      : 100
+
+    const availableTextWidth = uniformTabWidth - (PADDING_X * 2)
+
+    // Crea canvas per misurare testo
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    if (!context) return MAX_FONT_SIZE
+
+    // Prova font size da MAX verso MIN
+    let fontSize = MAX_FONT_SIZE
+    while (fontSize >= MIN_FONT_SIZE) {
+      context.font = `medium ${fontSize}px sans-serif`
+      const metrics = context.measureText(longestWord)
+
+      if (metrics.width <= availableTextWidth) {
+        return fontSize
+      }
+      fontSize -= 0.5
+    }
+
+    return MIN_FONT_SIZE
+  }, [drawerTabs])
+
+  // ✅ Calcola larghezza dinamica sidebar: testo misurato + 15px x 2
+  const archiveSidebarWidth = useMemo(() => {
+    if (archiveTabs.length === 0) return 200
+
+    // Trova l'etichetta più lunga (intera label)
+    const longestLabel = archiveTabs.reduce((longest, tab) =>
+      tab.name.length > longest.length ? tab.name : longest, '')
+
+    if (longestLabel === '') return 200
+
+    // Misura larghezza effettiva del testo con optimalFontSize
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    if (!context) return 200
+
+    context.font = `600 ${drawerOptimalFontSize}px sans-serif` // font-weight 600
+    const textWidth = context.measureText(longestLabel).width
+
+    // Larghezza = testo più lungo + 15px sinistra + 15px destra
+    const SIDEBAR_PADDING = 15
+    const totalWidth = textWidth + (SIDEBAR_PADDING * 2)
+
+    const minWidth = 100
+    return Math.max(minWidth, Math.ceil(totalWidth))
+  }, [archiveTabs, drawerOptimalFontSize])
+
+  const headerHeight = props.headerHeight || 56
+
   return (
     <div
       ref={layoutRootRef}
       className="dockv2-root"
       style={{ height: '100%', width: '100%', boxSizing: 'border-box', position: 'relative', display: 'flex', flexDirection: 'column' }}
     >
+      {/* ✅ Sidebar Archivi - tab orizzontali con icone grandi */}
+      <SidebarArchivi
+        tabs={archiveTabs}
+        selectedId={selectedArchiveTabId}
+        onSelect={handleArchiveTabSelect}
+        isOpen={isArchiveSidebarOpen}
+        onToggle={() => setIsArchiveSidebarOpen(prev => !prev)}
+        onMouseEnter={handleArchiveSidebarMouseEnter}
+        headerHeight={props.headerHeight}
+        optimalFontSize={drawerOptimalFontSize} // ✅ Passa font size dei cassetti
+        isDrawerStripVisible={isDrawerStripVisible} // ✅ Passa stato cassetti per z-index
+      />
       {/* Layout principale - ora occupa sempre il 100% perché la strip è fixed */}
       <div
         style={{
           flex: 1,
           minHeight: 0,
-          height: '100%', // ✅ Sempre 100% - la strip non ruba spazio
+          height: '100%',
+          marginLeft: isArchiveSidebarOpen ? `${archiveSidebarWidth}px` : '0px',
+          transition: 'margin-left 0.3s ease-out',
           position: 'relative',
           overflow: 'hidden',
           display: 'flex',
@@ -1725,7 +2054,55 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         />
       </div>
 
-      {/* ✅ Zona hover inferiore per attivare la strip */}
+      {/* ✅ Zona hover sinistra per attivare sidebar archivi */}
+      {archiveTabs.length > 0 && (
+        <div
+          className="archive-sidebar-hover-zone"
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: `${headerHeight}px`, // ✅ Inizia sotto l'header
+            bottom: 0,
+            width: '50px', // Stessa larghezza della linguetta
+            zIndex: 99,
+            pointerEvents: isArchiveSidebarOpen ? 'none' : 'auto',
+          }}
+          onMouseEnter={() => {
+            if (archiveSidebarTimeoutRef.current) {
+              clearTimeout(archiveSidebarTimeoutRef.current)
+              archiveSidebarTimeoutRef.current = null
+            }
+            setIsArchiveSidebarOpen(true)
+          }}
+          onMouseLeave={() => {
+            // Non chiudere qui, solo quando esci dalla sidebar stessa
+          }}
+        />
+      )}
+      {/* Zona hover sulla sidebar stessa - CHIUDI quando esci a destra */}
+      {isArchiveSidebarOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: `${headerHeight}px`, // ✅ Inizia sotto l'header
+            bottom: isDrawerStripVisible ? '350px' : 0, // ✅ Non coprire i cassetti quando sono visibili
+            width: `${archiveSidebarWidth}px`, // ✅ Larghezza dinamica
+            zIndex: isDrawerStripVisible ? 999 : 1000, // ✅ Più basso quando cassetti visibili
+            pointerEvents: 'auto',
+          }}
+          onMouseEnter={handleArchiveSidebarMouseEnter}
+          onMouseLeave={(e) => {
+            // ✅ Chiude quando esci a destra (oltre la larghezza della sidebar)
+            const rect = e.currentTarget.getBoundingClientRect()
+            if (e.clientX > rect.right) {
+              handleHideArchiveSidebar()
+            }
+          }}
+        />
+      )}
+
+      {/* ✅ Zona hover inferiore per attivare la strip - PRIORITÀ su sidebar */}
       {drawerTabs.length > 0 && (
         <div
           className="drawer-strip-hover-zone"
@@ -1735,7 +2112,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             left: 0,
             right: 0,
             height: '50px',
-            zIndex: 99,
+            zIndex: isArchiveSidebarOpen ? 1001 : 99, // ✅ Più alto quando sidebar aperta
             pointerEvents: isDrawerStripVisible ? 'none' : 'auto',
           }}
           onMouseEnter={() => {
@@ -1787,7 +2164,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
               whiteSpace: 'nowrap',
             }}
           >
-            Cassetti
+            Qui per vedere i cassetti
           </div>
         </div>
       )}
@@ -1803,7 +2180,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             right: 0,
             minHeight: '100px',
             height: 'auto',
-            zIndex: 100,
+            zIndex: isDrawerStripVisible ? 1002 : 100, // ✅ Più alto quando visibile per stare sopra sidebar
             overflow: 'visible',
             pointerEvents: isDrawerStripVisible ? 'auto' : 'none',
             background: '#f8fafc',

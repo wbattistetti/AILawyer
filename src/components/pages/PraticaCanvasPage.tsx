@@ -721,6 +721,7 @@ export function PraticaCanvasPage() {
         <DockWorkspaceV2
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v2_${id}`}
+          headerHeight={headerH} // ✅ Passa altezza header per posizionare sidebar
           // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
           renderExplorer={() => <Explorer {...ExplorerProps} />}
           // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
