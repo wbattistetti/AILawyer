@@ -166,7 +166,8 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 						}}
 						onClick={(e) => {
 							e.stopPropagation()
-							// Click handler per aprire menu contestuale
+							// ✅ Se si clicca sul rettangolo senza aprire il menu, rimuovilo
+							setPersistentSelections(prev => prev.filter(s => s.id !== selection.id))
 						}}
 						title={isHovered || isDragging ? 'Estratto' : undefined}
 					/>

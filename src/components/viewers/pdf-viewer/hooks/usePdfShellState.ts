@@ -100,6 +100,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     setContextMenu: viewerState.setContextMenu,
     selectionHandledRef,
     setPersistentSelections: viewerState.setPersistentSelections,
+    persistentSelections: viewerState.persistentSelections,
+    draft,
     docId
   })
 

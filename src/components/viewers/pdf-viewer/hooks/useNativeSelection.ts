@@ -39,6 +39,8 @@ export interface NativeSelectionHookProps {
 	setContextMenu: (menu: { x: number; y: number; visible: boolean }) => void
 	selectionHandledRef: React.MutableRefObject<boolean>
 	setPersistentSelections: (selections: any[]) => void
+	persistentSelections: any[]
+	draft: any
 	docId?: string
 }
 
@@ -58,6 +60,8 @@ export const useNativeSelection = ({
 	setContextMenu,
 	selectionHandledRef,
 	setPersistentSelections,
+	persistentSelections,
+	draft,
 	docId
 }: NativeSelectionHookProps) => {
 
@@ -91,6 +95,25 @@ export const useNativeSelection = ({
 
 		let timer: number | null = null
 
+		// ✅ Funzione helper per verificare se il click è dentro un rettangolo persistente
+		const isClickOnPersistentSelection = (x: number, y: number): boolean => {
+			for (const selection of persistentSelections) {
+				const pageLayer = pageElsRef.current.get(selection.page)
+				if (!pageLayer) continue
+
+				const pr = pageLayer.getBoundingClientRect()
+				const xPct = (x - pr.left) / pr.width
+				const yPct = (y - pr.top) / pr.height
+
+				// Verifica se il click è dentro il rettangolo
+				if (xPct >= selection.x0Pct && xPct <= selection.x1Pct &&
+					yPct >= selection.y0Pct && yPct <= selection.y1Pct) {
+					return true
+				}
+			}
+			return false
+		}
+
 		const onMouseDown = (ev: MouseEvent) => {
 			if (extractOpen) return
 
@@ -98,7 +121,37 @@ export const useNativeSelection = ({
 			const y = ev.clientY
 			const hostR = host.getBoundingClientRect()
 
-			if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) return
+			if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) {
+				// ✅ Click fuori dal viewer: cancella tutto
+				if (persistentSelections.length > 0 || draft) {
+					console.log('[NATIVE][mousedown] Click fuori dal viewer - cancello tutto')
+					setPersistentSelections([])
+					setDraft(null)
+					setContextMenu({ x: 0, y: 0, visible: false })
+				}
+				return
+			}
+
+			// ✅ PRIMA: Verifica se il click è dentro un rettangolo persistente
+			// Se il click è fuori da tutti i rettangoli, cancella tutto e NON iniziare una nuova selezione
+			if (persistentSelections.length > 0 || draft) {
+				const clickedOnSelection = isClickOnPersistentSelection(x, y)
+
+				if (clickedOnSelection) {
+					console.log('[NATIVE][mousedown] Click su rettangolo persistente')
+					// Il rettangolo gestirà il click tramite onClick, quindi non facciamo nulla qui
+					// Ma NON iniziamo una nuova selezione
+					return
+				}
+
+				// Se il click è fuori da tutti i rettangoli, cancella tutto e NON iniziare selezione
+				console.log('[NATIVE][mousedown] Click fuori dai rettangoli - cancello tutto')
+				setPersistentSelections([])
+				setDraft(null)
+				setContextMenu({ x: 0, y: 0, visible: false })
+				// NON continuare con la selezione
+				return
+			}
 
 			// Activate native selection suppression
 			host.classList.add('rpv--suppress-native-select')
@@ -161,6 +214,20 @@ export const useNativeSelection = ({
 					const ax = (x - r.left) / r.width
 					const ay = (y - r.top) / r.height
 					mouseDownPosRef.current = { xPct: ax, yPct: ay }
+
+					// ✅ RIPRISTINATO: Crea draft iniziale zero-area per mostrare subito il rettangolo
+					const initialDraft = {
+						id: 'draft',
+						page: mouseDownPageRef.current || 0,
+						type: 'highlight' as const,
+						color: 'rgba(59,130,246,0.3)',
+						x0Pct: ax,
+						y0Pct: ay,
+						x1Pct: ax,
+						y1Pct: ay
+					}
+					setDraft(initialDraft)
+					lastDraftBoxRef.current = [initialDraft]
 				}
 			} catch { }
 
@@ -195,6 +262,37 @@ export const useNativeSelection = ({
 				x: ev.clientX, y: ev.clientY,
 				wasSelecting: isSelectingRef.current
 			})
+
+			// ✅ Se NON stava selezionando, verifica se il click è fuori dai rettangoli persistenti
+			if (!isSelectingRef.current) {
+				// Verifica se il click è dentro un rettangolo persistente
+				let clickedOnSelection = false
+
+				for (const selection of persistentSelections) {
+					const pageLayer = pageElsRef.current.get(selection.page)
+					if (!pageLayer) continue
+
+					const pr = pageLayer.getBoundingClientRect()
+					const xPct = (ev.clientX - pr.left) / pr.width
+					const yPct = (ev.clientY - pr.top) / pr.height
+
+					// Verifica se il click è dentro il rettangolo
+					if (xPct >= selection.x0Pct && xPct <= selection.x1Pct &&
+						yPct >= selection.y0Pct && yPct <= selection.y1Pct) {
+						clickedOnSelection = true
+						break
+					}
+				}
+
+				// Se il click è fuori da tutti i rettangoli, cancella tutto
+				if (!clickedOnSelection && (persistentSelections.length > 0 || draft)) {
+					setPersistentSelections([])
+					setDraft(null)
+					setContextMenu({ x: 0, y: 0, visible: false })
+				}
+
+				return
+			}
 
 			// Se stava selezionando, gestisci fine drag
 			if (isSelectingRef.current) {
@@ -239,6 +337,21 @@ export const useNativeSelection = ({
 							h: (firstDraftBox.y1Pct - firstDraftBox.y0Pct) * pr.height
 						}
 
+						// ✅ Se il rettangolo è zero-area o molto piccolo, cancellalo invece di creare selezione
+						const minArea = 100 // pixel minimi (10x10)
+						if (viewportBox.w * viewportBox.h < minArea) {
+							console.log('[DRAG][END] Rettangolo troppo piccolo, cancello:', {
+								width: viewportBox.w,
+								height: viewportBox.h,
+								area: viewportBox.w * viewportBox.h
+							})
+							setDraft(null)
+							lastDraftBoxRef.current = null
+							mouseDownPageRef.current = null
+							mouseDownPosRef.current = null
+							isSelectingRef.current = false
+							return
+						}
 
 						// Estrai il testo usando le coordinate del rettangolo
 						const { text } = await getSelectedTextInRect(textLayer, viewportBox)
@@ -675,7 +788,7 @@ export const useNativeSelection = ({
 			document.removeEventListener('mousemove', onDragMove, true)
 			document.removeEventListener('keydown', onKey, true)
 		}
-	}, [selectMode, selectKind, extractOpen, setDraft, setExtractPos, setExtractPage, setLastSelection, setContextMenu, handleSelection, setPersistentSelections, docId])
+	}, [selectMode, selectKind, extractOpen, setDraft, setExtractPos, setExtractPage, setLastSelection, setContextMenu, handleSelection, setPersistentSelections, persistentSelections, draft, docId])
 
 	return {
 		isSelectingRef,
