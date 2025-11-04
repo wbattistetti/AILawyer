@@ -69,7 +69,9 @@ export const useNativeSelection = ({
 	const selectionBlocker = useCallback(() => {
 		if (!isSelectingRef.current) return;
 		const sel = window.getSelection?.();
-		if (sel && sel.rangeCount) sel.removeAllRanges();
+		if (sel && sel.rangeCount) {
+			sel.removeAllRanges();
+		}
 	}, []);
 	const isSelectingRef = useRef(false)
 	const mouseDownPageRef = useRef<number | null>(null)
@@ -86,6 +88,26 @@ export const useNativeSelection = ({
 	const handleSelection = useCallback(() => {
 		// Logica per gestire la selezione nativa
 	}, [])
+
+	// ✅ Disabilita la selezione nativa globalmente quando selectMode è attivo
+	useEffect(() => {
+		if (!selectMode || selectKind !== 'NATIVE') return
+
+		const host = hostRef.current
+		if (!host) return
+
+		// Applica user-select: none globalmente al container principale
+		host.style.setProperty('user-select', 'none', 'important')
+		host.style.setProperty('-webkit-user-select', 'none', 'important')
+
+		return () => {
+			// Ripristina al cleanup
+			if (host) {
+				host.style.removeProperty('user-select')
+				host.style.removeProperty('-webkit-user-select')
+			}
+		}
+	}, [selectMode, selectKind, hostRef])
 
 	useEffect(() => {
 		if (!selectMode || selectKind !== 'NATIVE') return
@@ -122,9 +144,8 @@ export const useNativeSelection = ({
 			const hostR = host.getBoundingClientRect()
 
 			if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) {
-				// ✅ Click fuori dal viewer: cancella tutto
+				// Click fuori dal viewer: cancella tutto
 				if (persistentSelections.length > 0 || draft) {
-					console.log('[NATIVE][mousedown] Click fuori dal viewer - cancello tutto')
 					setPersistentSelections([])
 					setDraft(null)
 					setContextMenu({ x: 0, y: 0, visible: false })
@@ -132,24 +153,19 @@ export const useNativeSelection = ({
 				return
 			}
 
-			// ✅ PRIMA: Verifica se il click è dentro un rettangolo persistente
-			// Se il click è fuori da tutti i rettangoli, cancella tutto e NON iniziare una nuova selezione
+			// Verifica se il click è dentro un rettangolo persistente
 			if (persistentSelections.length > 0 || draft) {
 				const clickedOnSelection = isClickOnPersistentSelection(x, y)
 
 				if (clickedOnSelection) {
-					console.log('[NATIVE][mousedown] Click su rettangolo persistente')
 					// Il rettangolo gestirà il click tramite onClick, quindi non facciamo nulla qui
-					// Ma NON iniziamo una nuova selezione
 					return
 				}
 
 				// Se il click è fuori da tutti i rettangoli, cancella tutto e NON iniziare selezione
-				console.log('[NATIVE][mousedown] Click fuori dai rettangoli - cancello tutto')
 				setPersistentSelections([])
 				setDraft(null)
 				setContextMenu({ x: 0, y: 0, visible: false })
-				// NON continuare con la selezione
 				return
 			}
 
@@ -160,7 +176,6 @@ export const useNativeSelection = ({
 
 			isSelectingRef.current = true
 			host.classList.add('is-dragging')
-			console.log('[NATIVE][DEBUG] MouseDown - isSelecting: true, added is-dragging class')
 
 			// Trova la pagina del mouse down
 			let pn = 0
@@ -231,37 +246,24 @@ export const useNativeSelection = ({
 				}
 			} catch { }
 
-			try {
-				console.log('[NATIVE][event] mousedown start selecting', { mouseDownPage: mouseDownPageRef.current })
-			} catch { }
 		}
 
 		const onMouseUp = async (ev: MouseEvent) => {
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
 			if (ev.clientX < hostR.left || ev.clientX > hostR.right || ev.clientY < hostR.top || ev.clientY > hostR.bottom) return
-			if (extractOpen) {
-				try { console.log('[NATIVE][mouseup] ignored: extractOpen') } catch { }
-				return
-			}
+			if (extractOpen) return
 			if (timer) window.clearTimeout(timer)
-
-			console.log('[NATIVE][DEBUG] MouseUp - isSelecting:', isSelectingRef.current, 'removing is-dragging class')
 
 			// Deactivate native selection suppression
 			document.removeEventListener('selectionchange', selectionBlocker, true)
 			host.classList.remove('rpv--suppress-native-select')
+			window.getSelection?.()?.removeAllRanges()
 
 			// Rimuovi classe dragging
 			if (hostRef.current) {
 				hostRef.current.classList.remove('is-dragging')
 			}
-
-			// Log posizione mouse
-			console.log('[NATIVE][event] mouseup within viewer', {
-				x: ev.clientX, y: ev.clientY,
-				wasSelecting: isSelectingRef.current
-			})
 
 			// ✅ Se NON stava selezionando, verifica se il click è fuori dai rettangoli persistenti
 			if (!isSelectingRef.current) {
@@ -413,6 +415,14 @@ export const useNativeSelection = ({
 										selectedText: sel.toString().substring(0, 80),
 										rangeText: range.toString().substring(0, 80)
 									})
+
+									// Rimuovi la selezione dopo un breve delay per evitare che persista
+									setTimeout(() => {
+										const selAfter = window.getSelection()
+										if (selAfter && selAfter.rangeCount > 0) {
+											selAfter.removeAllRanges()
+										}
+									}, 100)
 								}
 							} else {
 								console.warn('[NATIVE-SEL] No spans found in box')
@@ -458,40 +468,8 @@ export const useNativeSelection = ({
 							setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
 						}
 
-						// ✅ CREA SELEZIONE PERSISTENTE invece di cancellare il draft
-						const persistentSelection: PersistentSelection = {
-							id: cryptoRandom(),
-							page: pageNum,
-							x0Pct: firstDraftBox.x0Pct,
-							y0Pct: firstDraftBox.y0Pct,
-							x1Pct: firstDraftBox.x1Pct,
-							y1Pct: firstDraftBox.y1Pct,
-							text: text || '',
-							viewportBox: viewportBox,
-							source: docId ? `Documento ${docId}` : undefined
-						}
-
-						setPersistentSelections((prev) => {
-							// Limita a massimo 3 rettangoli persistenti, rimuovi i più vecchi
-							const newSelections = [...prev, persistentSelection]
-							console.log('🔵 [NATIVE-SEL] Creando rettangolo persistente:', {
-								id: persistentSelection.id,
-								page: persistentSelection.page,
-								totalePrima: prev.length,
-								totaleDopo: newSelections.length
-							})
-							if (newSelections.length > 3) {
-								// Rimuovi i più vecchi (primi nell'array)
-								const filtered = newSelections.slice(-3)
-								console.log('🔵 [NATIVE-SEL] Rimosso rettangoli vecchi, rimangono:', filtered.length)
-								return filtered
-							}
-							return newSelections
-						})
-
-						// Mantieni il draft visibile come selezione persistente
-						// Non chiamare setDraft(null) qui - il rettangolo rimane visibile
-						// Il draft verrà rimosso dopo che la selezione persistente è stata renderizzata
+						// ✅ Il draft rimane visibile - non creare una selezione persistente separata
+						// Il draft è l'unico rettangolo che serve
 
 						// Apri il context menu invece del dialog
 						selectionHandledRef.current = true
@@ -500,13 +478,7 @@ export const useNativeSelection = ({
 					} catch (error) {
 						console.error('[DRAG][EXTRACT][ERROR]', error)
 					} finally {
-						// ✅ PULISCI IL DRAFT dopo aver creato la selezione persistente
-						// Usa un piccolo delay per permettere al render della selezione persistente
-						setTimeout(() => {
-							try { setDraft(null) } catch { }
-						}, 100)
-
-						// Pulisci sempre i refs
+						// Pulisci sempre i refs (ma NON rimuovere il draft - rimane visibile)
 						lastDraftBoxRef.current = null
 						mouseDownPageRef.current = null
 						mouseDownPosRef.current = null
@@ -532,6 +504,12 @@ export const useNativeSelection = ({
 		const onDragMove = (ev: MouseEvent) => {
 			if (!isSelectingRef.current || !mouseDownPageRef.current || !mouseDownPosRef.current) {
 				return
+			}
+
+			// Rimuovi la selezione nativa durante il drag
+			const sel = window.getSelection?.()
+			if (sel && sel.rangeCount) {
+				sel.removeAllRanges()
 			}
 
 			try {

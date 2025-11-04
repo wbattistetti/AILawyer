@@ -141,7 +141,7 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					width,
 					height,
 					background: 'rgba(59,130,246,0.3)',
-					border: isHovered || isDragging ? '2px solid rgba(59,130,246,0.8)' : '2px solid rgba(59,130,246,0.5)',
+					border: isHovered || isDragging ? '2px solid rgba(59,130,246,0.8)' : 'none',
 					borderRadius: 2,
 					cursor: isDragging ? 'grabbing' : 'grab',
 					pointerEvents: 'auto',
