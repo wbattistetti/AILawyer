@@ -2089,7 +2089,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             bottom: isDrawerStripVisible ? '350px' : 0, // ✅ Non coprire i cassetti quando sono visibili
             width: `${archiveSidebarWidth}px`, // ✅ Larghezza dinamica
             zIndex: isDrawerStripVisible ? 999 : 1000, // ✅ Più basso quando cassetti visibili
-            pointerEvents: 'auto',
+            pointerEvents: 'none', // ✅ NON bloccare gli eventi mouse - lascia passare alla sidebar
           }}
           onMouseEnter={handleArchiveSidebarMouseEnter}
           onMouseLeave={(e) => {
