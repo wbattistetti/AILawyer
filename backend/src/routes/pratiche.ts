@@ -429,23 +429,8 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   // Get documenti for pratica
   fastify.get<{ Params: { id: string } }>('/pratiche/:id/documenti', async (request, reply) => {
     const praticaId = request.params.id
-    console.log('[LOAD][DOCUMENTI][START]', { praticaId })
-
+    // Log rimossi - troppo verbosi (non servono per diagnosticare estrazione oggetto)
     try {
-      // ✅ DEBUG: Verifica se il documento "Arresto Di Nardo.pdf" esiste e quale praticaId ha
-      const debugDoc = await prisma.documento.findFirst({
-        where: { filename: { contains: 'Arresto Di Nardo' } },
-        select: { id: true, filename: true, praticaId: true, compartoId: true }
-      })
-      if (debugDoc) {
-        console.log('[LOAD][DOCUMENTI][DEBUG] Documento trovato:', {
-          docId: debugDoc.id.substring(0, 20) + '...',
-          filename: debugDoc.filename,
-          praticaId: debugDoc.praticaId,
-          requestedPraticaId: praticaId,
-          match: debugDoc.praticaId === praticaId
-        })
-      }
 
       const documentiRaw = await prisma.documento.findMany({
         where: { praticaId: praticaId },
@@ -476,26 +461,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         }
       })
 
-      console.log('[LOAD][DOCUMENTI][BACKEND][FOUND]', {
-        praticaId,
-        count: documentiRaw.length,
-        documentiConCompartoId: documentiRaw.filter((d: any) => d.compartoId).length,
-        documentiSenzaCompartoId: documentiRaw.filter((d: any) => !d.compartoId).length,
-        documentiPerComparto: documentiRaw.reduce((acc: any, d: any) => {
-          const compId = d.compartoId || 'NO-COMPARTO'
-          acc[compId] = (acc[compId] || 0) + 1
-          return acc
-        }, {}),
-        documenti: documentiRaw.map((d: any) => ({
-          id: d.id.substring(0, 20) + '...',
-          filename: d.filename,
-          compartoId: d.compartoId || 'NULL',
-          ocrStatus: d.ocrStatus,
-          hasOcrLayout: !!d.ocrLayout,
-          ocrLayoutType: typeof d.ocrLayout,
-          createdAt: d.createdAt
-        }))
-      })
+      // Log BACKEND/FOUND rimosso
 
       const documenti = documentiRaw.map((d: any) => {
         const tags = typeof d.tags === 'string' ? (() => { try { return JSON.parse(d.tags) } catch { return [] } })() : (d.tags ?? [])
@@ -503,34 +469,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         return { ...d, tags, ocrLayout }
       })
 
-      // 🔍 LOG: Verifica se ocrText è presente quando vengono caricati i documenti
-      const ocrTextStatus = documenti.map((d: any) => ({
-        id: d.id.substring(0, 20) + '...',
-        filename: d.filename,
-        ocrStatus: d.ocrStatus,
-        hasOcrText: !!d.ocrText,
-        ocrTextLength: d.ocrText?.length || 0,
-        ocrTextPreview: d.ocrText ? d.ocrText.substring(0, 100) : null
-      }))
-
-      console.log('[LOAD][DOCUMENTI][SUCCESS]', {
-        praticaId,
-        count: documenti.length,
-        compartiCount: Object.keys(documenti.reduce((acc: any, d: any) => {
-          acc[d.compartoId] = true
-          return acc
-        }, {})).length
-      })
-
-      console.log('[LOAD][DOCUMENTI][OCR-TEXT-STATUS]', {
-        praticaId,
-        ocrTextStatus,
-        summary: {
-          total: documenti.length,
-          withOcrText: ocrTextStatus.filter((d: any) => d.hasOcrText).length,
-          completedWithoutText: ocrTextStatus.filter((d: any) => d.ocrStatus === 'completed' && !d.hasOcrText).length
-        }
-      })
+      // Log SUCCESS e OCR-TEXT-STATUS rimossi (troppo verbosi)
 
       return documenti
     } catch (error) {

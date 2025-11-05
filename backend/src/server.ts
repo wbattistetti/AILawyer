@@ -37,7 +37,10 @@ const computedBodyLimit = limitMb > 0 ? (limitMb * 1024 * 1024) : Number.MAX_SAF
 
 const fastify = Fastify({
   logger: {
-    level: config.NODE_ENV === 'development' ? 'info' : 'warn',
+    // Solo errori e warning - niente log HTTP request/response (troppo verbosi)
+    level: 'warn',
+    // Disabilita anche i log di avvio (troppo verbosi)
+    disableRequestLogging: true,
   },
   bodyLimit: computedBodyLimit,
 })

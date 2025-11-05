@@ -39,7 +39,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
             }
           }
         } catch (wmicError) {
-          fastify.log.warn('wmic command failed, using fallback method:', wmicError);
+          // Log rimosso - wmic fallback è normale su Windows, non è un errore
 
           // Fallback: try to access common drive letters
           const commonDrives = ['C:', 'D:', 'E:', 'F:'];
@@ -503,9 +503,10 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
 
   // Extract object from PDF (reads first few pages and searches for "Oggetto:")
   fastify.post('/filesystem/extract-object', async (request, reply) => {
-    try {
-      const { filePath, hasNativeText } = request.body as { filePath: string; hasNativeText?: boolean };
+    const requestBody = request.body as { filePath: string; hasNativeText?: boolean };
+    const { filePath, hasNativeText } = requestBody;
 
+    try {
       if (!filePath) {
         return reply.code(400).send({ error: 'File path is required' });
       }
@@ -523,18 +524,32 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'File must be a PDF' });
       }
 
-      // Se hasNativeText non è fornito, rilevalo
+      // Se hasNativeText non è fornito, rilevalo (silenzioso)
       let hasNative = hasNativeText;
       if (hasNative === undefined) {
         hasNative = await detectNativeText(filePath);
       }
 
-      // Estrai oggetto dalle prime pagine
+      // Estrai oggetto dalle prime pagine (i log sono dentro extractObject)
       const oggetto = await extractObject(filePath, hasNative, 3);
 
+      // Log solo se trovato (per debug)
+      if (oggetto) {
+        const filename = filePath.split(/[/\\]/).pop();
+        fastify.log.info('[EXTRACT-OBJECT][FOUND]', {
+          filename,
+          length: oggetto.length
+        });
+      }
+
       return reply.send({ oggetto });
-    } catch (error) {
-      fastify.log.error('Failed to extract object:', error);
+    } catch (error: any) {
+      // Log solo errori reali
+      const filename = filePath?.split(/[/\\]/).pop() || 'unknown';
+      fastify.log.error('[EXTRACT-OBJECT][ERROR]', {
+        filename,
+        error: error?.message || String(error)
+      });
       return reply.code(500).send({ error: 'Failed to extract object' });
     }
   });

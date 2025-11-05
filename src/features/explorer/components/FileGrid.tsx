@@ -16,6 +16,7 @@ import {
 import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
 import { CompartiService, CompartoOption } from '../services/CompartiService';
+import { ObjectExtractionStatus } from '../hooks/usePdfObjectExtraction';
 
 // Hook per colonna "Oggetto" ridimensionabile
 function useOggettoColumnWidth() {
@@ -68,6 +69,7 @@ interface FileGridProps {
   onRowMenu: (file: FileEntry, action: string) => void;
   onFileClassificationChange?: (fileId: string, compartoKey: string, compartoNome: string) => void;
   className?: string;
+  objectExtractionStatus?: ObjectExtractionStatus;
 }
 
 interface FileRowProps {
@@ -233,6 +235,10 @@ function FileRow({ index, style, data }: FileRowProps) {
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="whitespace-nowrap">Sto analizzando l'oggetto...</span>
           </div>
+        ) : file.kind === 'pdf' && (file.oggetto === null || file.oggetto === '') ? (
+          <div className="text-xs text-gray-400 italic">
+            Oggetto non trovato
+          </div>
         ) : file.oggetto && typeof file.oggetto === 'string' ? (
           <div className="text-xs text-gray-700 break-words" title={file.oggetto}>
             {file.oggetto}
@@ -324,7 +330,8 @@ export function FileGrid({
   onOpenPreview,
   onRowMenu,
   onFileClassificationChange,
-  className = ''
+  className = '',
+  objectExtractionStatus
 }: FileGridProps) {
   // Hook per colonna "Oggetto" ridimensionabile
   const { width: oggettoColumnWidth, handleResizeStart: handleOggettoResizeStart } = useOggettoColumnWidth();
@@ -380,7 +387,16 @@ export function FileGrid({
           className="flex-shrink-0 mr-4 min-w-0 relative"
           style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
         >
-          Oggetto
+          <div className="flex items-center gap-2">
+            {objectExtractionStatus && !objectExtractionStatus.isComplete ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Ricerca oggetti... ({objectExtractionStatus.percentage}%)</span>
+              </>
+            ) : (
+              <span>Oggetto</span>
+            )}
+          </div>
           {/* Resize handle nell'header */}
           <div
             className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize z-10 transition-all"

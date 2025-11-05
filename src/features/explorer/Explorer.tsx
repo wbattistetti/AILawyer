@@ -70,7 +70,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   });
 
   // Hook per l'estrazione lazy dell'oggetto dai PDF
-  usePdfObjectExtraction({
+  const { status: objectExtractionStatus } = usePdfObjectExtraction({
     files: state.files,
     scanning: state.scanning,
     onFileUpdate: updateFileObject
@@ -284,6 +284,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
                   onRowMenu={handleRowMenu}
                   onFileClassificationChange={handleFileClassificationChange}
                   onWidthChange={setCenterWidth}
+                  objectExtractionStatus={objectExtractionStatus}
                 />
               )}
             </div>

@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 
 export const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
+  // Solo warning ed errori - niente query log (troppo verbosi)
+  log: ['warn', 'error'],
 })
 
 // Graceful shutdown

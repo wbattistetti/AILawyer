@@ -249,7 +249,7 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
     const args: string[] = []
     if (!color) args.push('-gray')
     args.push('-f', String(page), '-l', String(page), '-r', String(dpi), '-png', '-cropbox', '-aa', 'no', '-aaVector', 'no', pdfPath, outBase)
-    try { console.log('[OCR][raster][cmd]', bin('pdftoppm'), args.join(' ')) } catch {}
+    // Log rimosso per ridurre verbosità
     const proc = execa(bin('pdftoppm'), args, { shell: false, windowsHide: true })
     const jobId = process.env.BULLMQ_JOB_ID || ''
     const tick = setInterval(() => {
@@ -271,7 +271,7 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
         if (hit) picked = path.join(dir, hit)
       } catch {}
     }
-    try { const sz = picked && fss.existsSync(picked) ? (fss.statSync(picked).size || 0) : 0; console.log('[OCR][raster][out]', { page, picked, size: sz, color }) } catch {}
+    // Log rimosso per ridurre verbosità
     if (!picked || !fss.existsSync(picked)) {
       throw new Error('[OCR][raster] PNG non trovato dopo pdftoppm')
     }
@@ -280,11 +280,16 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
     const shouldCrop = String(process.env.OCR_CROP_TOP_THIRD || '').toLowerCase() === 'true'
     if (shouldCrop) {
       try {
+        // Crop silenzioso (log rimosso)
         const { cropImageTopThird } = await import('../lib/extractObject.js')
         picked = await cropImageTopThird(picked)
-        try { console.log('[OCR][raster][crop]', { page, picked }) } catch {}
       } catch (cropError: any) {
-        try { console.warn('[OCR][raster][crop-error]', { page, error: String(cropError?.message || cropError) }) } catch {}
+        console.error('[OCR][raster][crop-error]', {
+          page,
+          error: String(cropError?.message || cropError),
+          stack: cropError?.stack,
+          originalPath: picked
+        });
         // Continua anche se il crop fallisce
       }
     }
@@ -301,7 +306,7 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
       return await tryOnce(useColor)
     } catch (e: any) {
       lastErr = e
-      try { console.warn('[OCR][raster][retry]', { page, dpi, attempt: attempt + 1, useColor, err: String(e?.message || e) }) } catch {}
+      // Log retry rimosso (solo log finale se fallisce)
       await new Promise(r => setTimeout(r, 120 + attempt * 80))
     }
   }
@@ -365,7 +370,7 @@ async function ocrTsv(pngPath: string, psm: number, dpi: number) {
   const outBase = path.join(path.dirname(pngPath), `out-${path.basename(pngPath, '.png')}-${psm}-${dpi}-${Date.now()}`)
   try {
     const args = [pngPath, outBase, ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, '-c', 'tessedit_create_tsv=1']
-    try { console.log('[OCR][cmd][tsv]', TESSERACT, args.join(' ')) } catch {}
+    // Log comando rimosso
     const proc = execa(TESSERACT, args, {
       shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
     })
@@ -386,8 +391,8 @@ async function ocrTsv(pngPath: string, psm: number, dpi: number) {
     console.warn('[OCR][tesseract][tsv][error]', String(msg).slice(0, 500))
   }
   const tsvPath = `${outBase}.tsv`
-  if (!(await waitFor(tsvPath))) { try { console.warn('[OCR][tsv][missing]', tsvPath) } catch {}; return '' }
-  try { const sz = fss.statSync(tsvPath)?.size || 0; console.log('[OCR][tsv][file]', { path: tsvPath, size: sz }) } catch {}
+  if (!(await waitFor(tsvPath))) { return '' }
+  // Log file tsv rimosso
   try { return await fs.readFile(tsvPath, 'utf-8') } catch { return '' }
 }
 
@@ -395,7 +400,7 @@ async function ocrHocr(pngPath: string, psm: number, dpi: number) {
   const outBase = path.join(path.dirname(pngPath), `out-${path.basename(pngPath, '.png')}-${psm}-${dpi}-${Date.now()}`)
   try {
     const args = [pngPath, outBase, ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, '-c', 'tessedit_create_hocr=1']
-    try { console.log('[OCR][cmd][hocr]', TESSERACT, args.join(' ')) } catch {}
+    // Log comando rimosso
     const proc = execa(TESSERACT, args, {
       shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
     })
@@ -415,15 +420,15 @@ async function ocrHocr(pngPath: string, psm: number, dpi: number) {
     console.warn('[OCR][tesseract][hocr][error]', String(msg).slice(0, 500))
   }
   const hocrPath = `${outBase}.hocr`
-  if (!(await waitFor(hocrPath))) { try { console.warn('[OCR][hocr][missing]', hocrPath) } catch {}; return '' }
-  try { const sz = fss.statSync(hocrPath)?.size || 0; console.log('[OCR][hocr][file]', { path: hocrPath, size: sz }) } catch {}
+  if (!(await waitFor(hocrPath))) { return '' }
+  // Log file hocr rimosso
   try { return await fs.readFile(hocrPath, 'utf-8') } catch { return '' }
 }
 
 async function ocrTxt(pngPath: string, psm: number, dpi: number) {
   // Use stdout renderer to avoid file race on Windows: outputbase=stdout + renderer 'txt'
   const args = [pngPath, 'stdout', ...baseArgsCommon, '--psm', String(psm), '-c', `user_defined_dpi=${dpi}`, 'txt']
-  try { console.log('[OCR][cmd][txt]', TESSERACT, args.join(' ')) } catch {}
+  // Log comando rimosso
   const { stdout } = await execa(TESSERACT, args, {
     shell: false, windowsHide: true, env: tessEnv, maxBuffer: 1024 * 1024 * 100,
   })
@@ -458,19 +463,19 @@ function parseHocrWords(hocr: string): Word[] {
 const PSM_CHAIN = [6, 4, 3, 11, 12] as const
 
 async function tryBoxes(png: string, dpi: number) {
-  try { const st = fss.statSync(png); console.log('[OCR][png]', { path: png, size: st?.size || 0, dpi }) } catch {}
+  // Log png rimosso
   for (const psm of PSM_CHAIN) {
     const tsv = await ocrTsv(png, psm, dpi).catch(() => '')
     let words = parseTsv(tsv)
-    try { console.log('[OCR][psm][tsv]', { psm, tsvLen: tsv.length || 0, words: words.length }) } catch {}
+    // Log psm rimosso
     if (words.length) return { words, psmUsed: psm }
     const hocr = await ocrHocr(png, psm, dpi).catch(() => '')
     if (hocr) {
       words = parseHocrWords(hocr)
-      try { console.log('[OCR][psm][hocr]', { psm, hocrLen: hocr.length || 0, words: words.length }) } catch {}
+      // Log psm hocr rimosso
       if (words.length) return { words, psmUsed: psm }
     } else {
-      try { console.log('[OCR][psm][hocr]', { psm, hocrLen: 0, words: 0 }) } catch {}
+      // Log psm hocr vuoto rimosso
     }
   }
   return { words: [] as Word[], psmUsed: 6 }
@@ -481,21 +486,16 @@ export class PopplerOcrService implements IOcrPoppler {
 
   async extract(s3Key: string, onProgress?: (p: number, meta?: ProgressMeta)=>void): Promise<OcrResult & { layout: any[] }> {
     const tStartAll = Date.now()
-    try { console.log('[OCR][bin]', { TESSERACT, TESSDATA_DIR, POPPLER, OCR_LANG }) } catch {}
-    // Preflight: versione e lang data
+    // Log inizializzazione OCR rimossi (troppo verbosi)
+    // Preflight: versione e lang data (silenzioso)
     try {
-      const { stdout: ver } = await execa(TESSERACT, ['--version'], { shell: false, windowsHide: true })
-      console.log('[OCR][tesseract][version]', (ver || '').split('\n')[0])
+      await execa(TESSERACT, ['--version'], { shell: false, windowsHide: true })
     } catch (e) {
+      // Log error solo se Tesseract non trovato (problema critico)
       console.error('[OCR][tesseract] not found or not runnable', e)
       throw new Error('Tesseract non trovato: installa Tesseract o imposta TESSERACT_PATH')
     }
-    try {
-      const td = TESSDATA_DIR || ''
-      const { stdout: langsOut } = await execa(String(TESSERACT), ['--list-langs', ...(td ? ['--tessdata-dir', td] : [])], { shell: false, windowsHide: true })
-      const first = (langsOut || '').split('\n').slice(0, 6).join(' | ')
-      console.log('[OCR][tesseract][langs]', first)
-    } catch {}
+    // Lang check silenzioso
     try {
       const langs = String(OCR_LANG || 'ita').split('+')
       const missing = langs.filter(l => {
@@ -548,17 +548,7 @@ export class PopplerOcrService implements IOcrPoppler {
       const cpuCount = Math.max(1, (os.cpus()?.length || 1))
       const autoConc = computePageConcurrency()
       const conc = Number(process.env.OCR_CONCURRENCY) > 0 ? Number(process.env.OCR_CONCURRENCY) : autoConc
-      try {
-        const cpu0 = (os.cpus() || [])[0]
-        console.log('[OCR][concurrency]', {
-          cpuCount,
-          model: cpu0?.model,
-          speedMhz: cpu0?.speed,
-          totalMemGb: Math.round((os.totalmem() || 0) / (1024 ** 3)),
-          auto: autoConc,
-          using: conc,
-        })
-      } catch {}
+      // Log concurrency rimosso (troppo verboso)
 
       const resultPages: { text: string; confidence: number }[] = new Array(pagesToProcess)
       const layout: any[] = []
@@ -621,15 +611,7 @@ export class PopplerOcrService implements IOcrPoppler {
             last = { b: nb, p: np, l: nl }
           }
           const text = textParts.join('').replace(/[ \t]+/g, ' ').replace(/\s+\n/g, '\n').trim()
-          // Log per verificare allineamento testo/words
-          try {
-            console.log('[OCR][processWords][text]', {
-              page: pageIdx,
-              wordsCount: byIdx.length,
-              textLen: text.length,
-              textHead: text.slice(0, 100).replace(/\s+/g, ' ')
-            })
-          } catch {}
+          // Log processWords rimosso (troppo verboso)
 
           const confs = byIdx.map(w => w.conf)
           const med = median(confs)
@@ -661,8 +643,9 @@ export class PopplerOcrService implements IOcrPoppler {
         let usedPsm = 6
         let usedDpi = DPI_BASE
 
+        // Log rimosso - logHead disabilitato per ridurre verbosità
         const logHead = (phase: string, extra: Record<string, any> = {}) => {
-          try { console.log('[OCR][page]', { page: pageIdx, phase, ...extra }) } catch {}
+          // Silenzioso
         }
 
         // base ladder
@@ -696,14 +679,7 @@ export class PopplerOcrService implements IOcrPoppler {
             logHead('warn', { msg: 'processWords returned empty text, keeping empty to maintain alignment' })
           }
         }
-        // Log testo riconosciuto per pagina (tronco a 200 char)
-        try {
-          console.log('[OCR][pageText]', {
-            page: pageIdx,
-            len: (pageText || '').length,
-            head: (pageText || '').slice(0, 200).replace(/\s+/g, ' '),
-          })
-        } catch {}
+        // Log testo pagina rimosso (troppo verboso)
         logHead('result', { words: pageConf ? undefined : words.length, conf: pageConf.toFixed(1), textLen: (pageText||'').length, ms: (Date.now()-t0), snippet: (pageText||'').slice(0, 120) })
         return { text: pageText, confidence: pageConf }
       }
@@ -717,7 +693,7 @@ export class PopplerOcrService implements IOcrPoppler {
           const jobId = process.env.BULLMQ_JOB_ID || ''
           // Check memory registry first (standalone mode)
           const mem = (globalThis as any).__CANCEL_FLAGS as Set<string> | undefined
-          if (jobId && mem && mem.has(String(jobId))) { console.log('[CANCEL][ocr-poppler][page-check][mem]', { jobId, page: p }); throw new Error('CANCELLED') }
+          if (jobId && mem && mem.has(String(jobId))) { throw new Error('CANCELLED') }
         } catch {}
         const png = await rasterizePage(pdfPath, p, outBase, DPI_BASE)
         const out = await translateOne(p, png)
@@ -733,7 +709,7 @@ export class PopplerOcrService implements IOcrPoppler {
       await Promise.all(runners)
 
       const avgConfidence = resultPages.length ? resultPages.reduce((a, b) => a + b.confidence, 0) / resultPages.length : 0
-      try { console.log('[OCR][return]', { pages: resultPages.length, lens: resultPages.map(p => (p.text||'').length).slice(0, 3).join(','), layoutPages: layout.length, words0: (layout[0]?.words?.length || 0), totalMs: Date.now() - tStartAll }) } catch {}
+      // Log return rimosso (troppo verboso)
       return { pages: resultPages, avgConfidence, layout }
     } finally {
       try { await fs.rm(tmpDir, { recursive: true, force: true }) } catch {}
