@@ -21,6 +21,10 @@ export interface FileEntry {
   mtime?: number;
   path: string;
   parentDirName?: string;
+  // Classificazione documento
+  compartoKey?: string; // Key del comparto (es. 'denuncia_querela')
+  compartoNome?: string; // Nome del comparto (es. 'Denuncia–Querela / Notizia di reato')
+  classificationSource?: 'auto' | 'manual'; // 'auto' = blu, 'manual' = verde
 }
 
 export interface ScanProgress {

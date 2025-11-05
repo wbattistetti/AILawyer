@@ -9,6 +9,7 @@ interface FileGridWithAutoWidthProps {
   onToggleSelection: (fileId: string) => void;
   onOpenPreview: (file: FileEntry) => void;
   onRowMenu: (file: FileEntry, action: string) => void;
+  onFileClassificationChange?: (fileId: string, compartoKey: string, compartoNome: string) => void;
   className?: string;
   onWidthChange?: (width: number) => void;
 }
@@ -19,6 +20,7 @@ export function FileGridWithAutoWidth({
   onToggleSelection,
   onOpenPreview,
   onRowMenu,
+  onFileClassificationChange,
   className = '',
   onWidthChange
 }: FileGridWithAutoWidthProps) {
@@ -43,13 +45,14 @@ export function FileGridWithAutoWidth({
   }, [optimalWidth, onWidthChange]);
 
   return (
-    <div ref={measureRef} className={className}>
+    <div ref={measureRef} className={`h-full ${className}`}>
       <FileGrid
         files={files}
         selectedIds={selectedIds}
         onToggleSelection={onToggleSelection}
         onOpenPreview={onOpenPreview}
         onRowMenu={onRowMenu}
+        onFileClassificationChange={onFileClassificationChange}
       />
     </div>
   );

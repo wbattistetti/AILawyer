@@ -53,7 +53,8 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     setProgress,
     setScanning,
     setError,
-    clearError
+    clearError,
+    updateFileClassification
   } = useExplorerState();
 
   // Sync scan results with state
@@ -174,6 +175,10 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     setPreviewFile(undefined);
   }, []);
 
+  const handleFileClassificationChange = useCallback((fileId: string, compartoKey: string, compartoNome: string) => {
+    updateFileClassification(fileId, compartoKey, compartoNome);
+  }, [updateFileClassification]);
+
   // Error handling
   if (drivesError) {
     return (
@@ -237,6 +242,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
                 onToggleSelection={toggleFileSelection}
                 onOpenPreview={handleFilePreview}
                 onRowMenu={handleRowMenu}
+                onFileClassificationChange={handleFileClassificationChange}
                 onWidthChange={setCenterWidth}
               />
             </div>

@@ -50,7 +50,7 @@ export function useExplorerState() {
     // Apply search filter
     if (state.filters.search) {
       const searchLower = state.filters.search.toLowerCase();
-      filtered = filtered.filter(file => 
+      filtered = filtered.filter(file =>
         file.name.toLowerCase().includes(searchLower) ||
         file.ext?.toLowerCase().includes(searchLower)
       );
@@ -69,6 +69,29 @@ export function useExplorerState() {
       ...prev,
       files,
       visibleIds: files.map(f => f.id)
+    }));
+  }, []);
+
+  const updateFileClassification = useCallback((fileId: string, compartoKey: string, compartoNome: string) => {
+    setState(prev => ({
+      ...prev,
+      files: prev.files.map(file =>
+        file.id === fileId
+          ? compartoKey
+            ? {
+                ...file,
+                compartoKey,
+                compartoNome,
+                classificationSource: 'manual' as const
+              }
+            : {
+                ...file,
+                compartoKey: undefined,
+                compartoNome: undefined,
+                classificationSource: undefined
+              }
+          : file
+      )
     }));
   }, []);
 
@@ -150,7 +173,7 @@ export function useExplorerState() {
     selectedFiles,
     selectedCount,
     filteredFiles,
-    
+
     // Actions
     setSelectedNode,
     setFiles,
@@ -163,7 +186,8 @@ export function useExplorerState() {
     setProgress,
     setScanning,
     setError,
-    clearError
+    clearError,
+    updateFileClassification
   };
 }
 

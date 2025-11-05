@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { FileEntry, ScanProgress, FileKind } from '../types';
 import { FileSystemAdapter } from '../services/FileSystemAdapter';
 import { MimeService } from '../services/MimeService';
+import { ClassificationService } from '../services/ClassificationService';
 
 interface ScanOptions {
   rootPath: string;
@@ -20,7 +21,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
   });
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const scanIdRef = useRef(0);
 
@@ -37,7 +38,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
     try {
       const { files: dirFiles } = await adapter.listDir(dirPath);
-      
+
       for (const file of dirFiles) {
         if (currentScanId !== scanIdRef.current) {
           return count;
@@ -69,7 +70,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
     try {
       console.log('🔍 Scanning directory:', dirPath);
-      
+
       // Aggiorna la directory corrente
       setProgress(prev => ({
         ...prev,
@@ -78,7 +79,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
       const { files: dirFiles } = await adapter.listDir(dirPath);
       console.log('🔍 Found files in', dirPath, ':', dirFiles);
-      
+
       // Prima processa tutti i file della directory corrente
       for (const file of dirFiles) {
         if (currentScanId !== scanIdRef.current) {
@@ -95,11 +96,11 @@ export function useScanFiles(adapter: FileSystemAdapter) {
           // Check if file matches filters
           const shouldInclude = await shouldIncludeFile(file, options);
           console.log('🔍 File', file.name, 'should include:', shouldInclude);
-          
+
           if (shouldInclude) {
             const fileEntry = await createFileEntry(file, adapter);
             console.log('🔍 Adding file to list:', fileEntry);
-            
+
             setFiles(prev => [...prev, fileEntry]);
             setProgress(prev => ({
               ...prev,
@@ -125,7 +126,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         ...prev,
         completedDirs: (prev.completedDirs || 0) + 1
       }));
-      
+
     } catch (err) {
       if (currentScanId === scanIdRef.current) {
         console.warn(`Failed to scan directory ${dirPath}:`, err);
@@ -149,7 +150,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         path: file.path,
         readChunk: adapter.readChunk
       });
-      
+
       if (!options.kinds.has(kind)) {
         return false;
       }
@@ -169,10 +170,10 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     });
 
     const ext = file.name.split('.').pop()?.toLowerCase();
-    
+
     // Rimuovi l'estensione
     let nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-    
+
     // Se il nome contiene timestamp-uuid-nomeReale, estrai solo il nome reale
     // Pattern: 1758383831848-4af3a8fa-12bd-44b6-9bba-a18fc9f4f9d6-Catania
     const timestampUuidPattern = /^\d+-[a-f0-9-]{36}-(.+)$/i;
@@ -180,10 +181,11 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     if (match) {
       nameWithoutExt = match[1]; // Prendi solo la parte dopo l'ultimo trattino
     }
-    
+
     const parentDirName = file.path.split(/[/\\]/).slice(-2, -1)[0] || '';
 
-    return {
+    // Classificazione automatica
+    const fileEntry: FileEntry = {
       id: file.path,
       name: nameWithoutExt,
       ext,
@@ -193,11 +195,25 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       path: file.path,
       parentDirName
     };
+
+    // Prova a classificare automaticamente
+    try {
+      const classification = await ClassificationService.classifyFile(fileEntry);
+      if (classification) {
+        fileEntry.compartoKey = classification.compartoKey;
+        fileEntry.compartoNome = classification.compartoNome;
+        fileEntry.classificationSource = 'auto';
+      }
+    } catch (error) {
+      console.warn('Failed to classify file:', file.path, error);
+    }
+
+    return fileEntry;
   };
 
   const startScan = useCallback(async (options: ScanOptions) => {
     console.log('🔍 Starting scan with options:', options);
-    
+
     // Cancel any existing scan
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -225,15 +241,15 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       // FASE 1: Conta le directory
       console.log('📊 Phase 1: Counting directories...');
       setProgress(prev => ({ ...prev, phase: 'counting', currentDir: 'Counting directories...' }));
-      
+
       const totalDirs = await countDirectories(options.rootPath, newScanId);
-      
+
       if (newScanId !== scanIdRef.current) {
         return; // Scan was cancelled
       }
 
       console.log(`📊 Found ${totalDirs} directories`);
-      
+
       setProgress(prev => ({
         ...prev,
         totalDirs,
@@ -244,7 +260,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       // FASE 2: Scansiona i file
       console.log('🔍 Phase 2: Scanning files...');
       await scanRecursively(options.rootPath, options, newScanId);
-      
+
       if (newScanId === scanIdRef.current) {
         setProgress(prev => ({ ...prev, done: true, currentDir: 'Scan completed!' }));
         console.log('🔍 Scan completed successfully');
