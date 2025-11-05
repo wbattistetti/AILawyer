@@ -79,13 +79,14 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   const handleNodeSelect = useCallback((node: { type: 'drive' | 'dir'; path: string }) => {
     setSelectedNode(node);
 
-    // Start scanning the selected directory
+    // Start scanning the selected directory - scan ALL files (ignore type filters)
+    // Type filters will be applied in memory after scanning
     startScan({
       rootPath: node.path,
-      kinds: state.filters.kinds.size > 0 ? state.filters.kinds : undefined,
-      search: state.filters.search || undefined
+      kinds: undefined, // Always scan all files, filter in memory later
+      search: state.filters.search || undefined // Keep search filter during scan for efficiency
     });
-  }, [setSelectedNode, startScan, state.filters]);
+  }, [setSelectedNode, startScan, state.filters.search]);
 
   const handleFilePreview = useCallback((file: FileEntry) => {
     setPreviewFile(file);
@@ -118,10 +119,11 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   const handleScanControls = useCallback((action: 'pause' | 'resume' | 'stop' | 'rescan') => {
     if (!state.selectedNode) return;
 
+    // Always scan all files, filter in memory later
     const scanOptions = {
       rootPath: state.selectedNode.path,
-      kinds: state.filters.kinds.size > 0 ? state.filters.kinds : undefined,
-      search: state.filters.search || undefined
+      kinds: undefined, // Always scan all files
+      search: state.filters.search || undefined // Keep search filter during scan for efficiency
     };
 
     switch (action) {
@@ -138,20 +140,22 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
         rescan(scanOptions);
         break;
     }
-  }, [state.selectedNode, state.filters, pause, resume, abort, rescan]);
+  }, [state.selectedNode, state.filters.search, pause, resume, abort, rescan]);
 
   const handleFiltersChange = useCallback((filters: Partial<typeof state.filters>) => {
     setFilters(filters);
 
-    // Restart scan with new filters if a node is selected
-    if (state.selectedNode) {
+    // If search filter changes, restart scan (for efficiency)
+    // Type filters are applied in memory, no need to rescan
+    if (state.selectedNode && filters.search !== undefined) {
       const newFilters = { ...state.filters, ...filters };
       startScan({
         rootPath: state.selectedNode.path,
-        kinds: newFilters.kinds.size > 0 ? newFilters.kinds : undefined,
+        kinds: undefined, // Always scan all files
         search: newFilters.search || undefined
       });
     }
+    // Type filters (kinds) are applied instantly in memory via filteredFiles
   }, [setFilters, state.selectedNode, state.filters, startScan]);
 
   const handleSelectAll = useCallback(() => {
@@ -213,6 +217,8 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
               filters={state.filters}
               onFiltersChange={handleFiltersChange}
               selectedCount={selectedCount}
+              totalFiles={state.files.length}
+              visibleFiles={filteredFiles.length}
               onSelectAll={handleSelectAll}
               onDeselectAll={handleDeselectAll}
               onUploadToArchive={handleUploadToArchive}

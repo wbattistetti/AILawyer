@@ -1,12 +1,12 @@
 import React from 'react';
-import { 
-  Search, 
-  Filter, 
-  CheckSquare, 
-  Square, 
-  Upload, 
-  Pause, 
-  Play, 
+import {
+  Search,
+  Filter,
+  CheckSquare,
+  Square,
+  Upload,
+  Pause,
+  Play,
   Square as Stop,
   RotateCcw,
   X,
@@ -25,6 +25,8 @@ interface GridToolbarProps {
   filters: GridFilters;
   onFiltersChange: (filters: Partial<GridFilters>) => void;
   selectedCount: number;
+  totalFiles: number; // Total files found (all files in memory)
+  visibleFiles: number; // Files visible after filtering
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onUploadToArchive: () => void;
@@ -37,44 +39,44 @@ interface GridToolbarProps {
   className?: string;
 }
 
-const FILE_KINDS: Array<{ 
-  kind: FileKind; 
-  label: string; 
-  color: string; 
+const FILE_KINDS: Array<{
+  kind: FileKind;
+  label: string;
+  color: string;
   icon: React.ComponentType<{ className?: string }>;
   iconColor: string;
 }> = [
-  { 
-    kind: 'pdf', 
-    label: 'PDF', 
+  {
+    kind: 'pdf',
+    label: 'PDF',
     color: 'bg-red-100 text-red-800 border-red-200',
     icon: FileType,
     iconColor: 'text-red-600'
   },
-  { 
-    kind: 'word', 
-    label: 'Word', 
+  {
+    kind: 'word',
+    label: 'Word',
     color: 'bg-blue-100 text-blue-800 border-blue-200',
     icon: FileText,
     iconColor: 'text-blue-600'
   },
-  { 
-    kind: 'image', 
-    label: 'Images', 
+  {
+    kind: 'image',
+    label: 'Images',
     color: 'bg-green-100 text-green-800 border-green-200',
     icon: FileImage,
     iconColor: 'text-green-600'
   },
-  { 
-    kind: 'video', 
-    label: 'Video', 
+  {
+    kind: 'video',
+    label: 'Video',
     color: 'bg-purple-100 text-purple-800 border-purple-200',
     icon: Video,
     iconColor: 'text-purple-600'
   },
-  { 
-    kind: 'audio', 
-    label: 'Audio', 
+  {
+    kind: 'audio',
+    label: 'Audio',
     color: 'bg-orange-100 text-orange-800 border-orange-200',
     icon: Music,
     iconColor: 'text-orange-600'
@@ -85,6 +87,8 @@ export function GridToolbar({
   filters,
   onFiltersChange,
   selectedCount,
+  totalFiles,
+  visibleFiles,
   onSelectAll,
   onDeselectAll,
   onUploadToArchive,
@@ -117,7 +121,7 @@ export function GridToolbar({
       const percentage = Math.round((completedDirs / progress.totalDirs) * 100);
       return `${percentage}%`;
     }
-    
+
     // Fallback al vecchio metodo (anche se non dovrebbe mai essere usato)
     if (progress.scanned === 0) return '0%';
     return '100%'; // Se stiamo scansionando senza info directory, mostra almeno qualcosa
@@ -127,14 +131,14 @@ export function GridToolbar({
     if (progress.phase === 'counting') {
       return 'Counting directories...';
     }
-    
+
     if (progress.currentDir) {
       // Mostra il nome della directory corrente (accorciato se troppo lungo)
       const parts = progress.currentDir.split(/[/\\]/);
       const lastPart = parts[parts.length - 1] || parts[parts.length - 2] || progress.currentDir;
       return `Scanning: ${lastPart}`;
     }
-    
+
     return 'Scanning files...';
   };
 
@@ -178,8 +182,8 @@ export function GridToolbar({
             onClick={() => toggleKindFilter(kind)}
             className={`
               flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border transition-colors
-              ${filters.kinds.has(kind) 
-                ? `${color} border-current` 
+              ${filters.kinds.has(kind)
+                ? `${color} border-current`
                 : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
               }
             `}
@@ -201,7 +205,7 @@ export function GridToolbar({
             <CheckSquare className="w-4 h-4" />
             Select All
           </button>
-          
+
           <button
             onClick={onDeselectAll}
             className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
@@ -209,6 +213,17 @@ export function GridToolbar({
             <Square className="w-4 h-4" />
             Deselect All
           </button>
+
+          {/* File Count Info */}
+          {!scanning && totalFiles > 0 && (
+            <div className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
+              {totalFiles === visibleFiles ? (
+                <span>{totalFiles} file{totalFiles !== 1 ? 's' : ''} found</span>
+              ) : (
+                <span>{totalFiles} found, {visibleFiles} visible</span>
+              )}
+            </div>
+          )}
 
           {/* Selected Count */}
           {selectedCount > 0 && (
@@ -229,7 +244,7 @@ export function GridToolbar({
                 <Pause className="w-4 h-4" />
                 Pause
               </button>
-              
+
               <button
                 onClick={onStop}
                 className="flex items-center gap-2 px-3 py-1 text-sm text-red-600 hover:text-red-900"
@@ -247,7 +262,7 @@ export function GridToolbar({
                 <Play className="w-4 h-4" />
                 Resume
               </button>
-              
+
               <button
                 onClick={onRescan}
                 className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
@@ -286,8 +301,8 @@ export function GridToolbar({
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className={`h-2 rounded-full transition-all duration-300 ${
-                progress.phase === 'counting' 
-                  ? 'bg-yellow-500' 
+                progress.phase === 'counting'
+                  ? 'bg-yellow-500'
                   : 'bg-blue-600'
               }`}
               style={{ width: formatProgress() }}

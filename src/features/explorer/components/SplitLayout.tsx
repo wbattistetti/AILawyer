@@ -119,16 +119,19 @@ export function SplitLayout({
 
       {/* Left Resizer */}
       <div
-        className={`w-1 bg-gray-200 hover:bg-gray-300 cursor-col-resize flex-shrink-0 ${
-          isDragging ? 'bg-blue-400' : ''
+        className={`w-2 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors relative group ${
+          isDragging ? 'bg-blue-500' : ''
         }`}
         onMouseDown={handleLeftDrag}
-      />
+        title="Trascina per ridimensionare"
+      >
+        <div className="absolute inset-y-0 left-1/2 w-0.5 bg-gray-400 group-hover:bg-blue-500 transition-colors" />
+      </div>
 
       {/* Center Panel */}
       <div
-        className={`flex flex-col min-w-0 ${centerAutoWidth ? 'flex-shrink-0' : 'flex-1'}`}
-        style={centerAutoWidth && centerW ? { width: centerW } : undefined}
+        className={`flex flex-col min-w-0 flex-1`}
+        style={centerAutoWidth && centerW ? { minWidth: centerW } : undefined}
       >
         {center}
       </div>
@@ -138,16 +141,19 @@ export function SplitLayout({
         <>
           {/* Right Resizer */}
           <div
-            className={`w-1 bg-gray-200 hover:bg-gray-300 cursor-col-resize flex-shrink-0 ${
-              isDragging ? 'bg-blue-400' : ''
+            className={`w-2 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors relative group ${
+              isDragging ? 'bg-blue-500' : ''
             }`}
             onMouseDown={handleRightDrag}
-          />
+            title="Trascina per ridimensionare"
+          >
+            <div className="absolute inset-y-0 left-1/2 w-0.5 bg-gray-400 group-hover:bg-blue-500 transition-colors" />
+          </div>
 
           {/* Right Content */}
           <div
-            className="flex-1 border-l border-gray-200 bg-white min-w-0"
-            style={{ minWidth: rightW }}
+            className="flex-shrink-0 border-l border-gray-200 bg-white"
+            style={{ width: rightW }}
           >
             {right}
           </div>
