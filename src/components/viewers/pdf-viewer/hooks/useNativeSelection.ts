@@ -358,6 +358,12 @@ export const useNativeSelection = ({
 						// Estrai il testo usando le coordinate del rettangolo
 						const { text } = await getSelectedTextInRect(textLayer, viewportBox)
 
+						console.log('[DRAG][EXTRACT][TEXT]', {
+							hasText: !!text,
+							textLength: text?.length || 0,
+							textPreview: text?.substring(0, 100) || 'N/A',
+							viewportBox
+						})
 
 						// ✅ NUOVO: Crea selezione nativa programmaticamente dalle coordinate del rettangolo
 						try {

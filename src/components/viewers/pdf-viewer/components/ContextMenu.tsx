@@ -41,6 +41,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
 	const handleCopyExtract = async () => {
 		console.log('🎬 [ContextMenu] Copia estratto clicked')
+		console.log('🎬 [ContextMenu] lastSelection completo:', {
+			hasLastSelection: !!lastSelection,
+			hasText: !!lastSelection?.text,
+			textLength: lastSelection?.text?.length || 0,
+			textPreview: lastSelection?.text?.substring(0, 100) || 'N/A',
+			pdfPageNumber: lastSelection?.pdfPageNumber,
+			hasViewportBox: !!lastSelection?.viewportBox,
+			viewportBox: lastSelection?.viewportBox
+		})
 		console.log('🎬 [ContextMenu] Stato attuale persistentSelections:', persistentSelections.length, 'elementi')
 
 		if (!lastSelection) {
@@ -155,7 +164,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 			bbox
 		}
 
+		// Copia nella clipboard personalizzata (per drag & drop)
 		extractClipboardManager.copy(extractData)
+
+		// ✅ Copia anche nella clipboard del browser per permettere Ctrl+V
+		if (extractData.content) {
+			try {
+				await navigator.clipboard.writeText(extractData.content)
+				console.log('✅ [ContextMenu] Testo copiato nella clipboard del browser')
+			} catch (error) {
+				console.error('[ContextMenu] Errore copiando nella clipboard del browser:', error)
+			}
+		}
+
 		console.log('✅ [ContextMenu] Estratto copiato:', {
 			hasText: !!extractData.content,
 			hasImage: !!extractData.imageDataUrl,
@@ -195,7 +216,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 		onContextMenuChange({ x: 0, y: 0, visible: false })
 	}
 
-	if (!contextMenu.visible) return null
+	if (!contextMenu.visible) {
+		return null
+	}
 
 	// ✅ FIX: Previeni che il context menu vada troppo in basso
 	const menuHeight = 100 // Altezza approssimativa del menu
@@ -206,19 +229,59 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 			{/* Overlay invisibile per catturare click fuori */}
 			<div
 				className="fixed inset-0 z-[9998]"
-				onClick={() => onContextMenuChange({ x: 0, y: 0, visible: false })}
+				onClick={(e) => {
+					// Se il click è sul menu stesso, non chiudere
+					const target = e.target as HTMLElement
+					if (target.closest('[data-context-menu]')) {
+						return
+					}
+					onContextMenuChange({ x: 0, y: 0, visible: false })
+				}}
 			/>
-			<div className="fixed z-[9999]" style={{ left: contextMenu.x, top: safeY }}>
-				<div className="bg-white border border-gray-200 rounded-lg shadow-2xl p-3 min-w-[200px] pointer-events-auto">
+			<div
+				className="fixed z-[9999]"
+				style={{ left: contextMenu.x, top: safeY }}
+				data-context-menu="true"
+				onClick={(e) => {
+					e.stopPropagation()
+				}}
+				onMouseDown={(e) => {
+					e.stopPropagation()
+				}}
+			>
+				<div
+					className="bg-white border border-gray-200 rounded-lg shadow-2xl p-3 min-w-[200px] pointer-events-auto"
+					data-context-menu="true"
+					onClick={(e) => {
+						e.stopPropagation()
+					}}
+					onMouseDown={(e) => {
+						e.stopPropagation()
+					}}
+				>
 					<button
 						className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
-						onClick={handleCreateTask}
+						onClick={(e) => {
+							e.preventDefault()
+							e.stopPropagation()
+							console.log('🔘 [ContextMenu] Create task button clicked')
+							handleCreateTask()
+						}}
 					>
 						📋 Create task
 					</button>
 					<button
 						className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
-						onClick={handleCopyExtract}
+						data-context-menu="true"
+						onMouseDown={(e) => {
+							e.stopPropagation()
+						}}
+						onClick={(e) => {
+							e.preventDefault()
+							e.stopPropagation()
+							console.log('🔘 [ContextMenu] Copia estratto button clicked')
+							handleCopyExtract()
+						}}
 					>
 						📄 Copia estratto
 					</button>

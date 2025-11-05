@@ -25,18 +25,18 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
 
   // Hooks
   const { drives, loading: drivesLoading, error: drivesError, refresh: refreshDrives } = useDriveList(adapter);
-  const { 
-    files, 
-    progress, 
-    scanning, 
-    error: scanError, 
-    startScan, 
-    pause, 
-    resume, 
-    abort, 
-    rescan 
+  const {
+    files,
+    progress,
+    scanning,
+    error: scanError,
+    startScan,
+    pause,
+    resume,
+    abort,
+    rescan
   } = useScanFiles(adapter);
-  
+
   const {
     state,
     visibleFiles,
@@ -78,7 +78,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   // Event handlers
   const handleNodeSelect = useCallback((node: { type: 'drive' | 'dir'; path: string }) => {
     setSelectedNode(node);
-    
+
     // Start scanning the selected directory
     startScan({
       rootPath: node.path,
@@ -142,7 +142,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
 
   const handleFiltersChange = useCallback((filters: Partial<typeof state.filters>) => {
     setFilters(filters);
-    
+
     // Restart scan with new filters if a node is selected
     if (state.selectedNode) {
       const newFilters = { ...state.filters, ...filters };
@@ -190,7 +190,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
 
 
   return (
-    <div className={`h-full ${className}`}>
+    <div className={`h-full w-full ${className}`}>
       <SplitLayout
         left={
           <DirectoryTree
@@ -223,7 +223,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
               onStop={() => handleScanControls('stop')}
               onRescan={() => handleScanControls('rescan')}
             />
-            
+
             <div className="flex-1 overflow-hidden">
               <FileGridWithAutoWidth
                 files={filteredFiles}

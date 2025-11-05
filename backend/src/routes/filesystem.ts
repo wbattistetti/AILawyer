@@ -8,7 +8,7 @@ const execAsync = promisify(exec);
 
 export async function filesystemRoutes(fastify: FastifyInstance) {
   // List drives
-  fastify.get('/api/filesystem/drives', async (request, reply) => {
+  fastify.get('/filesystem/drives', async (request, reply) => {
     try {
       const drives = [];
 
@@ -66,7 +66,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // List directory contents
-  fastify.post('/api/filesystem/list', async (request, reply) => {
+  fastify.post('/filesystem/list', async (request, reply) => {
     try {
       const { path: dirPath } = request.body as { path: string };
 
@@ -112,7 +112,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Check if path exists
-  fastify.post('/api/filesystem/exists', async (request, reply) => {
+  fastify.post('/filesystem/exists', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
 
@@ -133,7 +133,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Open file in system
-  fastify.post('/api/filesystem/open', async (request, reply) => {
+  fastify.post('/filesystem/open', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
 
@@ -156,7 +156,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Reveal file in folder
-  fastify.post('/api/filesystem/reveal', async (request, reply) => {
+  fastify.post('/filesystem/reveal', async (request, reply) => {
     try {
       const { path: filePath } = request.body as { path: string };
 
@@ -179,7 +179,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Read file chunk
-  fastify.post('/api/filesystem/read-chunk', async (request, reply) => {
+  fastify.post('/filesystem/read-chunk', async (request, reply) => {
     try {
       const { path: filePath, start, length } = request.body as {
         path: string;
@@ -206,9 +206,11 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Serve file for preview (PDF, images, etc.)
-  fastify.get('/api/filesystem/file/*', async (request, reply) => {
+  fastify.get('/filesystem/file/*', async (request, reply) => {
     try {
-      const filePath = decodeURIComponent(request.url.replace('/api/filesystem/file/', ''));
+      // Extract file path from URL (handles both with and without /api prefix)
+      const urlPath = request.url.replace(/^\/api\/filesystem\/file\//, '').replace(/^\/filesystem\/file\//, '');
+      const filePath = decodeURIComponent(urlPath);
 
       console.log('🔍 Serving file:', filePath);
 
@@ -270,7 +272,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Read file content for upload
-  fastify.post('/api/filesystem/read-file', async (request, reply) => {
+  fastify.post('/filesystem/read-file', async (request, reply) => {
     try {
       const { filePath } = request.body as { filePath: string };
 
@@ -327,7 +329,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Copy file to temp directory for preview
-  fastify.post('/api/filesystem/copy-temp', async (request, reply) => {
+  fastify.post('/filesystem/copy-temp', async (request, reply) => {
     try {
       const { sourcePath } = request.body as { sourcePath: string };
 
@@ -369,7 +371,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Move temp file to archive
-  fastify.post('/api/filesystem/move-to-archive', async (request, reply) => {
+  fastify.post('/filesystem/move-to-archive', async (request, reply) => {
     try {
       const { tempFileName, archivePath } = request.body as { tempFileName: string; archivePath?: string };
 
@@ -407,7 +409,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Delete temp file
-  fastify.delete('/api/filesystem/temp/:filename', async (request, reply) => {
+  fastify.delete('/filesystem/temp/:filename', async (request, reply) => {
     try {
       const { filename } = request.params as { filename: string };
 
@@ -431,7 +433,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Cleanup old temp files (older than 1 hour)
-  fastify.post('/api/filesystem/cleanup-temp', async (request, reply) => {
+  fastify.post('/filesystem/cleanup-temp', async (request, reply) => {
     try {
       const tempDir = path.join(process.cwd(), 'uploads', 'temp');
 
@@ -466,7 +468,7 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
   });
 
   // Copia file da filePath originale a uploads/ per OCR on-demand
-  fastify.post('/api/filesystem/copy-for-ocr', async (request, reply) => {
+  fastify.post('/filesystem/copy-for-ocr', async (request, reply) => {
     try {
       const { sourcePath, targetS3Key } = request.body as { sourcePath: string; targetS3Key: string };
 

@@ -41,19 +41,19 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
 
   const handleAddToArchive = async () => {
     if (!tempFileName) return;
-    
+
     setIsArchiving(true);
     try {
       // Per ora, mostriamo solo un messaggio di successo
       // In futuro, possiamo implementare il trasferimento a una pratica specifica
       console.log('✅ File ready for archive:', tempFileName);
-      
+
       // Reset temp file state
       setTempFileName(null);
-      
+
       // Show success message
       alert('File ready for archive! (Feature to be implemented)');
-      
+
     } catch (error) {
       console.error('Error preparing file for archive:', error);
       alert('Failed to prepare file for archive');
@@ -64,19 +64,19 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
 
   const handleDeleteTemp = async () => {
     if (!tempFileName) return;
-    
+
     setIsDeleting(true);
     try {
       // Per ora, mostriamo solo un messaggio di successo
       // In futuro, possiamo implementare la cancellazione del file S3
       console.log('✅ Temp file marked for deletion:', tempFileName);
-      
+
       // Reset temp file state
       setTempFileName(null);
-      
+
       // Close preview
       onClose();
-      
+
     } catch (error) {
       console.error('Error deleting temp file:', error);
       alert('Failed to delete temp file');
@@ -102,7 +102,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   };
 
   return (
-    <div className={`h-full flex flex-col bg-white ${className}`}>
+    <div className={`h-full w-full flex flex-col bg-white ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
         <div className="flex-1 min-w-0">
@@ -114,7 +114,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
             {tempFileName && <span className="ml-2 text-blue-600">• Temp file ready</span>}
           </p>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {/* Action buttons - only show if temp file exists */}
           {tempFileName && (
@@ -128,7 +128,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
                 <Archive className="w-3 h-3" />
                 {isArchiving ? 'Adding...' : 'Archive'}
               </button>
-              
+
               <button
                 onClick={handleDeleteTemp}
                 disabled={isDeleting}
@@ -140,7 +140,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
               </button>
             </>
           )}
-          
+
           <button
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
@@ -163,12 +163,12 @@ function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
-  
+
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex++;
   }
-  
+
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 

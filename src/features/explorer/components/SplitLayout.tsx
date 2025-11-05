@@ -40,7 +40,7 @@ export function SplitLayout({
   // Funzione per calcolare la larghezza ottimale del pannello centrale
   const calculateOptimalCenterWidth = () => {
     if (!centerAutoWidth) return null;
-    
+
     // Per ora, usiamo una larghezza fissa ottimale
     // In futuro, potremmo calcolare dinamicamente basandoci sul contenuto
     return Math.max(centerMinWidth, Math.min(centerMaxWidth, 500));
@@ -63,7 +63,7 @@ export function SplitLayout({
 
   const handleLeftDrag = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    
+
     setIsDragging(true);
     const startX = e.clientX;
     const startWidth = leftW;
@@ -86,14 +86,14 @@ export function SplitLayout({
 
   const handleRightDrag = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    
+
     setIsDragging(true);
     const startX = e.clientX;
     const startWidth = rightW;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = startX - e.clientX;
-      const newWidth = Math.max(minRightWidth, Math.min(600, startWidth + deltaX));
+      const newWidth = Math.max(minRightWidth, startWidth + deltaX);
       setRightW(newWidth);
     };
 
@@ -108,9 +108,9 @@ export function SplitLayout({
   };
 
   return (
-    <div className={`flex h-full bg-gray-50 ${className}`}>
+    <div className={`flex h-full w-full bg-gray-50 ${className}`}>
       {/* Left Panel */}
-      <div 
+      <div
         className="flex-shrink-0 border-r border-gray-200 bg-white"
         style={{ width: leftW }}
       >
@@ -126,7 +126,7 @@ export function SplitLayout({
       />
 
       {/* Center Panel */}
-      <div 
+      <div
         className={`flex flex-col min-w-0 ${centerAutoWidth ? 'flex-shrink-0' : 'flex-1'}`}
         style={centerAutoWidth && centerW ? { width: centerW } : undefined}
       >
@@ -145,9 +145,9 @@ export function SplitLayout({
           />
 
           {/* Right Content */}
-          <div 
-            className="flex-shrink-0 border-l border-gray-200 bg-white"
-            style={{ width: rightW }}
+          <div
+            className="flex-1 border-l border-gray-200 bg-white min-w-0"
+            style={{ minWidth: rightW }}
           >
             {right}
           </div>
