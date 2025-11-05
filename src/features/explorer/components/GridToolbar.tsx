@@ -100,14 +100,25 @@ export function GridToolbar({
   onRescan,
   className = ''
 }: GridToolbarProps) {
-  const toggleKindFilter = (kind: FileKind) => {
-    const newKinds = new Set(filters.kinds);
-    if (newKinds.has(kind)) {
-      newKinds.delete(kind);
+  const handleKindFilterClick = (kind: FileKind, e: React.MouseEvent) => {
+    if (e.ctrlKey || e.shiftKey) {
+      // Se Ctrl o Shift premuto: seleziona solo questo tipo (esclude tutti gli altri)
+      onFiltersChange({ kinds: new Set([kind]) });
     } else {
-      newKinds.add(kind);
+      // Clic normale: toggle
+      const newKinds = new Set(filters.kinds);
+      if (newKinds.has(kind)) {
+        newKinds.delete(kind);
+      } else {
+        newKinds.add(kind);
+      }
+      onFiltersChange({ kinds: newKinds });
     }
-    onFiltersChange({ kinds: newKinds });
+  };
+
+  const selectAllTypes = () => {
+    // Seleziona tutti i tipi di file
+    onFiltersChange({ kinds: new Set(['pdf', 'word', 'image', 'video', 'audio']) });
   };
 
   const clearSearch = () => {
@@ -179,7 +190,7 @@ export function GridToolbar({
         {FILE_KINDS.map(({ kind, label, color, icon: Icon, iconColor }) => (
           <button
             key={kind}
-            onClick={() => toggleKindFilter(kind)}
+            onClick={(e) => handleKindFilterClick(kind, e)}
             className={`
               flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border transition-colors
               ${filters.kinds.has(kind)
@@ -192,6 +203,16 @@ export function GridToolbar({
             {label}
           </button>
         ))}
+        {/* Tutti Button - visibile solo se non tutti i tipi sono selezionati */}
+        {filters.kinds.size < 5 && (
+          <button
+            onClick={selectAllTypes}
+            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            title="Seleziona tutti i tipi di file"
+          >
+            Tutti
+          </button>
+        )}
       </div>
 
       {/* Actions Row */}
