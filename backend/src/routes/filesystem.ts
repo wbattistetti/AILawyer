@@ -4,6 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { detectNativeText } from '../lib/detectNativeText';
+import { extractObject } from '../lib/extractObject';
 
 const execAsync = promisify(exec);
 
@@ -497,6 +498,44 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
     } catch (error) {
       fastify.log.error('Failed to detect native text:', error);
       return reply.code(500).send({ error: 'Failed to detect native text' });
+    }
+  });
+
+  // Extract object from PDF (reads first few pages and searches for "Oggetto:")
+  fastify.post('/filesystem/extract-object', async (request, reply) => {
+    try {
+      const { filePath, hasNativeText } = request.body as { filePath: string; hasNativeText?: boolean };
+
+      if (!filePath) {
+        return reply.code(400).send({ error: 'File path is required' });
+      }
+
+      // Check if file exists
+      try {
+        await fs.access(filePath);
+      } catch (accessError) {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      // Check if it's a PDF
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext !== '.pdf') {
+        return reply.code(400).send({ error: 'File must be a PDF' });
+      }
+
+      // Se hasNativeText non è fornito, rilevalo
+      let hasNative = hasNativeText;
+      if (hasNative === undefined) {
+        hasNative = await detectNativeText(filePath);
+      }
+
+      // Estrai oggetto dalle prime pagine
+      const oggetto = await extractObject(filePath, hasNative, 3);
+
+      return reply.send({ oggetto });
+    } catch (error) {
+      fastify.log.error('Failed to extract object:', error);
+      return reply.code(500).send({ error: 'Failed to extract object' });
     }
   });
 

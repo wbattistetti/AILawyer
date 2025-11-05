@@ -27,6 +27,8 @@ export interface FileEntry {
   classificationSource?: 'auto' | 'manual'; // 'auto' = blu, 'manual' = verde
   // OCR detection
   hasNativeText?: boolean; // undefined = non ancora controllato, true = ha testo nativo, false = serve OCR
+  // Oggetto del documento
+  oggetto?: string | null; // undefined = non ancora letto, string = oggetto trovato, null = oggetto non trovato
 }
 
 export interface ScanProgress {

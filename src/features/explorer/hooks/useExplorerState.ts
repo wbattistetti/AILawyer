@@ -106,6 +106,17 @@ export function useExplorerState() {
     }));
   }, []);
 
+  const updateFileObject = useCallback((fileId: string, oggetto: string | null) => {
+    setState(prev => ({
+      ...prev,
+      files: prev.files.map(file =>
+        file.id === fileId
+          ? { ...file, oggetto }
+          : file
+      )
+    }));
+  }, []);
+
   const toggleFileSelection = useCallback((fileId: string) => {
     setState(prev => {
       const newSelectedIds = new Set(prev.selectedIds);
@@ -199,7 +210,8 @@ export function useExplorerState() {
     setError,
     clearError,
     updateFileClassification,
-    updateFileNativeText
+    updateFileNativeText,
+    updateFileObject
   };
 }
 

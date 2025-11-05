@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { File } from 'lucide-react';
 import { SplitLayout } from './components/SplitLayout';
 import { DirectoryTree } from './components/DirectoryTree';
 import { FileGrid } from './components/FileGrid';
@@ -10,6 +11,7 @@ import { useDriveList } from './hooks/useDriveList';
 import { useScanFiles } from './hooks/useScanFiles';
 import { useExplorerState } from './hooks/useExplorerState';
 import { usePdfNativeTextDetection } from './hooks/usePdfNativeTextDetection';
+import { usePdfObjectExtraction } from './hooks/usePdfObjectExtraction';
 import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
 import { FileEntry } from './types';
@@ -56,7 +58,8 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     setError,
     clearError,
     updateFileClassification,
-    updateFileNativeText
+    updateFileNativeText,
+    updateFileObject
   } = useExplorerState();
 
   // Hook per il rilevamento lazy del testo nativo nei PDF
@@ -64,6 +67,13 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     files: state.files,
     scanning: state.scanning,
     onFileUpdate: updateFileNativeText
+  });
+
+  // Hook per l'estrazione lazy dell'oggetto dai PDF
+  usePdfObjectExtraction({
+    files: state.files,
+    scanning: state.scanning,
+    onFileUpdate: updateFileObject
   });
 
   // Sync scan results with state
@@ -227,33 +237,55 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
         minRightWidth={400}
         center={
           <div className="flex flex-col h-full">
-            <GridToolbar
-              filters={state.filters}
-              onFiltersChange={handleFiltersChange}
-              selectedCount={selectedCount}
-              totalFiles={state.files.length}
-              visibleFiles={filteredFiles.length}
-              onSelectAll={handleSelectAll}
-              onDeselectAll={handleDeselectAll}
-              onUploadToArchive={handleUploadToArchive}
-              scanning={scanning}
-              progress={progress}
-              onPause={() => handleScanControls('pause')}
-              onResume={() => handleScanControls('resume')}
-              onStop={() => handleScanControls('stop')}
-              onRescan={() => handleScanControls('rescan')}
-            />
+            {/* Mostra toolbar solo se c'è directory selezionata E ci sono file da mostrare */}
+            {state.selectedNode && filteredFiles.length > 0 && (
+              <GridToolbar
+                filters={state.filters}
+                onFiltersChange={handleFiltersChange}
+                selectedCount={selectedCount}
+                totalFiles={state.files.length}
+                visibleFiles={filteredFiles.length}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={handleDeselectAll}
+                onUploadToArchive={handleUploadToArchive}
+                scanning={scanning}
+                progress={progress}
+                onPause={() => handleScanControls('pause')}
+                onResume={() => handleScanControls('resume')}
+                onStop={() => handleScanControls('stop')}
+                onRescan={() => handleScanControls('rescan')}
+              />
+            )}
 
             <div className="flex-1 overflow-hidden">
-              <FileGridWithAutoWidth
-                files={filteredFiles}
-                selectedIds={state.selectedIds}
-                onToggleSelection={toggleFileSelection}
-                onOpenPreview={handleFilePreview}
-                onRowMenu={handleRowMenu}
-                onFileClassificationChange={handleFileClassificationChange}
-                onWidthChange={setCenterWidth}
-              />
+              {/* Stato 1: Nessuna directory selezionata */}
+              {!state.selectedNode ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <File className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                    <p className="text-lg font-medium text-gray-600">Devi selezionare a sinistra una cartella</p>
+                  </div>
+                </div>
+              ) : filteredFiles.length === 0 && !scanning ? (
+                /* Stato 2: Directory selezionata ma nessun file trovato */
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <File className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                    <p className="text-lg font-medium text-gray-600">Nessun file trovato</p>
+                  </div>
+                </div>
+              ) : (
+                /* Stato 3: File trovati - mostra griglia normalmente */
+                <FileGridWithAutoWidth
+                  files={filteredFiles}
+                  selectedIds={state.selectedIds}
+                  onToggleSelection={toggleFileSelection}
+                  onOpenPreview={handleFilePreview}
+                  onRowMenu={handleRowMenu}
+                  onFileClassificationChange={handleFileClassificationChange}
+                  onWidthChange={setCenterWidth}
+                />
+              )}
             </div>
           </div>
         }

@@ -17,6 +17,49 @@ import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
 import { CompartiService, CompartoOption } from '../services/CompartiService';
 
+// Hook per colonna "Oggetto" ridimensionabile
+function useOggettoColumnWidth() {
+  const [width, setWidth] = useState(250); // Larghezza iniziale
+  const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    resizingRef.current = {
+      startX: e.clientX,
+      startWidth: width
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizingRef.current) return;
+
+      const { startX, startWidth: startW } = resizingRef.current;
+      const delta = moveEvent.clientX - startX;
+      const minWidth = 150;
+      const newWidth = Math.max(minWidth, startW + delta);
+
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      resizingRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [width]);
+
+  return { width, handleResizeStart };
+}
+
 interface FileGridProps {
   files: FileEntry[];
   selectedIds: Set<string>;
@@ -38,11 +81,13 @@ interface FileRowProps {
     onRowMenu: (file: FileEntry, action: string) => void;
     onFileClassificationChange?: (fileId: string, compartoKey: string, compartoNome: string) => void;
     compartoColumnWidth: number;
+    oggettoColumnWidth: number;
+    handleOggettoResizeStart?: (e: React.MouseEvent) => void;
   };
 }
 
 function FileRow({ index, style, data }: FileRowProps) {
-  const { files, selectedIds, onToggleSelection, onOpenPreview, onRowMenu, onFileClassificationChange, compartoColumnWidth } = data;
+  const { files, selectedIds, onToggleSelection, onOpenPreview, onRowMenu, onFileClassificationChange, compartoColumnWidth, oggettoColumnWidth } = data;
   const file = files[index];
   const isSelected = selectedIds.has(file.id);
   const [isEditingComparto, setIsEditingComparto] = useState(false);
@@ -178,6 +223,36 @@ function FileRow({ index, style, data }: FileRowProps) {
         </div>
       </div>
 
+      {/* Oggetto - con wrap text e ridimensionabile */}
+      <div
+        className="flex-shrink-0 mr-4 min-w-0 relative"
+        style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
+      >
+        {file.kind === 'pdf' && file.oggetto === undefined ? (
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="whitespace-nowrap">Sto analizzando l'oggetto...</span>
+          </div>
+        ) : file.oggetto && typeof file.oggetto === 'string' ? (
+          <div className="text-xs text-gray-700 break-words" title={file.oggetto}>
+            {file.oggetto}
+          </div>
+        ) : null}
+        {/* Resize handle */}
+        <div
+          className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize z-10 transition-all"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (data.handleOggettoResizeStart) {
+              data.handleOggettoResizeStart(e);
+            }
+          }}
+          style={{ marginRight: '-4px' }}
+          title="Trascina per ridimensionare"
+        />
+      </div>
+
       {/* Tipo Documento */}
       <div
         className="flex-shrink-0 mr-4 min-w-0"
@@ -251,6 +326,9 @@ export function FileGrid({
   onFileClassificationChange,
   className = ''
 }: FileGridProps) {
+  // Hook per colonna "Oggetto" ridimensionabile
+  const { width: oggettoColumnWidth, handleResizeStart: handleOggettoResizeStart } = useOggettoColumnWidth();
+
   // Calcola la larghezza necessaria per la colonna "Tipo documento"
   // basandosi sul testo più lungo tra tutti i comparti disponibili e quelli usati nei file
   const compartoColumnWidth = useMemo(() => {
@@ -286,7 +364,9 @@ export function FileGrid({
     onOpenPreview,
     onRowMenu,
     onFileClassificationChange,
-    compartoColumnWidth
+    compartoColumnWidth,
+    oggettoColumnWidth,
+    handleOggettoResizeStart
   };
 
   return (
@@ -296,6 +376,23 @@ export function FileGrid({
         <div className="w-6 mr-3 flex-shrink-0"></div>
         <div className="w-8 mr-3 flex-shrink-0"></div>
         <div className="flex-1 min-w-[200px] max-w-[400px] min-w-0">Name</div>
+        <div
+          className="flex-shrink-0 mr-4 min-w-0 relative"
+          style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
+        >
+          Oggetto
+          {/* Resize handle nell'header */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize z-10 transition-all"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleOggettoResizeStart(e);
+            }}
+            style={{ marginRight: '-4px' }}
+            title="Trascina per ridimensionare"
+          />
+        </div>
         <div
           className="flex-shrink-0 mr-4 min-w-0"
           style={{ width: `${compartoColumnWidth}px`, minWidth: `${compartoColumnWidth}px` }}

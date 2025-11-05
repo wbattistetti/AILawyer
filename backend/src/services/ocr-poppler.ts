@@ -275,6 +275,20 @@ async function rasterizePage(pdfPath: string, page: number, outBase: string, dpi
     if (!picked || !fss.existsSync(picked)) {
       throw new Error('[OCR][raster] PNG non trovato dopo pdftoppm')
     }
+
+    // Se OCR_CROP_TOP_THIRD è attivo, ritaglia l'immagine al primo terzo
+    const shouldCrop = String(process.env.OCR_CROP_TOP_THIRD || '').toLowerCase() === 'true'
+    if (shouldCrop) {
+      try {
+        const { cropImageTopThird } = await import('../lib/extractObject.js')
+        picked = await cropImageTopThird(picked)
+        try { console.log('[OCR][raster][crop]', { page, picked }) } catch {}
+      } catch (cropError: any) {
+        try { console.warn('[OCR][raster][crop-error]', { page, error: String(cropError?.message || cropError) }) } catch {}
+        // Continua anche se il crop fallisce
+      }
+    }
+
     return picked
   }
 
