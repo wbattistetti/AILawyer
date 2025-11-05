@@ -9,6 +9,7 @@ import { RowActionsMenu } from './components/RowActionsMenu';
 import { useDriveList } from './hooks/useDriveList';
 import { useScanFiles } from './hooks/useScanFiles';
 import { useExplorerState } from './hooks/useExplorerState';
+import { usePdfNativeTextDetection } from './hooks/usePdfNativeTextDetection';
 import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
 import { FileEntry } from './types';
@@ -54,8 +55,16 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     setScanning,
     setError,
     clearError,
-    updateFileClassification
+    updateFileClassification,
+    updateFileNativeText
   } = useExplorerState();
+
+  // Hook per il rilevamento lazy del testo nativo nei PDF
+  const { isInspecting } = usePdfNativeTextDetection({
+    files: state.files,
+    scanning: state.scanning,
+    onFileUpdate: updateFileNativeText
+  });
 
   // Sync scan results with state
   useEffect(() => {

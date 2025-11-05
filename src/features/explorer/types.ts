@@ -25,6 +25,8 @@ export interface FileEntry {
   compartoKey?: string; // Key del comparto (es. 'denuncia_querela')
   compartoNome?: string; // Nome del comparto (es. 'Denuncia–Querela / Notizia di reato')
   classificationSource?: 'auto' | 'manual'; // 'auto' = blu, 'manual' = verde
+  // OCR detection
+  hasNativeText?: boolean; // undefined = non ancora controllato, true = ha testo nativo, false = serve OCR
 }
 
 export interface ScanProgress {

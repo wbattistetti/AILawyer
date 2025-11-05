@@ -95,6 +95,17 @@ export function useExplorerState() {
     }));
   }, []);
 
+  const updateFileNativeText = useCallback((fileId: string, hasNativeText: boolean) => {
+    setState(prev => ({
+      ...prev,
+      files: prev.files.map(file =>
+        file.id === fileId
+          ? { ...file, hasNativeText }
+          : file
+      )
+    }));
+  }, []);
+
   const toggleFileSelection = useCallback((fileId: string) => {
     setState(prev => {
       const newSelectedIds = new Set(prev.selectedIds);
@@ -187,7 +198,8 @@ export function useExplorerState() {
     setScanning,
     setError,
     clearError,
-    updateFileClassification
+    updateFileClassification,
+    updateFileNativeText
   };
 }
 

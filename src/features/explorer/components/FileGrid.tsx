@@ -10,7 +10,8 @@ import {
   CheckSquare,
   Square,
   FileType,
-  FileImage
+  FileImage,
+  Loader2
 } from 'lucide-react';
 import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
@@ -148,9 +149,23 @@ function FileRow({ index, style, data }: FileRowProps) {
         )}
       </div>
 
-      {/* File Icon */}
-      <div className="w-8 h-8 flex items-center justify-center mr-3">
+      {/* File Icon with OCR indicator */}
+      <div className="w-8 h-8 flex items-center justify-center mr-3 relative">
         {getFileIcon(file.kind)}
+        {/* OCR indicator for PDFs */}
+        {file.kind === 'pdf' && (
+          <div className="absolute -top-1 -right-1">
+            {file.hasNativeText === undefined ? (
+              // Spinner quando sta controllando
+              <Loader2 className="w-3 h-3 text-gray-400 animate-spin" />
+            ) : file.hasNativeText === false ? (
+              // Badge "Da trascrivere" quando serve OCR
+              <span className="px-1 py-0.5 text-[8px] rounded bg-orange-500 text-white shadow-sm">
+                OCR
+              </span>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* File Name */}
