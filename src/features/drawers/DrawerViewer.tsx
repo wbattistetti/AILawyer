@@ -381,11 +381,6 @@ export function DrawerViewer({
   if (!archiveData) {
     return (
       <div className="w-full h-full flex flex-col">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white" style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}>
-          {number !== undefined && <span className="text-sm font-semibold text-slate-700">{number}</span>}
-          {icon && <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>{icon}</span>}
-          <span className="text-base font-semibold text-slate-900">{title}</span>
-        </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-sm text-muted-foreground">Caricamento...</div>
         </div>
@@ -399,11 +394,6 @@ export function DrawerViewer({
   if (!comparto) {
     return (
       <div className="w-full h-full flex flex-col">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white" style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}>
-          {number !== undefined && <span className="text-sm font-semibold text-slate-700">{number}</span>}
-          {icon && <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>{icon}</span>}
-          <span className="text-base font-semibold text-slate-900">{title}</span>
-        </div>
         <div className="flex-1 p-3 text-sm text-muted-foreground">Cassetto non trovato</div>
       </div>
     )
@@ -411,27 +401,7 @@ export function DrawerViewer({
 
   return (
     <div className="w-full h-full flex flex-col">
-      {/* ✅ Header personalizzato come la tab */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white"
-        style={{ borderTopColor: color, borderTopWidth: color ? '3px' : undefined }}
-      >
-        {/* Numero */}
-        {number !== undefined && (
-          <span className="text-sm font-semibold text-slate-700">{number}</span>
-        )}
-
-        {/* Icona */}
-        {icon && (
-          <span className="flex-shrink-0" style={{ color: color || '#6b7280' }}>
-            {icon}
-          </span>
-        )}
-
-        {/* Titolo */}
-        <span className="text-base font-semibold text-slate-900">{title}</span>
-      </div>
-
+      {/* ✅ FASE 1: Header rimosso - numero e icona ora sono nella tab strip */}
       {/* ✅ Usa ArchiveRenderer per questo singolo comparto */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <ArchiveRenderer

@@ -4,17 +4,11 @@
 }
 
 .dockv2-root .flexlayout__border_top,
-.dockv2-root .flexlayout__border_right {
-  display: none !important;
-  /* keep only left border (Archivio/Search) and bottom border (drawers) visible */
-}
-
-/* ✅ Bottom border per i cassetti: sempre visibile e con altezza fissa */
+.dockv2-root .flexlayout__border_right,
 .dockv2-root .flexlayout__border_bottom {
-  display: flex !important;
-  min-height: 350px !important;
-  height: 350px !important;
-  z-index: 100 !important;
+  display: none !important;
+  /* ✅ FASE 1: Rimossi border bottom - ora usiamo tabset drawerTabset nel layout principale */
+  /* keep only left border (Archivio/Search) visible */
 }
 
 /* ✅ Fix RADICALE: Forza FlexLayout a rispettare i confini del container flex */
@@ -120,8 +114,8 @@
 }
 
 /* ✅ Fix DEFINITIVO: flexlayout__tab non deve scrollare (scrollbar gialla sbagliata) */
-/* ✅ IMPORTANTE: Solo per document tabs, NON per drawer tabs */
-.dockv2-root .flexlayout__tabset:not([id="drawerContentTabset"]) .flexlayout__tab {
+/* ✅ FASE 1: IMPORTANTE: Solo per document tabs, NON per drawer tabs */
+.dockv2-root .flexlayout__tabset:not([id="drawerTabset"]) .flexlayout__tab {
   overflow: hidden !important; /* ✅ Blocca scrollbar gialla sbagliata */
   overflow-x: hidden !important;
   overflow-y: hidden !important;
@@ -131,7 +125,8 @@
 }
 
 /* ✅ Fix: flexlayout__tab_content deve avere altezza limitata e flex column */
-.dockv2-root .flexlayout__tabset:not([id="drawerContentTabset"]) .flexlayout__tab_content {
+/* ✅ FASE 1: Escludi drawerTabset */
+.dockv2-root .flexlayout__tabset:not([id="drawerTabset"]) .flexlayout__tab_content {
   height: 100% !important;
   max-height: 100% !important;
   overflow: hidden !important;
@@ -167,24 +162,49 @@
   display: none !important;
 }
 
-/* ✅ Drawer content tabset: forza dimensioni minime e visibilità */
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] {
+/* ✅ FASE 1: Drawer tabset in basso: dimensioni minime e visibilità */
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] {
   min-height: 250px !important;
-  height: 350px !important;
+  height: auto !important;
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
   overflow: visible !important;
+  /* ✅ Forza visibilità anche quando weight è 0 */
+  flex-shrink: 0 !important;
 }
 
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab {
+/* ✅ FASE 1: Assicura che il drawerTabset sia visibile quando ha children */
+.dockv2-root .flexlayout__tabset[id="drawerTabset"]:not(:empty) {
+  min-height: 250px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: flex !important;
+}
+
+/* ✅ FASE 1: Forza visibilità della tab strip per drawerTabset */
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tabset_header {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: 28px !important;
+  min-height: 28px !important;
+}
+
+/* ✅ FASE 1: Assicura che il drawerTabset sia sempre in fondo nella struttura column */
+.dockv2-root .flexlayout__layout > .flexlayout__column > .flexlayout__tabset[id="drawerTabset"] {
+  order: 999 !important; /* ✅ Forza in fondo */
+  flex-shrink: 0 !important;
+}
+
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tab {
   height: 100% !important;
   min-height: 250px !important;
   overflow: visible !important; /* ✅ Drawer tabs devono mostrare contenuto */
   max-height: none !important; /* ✅ Rimuovi limitazione per drawer */
 }
 
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tab_content {
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tab_content {
   height: 100% !important;
   min-height: 250px !important;
   overflow: auto !important;
@@ -517,21 +537,25 @@
 }
 
 /* ✅ Pannello drawer dockabile in fondo - assicura visibilità e dimensioni minime */
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] {
+/* ✅ FASE 1: Aggiornato da drawerContentTabset a drawerTabset */
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] {
   min-height: 250px !important;
   height: auto !important;
   display: flex !important;
   flex-direction: column !important;
+  /* ✅ Forza visibilità anche con weight 0 */
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"] .flexlayout__tabset_content {
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tabset_content {
   min-height: 200px !important;
   display: flex !important;
   flex-direction: column !important;
 }
 
 /* Assicura che il tabset sia visibile anche quando ha solo una tab */
-.dockv2-root .flexlayout__tabset[id="drawerContentTabset"]:not(:empty) {
+.dockv2-root .flexlayout__tabset[id="drawerTabset"]:not(:empty) {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;

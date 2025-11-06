@@ -459,12 +459,53 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
   }, [])
 
   const initial: IJsonModel = useMemo(() => {
-    // ✅ STEP 1: Reset layout per canvas vuoto - rimuovi layout persistito vecchio
+    // ✅ FASE 1: Carica layout da localStorage, ma verifica che abbia struttura column corretta
     try {
-      localStorage.removeItem(storageKey)
-    } catch { }
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved) as IJsonModel
+        // Verifica che il layout sia column con drawerTabset
+        if (parsed.layout?.type === 'column') {
+          const hasDrawerTabset = findById(parsed.layout, 'drawerTabset')
+          if (hasDrawerTabset) {
+            console.log('[INIT] Layout caricato da localStorage con struttura column corretta')
+            return parsed
+          } else {
+            console.log('[INIT] Layout column ma senza drawerTabset, aggiungo...')
+            // Aggiungi drawerTabset se manca
+            if (!parsed.layout.children) parsed.layout.children = []
+            parsed.layout.children.push({
+              type: 'tabset',
+              id: 'drawerTabset',
+              weight: 0,
+              enableTabStrip: true,
+              enableClose: true,
+              enableDrag: false,
+              enableDrop: false,
+              enableMaximize: false,
+              enableResize: true,
+              children: []
+            })
+            return parsed
+          }
+        } else {
+          console.log('[INIT] Layout non è column, uso default...')
+        }
+      }
+    } catch (e) {
+      console.warn('[INIT] Errore nel caricare layout da localStorage:', e)
+    }
     return getDefaultModelJson()
   }, [storageKey, clienti])
+
+  // Helper per findById (deve essere definito prima di essere usato)
+  function findById(node: any, id: string): any | undefined {
+    if (!node) return undefined
+    if (node.id === id) return node
+    const kids = node.children || []
+    for (const k of kids) { const f = findById(k, id); if (f) return f }
+    return undefined
+  }
 
   const [model, setModel] = useState(() => Model.fromJson(initial))
   modelRef.current = model
@@ -623,6 +664,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ Gestisce il click su una tab del cassetto
   const handleDrawerTabSelect = useCallback((drawerId: string) => {
+    console.log('[DRAWER-TAB-SELECT] Click su cassetto:', drawerId)
     setSelectedDrawerId(drawerId)
 
     // Trova il comparto corrispondente
@@ -638,51 +680,128 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       return
     }
 
-    // Apri o aggiorna il pannello dockabile sopra la striscia
+    // Apri o aggiorna il pannello dockabile nel tabset in basso
     if (!modelRef.current) {
       console.error('[DRAWER-TAB-SELECT] modelRef.current è null')
       return
     }
 
     const json = modelRef.current.toJson() as any
+    console.log('[DRAWER-TAB-SELECT] Layout type:', json.layout?.type, 'children:', json.layout?.children?.length)
 
-    // ✅ STRATEGIA: Usa un border bottom invece del layout column
-    // I border sono sempre visibili e posizionati correttamente da FlexLayout
+    // ✅ FASE 1: Usa un tabset nel layout principale invece del border bottom
+    // Cerca il tabset drawerTabset nel layout (struttura column con row sopra e tabset sotto)
+    let drawerTabset = findById(json.layout, 'drawerTabset')
+    console.log('[DRAWER-TAB-SELECT] drawerTabset trovato:', !!drawerTabset)
 
-    // Cerca se esiste già un border bottom
-    if (!json.borders) json.borders = []
-    let bottomBorder = json.borders.find((b: any) => b.location === 'bottom')
+    // Se non esiste, crealo (dovrebbe esistere già dal default, ma per sicurezza)
+    if (!drawerTabset) {
+      console.log('[DRAWER-TAB-SELECT] drawerTabset non trovato, creazione in corso...')
+      // Assicurati che il layout sia una column
+      if (json.layout.type !== 'column') {
+        console.log('[DRAWER-TAB-SELECT] Layout non è column, ricostruisco struttura...')
+        // Se non è column, ricostruisci la struttura
+        const existingCanvas = findById(json.layout, 'placeholder') ||
+          (json.layout.children && json.layout.children[0]) ||
+          { type: 'tabset', id: 'placeholder', weight: 100, enableTabStrip: false, children: [] }
 
-    if (!bottomBorder) {
-      // Crea un border bottom con il drawer tab
-      bottomBorder = {
-        type: 'border',
-        location: 'bottom',
-        size: 350, // Altezza fissa del border
-        children: []
+        json.layout = {
+          type: 'column',
+          children: [
+            {
+              type: 'row',
+              weight: 100,
+              children: [existingCanvas]
+            },
+            {
+              type: 'tabset',
+              id: 'drawerTabset',
+              weight: 0,
+              enableTabStrip: true,
+              enableClose: true,
+              enableDrag: false,
+              enableDrop: false,
+              enableMaximize: false,
+              enableResize: true,
+              children: []
+            }
+          ]
+        }
+        console.log('[DRAWER-TAB-SELECT] Struttura column ricostruita')
+      } else {
+        console.log('[DRAWER-TAB-SELECT] Layout è già column, aggiungo drawerTabset...')
+        // È già column, aggiungi il drawerTabset se manca
+        if (!json.layout.children || !Array.isArray(json.layout.children)) {
+          json.layout.children = []
+        }
+        const hasDrawerTabset = json.layout.children.some((c: any) => c.id === 'drawerTabset')
+        if (!hasDrawerTabset) {
+          json.layout.children.push({
+            type: 'tabset',
+            id: 'drawerTabset',
+            weight: 0,
+            enableTabStrip: true,
+            enableClose: true,
+            enableDrag: false,
+            enableDrop: false,
+            enableMaximize: false,
+            enableResize: true,
+            children: []
+          })
+          console.log('[DRAWER-TAB-SELECT] drawerTabset aggiunto ai children')
+        } else {
+          console.log('[DRAWER-TAB-SELECT] drawerTabset già presente nei children')
+        }
       }
-      json.borders.push(bottomBorder)
+      drawerTabset = findById(json.layout, 'drawerTabset')
+      console.log('[DRAWER-TAB-SELECT] drawerTabset dopo creazione:', !!drawerTabset)
     }
 
-    // Cerca la tab esistente per questo drawer nel border bottom
-    const existingTabIndex = bottomBorder.children?.findIndex((t: any) => t.config?.drawerId === comparto.id) ?? -1
-    const isCurrentlySelected = existingTabIndex >= 0 && bottomBorder.selected === existingTabIndex
+    if (!drawerTabset) {
+      console.error('[DRAWER-TAB-SELECT] Impossibile creare/trovare drawerTabset')
+      console.error('[DRAWER-TAB-SELECT] Layout JSON:', JSON.stringify(json.layout, null, 2))
+      return
+    }
+
+    // Assicurati che drawerTabset abbia children
+    if (!drawerTabset.children) {
+      drawerTabset.children = []
+    }
+
+    console.log('[DRAWER-TAB-SELECT] drawerTabset.children.length:', drawerTabset.children.length)
+
+    // Cerca la tab esistente per questo drawer
+    const existingTabIndex = drawerTabset.children.findIndex((t: any) =>
+      t.config?.drawerId === comparto.id || t.id === `drawer-${comparto.id}`
+    )
+    const isCurrentlySelected = existingTabIndex >= 0 && drawerTabset.selected === existingTabIndex
+
+    console.log('[DRAWER-TAB-SELECT] existingTabIndex:', existingTabIndex, 'isCurrentlySelected:', isCurrentlySelected)
 
     // ✅ TOGGLE: Se il cassetto è già aperto e selezionato, chiudilo
     if (isCurrentlySelected) {
-      // Rimuovi tutte le tab dal border (chiudi il pannello)
-      bottomBorder.children = []
-      bottomBorder.selected = undefined
+      console.log('[DRAWER-TAB-SELECT] Chiudo cassetto già aperto')
+      // Rimuovi questa tab dal tabset
+      drawerTabset.children.splice(existingTabIndex, 1)
+      // Seleziona la tab precedente o nessuna
+      if (drawerTabset.children.length > 0) {
+        drawerTabset.selected = Math.min(existingTabIndex, drawerTabset.children.length - 1)
+      } else {
+        drawerTabset.selected = undefined
+      }
       setSelectedDrawerId(undefined)
     } else if (existingTabIndex >= 0) {
-      // ✅ Il cassetto esiste ma non è selezionato: selezionalo e chiudi gli altri
-      // Rimuovi tutte le altre tab e mantieni solo quella selezionata
-      bottomBorder.children = [bottomBorder.children[existingTabIndex]]
-      bottomBorder.selected = 0
+      console.log('[DRAWER-TAB-SELECT] Seleziono cassetto già aperto, existingTabIndex:', existingTabIndex)
+      // ✅ Il cassetto esiste ma non è selezionato: selezionalo
+      drawerTabset.selected = existingTabIndex
+      // ✅ Forza anche il weight del tabset per assicurarsi che sia visibile
+      if (drawerTabset.weight === 0 || drawerTabset.weight === undefined) {
+        drawerTabset.weight = 30 // Altezza minima visibile
+      }
       setSelectedDrawerId(drawerId)
     } else {
-      // ✅ Crea nuova tab: rimuovi tutte le altre e apri solo questa
-      // Crea nuova tab nel border bottom
+      console.log('[DRAWER-TAB-SELECT] Creo nuova tab per cassetto')
+      // ✅ Crea nuova tab: aggiungila al tabset (permettiamo più cassetti aperti)
       const newTab = {
         type: 'tab',
         name: comparto.nome,
@@ -697,16 +816,23 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         }
       }
 
-      // ✅ Sostituisci tutte le tab esistenti con questa nuova (un solo cassetto aperto alla volta)
-      bottomBorder.children = [newTab]
-      bottomBorder.selected = 0
+      // ✅ Aggiungi la nuova tab (non sostituisci le esistenti)
+      drawerTabset.children.push(newTab)
+      drawerTabset.selected = drawerTabset.children.length - 1
+      // ✅ Forza anche il weight del tabset per assicurarsi che sia visibile
+      if (drawerTabset.weight === 0 || drawerTabset.weight === undefined) {
+        drawerTabset.weight = 30 // Altezza minima visibile
+      }
       setSelectedDrawerId(drawerId)
+      console.log('[DRAWER-TAB-SELECT] Tab aggiunta, selected:', drawerTabset.selected, 'weight:', drawerTabset.weight)
     }
 
+    console.log('[DRAWER-TAB-SELECT] Aggiornamento modello...')
     // Aggiorna il modello
     const nextModel = Model.fromJson(json)
     modelRef.current = nextModel
     setModel(nextModel)
+    console.log('[DRAWER-TAB-SELECT] Modello aggiornato')
   }, [comparti, drawerTabs])
 
   // ✅ Gestisce il drop di file sulla tab della striscia
@@ -753,47 +879,26 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     handleDrawerTabSelect(drawerKey)
   }, [comparti, drawerTabs, handleDrawerTabSelect])
 
-  // Listener per aprire un cassetto in una nuova tab
+  // ✅ FASE 1: Listener per aprire un cassetto nel drawerTabset in basso (non più rightTabset)
   useEffect(() => {
     function onOpenDrawer(e: any) {
       const { drawerId, title, type } = (e?.detail || {}) as { drawerId: string; title?: string; type?: string }
       if (!drawerId) return
-      const json = modelRef.current.toJson() as any
-      let center = findById(json.layout, 'centerTabset')
-      // Ensure a right side drawer panel
-      let right = (json.layout.children || []).find((c: any) => c.id === 'rightTabset')
-      if (!right) {
-        json.layout.children = json.layout.children || []
-        json.layout.children.push({ type: 'tabset', id: 'rightTabset', enableTabStrip: true, weight: 26, children: [] })
+
+      // Trova il comparto corrispondente
+      const comparto = comparti.find(c => c.id === drawerId || c.key === drawerId)
+      if (!comparto) {
+        console.warn('[ON-OPEN-DRAWER] Comparto non trovato per drawerId:', drawerId)
+        return
       }
-      right = (json.layout.children || []).find((c: any) => c.id === 'rightTabset')
-      if (!center) {
-        if (json.layout?.type !== 'row' || !Array.isArray(json.layout.children)) {
-          json.layout = getDefaultModelJson().layout
-        } else {
-          json.layout.children.push({ type: 'tabset', id: 'centerTabset', enableTabStrip: true, weight: 80, children: [] })
-        }
-        center = findById(json.layout, 'centerTabset')
-      }
-      // evita duplicati sullo stesso id
-      let exists = false
-      modelRef.current.visitNodes((n) => {
-        if (n.getType() === 'tab') {
-          const cfg = (n as any).getConfig?.() || {}
-          if ((n as any).getComponent?.() === 'drawer' && cfg.drawerId === drawerId) exists = true
-        }
-      })
-      if (!exists) {
-        right.children = right.children || []
-        right.children.push({ type: 'tab', name: title || 'Cassetto', component: 'drawer', config: { drawerId, drawerTitle: title, drawerType: type } })
-        right.selected = (right.children || []).length - 1
-      }
-      const next = Model.fromJson(json)
-      setModel(next)
+
+      // Usa handleDrawerTabSelect che gestisce correttamente drawerTabset
+      const drawerKey = comparto.key || drawerId
+      handleDrawerTabSelect(drawerKey)
     }
     window.addEventListener('app:open-drawer' as any, onOpenDrawer as any)
     return () => window.removeEventListener('app:open-drawer' as any, onOpenDrawer as any)
-  }, [])
+  }, [comparti, handleDrawerTabSelect])
 
   // ✅ STEP 1: Apri doc come tab orizzontale nel canvas principale
   const openDoc = (doc: DocTab) => {
@@ -1083,16 +1188,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return null
   }
 
-  // Utility: find node json by id
-  function findById(node: any, id: string): any | undefined {
-    if (!node) return undefined
-    if (node.id === id) return node
-    const kids = node.children || []
-    for (const k of kids) { const f = findById(k, id); if (f) return f }
-    return undefined
-  }
-
   // ✅ STEP 1: Canvas con placeholder invisibile per evitare creazione automatica di tabsets
+  // Nota: findById è definito sopra, prima di initial
   function getDefaultModelJson(): IJsonModel {
     // Tab statiche esistenti
     const staticTabs = [
@@ -1141,26 +1238,46 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         tabSetEnableRestore: false,
         tabSetEnableSplit: false,
         tabSetEnableResize: false,
-        // ✅ Disabilita completamente la creazione automatica di tabsets
-        tabSetEnableTabStrip: false,
+        // ✅ Tab strip abilitata di default per tutti i docking pane
+        tabSetEnableTabStrip: true,
         // ✅ Impedisce a FlexLayout di creare tabsets vuoti
         tabSetAutoSelectTab: false,
         tabSetEnableDeleteWhenEmpty: true
       },
       layout: {
-        type: 'row',
+        type: 'column',
         children: [
-          // ✅ Placeholder invisibile per evitare che FlexLayout crei tabsets automaticamente
+          // ✅ Row principale con canvas
+          {
+            type: 'row',
+            weight: 100, // Prende tutto lo spazio disponibile
+            children: [
+              // ✅ Placeholder invisibile per evitare che FlexLayout crei tabsets automaticamente
+              {
+                type: 'tabset',
+                id: 'placeholder',
+                weight: 100,
+                enableTabStrip: false, // Nascondi la barra delle tab
+                enableClose: false,    // Non chiudibile
+                enableDrag: false,     // Non trascinabile
+                enableDrop: false,     // Non droppabile
+                enableMaximize: false, // Non massimizzabile
+                children: [] // Vuoto ma presente per evitare creazione automatica
+              }
+            ]
+          },
+          // ✅ Tabset per i cassetti in basso (orizzontale)
           {
             type: 'tabset',
-            id: 'placeholder',
-            weight: 100,
-            enableTabStrip: false, // Nascondi la barra delle tab
-            enableClose: false,    // Non chiudibile
-            enableDrag: false,     // Non trascinabile
-            enableDrop: false,     // Non droppabile
-            enableMaximize: false, // Non massimizzabile
-            children: [] // Vuoto ma presente per evitare creazione automatica
+            id: 'drawerTabset',
+            weight: 0, // Altezza minima, si espande quando ci sono tab
+            enableTabStrip: true,
+            enableClose: true,
+            enableDrag: false,
+            enableDrop: false,
+            enableMaximize: false,
+            enableResize: true, // Permetti ridimensionamento
+            children: [] // Inizialmente vuoto
           }
         ]
       },
@@ -1174,15 +1291,42 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     try {
       const json: any = JSON.parse(JSON.stringify(raw))
       json.global = json.global || {}
+      // ✅ Assicura che tab strip sia sempre abilitata (anche per layout vecchi salvati)
       json.global.tabSetEnableTabStrip = true
       json.global.tabSetHeaderHeight = json.global.tabSetHeaderHeight || 28
 
-      // ✅ STEP 1: Force row root with placeholder canvas
-      if (!json.layout || json.layout.type !== 'row' || !Array.isArray(json.layout.children)) {
-        json.layout = getDefaultModelJson().layout
+      // ✅ FASE 1: Force column root con row sopra (canvas) e tabset sotto (cassetti)
+      if (!json.layout || json.layout.type !== 'column' || !Array.isArray(json.layout.children)) {
+        // Se il layout non è column, ricostruiscilo
+        const existingCanvas = findById(json.layout, 'placeholder') ||
+          (json.layout.children && json.layout.children[0]) ||
+          { type: 'tabset', id: 'placeholder', weight: 100, enableTabStrip: false, children: [] }
+
+        json.layout = {
+          type: 'column',
+          children: [
+            {
+              type: 'row',
+              weight: 100,
+              children: [existingCanvas]
+            },
+            {
+              type: 'tabset',
+              id: 'drawerTabset',
+              weight: 0,
+              enableTabStrip: true,
+              enableClose: true,
+              enableDrag: false,
+              enableDrop: false,
+              enableMaximize: false,
+              enableResize: true,
+              children: []
+            }
+          ]
+        }
       }
 
-      // ✅ STEP 1: Cerca ricorsivamente docTabset E dockableTabset esistenti (anche se annidati in row)
+      // ✅ STEP 1: Cerca ricorsivamente docTabset, dockableTabset e drawerTabset esistenti
       const findTabsetRecursive = (node: any, id: string): any => {
         if (node.id === id) return node
         if (Array.isArray(node.children)) {
@@ -1196,23 +1340,78 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
       const existingDocTabset = findTabsetRecursive(json.layout, 'docTabset')
       const existingDockableTabset = findTabsetRecursive(json.layout, 'dockableTabset')
-      const hasPlaceholder = json.layout.children.some((child: any) => child.id === 'placeholder')
+      const existingDrawerTabset = findTabsetRecursive(json.layout, 'drawerTabset')
 
-      if (!hasPlaceholder && !existingDocTabset && !existingDockableTabset) {
-        // Solo se non c'è né placeholder né docTabset né dockableTabset, crea il placeholder
-        json.layout.children = [
-          {
+      // Verifica che ci sia il placeholder (canvas) e il drawerTabset (cassetti)
+      let hasPlaceholder = false
+      let hasCanvasRow = false
+
+      if (json.layout.type === 'column' && Array.isArray(json.layout.children)) {
+        // Cerca il row con placeholder
+        for (const child of json.layout.children) {
+          if (child.type === 'row' && Array.isArray(child.children)) {
+            hasCanvasRow = true
+            hasPlaceholder = child.children.some((c: any) => c.id === 'placeholder')
+          }
+        }
+
+        // Se manca il drawerTabset, aggiungilo
+        if (!existingDrawerTabset) {
+          json.layout.children.push({
             type: 'tabset',
-            id: 'placeholder',
-            weight: 100,
-            enableTabStrip: false,
-            enableClose: false,
+            id: 'drawerTabset',
+            weight: 0,
+            enableTabStrip: true,
+            enableClose: true,
             enableDrag: false,
             enableDrop: false,
             enableMaximize: false,
+            enableResize: true,
             children: []
+          })
+        }
+      }
+
+      // ✅ FASE 1: Se manca il placeholder nel canvas row, crealo
+      if (!hasPlaceholder && !existingDocTabset && !existingDockableTabset) {
+        // Cerca il row del canvas
+        if (json.layout.type === 'column' && Array.isArray(json.layout.children)) {
+          const canvasRow = json.layout.children.find((c: any) => c.type === 'row')
+          if (canvasRow && Array.isArray(canvasRow.children)) {
+            // Aggiungi placeholder al row
+            canvasRow.children.push({
+              type: 'tabset',
+              id: 'placeholder',
+              weight: 100,
+              enableTabStrip: false,
+              enableClose: false,
+              enableDrag: false,
+              enableDrop: false,
+              enableMaximize: false,
+              children: []
+            })
+          } else if (!hasCanvasRow) {
+            // Se non c'è neanche il row, crea tutto
+            json.layout.children = [
+              {
+                type: 'row',
+                weight: 100,
+                children: [{
+                  type: 'tabset',
+                  id: 'placeholder',
+                  weight: 100,
+                  enableTabStrip: false,
+                  enableClose: false,
+                  enableDrag: false,
+                  enableDrop: false,
+                  enableMaximize: false,
+                  children: []
+                }]
+              },
+              ...(json.layout.children || [])
+            ]
           }
-        ]
+        }
       }
 
       // ensure left border
@@ -1706,6 +1905,52 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     const comp = node.getComponent?.()
     const tabId = node.getId()
 
+    // ✅ FASE 1: Gestisci tab dei drawer (drawer-content) - aggiungi numero e icona nella tab
+    if (comp === 'drawer-content') {
+      const cfg = node.getConfig?.() || {}
+      const drawerKey = cfg.drawerKey || ''
+
+      // Ricostruisci numero, icona e colore usando drawerKey
+      const drawerTab = drawerKey ? drawerTabs.find((dt: DrawerTabItem) => dt.id === drawerKey) : undefined
+      const drawerNumber = drawerTab ? drawerTabs.findIndex((dt: DrawerTabItem) => dt.id === drawerKey) + 1 : undefined
+      const drawerIcon = drawerTab?.icon
+      const drawerColor = drawerTab?.color
+
+      // Aggiungi numero e icona nella tab come leading element
+      if (drawerNumber !== undefined || drawerIcon) {
+        const tabParts: React.ReactNode[] = []
+
+        // Numero
+        if (drawerNumber !== undefined) {
+          tabParts.push(
+            <span key="number" style={{ marginRight: '4px', fontWeight: 600, color: drawerColor || '#64748b', fontSize: '13px' }}>
+              {drawerNumber}
+            </span>
+          )
+        }
+
+        // Icona
+        if (drawerIcon && React.isValidElement(drawerIcon)) {
+          tabParts.push(
+            <span key="icon" style={{ marginRight: '4px', display: 'inline-flex', alignItems: 'center', color: drawerColor || '#64748b' }}>
+              {React.cloneElement(drawerIcon as any, { size: 14 })}
+            </span>
+          )
+        }
+
+        // Aggiungi come leading element
+        if (tabParts.length > 0) {
+          renderValues.leading = (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+              {tabParts}
+            </span>
+          )
+        }
+      }
+
+      return
+    }
+
     // ✅ Verifica se la tab è nella sidebar (left border)
     const parent = node.getParent()
     const isInSidebar = parent && parent.getType() === 'tabset' && parent.getParent()?.getType() === 'border'
@@ -1799,7 +2044,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
         {isFullscreen ? '⛷' : '⛶'}
       </button>
     )
-  }, [fullscreenTrigger, fullscreenStates, isTabOpen])
+  }, [fullscreenTrigger, fullscreenStates, isTabOpen, drawerTabs])
 
   // ✅ Rimossa: l'aggiornamento del modello viene gestito direttamente in handleAction quando necessario
 
@@ -1845,37 +2090,8 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
   }, [tabsOpenState, model]) // Re-esegui quando cambia lo stato delle tab
 
-  // ✅ Verifica e forza dimensioni del bottom border dopo il rendering
-  useEffect(() => {
-    if (!selectedDrawerId || !layoutRootRef.current) return
-
-    const checkAndForceDimensions = () => {
-      // Cerca il border bottom
-      const bottomBorder = layoutRootRef.current?.querySelector('.flexlayout__border_bottom') as HTMLElement | null
-
-      if (bottomBorder) {
-        const rect = bottomBorder.getBoundingClientRect()
-
-        // Se ha dimensioni troppo piccole, forza dimensioni minime
-        if (rect.height < 200) {
-          bottomBorder.style.height = '350px'
-          bottomBorder.style.minHeight = '350px'
-        }
-      }
-    }
-
-    // Check immediato e dopo delays per catturare il rendering
-    checkAndForceDimensions()
-    const timeout1 = setTimeout(checkAndForceDimensions, 100)
-    const timeout2 = setTimeout(checkAndForceDimensions, 300)
-    const timeout3 = setTimeout(checkAndForceDimensions, 500)
-
-    return () => {
-      clearTimeout(timeout1)
-      clearTimeout(timeout2)
-      clearTimeout(timeout3)
-    }
-  }, [selectedDrawerId, model])
+  // ✅ FASE 1: Rimossa logica border bottom - ora usiamo tabset drawerTabset nel layout
+  // Il tabset drawerTabset è gestito direttamente da FlexLayout e non ha bisogno di dimensioni forzate
 
   // ✅ Cleanup timeout strip quando componente smontato
   useEffect(() => {
