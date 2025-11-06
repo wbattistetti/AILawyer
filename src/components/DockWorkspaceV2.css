@@ -1,6 +1,51 @@
 .dockv2-root .flexlayout__tabset_header {
   display: flex !important;
   /* ensure native tab strip is visible */
+  position: relative !important;
+  z-index: 1003 !important; /* ✅ AUMENTATO da 100 a 1003 per stare sopra DrawerTabStrip (1002) */
+  background: white !important; /* ✅ Assicura sfondo solido per evitare trasparenze */
+}
+
+/* ✅ FASE 1: Forza visibilità e z-index per tutte le tab strip (non solo drawerTabset) */
+.dockv2-root .flexlayout__tabset .flexlayout__tabset_header {
+  z-index: 1003 !important; /* ✅ AUMENTATO da 100 a 1003 per stare sopra DrawerTabStrip (1002) */
+  position: relative !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: white !important;
+}
+
+/* ✅ NUOVO: Assicura che anche il tabset stesso abbia z-index alto */
+.dockv2-root .flexlayout__tabset {
+  position: relative !important;
+  /* ❌ RIMOSSO z-index globale - causava problemi con sidebar e cassetti */
+}
+
+/* ✅ NUOVO: Durante il drag, assicura che la tab strip rimanga sempre visibile */
+.dockv2-root .flexlayout__tabset.dragging .flexlayout__tabset_header,
+.dockv2-root .flexlayout__tabset:has(.flexlayout__tab.dragging) .flexlayout__tabset_header,
+.dockv2-root .flexlayout__tab.dragging ~ .flexlayout__tabset_header,
+.dockv2-root .flexlayout__tabset:has(.dragging) .flexlayout__tabset_header {
+  z-index: 1003 !important;
+  position: relative !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: white !important;
+}
+
+/* ✅ NUOVO: Assicura che anche le singole tab durante il drag abbiano z-index alto */
+.dockv2-root .flexlayout__tab.dragging,
+.dockv2-root .flexlayout__tabset .flexlayout__tab {
+  position: relative !important;
+}
+
+/* ✅ NUOVO: Durante il drag, assicura che il tabset sia sopra DrawerTabStrip */
+.dockv2-root .flexlayout__tabset.dragging,
+.dockv2-root .flexlayout__tabset:has(.flexlayout__tab.dragging) {
+  z-index: 1003 !important;
+  position: relative !important;
 }
 
 .dockv2-root .flexlayout__border_top,
@@ -17,7 +62,7 @@
   height: 100% !important;
   width: 100% !important;
   position: relative !important; /* ✅ Usa relative invece di absolute per rispettare flex */
-  overflow: hidden !important; /* ✅ IMPORTANTE: No scroll a livello layout */
+  overflow: hidden !important; /* ✅ RIPRISTINATO: No scroll a livello layout */
 }
 
 /* ✅ Fix: Disabilita scroll su row e splitter di FlexLayout */
@@ -189,6 +234,20 @@
   opacity: 1 !important;
   height: 28px !important;
   min-height: 28px !important;
+  z-index: 1003 !important; /* ✅ AUMENTATO da 10 a 1003 per stare sopra DrawerTabStrip (1002) */
+  position: relative !important; /* ✅ Importante per z-index */
+  background: white !important; /* ✅ Assicura sfondo solido */
+}
+
+/* ✅ FASE 1: Assicura visibilità tab strip anche per tab drawer in altri tabset (caso edge) */
+.dockv2-root .flexlayout__tab[data-component="drawer-content"] ~ *,
+.dockv2-root .flexlayout__tabset:has(.flexlayout__tab[data-component="drawer-content"]) .flexlayout__tabset_header {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 1003 !important; /* ✅ AUMENTATO da 10 a 1003 */
+  position: relative !important;
+  background: white !important;
 }
 
 /* ✅ FASE 1: Assicura che il drawerTabset sia sempre in fondo nella struttura column */
@@ -208,6 +267,15 @@
   height: 100% !important;
   min-height: 250px !important;
   overflow: auto !important;
+}
+
+/* ✅ Ripristina cursore grab per tab drawer (drag permesso) */
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tab {
+  cursor: grab !important; /* ✅ Ripristina cursore grab */
+}
+
+.dockv2-root .flexlayout__tabset[id="drawerTabset"] .flexlayout__tab:active {
+  cursor: grabbing !important;
 }
 
 /* nascosto: ora usiamo il bottone nell'header */
@@ -562,8 +630,9 @@
 }
 
 /* ✅ Fix RADICALE: Impedisci ai tabset di estendersi oltre la striscia dei cassetti */
+/* ✅ FASE 1: Modificato overflow - tab strip deve essere visibile */
 .dockv2-root .flexlayout__tabset {
-  overflow: hidden !important;
+  overflow: visible !important; /* ✅ Cambiato da hidden a visible per permettere tab strip visibile */
   max-height: 100% !important;
   height: 100% !important; /* ✅ Forza altezza 100% del parent, non dello schermo */
   position: relative !important;
@@ -664,4 +733,22 @@
   background: rgba(241, 245, 249, 1) !important;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15) !important;
   transform: translateY(-2px);
+}
+
+/* ✅ NUOVO: Assicura che tutte le tab strip siano visibili anche quando i tabsets sono in una row */
+.dockv2-root .flexlayout__row .flexlayout__tabset .flexlayout__tabset_header {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 1003 !important;
+  position: relative !important;
+  background: white !important;
+  height: 28px !important;
+  min-height: 28px !important;
+}
+
+/* ✅ NUOVO: Assicura che i tabsets in una row non taglino le tab strip con overflow */
+.dockv2-root .flexlayout__row .flexlayout__tabset {
+  overflow: visible !important; /* ✅ Permetti overflow per vedere tab strip */
+  position: relative !important;
 }

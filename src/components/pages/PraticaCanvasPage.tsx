@@ -641,11 +641,13 @@ export function PraticaCanvasPage() {
     <div className="h-screen overflow-hidden bg-background">
 
       {/* Header */}
-      <HeaderToolbar
-        pratica={pratica}
-        onHomeClick={() => navigate('/')}
-        onOpenPratica={() => navigate('/')}
-        onSavePratica={async () => {
+      {/* ✅ TEMPORANEO: Nascondo la toolbar principale per test */}
+      {false && (
+        <HeaderToolbar
+          pratica={pratica}
+          onHomeClick={() => navigate('/')}
+          onOpenPratica={() => navigate('/')}
+          onSavePratica={async () => {
           if (!id || !pratica) {
             console.warn('[SAVE][PRATICA][FRONTEND] Dati mancanti', { id, pratica })
             return
@@ -694,7 +696,8 @@ export function PraticaCanvasPage() {
         onSaveFilesToDbChange={setSaveFilesToDb}
         isSaving={isSaving}
         onUploadDocuments={() => open()}
-      />
+        />
+      )}
 
       {/* Spacer per l'header fisso */}
       <div style={{ height: headerH }} />

@@ -206,6 +206,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     return match ? match[1] : null
   }, [])
 
+
   // ✅ State globale per tracciare lo stato fullscreen di ogni componente (reattivo)
   const [fullscreenStates, setFullscreenStates] = useState<Map<string, boolean>>(new Map())
   // ✅ State per forzare re-render quando cambia lo stato fullscreen
@@ -1036,11 +1037,465 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ✅ STEP 5: Cambio modello semplificato
+  // ✅ WORKAROUND: Forza creazione header mancanti nel DOM e popola le tab
+  const forceCreateMissingHeaders = useCallback(() => {
+    if (!modelRef.current) return
+
+    const allTabsets = document.querySelectorAll('.flexlayout__tabset')
+    allTabsets.forEach((tabsetEl) => {
+      const headerEl = tabsetEl.querySelector('.flexlayout__tabset_header')
+      const tabsetId = (tabsetEl as HTMLElement).id ||
+                       tabsetEl.getAttribute('data-layout-path')?.split('/').pop() ||
+                       'unknown'
+
+      // Trova il tabset nel modello
+      let tabsetNode: any = null
+      modelRef.current?.visitNodes((node) => {
+        if (node.getType() === 'tabset') {
+          const nodeId = node.getId()
+          // Match per ID o per posizione nel DOM
+          if (nodeId === tabsetId ||
+              (tabsetId === 'unknown' && tabsetEl === document.querySelector(`.flexlayout__tabset[data-layout-path*="${nodeId}"]`))) {
+            tabsetNode = node
+          }
+        }
+      })
+
+      if (!headerEl) {
+        // Crea l'header mancante
+        const header = document.createElement('div')
+        header.className = 'flexlayout__tabset_header'
+        header.style.cssText = 'display: flex !important; visibility: visible !important; opacity: 1 !important; background: white !important; height: 28px !important; min-height: 28px !important; z-index: 1003 !important; position: relative !important;'
+
+        // Se abbiamo il tabsetNode, popola le tab
+        if (tabsetNode) {
+          const children = tabsetNode.getChildren()
+          children.forEach((tabNode: any) => {
+            const tab = document.createElement('div')
+            tab.className = 'flexlayout__tab'
+            tab.textContent = tabNode.getName() || 'Tab'
+            tab.setAttribute('data-node-id', tabNode.getId())
+            header.appendChild(tab)
+          })
+        }
+
+        // Inserisci l'header come primo figlio del tabset
+        if (tabsetEl.firstChild) {
+          tabsetEl.insertBefore(header, tabsetEl.firstChild)
+        } else {
+          tabsetEl.appendChild(header)
+        }
+        console.log('[FORCE-HEADER] Creato header mancante per tabset:', tabsetId, 'con', tabsetNode?.getChildren()?.length || 0, 'tab')
+      } else {
+        // Header esiste, verifica che abbia le tab
+        const existingTabs = headerEl.querySelectorAll('.flexlayout__tab')
+        if (tabsetNode && existingTabs.length !== tabsetNode.getChildren().length) {
+          console.log('[FORCE-HEADER] Header esiste ma tab non sincronizzate:', existingTabs.length, 'vs', tabsetNode.getChildren().length)
+          // Potremmo dover sincronizzare, ma per ora solo log
+        }
+      }
+    })
+  }, [])
+
+  // ✅ STEP 5: Cambio modello con correzione automatica di enableTabStrip
   const handleModelChange = (m: Model) => {
     modelRef.current = m
-    setModel(m)
+
+    // ✅ CORREZIONE: Forza enableTabStrip su tutti i tabsets nel JSON
+    const json = m.toJson() as any
+    let changed = false
+
+    // ✅ CRITICO: Assicura che global.tabSetEnableTabStrip sia sempre true
+    if (!json.global) {
+      json.global = {}
+      changed = true
+    }
+    if (json.global.tabSetEnableTabStrip !== true) {
+      json.global.tabSetEnableTabStrip = true
+      changed = true
+      console.log('[MODEL-CHANGE] Corretto global.tabSetEnableTabStrip a true')
+    }
+
+    const fixTabsets = (node: any) => {
+      if (node.type === 'tabset' && node.id !== 'placeholder') {
+        if (node.enableTabStrip !== true) {
+          node.enableTabStrip = true
+          changed = true
+          console.log('[MODEL-CHANGE] Corretto enableTabStrip su tabset:', node.id)
+        }
+      }
+      if (Array.isArray(node.children)) {
+        node.children.forEach(fixTabsets)
+      }
+    }
+
+    if (json.layout) {
+      fixTabsets(json.layout)
+    }
+
+    // ✅ FORZA SEMPRE ricreazione del modello per assicurare che FlexLayout applichi le modifiche
+    if (changed) {
+      const fixedModel = Model.fromJson(json)
+      modelRef.current = fixedModel
+      // ✅ Forza re-render completo usando setTimeout per assicurare che FlexLayout abbia finito
+      setTimeout(() => {
+        setModel(fixedModel)
+        // ✅ Forza anche un re-render del layout
+        setTabsOpenState(prev => prev + 1)
+        // ✅ WORKAROUND: Forza creazione header mancanti nel DOM
+        forceCreateMissingHeaders()
+      }, 0)
+    } else {
+      setModel(m)
+      // ✅ WORKAROUND: Anche senza modifiche, verifica che gli header esistano
+      setTimeout(() => {
+        forceCreateMissingHeaders()
+      }, 0)
+    }
   }
+
+  // ✅ DEBUG: Esponi il modello sulla console per ispezione
+  useEffect(() => {
+    // Esponi il modello globale per debug
+    ;(window as any).__flexLayoutModel = modelRef
+    ;(window as any).__flexLayoutDebug = {
+      // Stampa la struttura completa del modello
+      printModel: () => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return
+        }
+        const json = modelRef.current.toJson() as any
+        console.log('📋 STRUTTURA COMPLETA DEL MODELLO:', json)
+        return json
+      },
+      // Stampa solo i tabsets con le loro proprietà
+      printTabsets: () => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return
+        }
+        const tabsets: any[] = []
+        modelRef.current.visitNodes((node) => {
+          if (node.getType() === 'tabset') {
+            const config = node.getConfig() || {}
+            const enableTabStrip = typeof node.getEnableTabStrip === 'function'
+              ? node.getEnableTabStrip()
+              : config.enableTabStrip ?? 'N/A'
+            const tabsetInfo = {
+              id: node.getId(),
+              enableTabStrip: enableTabStrip,
+              config: config,
+              getConfig: () => node.getConfig(),
+              getRect: () => node.getRect(),
+              getChildren: () => {
+                const children: any[] = []
+                node.getChildren().forEach((child) => {
+                  children.push({
+                    id: child.getId(),
+                    type: child.getType(),
+                    component: child.getComponent(),
+                    name: child.getName(),
+                  })
+                })
+                return children
+              },
+              getParent: () => {
+                const parent = node.getParent()
+                return parent ? { id: parent.getId(), type: parent.getType() } : null
+              },
+            }
+            tabsets.push(tabsetInfo)
+          }
+        })
+        console.log('📑 TUTTI I TABSETS:', tabsets)
+        tabsets.forEach((ts, idx) => {
+          console.log(`\n📑 TABSET ${idx + 1}:`, {
+            id: ts.id,
+            enableTabStrip: ts.enableTabStrip,
+            parent: ts.getParent(),
+            children: ts.getChildren(),
+            rect: ts.getRect(),
+          })
+        })
+        return tabsets
+      },
+      // Trova un tabset specifico per ID
+      findTabset: (id: string) => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return null
+        }
+        const node = modelRef.current.getNodeById(id)
+        if (!node || node.getType() !== 'tabset') {
+          console.log(`❌ Tabset con id "${id}" non trovato`)
+          return null
+        }
+        const config = node.getConfig() || {}
+        const enableTabStrip = typeof node.getEnableTabStrip === 'function'
+          ? node.getEnableTabStrip()
+          : config.enableTabStrip ?? 'N/A'
+        const info = {
+          id: node.getId(),
+          enableTabStrip: enableTabStrip,
+          config: config,
+          getConfig: () => node.getConfig(),
+          getRect: () => node.getRect(),
+          getChildren: () => {
+            const children: any[] = []
+            node.getChildren().forEach((child) => {
+              children.push({
+                id: child.getId(),
+                type: child.getType(),
+                component: child.getComponent(),
+                name: child.getName(),
+              })
+            })
+            return children
+          },
+          getParent: () => {
+            const parent = node.getParent()
+            return parent ? { id: parent.getId(), type: parent.getType() } : null
+          },
+        }
+        console.log(`🔍 TABSET "${id}":`, info)
+        return info
+      },
+      // Stampa la gerarchia completa (albero)
+      printHierarchy: () => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return
+        }
+        const printNode = (node: any, indent = '') => {
+          const type = node.getType()
+          const id = node.getId()
+          const comp = node.getComponent?.() || 'N/A'
+          const name = node.getName?.() || 'N/A'
+
+          let enableTabStrip = 'N/A'
+          let configInfo = ''
+          if (type === 'tabset') {
+            const config = node.getConfig?.() || {}
+            enableTabStrip = typeof node.getEnableTabStrip === 'function'
+              ? node.getEnableTabStrip()
+              : config.enableTabStrip ?? 'N/A'
+            configInfo = ` config: ${JSON.stringify(config)}`
+          }
+
+          console.log(
+            `${indent}${type === 'tabset' ? '📑' : type === 'tab' ? '📄' : '📦'} ${type} [${id}]`,
+            type === 'tabset' ? `enableTabStrip: ${enableTabStrip}${configInfo}` : `component: ${comp}, name: ${name}`
+          )
+
+          if (node.getChildren) {
+            const children = node.getChildren()
+            if (children && children.length > 0) {
+              children.forEach((child: any) => printNode(child, indent + '  '))
+            }
+          }
+        }
+
+        const root = modelRef.current.getRoot()
+        console.log('🌳 GERARCHIA COMPLETA DEL MODELLO:')
+        printNode(root)
+
+        // Mostra anche il JSON per vedere la struttura completa
+        const json = modelRef.current.toJson() as any
+        console.log('📋 JSON COMPLETO DEL MODELLO:', JSON.stringify(json, null, 2))
+        console.log('📋 JSON.layout:', JSON.stringify(json.layout, null, 2))
+        if (json.global) {
+          console.log('📋 JSON.global:', JSON.stringify(json.global, null, 2))
+        }
+      },
+      // Verifica se le tab strips esistono nel DOM
+      checkDOMTabsets: () => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return
+        }
+
+        console.log('🔍 VERIFICA DOM TABSETS:')
+
+        // Verifica anche global.tabSetEnableTabStrip
+        const json = modelRef.current.toJson() as any
+        console.log('📋 global.tabSetEnableTabStrip:', json.global?.tabSetEnableTabStrip)
+        console.log('📋 global completo:', json.global)
+
+        // Prima, vediamo tutti i tabsets nel DOM (qualsiasi)
+        const allTabsetsInDOM = document.querySelectorAll('.flexlayout__tabset')
+        console.log(`📊 Trovati ${allTabsetsInDOM.length} elementi .flexlayout__tabset nel DOM:`)
+        allTabsetsInDOM.forEach((el, idx) => {
+          const htmlEl = el as HTMLElement
+          const headerEl = htmlEl.querySelector('.flexlayout__tabset_header') as HTMLElement
+          const tabs = htmlEl.querySelectorAll('.flexlayout__tab')
+          const tabInfo = Array.from(tabs).map(tab => {
+            const tabEl = tab as HTMLElement
+            return {
+              component: tabEl.getAttribute('data-component') || tabEl.querySelector('[data-component]')?.getAttribute('data-component'),
+              name: tabEl.textContent?.trim() || 'N/A',
+              id: tabEl.id || 'N/A'
+            }
+          })
+
+          const dataAttrs = Array.from(htmlEl.attributes)
+            .filter(attr => attr.name.startsWith('data-'))
+            .reduce((acc, attr) => {
+              acc[attr.name] = attr.value
+              return acc
+            }, {} as Record<string, string>)
+
+          console.log(`  ${idx + 1}. TABSET nel DOM:`, {
+            id: htmlEl.id || '(vuoto)',
+            className: htmlEl.className,
+            dataAttributes: dataAttrs,
+            hasHeader: !!headerEl,
+            headerDisplay: headerEl ? window.getComputedStyle(headerEl).display : 'N/A',
+            headerHeight: headerEl?.offsetHeight || 0,
+            children: htmlEl.children.length,
+            tabs: tabInfo,
+            rect: htmlEl.getBoundingClientRect(),
+            innerHTML: htmlEl.innerHTML.substring(0, 300) // Primi 300 caratteri per debug
+          })
+
+          // Mostra anche tutti gli attributi
+          console.log(`     Tutti gli attributi:`, Array.from(htmlEl.attributes).map(a => `${a.name}="${a.value}"`).join(', '))
+        })
+
+        const tabsets: any[] = []
+        modelRef.current.visitNodes((node) => {
+          if (node.getType() === 'tabset') {
+            const tabsetId = node.getId()
+
+            // Prova vari selettori
+            const selectors = [
+              `.flexlayout__tabset[id="${tabsetId}"]`,
+              `.flexlayout__tabset[data-id="${tabsetId}"]`,
+              `[data-layout-path*="${tabsetId}"]`,
+              `.flexlayout__tabset:has([data-node-id="${tabsetId}"])`,
+            ]
+
+            let domElement: Element | null = null
+            for (const selector of selectors) {
+              domElement = document.querySelector(selector)
+              if (domElement) {
+                console.log(`  ✅ Trovato con selettore: ${selector}`)
+                break
+              }
+            }
+
+            // Se non trovato, cerca per contenuto (tab con component che corrisponde)
+            if (!domElement) {
+              const config = node.getConfig() || {}
+              const children = node.getChildren()
+              if (children.length > 0) {
+                const firstTab = children[0]
+                const component = firstTab.getComponent()
+                const tabName = firstTab.getName()
+
+                // Cerca tab con questo component o name
+                const tabsWithComponent = document.querySelectorAll(`[data-component="${component}"]`)
+                if (tabsWithComponent.length > 0) {
+                  const parentTabset = tabsWithComponent[0].closest('.flexlayout__tabset')
+                  if (parentTabset) {
+                    domElement = parentTabset
+                    console.log(`  ✅ Trovato tramite tab child con component: ${component}`)
+                  }
+                }
+              }
+            }
+
+            const headerElement = domElement?.querySelector('.flexlayout__tabset_header') as HTMLElement
+
+            const info = {
+              id: tabsetId,
+              enableTabStrip: typeof node.getEnableTabStrip === 'function'
+                ? node.getEnableTabStrip()
+                : (node.getConfig() || {}).enableTabStrip ?? 'N/A',
+              domExists: !!domElement,
+              headerExists: !!headerElement,
+              headerDisplay: headerElement?.style.display || window.getComputedStyle(headerElement || document.body).display,
+              headerVisibility: headerElement?.style.visibility || window.getComputedStyle(headerElement || document.body).visibility,
+              headerOpacity: headerElement?.style.opacity || window.getComputedStyle(headerElement || document.body).opacity,
+              headerZIndex: headerElement?.style.zIndex || window.getComputedStyle(headerElement || document.body).zIndex,
+              headerHeight: headerElement?.offsetHeight || 0,
+              headerWidth: headerElement?.offsetWidth || 0,
+              headerRect: headerElement?.getBoundingClientRect(),
+              computedStyles: headerElement ? window.getComputedStyle(headerElement) : null,
+            }
+
+            tabsets.push(info)
+            console.log(`\n📑 TABSET "${tabsetId}":`, info)
+
+            if (headerElement) {
+              console.log(`  ✅ Header trovato nel DOM`)
+              console.log(`  📏 Dimensioni: ${info.headerWidth}x${info.headerHeight}`)
+              console.log(`  🎨 Display: ${info.headerDisplay}, Visibility: ${info.headerVisibility}, Opacity: ${info.headerOpacity}`)
+              console.log(`  📍 Posizione:`, info.headerRect)
+            } else {
+              console.log(`  ❌ Header NON trovato nel DOM!`)
+            }
+          }
+        })
+
+        return tabsets
+      },
+      // Forza enableTabStrip su tutti i tabsets
+      forceEnableTabStrip: () => {
+        if (!modelRef.current) {
+          console.log('❌ Modello non disponibile')
+          return
+        }
+        // Modifica il modello JSON invece di cercare di modificare i nodi direttamente
+        const json = modelRef.current.toJson() as any
+        console.log('🔍 [FORCE-ENABLE] JSON prima della modifica:', JSON.stringify(json.layout, null, 2))
+        let count = 0
+
+        const fixTabsets = (node: any, path = '') => {
+          if (!node) return
+          const currentPath = path ? `${path}.${node.type}[${node.id || 'no-id'}]` : `${node.type}[${node.id || 'no-id'}]`
+
+          if (node.type === 'tabset' && node.id !== 'placeholder') {
+            // Forza enableTabStrip se non è esplicitamente true (gestisce anche undefined/null/assente)
+            const currentValue = node.enableTabStrip
+            console.log(`🔍 [FORCE-ENABLE] Trovato tabset: ${node.id} a ${currentPath}, enableTabStrip: ${currentValue ?? 'undefined'}`)
+            if (currentValue !== true) {
+              const oldValue = currentValue ?? 'undefined (non presente nel JSON)'
+              node.enableTabStrip = true
+              count++
+              console.log(`✅ Forzato enableTabStrip su tabset: ${node.id} (era: ${oldValue})`)
+            }
+          }
+          if (Array.isArray(node.children)) {
+            node.children.forEach((child: any) => fixTabsets(child, currentPath))
+          }
+        }
+
+        if (json.layout) {
+          fixTabsets(json.layout)
+        } else {
+          console.warn('⚠️ [FORCE-ENABLE] json.layout non esiste!')
+        }
+
+        console.log('🔍 [FORCE-ENABLE] JSON dopo la modifica:', JSON.stringify(json.layout, null, 2))
+
+        console.log(`✅ Forzato enableTabStrip su ${count} tabsets`)
+        // Ricrea il modello con le modifiche
+        const newModel = Model.fromJson(json)
+        modelRef.current = newModel
+        setModel(newModel)
+      },
+    }
+
+    console.log('🔧 DEBUG TOOLS DISPONIBILI:')
+    console.log('  - window.__flexLayoutDebug.printModel() - Stampa struttura completa')
+    console.log('  - window.__flexLayoutDebug.printTabsets() - Stampa tutti i tabsets')
+    console.log('  - window.__flexLayoutDebug.findTabset(id) - Trova un tabset specifico')
+    console.log('  - window.__flexLayoutDebug.printHierarchy() - Stampa gerarchia ad albero')
+    console.log('  - window.__flexLayoutDebug.checkDOMTabsets() - Verifica tab strips nel DOM')
+    console.log('  - window.__flexLayoutDebug.forceEnableTabStrip() - Forza enableTabStrip su tutti')
+    console.log('  - window.__flexLayoutModel.current - Accesso diretto al modello')
+  }, [setModel])
 
   const factory = (node: TabNode) => {
     const comp = node.getComponent()
@@ -1294,6 +1749,20 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
       // ✅ Assicura che tab strip sia sempre abilitata (anche per layout vecchi salvati)
       json.global.tabSetEnableTabStrip = true
       json.global.tabSetHeaderHeight = json.global.tabSetHeaderHeight || 28
+
+      // ✅ NUOVO: Forza enableTabStrip: true su tutti i tabsets (tranne placeholder)
+      // Questo risolve il problema delle tab strip che spariscono quando si sposta un pannello
+      const forceTabStrip = (node: any) => {
+        if (node.type === 'tabset' && node.id !== 'placeholder') {
+          node.enableTabStrip = true // ✅ Forza tab strip sempre visibile
+        }
+        if (Array.isArray(node.children)) {
+          node.children.forEach(forceTabStrip)
+        }
+      }
+      if (json.layout) {
+        forceTabStrip(json.layout)
+      }
 
       // ✅ FASE 1: Force column root con row sopra (canvas) e tabset sotto (cassetti)
       if (!json.layout || json.layout.type !== 'column' || !Array.isArray(json.layout.children)) {
@@ -1665,6 +2134,22 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     if (action.type === 'FlexLayout_DragTab') {
       const { dragNode, dropInfo } = action
       const component = dragNode.getComponent()
+      const tabId = dragNode.getId()
+
+      console.log('[HANDLE-ACTION][DRAG-TAB]', {
+        component,
+        tabId,
+        tabName: dragNode.getName(),
+        targetType: dropInfo?.node?.getType?.(),
+        targetId: dropInfo?.node?.getId?.(),
+        isDrawerContent: component === 'drawer-content',
+        isDrawerTab: tabId.startsWith('drawer-'),
+        dropInfo: dropInfo ? {
+          type: dropInfo.node?.getType?.(),
+          id: dropInfo.node?.getId?.()
+        } : null
+      })
+
       const behavior = PANEL_BEHAVIORS[component]
 
       // Se è un pannello dockable, gestisci il posizionamento
@@ -1689,6 +2174,86 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
         // Blocca il drop in altre zone
         return undefined // Blocca l'azione
+      }
+    }
+
+    // ✅ Intercetta anche MoveNode e AddNode per bloccare spostamenti di tab drawer
+    if (action.type === 'FlexLayout_MoveNode' || action.type === 'FlexLayout_AddNode') {
+      const node = action.data?.node || action.data?.dragNode || action.data?.nodeToAdd
+      if (node) {
+        const comp = typeof node.getComponent === 'function' ? node.getComponent() :
+                     (node as any).getComponent?.() || (action.data as any)?.component
+        if (comp === 'drawer-content') {
+          console.log('[HANDLE-ACTION][MOVE/ADD] ❌ BLOCCATO:', action.type, {
+            nodeId: typeof node.getId === 'function' ? node.getId() : (node as any).id,
+            component: comp
+          })
+          return undefined
+        }
+      }
+
+      // ✅ MIGLIORATO: Identifica correttamente il tabset (potrebbe essere il parent del tab)
+      const targetNode = action.data?.node || action.data?.nodeToAdd || action.data?.dragNode
+      if (targetNode && typeof targetNode.getType === 'function') {
+        const nodeType = targetNode.getType()
+        const nodeId = typeof targetNode.getId === 'function' ? targetNode.getId() : (targetNode as any).id
+
+        // Se è un tabset (non placeholder), forza enableTabStrip
+        if (nodeType === 'tabset' && nodeId !== 'placeholder') {
+          console.log('[HANDLE-ACTION][MOVE/ADD] Forzo enableTabStrip su tabset:', nodeId, action.type)
+          if (typeof targetNode.setEnableTabStrip === 'function') {
+            targetNode.setEnableTabStrip(true)
+          } else {
+            ;(targetNode as any).enableTabStrip = true
+          }
+        }
+
+        // ✅ NUOVO: Se è un tab, trova il parent tabset e forza enableTabStrip
+        if (nodeType === 'tab') {
+          const parent = typeof targetNode.getParent === 'function' ? targetNode.getParent() : null
+          if (parent && typeof parent.getType === 'function' && parent.getType() === 'tabset') {
+            const parentId = typeof parent.getId === 'function' ? parent.getId() : (parent as any).id
+            if (parentId !== 'placeholder') {
+              console.log('[HANDLE-ACTION][MOVE/ADD] Forzo enableTabStrip su parent tabset:', parentId)
+              if (typeof parent.setEnableTabStrip === 'function') {
+                parent.setEnableTabStrip(true)
+              } else {
+                ;(parent as any).enableTabStrip = true
+              }
+            }
+          }
+        }
+      }
+
+      // ✅ Se l'azione crea un nuovo tabset tramite JSON, forza enableTabStrip
+      if (action.type === 'FlexLayout_AddNode' && action.data?.json) {
+        const jsonNode = action.data.json
+        if (jsonNode && jsonNode.type === 'tabset' && jsonNode.id !== 'placeholder') {
+          jsonNode.enableTabStrip = true
+          console.log('[HANDLE-ACTION][ADD-NODE] Forzo enableTabStrip su nuovo tabset JSON:', jsonNode.id)
+        }
+      }
+
+      // ✅ CRITICO: Se l'azione crea un nuovo tabset (anche senza JSON), forza enableTabStrip
+      // FlexLayout può creare tabsets durante drag/drop anche senza JSON esplicito
+      if (action.type === 'FlexLayout_AddNode' || action.type === 'FlexLayout_MoveNode') {
+        // Verifica se l'azione creerà un nuovo tabset
+        const dropInfo = (action.data as any)?.dropInfo
+        if (dropInfo && dropInfo.type === 'tabset') {
+          // Se il drop crea un nuovo tabset, assicurati che abbia enableTabStrip
+          const targetTabset = dropInfo.node
+          if (targetTabset && typeof targetTabset.getType === 'function' && targetTabset.getType() === 'tabset') {
+            const tabsetId = typeof targetTabset.getId === 'function' ? targetTabset.getId() : (targetTabset as any).id
+            if (tabsetId !== 'placeholder') {
+              console.log('[HANDLE-ACTION][MOVE/ADD] Forzo enableTabStrip su tabset creato da drop:', tabsetId)
+              if (typeof targetTabset.setEnableTabStrip === 'function') {
+                targetTabset.setEnableTabStrip(true)
+              } else {
+                ;(targetTabset as any).enableTabStrip = true
+              }
+            }
+          }
+        }
       }
     }
 
@@ -2397,7 +2962,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
             right: 0,
             minHeight: '100px',
             height: 'auto',
-            zIndex: isDrawerStripVisible ? 1002 : 100, // ✅ Più alto quando visibile per stare sopra sidebar
+            zIndex: isDrawerStripVisible ? 999 : 100, // ✅ RIDOTTO da 1002 a 999 per stare sotto le tab strip (1003)
             overflow: 'visible',
             pointerEvents: isDrawerStripVisible ? 'auto' : 'none',
             background: '#f8fafc',
