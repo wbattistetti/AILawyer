@@ -1,7 +1,61 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Search } from 'lucide-react'
 import type { DrawerType } from './types'
 import type { Documento, Comparto } from '../../types'
+import './DrawerTabStrip.css'
+
+// ✅ Componente helper per applicare il colore all'icona SVG
+function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: string; size: number }) {
+  const wrapperRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!wrapperRef.current) return
+
+    // Trova tutti gli elementi SVG e applica il colore direttamente
+    const svg = wrapperRef.current.querySelector('svg')
+    if (svg) {
+      // Applica il colore a tutti gli elementi path, circle, etc. dentro l'SVG
+      const allElements = svg.querySelectorAll('path, circle, rect, line, polyline, polygon, g')
+      allElements.forEach(el => {
+        ;(el as SVGElement).setAttribute('stroke', color)
+        ;(el as SVGElement).setAttribute('fill', 'none')
+        ;(el as SVGElement).style.stroke = color
+        ;(el as SVGElement).style.fill = 'none'
+      })
+      // Applica anche all'SVG stesso
+      svg.style.color = color
+      svg.style.stroke = color
+    }
+  }, [color])
+
+  return (
+    <span
+      ref={wrapperRef}
+      className="flex-shrink-0 drawer-tab-icon-wrapper"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        '--drawer-icon-color': color // CSS variable per il colore
+      } as React.CSSProperties}
+    >
+      {React.isValidElement(icon) && typeof icon.type !== 'string'
+        ? React.cloneElement(icon as React.ReactElement<any>, {
+            size: size,
+            className: 'drawer-tab-icon',
+            strokeWidth: 2.5,
+            fill: 'none',
+            style: {
+              width: `${size}px`,
+              height: `${size}px`
+            }
+          })
+        : typeof icon === 'string'
+          ? icon
+          : icon}
+    </span>
+  )
+}
 
 export type DrawerTabItem = {
   id: string
@@ -430,25 +484,14 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             onDragOver={(e) => handleDragOver(e, item.id)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, item.id)}
-            className={`
-              flex flex-col items-center justify-start gap-1.5 px-2 py-2.5
-              transition-all flex-shrink-0
-              ${isSelected
-                ? 'bg-white shadow-md'
-                : isHovered
-                ? 'bg-slate-100 shadow-lg'
-                : isDraggedOver
-                ? 'bg-blue-50 shadow-md'
-                : 'bg-slate-50'
-              }
-            `}
+            className="flex flex-col items-center justify-start transition-all flex-shrink-0"
             style={{
-              // ✅ Bordino sottile completo con angoli arrotondati (come cassetti)
-              // ✅ Usa proprietà non-shorthand per evitare conflitti con borderBottom
-              borderTop: `${isSelected || isHovered ? '3px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderLeft: `${isSelected || isHovered ? '2px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderRight: `${isSelected || isHovered ? '2px' : '1px'} solid ${isSelected ? item.color : isHovered ? item.color : isDraggedOver ? '#93c5fd' : '#cbd5e1'}`,
-              borderBottom: 'none', // ✅ Nessun bordo in basso (si attacca alla strip)
+              // ✅ Sfondo scuro (dark brownish-grey) come nella seconda figura, leggermente più chiaro se selezionata
+              backgroundColor: isSelected ? '#3a3a3a' : '#2d2d2d', // leggermente più chiaro se selezionata
+              // ✅ Bordino golden-brown solo per tab selezionata, altrimenti sottile grigio
+              border: isSelected
+                ? `2px solid #d4a574` // golden-brown per tab selezionata
+                : `1px solid #4a4a4a`, // bordo sottile grigio per tab non selezionate
               borderRadius: '8px', // ✅ Angoli arrotondati
               borderBottomLeftRadius: '0', // ✅ Angoli in basso senza arrotondamento
               borderBottomRightRadius: '0',
@@ -457,37 +500,72 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
               // ✅ Altezza uniforme calcolata in base al numero massimo di righe
               height: `${uniformTabHeight}px`,
               minHeight: `${uniformTabHeight}px`,
+              // ✅ Padding (sostituisce px-2 py-2.5)
+              padding: '10px 8px',
+              // ✅ Gap (sostituisce gap-1.5)
+              gap: '6px',
               // ✅ Transform leggero quando hover per effetto "sollevamento"
               transform: isHovered && !isSelected ? 'translateY(-2px)' : 'translateY(0)',
-            }}
+              // ✅ Shadow quando selezionato o hover
+              boxShadow: isSelected || isHovered ? '0 4px 6px rgba(212, 165, 116, 0.3)' : 'none',
+            } as React.CSSProperties}
           >
-            {/* ✅ Numero e icona sulla stessa riga (numero a sinistra) */}
-            <div className="flex items-center gap-1.5 w-full justify-center">
-              <span className={`text-xs font-semibold leading-none ${isSelected ? 'text-slate-700' : isHovered ? 'text-slate-700' : 'text-slate-500'}`}>
-                {tabNumber}.
-              </span>
-              {item.icon && (
-                <span className="flex-shrink-0" style={{ color: isHovered || isSelected ? item.color : item.color, opacity: isHovered || isSelected ? 1 : 0.8 }}>
-                  {React.isValidElement(item.icon) && typeof item.icon.type !== 'string'
-                    ? React.cloneElement(item.icon as React.ReactElement<any>, { size: 32, className: 'w-8 h-8', style: { width: '32px', height: '32px' } })
-                    : item.icon}
+            {/* ✅ Layout: numero e icona affiancati in alto, testo centrato sotto */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              width: '100%',
+              height: '100%',
+              position: 'relative'
+            }}>
+              {/* Numero e icona affiancati in alto */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                width: '100%',
+                marginBottom: '4px'
+              }}>
+                {/* Numero in alto a sinistra */}
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
+                    fontSize: '18px',
+                    lineHeight: '1'
+                  }}
+                >
+                  {tabNumber}.
                 </span>
-              )}
-            </div>
 
-            {/* Descrizione multi-linea wrappata */}
-            <span
-              className={`text-xs font-medium text-center leading-tight ${isSelected ? 'text-slate-900' : isHovered ? 'text-slate-800' : 'text-slate-600'}`}
-              style={{
-                fontSize: `${optimalFontSize}px`, // ✅ Font size ottimale calcolato
-                wordBreak: 'normal', // ✅ NON spezzare parole
-                overflowWrap: 'normal', // ✅ Wrappare solo agli spazi
-                hyphens: 'none', // ✅ Nessuna sillabazione automatica
-                lineHeight: LINE_HEIGHT,
-              }}
-            >
-              {item.label}
-            </span>
+                {/* Icona a fianco del numero */}
+                {item.icon && (
+                  <IconWithColor
+                    icon={item.icon}
+                    color={isSelected ? '#d4a574' : (item.color || '#60a5fa')}
+                    size={20}
+                  />
+                )}
+              </div>
+
+              {/* Descrizione multi-linea wrappata centrata sotto */}
+              <span
+                style={{
+                  fontSize: `${optimalFontSize}px`,
+                  color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
+                  fontWeight: 500,
+                  textAlign: 'center',
+                  lineHeight: LINE_HEIGHT,
+                  wordBreak: 'normal',
+                  overflowWrap: 'normal',
+                  hyphens: 'none',
+                  width: '100%'
+                }}
+              >
+                {item.label}
+              </span>
+            </div>
           </button>
         )
       })}

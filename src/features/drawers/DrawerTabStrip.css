@@ -1,0 +1,21 @@
+/* ✅ Forza colori sulle icone SVG nei drawer tabs - ULTRA SPECIFICO */
+.drawer-tab-icon-wrapper .drawer-tab-icon svg,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg path,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg circle,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg rect,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg line,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg polyline,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg polygon,
+.drawer-tab-icon-wrapper .drawer-tab-icon svg g {
+  stroke: var(--drawer-icon-color, currentColor) !important;
+  fill: none !important;
+  color: var(--drawer-icon-color, currentColor) !important;
+}
+
+/* ✅ Forza anche su tutti gli elementi SVG dentro il wrapper */
+button .drawer-tab-icon-wrapper svg,
+button .drawer-tab-icon-wrapper svg * {
+  stroke: var(--drawer-icon-color, currentColor) !important;
+  fill: none !important;
+  color: var(--drawer-icon-color, currentColor) !important;
+}

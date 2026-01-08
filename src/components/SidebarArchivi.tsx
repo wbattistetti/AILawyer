@@ -18,12 +18,13 @@ interface SidebarArchiviProps {
   isOpen: boolean
   onToggle: () => void
   onMouseEnter?: () => void
+  onMouseLeave?: () => void
   headerHeight?: number
   optimalFontSize?: number // ✅ Font size calcolato dai cassetti
   isDrawerStripVisible?: boolean // ✅ Per gestire z-index e bottom
 }
 
-export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, onMouseEnter, headerHeight = 56, optimalFontSize = 13, isDrawerStripVisible = false }: SidebarArchiviProps) {
+export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, onMouseEnter, onMouseLeave, headerHeight = 56, optimalFontSize = 13, isDrawerStripVisible = false }: SidebarArchiviProps) {
   const sidebarRef = useRef<HTMLDivElement>(null)
   const [hoveredTabId, setHoveredTabId] = React.useState<string | null>(null)
 
@@ -78,8 +79,10 @@ export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, o
             writingMode: 'vertical-rl',
             textOrientation: 'mixed',
           }}
+          onMouseEnter={onMouseEnter}
         >
           <div
+            onClick={onToggle}
             style={{
               background: '#f1f5f9',
               borderTopRightRadius: '8px',
@@ -120,6 +123,7 @@ export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, o
           boxShadow: isOpen ? '2px 0 12px rgba(0, 0, 0, 0.1)' : 'none',
         }}
         onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
       >
         <div
           style={{

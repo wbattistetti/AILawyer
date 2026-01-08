@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Comparto, Documento, UploadProgress } from '../../../../types';
-import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
 import { DocumentCollection } from '../../../../features/documents/DocumentCollection';
 import { api } from '../../../../lib/api';
 import { colorFor, iconFor } from '../../../../features/drawers/drawerPalette';
@@ -18,7 +18,7 @@ function hexToRgba(hex: string, alpha = 0.1) {
 interface ArchiveRendererProps {
     documenti: Documento[];
     clientThumbByS3: Record<string, string>;
-    dockV2Ref: React.RefObject<DockWorkspaceV2Handle | null>;
+    dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
     handleFileDrop: (files: File[], compartoId?: string | null, target?: any) => Promise<void>;
     handleRemoveThumb: (docId: string) => void;
     handleOcr: (doc: Documento, mode?: 'quick' | 'full', limitPages?: number) => Promise<void>;

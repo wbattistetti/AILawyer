@@ -1,6 +1,6 @@
 import React from 'react';
 import { Documento } from '../../../../types';
-import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
 import { SearchProvider } from '../../../search/SearchProvider';
 import { SearchPanelTree } from '../../../search/SearchPanelTree';
 import { api } from '../../../../lib/api';
@@ -8,7 +8,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 interface SearchRendererProps {
     documenti: Documento[];
-    dockV2Ref: React.RefObject<DockWorkspaceV2Handle | null>;
+    dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
     toast: any;
 }
 

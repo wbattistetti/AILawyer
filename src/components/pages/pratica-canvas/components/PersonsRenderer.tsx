@@ -1,12 +1,12 @@
 import React from 'react';
 import { Documento } from '../../../../types';
-import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
 import { PersonCardsPanel } from '../../../../features/entities/PersonCardsPanel';
 import { buildPdfJsAdaptersFromDocs } from '../../../../features/entities/adapters/PdfJsDocAdapter';
 
 interface PersonsRendererProps {
   documenti: Documento[];
-  dockV2Ref: React.RefObject<DockWorkspaceV2Handle | null>;
+  dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
   toast: any;
 }
 

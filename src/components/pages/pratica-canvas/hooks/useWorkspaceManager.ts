@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
 
 export function useWorkspaceManager(id: string | undefined) {
     const [viewMode, setViewMode] = useState<'archivio' | 'tavolo'>('archivio');
-    const dockV2Ref = useRef<DockWorkspaceV2Handle | null>(null);
+    const dockV2Ref = useRef<DockWorkspaceV3Handle | null>(null);
 
     // Restore viewMode from localStorage
     useEffect(() => {

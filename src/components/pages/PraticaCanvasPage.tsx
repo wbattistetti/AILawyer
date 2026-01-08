@@ -3,7 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { api } from '../../lib/api'
-import { DockWorkspaceV2, DockWorkspaceV2Handle } from '../DockWorkspaceV2'
+import { DockWorkspaceV3, DockWorkspaceV3Handle } from '../DockWorkspaceV3'
 import { usePageRegistry } from '../viewers/usePageRegistry'
 import { useToast } from '../../hooks/use-toast'
 import { Pratica, Comparto, Documento, Cliente } from '../../types'
@@ -703,9 +703,9 @@ export function PraticaCanvasPage() {
       <div style={{ height: headerH }} />
       {/* Main Content: Archivio (sx) + Tavolo (dx) sempre insieme */}
       <div className="w-full overflow-hidden" style={{ height: `calc(100vh - ${headerH}px)` }}>
-        <DockWorkspaceV2
+        <DockWorkspaceV3
           ref={dockV2Ref as any}
-          storageKey={`ws_dock_v2_${id}`}
+          storageKey={`ws_dock_v3_${id}`}
           headerHeight={headerH} // ✅ Passa altezza header per posizionare sidebar
           // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
           renderExplorer={() => <Explorer {...ExplorerProps} />}
@@ -769,7 +769,7 @@ export function PraticaCanvasPage() {
           </div>
         )}
 
-        {/* Tavolo gestito interamente da DockWorkspaceV2 */}
+        {/* Tavolo gestito interamente da DockWorkspaceV3 */}
       </div>
 
       {/* Overlay globale disattivato */}

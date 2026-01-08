@@ -1,11 +1,11 @@
 import { useEffect, RefObject } from 'react';
 import { Documento } from '../../../../types';
-import { DockWorkspaceV2Handle } from '../../../DockWorkspaceV2';
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
 
 interface UseEventListenersProps {
     documenti: Documento[];
     clientThumbByS3: Record<string, string>;
-    dockV2Ref: RefObject<DockWorkspaceV2Handle | null>;
+    dockV2Ref: RefObject<DockWorkspaceV3Handle | null>;
     handleFileDrop: (files: File[], compartoId?: string | null, target?: any) => Promise<void>;
 }
 
