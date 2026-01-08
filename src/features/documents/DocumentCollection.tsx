@@ -19,6 +19,7 @@ type DocItem = {
   meta?: any
   ocrStatus?: string
   hasNativeText?: boolean
+  autoGenerateThumbnail?: boolean // ✅ NOVO: Flag per auto-generazione thumbnail per file virtuali
 }
 
 // ✅ CORREZIONE: Funzione per generare snippet contestuali
@@ -511,7 +512,8 @@ export function DocumentCollection({
               const finalImgSrc = isExtract ? '' : thumbnailFromDb
               const isTempDoc = doc.id?.startsWith('temp:')
               // ✅ Per documenti temporanei, non fare lazy loading dal backend (thumbnail generata client-side)
-              const shouldAutoGenerate = isPdf && !thumbnailFromDb && computedFileUrl
+              // ✅ NOVO: Usa autoGenerateThumbnail dal docItem se presente (per file virtuali), altrimenti calcola
+              const shouldAutoGenerate = doc.autoGenerateThumbnail ?? (isPdf && !thumbnailFromDb && computedFileUrl)
               const shouldLoadLazyThumbnail = !isExtract && isPdf && !thumbnailFromDb && !isTempDoc
 
               return (

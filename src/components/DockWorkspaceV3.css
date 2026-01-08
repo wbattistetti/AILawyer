@@ -24,3 +24,105 @@
   height: 100%;
 }
 
+/* ✅ BORDI EVIDENZIATI TRA I PANNELLI */
+/* Bordo sui pannelli (group view) */
+.dockv3-root .dv-group-view {
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Bordo più spesso quando i pannelli sono affiancati (split) */
+.dockv3-root .dv-group-view + .dv-group-view {
+  border-left: 2px solid #d1d5db !important;
+}
+
+/* Stile per i divisori/splitter tra i pannelli */
+.dockv3-root .dv-split-view-container {
+  background-color: #f3f4f6;
+}
+
+.dockv3-root .dv-split-view-container .dv-split-view-divider {
+  background-color: #d1d5db !important;
+  border: 1px solid #9ca3af;
+}
+
+/* Hover sui divisori per evidenziarli */
+.dockv3-root .dv-split-view-container .dv-split-view-divider:hover {
+  background-color: #9ca3af !important;
+}
+
+/* Bordo superiore per separare i pannelli verticalmente */
+.dockv3-root .dv-group-view:not(:first-child) {
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Bordo più evidente quando ci sono più pannelli affiancati */
+.dockv3-root [class*="split-view"] .dv-group-view {
+  border-right: 1px solid #d1d5db !important;
+}
+
+.dockv3-root [class*="split-view"] .dv-group-view:last-child {
+  border-right: none !important;
+}
+
+/* ✅ Approccio generico per elementi che potrebbero essere divisori */
+.dockv3-root [class*="splitter"],
+.dockv3-root [class*="divider"],
+.dockv3-root [class*="resizer"] {
+  background-color: #d1d5db !important;
+  border: 1px solid #9ca3af !important;
+}
+
+.dockv3-root [class*="splitter"]:hover,
+.dockv3-root [class*="divider"]:hover {
+  background-color: #9ca3af !important;
+}
+
+/* ✅ Disabilita drop sul contenuto dei pannelli durante il drag */
+.dockv3-root.drag-active .dv-group-view > div[class*="overflow"] {
+  pointer-events: none !important;
+}
+
+.dockv3-root.drag-active [data-component] {
+  pointer-events: none !important;
+}
+
+/* ✅ Overlay di drop durante il drag - copre il contenuto dei pannelli */
+.dockview-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  pointer-events: auto;
+
+  /* Bordo tratteggiato per evidenziare la zona di drop */
+  border: 2px dashed rgba(59, 130, 246, 0.5);
+  border-radius: 4px;
+
+  /* Background leggermente colorato per evidenziare l'area */
+  background-color: rgba(59, 130, 246, 0.05);
+
+  /* Transizione per apparizione/scomparsa */
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Evidenziazione quando si passa sopra durante il drag */
+.dockview-drop-overlay:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
+/* Assicura che l'overlay sia riconosciuto come area Dockview valida */
+.dockview-drop-overlay.dv-group-view {
+  /* Usa le classi Dockview per essere riconosciuto come area valida */
+}
+
+/* ✅ Nascondi preview/ghost di Dockview che rimangono visibili */
+.dockview-react .dv-drag-preview,
+.dockview-react [class*="drag-preview"],
+.dockview-react [class*="ghost"] {
+  display: none !important;
+}
+

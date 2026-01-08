@@ -183,6 +183,30 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const archiveSidebarTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const drawerStripTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // ✅ Ref per gestire il drag attivo (per evitare re-render continui)
+  const isDragActiveRef = useRef(false)
+
+  // ✅ State per forzare re-render quando cambia drag mode
+  const [dragModeTrigger, setDragModeTrigger] = useState(0)
+
+  // ✅ Funzione per abilitare drag mode (disabilita pointer-events sul contenuto)
+  const enableDragMode = useCallback(() => {
+    if (!isDragActiveRef.current) {
+      console.log('[DOCK-V3] 📦 Abilito drag mode - disabilito pointer-events sul contenuto')
+      isDragActiveRef.current = true
+      setDragModeTrigger(prev => prev + 1) // ✅ Forza re-render solo una volta
+    }
+  }, [])
+
+  // ✅ Funzione per disabilitare drag mode (riabilita pointer-events sul contenuto)
+  const disableDragMode = useCallback(() => {
+    if (isDragActiveRef.current) {
+      console.log('[DOCK-V3] 📦 Disabilito drag mode - riabilito pointer-events sul contenuto')
+      isDragActiveRef.current = false
+      setDragModeTrigger(prev => prev + 1) // ✅ Forza re-render solo una volta
+    }
+  }, [])
+
   // Carica comparti
   useEffect(() => {
     if (!praticaId) return
@@ -353,6 +377,34 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     return tabs
   }, [comparti])
 
+  // ✅ Wrapper per il contenuto dei pannelli: inietta overlay durante il drag
+  const PanelContentWrapper = ({ children }: { children: React.ReactNode }) => {
+    // ✅ Usa dragModeTrigger per forzare re-render quando cambia
+    const _ = dragModeTrigger // ✅ Leggi per forzare dipendenza e re-render
+    const isDragActive = isDragActiveRef.current
+    return (
+      <div className="relative w-full h-full">
+        {children}
+        {isDragActive && (
+          <div
+            className="absolute inset-0 z-50"
+            style={{
+              pointerEvents: 'auto',
+              background: 'transparent'
+            }}
+            onDrop={(e) => {
+              // ✅ NON fare preventDefault - lascia che il drop propaghi a Dockview
+              console.log('[DOCK-V3] 📦 OVERLAY INTERNO - Drop intercettato, lascio propagare')
+            }}
+            onDragOver={(e) => {
+              // ✅ NON fare preventDefault - lascia che il dragover propaghi a Dockview
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
   // Factory per i componenti Dockview
   const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> = useMemo(() => {
     const registerToggle = (id: string, fn: () => void) => {
@@ -379,9 +431,11 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             forceRerender={forceRerender}
             forceTabUpdate={forceTabUpdate}
           >
-            <div className="w-full h-full overflow-hidden bg-white">
-              {renderExplorer ? renderExplorer() : <div>Explorer non disponibile</div>}
-            </div>
+            <PanelContentWrapper>
+              <div className="w-full h-full overflow-hidden bg-white">
+                {renderExplorer ? renderExplorer() : <div>Explorer non disponibile</div>}
+              </div>
+            </PanelContentWrapper>
           </PanelWithFullscreenToggle>
         )
       },
@@ -396,30 +450,58 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             forceRerender={forceRerender}
             forceTabUpdate={forceTabUpdate}
           >
-            <div className="w-full h-full overflow-hidden bg-white">
-              <CaseOverviewDiagram praticaId={praticaId || ''} />
-            </div>
+            <PanelContentWrapper>
+              <div className="w-full h-full overflow-hidden bg-white">
+                <CaseOverviewDiagram praticaId={praticaId || ''} />
+              </div>
+            </PanelContentWrapper>
           </PanelWithFullscreenToggle>
         )
       },
       'persons': (props: IDockviewPanelProps) => {
-        return <div className="w-full h-full overflow-auto bg-white">{renderPersons ? renderPersons() : null}</div>
+        return (
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderPersons ? renderPersons() : null}
+            </div>
+          </PanelContentWrapper>
+        )
       },
       'contacts': (props: IDockviewPanelProps) => {
-        return <div className="w-full h-full overflow-auto bg-white">{renderContacts ? renderContacts() : null}</div>
+        return (
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderContacts ? renderContacts() : null}
+            </div>
+          </PanelContentWrapper>
+        )
       },
       'ids': (props: IDockviewPanelProps) => {
-        return <div className="w-full h-full overflow-auto bg-white">{renderIds ? renderIds() : null}</div>
+        return (
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderIds ? renderIds() : null}
+            </div>
+          </PanelContentWrapper>
+        )
       },
       'events': (props: IDockviewPanelProps) => {
-        return <div className="w-full h-full overflow-auto bg-white">{renderEvents ? renderEvents() : null}</div>
+        return (
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderEvents ? renderEvents() : null}
+            </div>
+          </PanelContentWrapper>
+        )
       },
       'cliente-memoria': (props: IDockviewPanelProps<{ clienteId?: string }>) => {
         const clienteId = props.params?.clienteId || props.api.id.replace('cliente-', '').replace('-tab', '').split('-')[0]
         return (
-          <div className="w-full h-full overflow-auto bg-white">
-            {renderClienteMemoria && clienteId ? renderClienteMemoria(clienteId) : <div>Cliente non trovato</div>}
-          </div>
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderClienteMemoria && clienteId ? renderClienteMemoria(clienteId) : <div>Cliente non trovato</div>}
+            </div>
+          </PanelContentWrapper>
         )
       },
       'drawer-content': (props: IDockviewPanelProps<{ drawerId?: string; drawerKey?: string; drawerTitle?: string }>) => {
@@ -428,40 +510,46 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         // ✅ Trova il comparto per ottenere i dati completi
         const comparto = comparti.find(c => c.id === drawerId)
         return (
-          <div className="w-full h-full overflow-auto bg-white">
-            <DrawerViewer
-              id={drawerId}
-              title={drawerTitle}
-              type={comparto?.chiave as DrawerType}
-            />
-          </div>
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              <DrawerViewer
+                id={drawerId}
+                title={drawerTitle}
+                type={comparto?.chiave as DrawerType}
+              />
+            </div>
+          </PanelContentWrapper>
         )
       },
       'doc': (props: IDockviewPanelProps<{ docId?: string }>) => {
         const docId = props.params?.docId || props.api.id.replace('doc-', '')
         return (
-          <div className="w-full h-full overflow-auto bg-white">
-            {renderDoc ? renderDoc(docId) : <div>Documento non disponibile</div>}
-          </div>
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white">
+              {renderDoc ? renderDoc(docId) : <div>Documento non disponibile</div>}
+            </div>
+          </PanelContentWrapper>
         )
       },
       'tmpdoc': (props: IDockviewPanelProps<{ meta?: any }>) => {
         const meta = props.params?.meta || {}
         return (
-          <div className="w-full h-full overflow-auto bg-white p-4">
-            <div className="text-sm mb-3">
-              <span className="inline-flex items-center gap-1 bg-slate-100 border rounded px-2 py-0.5">
-                <FileText size={14} className="text-slate-700" /> {meta.title || 'Documento temporaneo'}
-              </span>
+          <PanelContentWrapper>
+            <div className="w-full h-full overflow-auto bg-white p-4">
+              <div className="text-sm mb-3">
+                <span className="inline-flex items-center gap-1 bg-slate-100 border rounded px-2 py-0.5">
+                  <FileText size={14} className="text-slate-700" /> {meta.title || 'Documento temporaneo'}
+                </span>
+              </div>
+              <div className="prose max-w-none">
+                {meta.content || meta.text || 'Nessun contenuto disponibile'}
+              </div>
             </div>
-            <div className="prose max-w-none">
-              {meta.content || meta.text || 'Nessun contenuto disponibile'}
-            </div>
-          </div>
+          </PanelContentWrapper>
         )
       }
     }
-  }, [renderExplorer, renderPersons, renderContacts, renderIds, renderEvents, renderClienteMemoria, renderDoc, praticaId, fullscreenTrigger])
+  }, [renderExplorer, renderPersons, renderContacts, renderIds, renderEvents, renderClienteMemoria, renderDoc, praticaId, fullscreenTrigger, dragModeTrigger])
 
   // ✅ Componente tab personalizzato con icone e colori (stesso aspetto di V2)
   const defaultTabComponent = useCallback((props: IDockviewPanelHeaderProps) => {
@@ -819,8 +907,330 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       console.error('[DOCK-V3] Errore caricamento layout:', err)
     }
 
+    // ✅ Funzione helper per sbloccare tutti i gruppi
+    const unlockAllGroups = () => {
+      const groups = event.api.groups
+      console.log('[DOCK-V3] 🔓 Sblocco gruppi. Totale gruppi:', groups.length)
+      groups.forEach((group, index) => {
+        const wasLocked = group.locked
+        if (group.locked) {
+          group.locked = false
+          console.log(`[DOCK-V3] 🔓 Gruppo ${index} (${group.id}) sbloccato. Era locked:`, wasLocked)
+        } else {
+          console.log(`[DOCK-V3] ✅ Gruppo ${index} (${group.id}) già sbloccato`)
+        }
+      })
+    }
+
+    // ✅ Assicura che tutti i gruppi non siano bloccati per permettere drag and drop
+    unlockAllGroups()
+
+    // ✅ Sblocca anche dopo un breve delay per assicurarsi che il layout sia completamente caricato
+    setTimeout(unlockAllGroups, 100)
+
+    // ✅ Listener per quando vengono aggiunti nuovi gruppi - assicura che non siano bloccati
+    const disposableGroups = event.api.onDidAddGroup((group) => {
+      console.log('[DOCK-V3] ➕ Nuovo gruppo aggiunto:', group.id, 'locked:', group.locked)
+      if (group.locked) {
+        group.locked = false
+        console.log('[DOCK-V3] 🔓 Nuovo gruppo sbloccato:', group.id)
+      }
+    })
+
+    // ✅ Listener per quando viene aggiunto un pannello
+    const disposablePanels = event.api.onDidAddPanel((panel) => {
+      console.log('[DOCK-V3] ➕ Nuovo pannello aggiunto:', panel.id, 'gruppo:', panel.group?.id, 'gruppo locked:', panel.group?.locked)
+      if (panel.group?.locked) {
+        panel.group.locked = false
+        console.log('[DOCK-V3] 🔓 Gruppo del pannello sbloccato:', panel.group.id)
+      }
+    })
+
+    // ✅ Verifica metodi disponibili sull'API per debug
+    const apiMethods = Object.keys(event.api).filter(key => key.startsWith('on'))
+    console.log('[DOCK-V3] 🔍 API methods disponibili:', {
+      hasOnWillDragPanel: typeof event.api.onWillDragPanel === 'function',
+      hasOnWillDrop: typeof event.api.onWillDrop === 'function',
+      hasOnDidMovePanel: typeof event.api.onDidMovePanel === 'function',
+      hasOnDidActivePanelChange: typeof event.api.onDidActivePanelChange === 'function',
+      apiKeys: apiMethods
+    })
+
+    // ✅ Log completo di tutti i metodi on* disponibili
+    console.log('[DOCK-V3] 🔍 Tutti i metodi on*:', apiMethods)
+
+    // ✅ Traccia la posizione dei pannelli prima del drag per confrontare dopo
+    // ✅ Usa un oggetto ref-like per isDragging (non possiamo usare useRef dentro un callback)
+    const dragState = { isDragging: false }
+    let panelPositionsBeforeDrag = new Map<string, string>()
+
+    // ✅ Listener GLOBALE per drop - SEMPRE attivo per intercettare TUTTI i drop
+    const globalDropHandler = (e: DragEvent) => {
+      // ✅ Log SEMPRE per vedere se il drop viene chiamato
+      console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target:', e.target, 'Default prevented:', e.defaultPrevented)
+      console.log('[DOCK-V3] 🌐 GLOBAL DROP - dropEffect:', e.dataTransfer?.dropEffect)
+      console.log('[DOCK-V3] 🌐 GLOBAL DROP - isDragging:', dragState.isDragging)
+
+      // ✅ Se è un drag di Dockview, verifica se il target è un'area valida
+      if (dragState.isDragging) {
+        const target = e.target as HTMLElement
+
+        // ✅ Verifica se il target è dentro Dockview (cerca elementi con classi Dockview)
+        const dockviewContainer = target.closest('.dockview-react')
+        const isDockviewArea = dockviewContainer !== null
+
+        // ✅ Verifica se il target è un elemento interno del pannello (non un'area di drop valida)
+        const isInternalElement = target.closest('[data-component]') !== null &&
+                                  !target.closest('.dv-tabs-and-actions-container') &&
+                                  !target.closest('.dv-group-view')
+
+        console.log('[DOCK-V3] 🌐 GLOBAL DROP - isDockviewArea:', isDockviewArea, 'isInternalElement:', isInternalElement)
+        console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target classes:', target.className)
+        console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target data-component:', target.getAttribute('data-component'))
+
+        // ✅ Se è un elemento interno, Dockview non gestisce il drop
+        // Il problema è che pointer-events: none non blocca gli eventi di drag and drop
+        // Quindi dobbiamo assicurarci che il drop avvenga su un'area valida
+        // Per ora, non facciamo nulla - Dockview ignorerà il drop su elementi interni
+        // e il pannello rimarrà nella posizione originale
+        if (isInternalElement) {
+          console.log('[DOCK-V3] ⚠️ GLOBAL DROP - Drop su elemento interno. Dockview non gestisce il drop su elementi interni.')
+          console.log('[DOCK-V3] ⚠️ GLOBAL DROP - Il pannello rimarrà nella posizione originale.')
+          // ✅ NON fare preventDefault - lasciamo che Dockview gestisca comunque
+          // Anche se Dockview non gestisce il drop su elementi interni, potrebbe comunque
+          // gestirlo se l'evento raggiunge un'area valida durante la propagazione
+        }
+      }
+    }
+
+    // ✅ Listener GLOBALE per dragover - SEMPRE attivo
+    const globalDragOverHandler = (e: DragEvent) => {
+      // ✅ Se è un drag di Dockview, imposta dropEffect per permettere il drop
+      if (dragState.isDragging) {
+        // ✅ Abilita drag mode quando il drag è effettivamente in corso (dragover chiamato)
+        // Questo significa che Dockview ha già inizializzato il drag e mostrato il preview
+        if (!isDragActiveRef.current) {
+          enableDragMode()
+        }
+
+        const target = e.target as HTMLElement
+
+        // ✅ Verifica se il target è dentro Dockview
+        const isDockviewArea = target.closest('.dockview-react') ||
+                                target.closest('.dv-group-view') ||
+                                target.closest('.dv-tabs-and-actions-container') ||
+                                target.closest('[class*="dockview"]')
+
+        // ✅ Se è un'area Dockview valida, imposta dropEffect
+        if (isDockviewArea && e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move'
+        } else if (e.dataTransfer) {
+          // ✅ Anche se non è un'area Dockview, prova a permettere il drop
+          // Dockview potrebbe gestirlo comunque se è un'area valida internamente
+          e.dataTransfer.dropEffect = 'move'
+        }
+        // ✅ NON fare preventDefault qui - Dockview lo gestisce
+      }
+    }
+
+    // ✅ Listener GLOBALE per dragend - SEMPRE attivo
+    const globalDragEndHandler = (e: DragEvent) => {
+      console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - dropEffect:', e.dataTransfer?.dropEffect)
+      console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - isDragging:', dragState.isDragging)
+
+      if (dragState.isDragging) {
+        console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - Drag di Dockview terminato')
+        dragState.isDragging = false
+        disableDragMode() // ✅ Disabilita drag mode quando il drag finisce
+      }
+    }
+
+    // ✅ Aggiungi listener globali PRIMA di tutto, sempre attivi
+    document.addEventListener('drop', globalDropHandler, { capture: true, passive: false })
+    document.addEventListener('dragover', globalDragOverHandler, { capture: true, passive: false })
+    document.addEventListener('dragend', globalDragEndHandler, { capture: true })
+
+    // ✅ Cleanup per listener globali
+    const cleanupGlobalListeners = () => {
+      document.removeEventListener('drop', globalDropHandler, { capture: true })
+      document.removeEventListener('dragover', globalDragOverHandler, { capture: true })
+      document.removeEventListener('dragend', globalDragEndHandler, { capture: true })
+    }
+
+    // ✅ Listener per eventi di drag (se disponibile)
+    let disposableWillDrag: any = null
+    if (typeof event.api.onWillDragPanel === 'function') {
+      try {
+        disposableWillDrag = event.api.onWillDragPanel((dragEvent: any) => {
+          dragState.isDragging = true // ✅ Usa oggetto ref-like
+          // ✅ NON mostrare overlay qui - aspetta che dragover venga chiamato
+          // Questo garantisce che Dockview abbia già inizializzato il drag
+
+          // ✅ Salva posizioni prima del drag
+          panelPositionsBeforeDrag.clear()
+          event.api.groups.forEach((group) => {
+            group.panels.forEach(panel => {
+              panelPositionsBeforeDrag.set(panel.id, group.id)
+            })
+          })
+
+          console.log('[DOCK-V3] 🖱️ DRAG INIZIATO - Pannello:', dragEvent.panel?.id, 'Gruppo:', dragEvent.panel?.group?.id, 'Gruppo locked:', dragEvent.panel?.group?.locked)
+          console.log('[DOCK-V3] 🖱️ DRAG - Event completo:', dragEvent)
+
+          // ✅ Verifica se possiamo prevenire il drag (per debug)
+          if (dragEvent.nativeEvent) {
+            const nativeEvent = dragEvent.nativeEvent as DragEvent
+            console.log('[DOCK-V3] 🖱️ DRAG - Native event:', nativeEvent)
+            console.log('[DOCK-V3] 🖱️ DRAG - DataTransfer effectAllowed:', nativeEvent.dataTransfer?.effectAllowed)
+
+            // ✅ Imposta effectAllowed per permettere il move
+            if (nativeEvent.dataTransfer) {
+              nativeEvent.dataTransfer.effectAllowed = 'move'
+              console.log('[DOCK-V3] 🖱️ DRAG - Impostato effectAllowed a "move"')
+            }
+          }
+
+          // ✅ Reset flag dopo un timeout (in caso il drop non venga rilevato)
+          setTimeout(() => {
+            if (dragState.isDragging) {
+              console.log('[DOCK-V3] ⚠️ DRAG FINITO (timeout) - Reset flag')
+              dragState.isDragging = false
+              disableDragMode() // ✅ Disabilita drag mode anche in caso di timeout
+            }
+          }, 5000)
+        })
+      } catch (err) {
+        console.error('[DOCK-V3] ❌ Errore registrazione onWillDragPanel:', err)
+      }
+    } else {
+      console.warn('[DOCK-V3] ⚠️ onWillDragPanel non disponibile')
+    }
+
+    // ✅ Listener per eventi di drop (se disponibile)
+    let disposableWillDrop: any = null
+    if (typeof event.api.onWillDrop === 'function') {
+      try {
+        disposableWillDrop = event.api.onWillDrop((dropEvent: any) => {
+          console.log('[DOCK-V3] 🎯 DROP - Pannello:', dropEvent.panel?.id, 'Target:', dropEvent.target?.type, 'Target ID:', dropEvent.target?.id)
+          console.log('[DOCK-V3] 🎯 DROP - Event completo:', dropEvent)
+          console.log('[DOCK-V3] 🎯 DROP - Target group:', dropEvent.target?.group?.id, 'Target group locked:', dropEvent.target?.group?.locked)
+          // ✅ Verifica se possiamo prevenire il drop (per debug)
+          if (dropEvent.nativeEvent) {
+            console.log('[DOCK-V3] 🎯 DROP - Native event:', dropEvent.nativeEvent)
+          }
+          // ✅ NON restituire nulla - permette il drop
+          return undefined // Permetti il drop
+        })
+      } catch (err) {
+        console.error('[DOCK-V3] ❌ Errore registrazione onWillDrop:', err)
+      }
+    } else {
+      console.warn('[DOCK-V3] ⚠️ onWillDrop non disponibile')
+    }
+
+    // ✅ Listener per quando un pannello viene spostato (se disponibile)
+    let disposableDidMove: any = null
+    if (typeof event.api.onDidMovePanel === 'function') {
+      try {
+        disposableDidMove = event.api.onDidMovePanel((event: any) => {
+          console.log('[DOCK-V3] ✅ PANNELLO SPOSTATO - Pannello:', event.panel?.id, 'Da gruppo:', event.from?.group?.id, 'A gruppo:', event.to?.group?.id)
+        })
+      } catch (err) {
+        console.error('[DOCK-V3] ❌ Errore registrazione onDidMovePanel:', err)
+      }
+    } else {
+      console.warn('[DOCK-V3] ⚠️ onDidMovePanel non disponibile')
+    }
+
+    // ✅ Listener per mouseup globale per rilevare quando il drag termina
+    const handleMouseUp = () => {
+        if (dragState.isDragging) {
+          console.log('[DOCK-V3] 🖱️ MOUSE UP - Drag terminato')
+          dragState.isDragging = false
+          disableDragMode() // ✅ Disabilita drag mode quando il mouse viene rilasciato
+
+        // ✅ Dopo un breve delay, verifica se il pannello è stato spostato
+        setTimeout(() => {
+          const currentPositions = new Map<string, string>()
+          event.api.groups.forEach((group) => {
+            group.panels.forEach(panel => {
+              currentPositions.set(panel.id, group.id)
+            })
+          })
+
+          let foundMovement = false
+          currentPositions.forEach((groupId, panelId) => {
+            const oldGroupId = panelPositionsBeforeDrag.get(panelId)
+            if (oldGroupId && oldGroupId !== groupId) {
+              console.log(`[DOCK-V3] ✅ SPOSTAMENTO CONFERMATO - Pannello ${panelId}: da gruppo ${oldGroupId} a gruppo ${groupId}`)
+              foundMovement = true
+            }
+          })
+
+          if (!foundMovement && panelPositionsBeforeDrag.size > 0) {
+            console.log(`[DOCK-V3] ❌ NESSUNO SPOSTAMENTO - Il pannello è rimasto nella stessa posizione`)
+            console.log(`[DOCK-V3] ❌ Posizioni prima:`, Array.from(panelPositionsBeforeDrag.entries()))
+            console.log(`[DOCK-V3] ❌ Posizioni dopo:`, Array.from(currentPositions.entries()))
+          }
+
+          panelPositionsBeforeDrag.clear()
+        }, 100)
+      }
+    }
+
+    // ✅ Aggiungi listener globale per mouseup
+    document.addEventListener('mouseup', handleMouseUp)
+
+    // ✅ Listener alternativo: monitora tutti i cambiamenti di layout (potrebbe catturare gli spostamenti)
+    let layoutChangeCount = 0
+    const disposableLayoutChange = event.api.onDidLayoutChange(() => {
+      layoutChangeCount++
+      const currentPositions = new Map<string, string>()
+      event.api.groups.forEach((group) => {
+        group.panels.forEach(panel => {
+          currentPositions.set(panel.id, group.id)
+        })
+      })
+
+      // ✅ Solo log dettagliato se non stiamo facendo drag (per evitare spam durante il drag)
+      if (!dragState.isDragging || layoutChangeCount % 5 === 0) {
+        console.log(`[DOCK-V3] 📐 LAYOUT CAMBIATO (#${layoutChangeCount}) - Gruppi:`, event.api.groups.length, 'Pannelli totali:', event.api.panels.length)
+      }
+
+      // ✅ Confronta posizioni per rilevare spostamenti (solo dopo che il drag è finito)
+      if (!dragState.isDragging && panelPositionsBeforeDrag.size > 0) {
+        let foundMovement = false
+        currentPositions.forEach((groupId, panelId) => {
+          const oldGroupId = panelPositionsBeforeDrag.get(panelId)
+          if (oldGroupId && oldGroupId !== groupId) {
+            console.log(`[DOCK-V3] ✅ SPOSTAMENTO RILEVATO - Pannello ${panelId}: da gruppo ${oldGroupId} a gruppo ${groupId}`)
+            foundMovement = true
+          }
+        })
+
+        if (!foundMovement && panelPositionsBeforeDrag.size > 0) {
+          console.log(`[DOCK-V3] ⚠️ DROP COMPLETATO MA NESSUNO SPOSTAMENTO - Il pannello è tornato nella posizione originale`)
+        }
+
+        // ✅ Reset dopo il confronto
+        panelPositionsBeforeDrag.clear()
+      }
+
+      if (!dragState.isDragging || layoutChangeCount % 5 === 0) {
+        event.api.groups.forEach((group, idx) => {
+          const panelIds = group.panels.map(p => p.id).join(', ')
+          console.log(`[DOCK-V3] 📐 Gruppo ${idx} (${group.id}): locked:`, group.locked, 'pannelli:', group.panels.length, 'IDs:', panelIds)
+        })
+      }
+
+      // ✅ Salva posizioni correnti per il prossimo confronto
+      if (!dragState.isDragging) {
+        panelPositionsBeforeDrag = new Map(currentPositions)
+      }
+    })
+
     // Salva layout quando cambia
-    const disposable = event.api.onDidLayoutChange(() => {
+    const disposableLayout = event.api.onDidLayoutChange(() => {
       try {
         const layout = event.api.toJSON()
         localStorage.setItem(storageKey, JSON.stringify(layout))
@@ -830,9 +1240,17 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     })
 
     return () => {
-      disposable.dispose()
+      document.removeEventListener('mouseup', handleMouseUp)
+      cleanupGlobalListeners() // ✅ Cleanup listener globali
+      disposableGroups.dispose()
+      disposablePanels.dispose()
+      if (disposableWillDrag) disposableWillDrag.dispose()
+      if (disposableWillDrop) disposableWillDrop.dispose()
+      if (disposableDidMove) disposableDidMove.dispose()
+      disposableLayoutChange.dispose()
+      disposableLayout.dispose()
     }
-  }, [storageKey])
+  }, [storageKey, enableDragMode, disableDragMode])
 
   // Handler per click su drawer tab
   const handleDrawerTabClick = useCallback((drawerKey: string, drawerId: string) => {
@@ -848,7 +1266,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const comparto = comparti.find(c => c.id === drawerId)
         const drawerNumber = comparto ? comparti.findIndex(c => c.id === drawerId) + 1 : undefined
 
-        dockviewApiRef.current.addPanel({
+        const newPanel = dockviewApiRef.current.addPanel({
           id: panelId,
           component: 'drawer-content',
           params: {
@@ -864,6 +1282,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           title: comparto?.nome || 'Drawer',
           closeable: true // ✅ Abilita pulsante close sulla tab
         })
+        console.log('[DOCK-V3] ➕ Pannello drawer creato:', panelId, 'Gruppo:', newPanel?.group?.id, 'Gruppo locked:', newPanel?.group?.locked)
+        // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
+        if (newPanel?.group?.locked) {
+          newPanel.group.locked = false
+          console.log('[DOCK-V3] 🔓 Gruppo drawer sbloccato:', newPanel.group.id)
+        }
       }
   }, [comparti])
 
@@ -887,7 +1311,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         params = { clienteId }
       }
 
-      dockviewApiRef.current.addPanel({
+      const newPanel = dockviewApiRef.current.addPanel({
         id: panelId,
         component: panelComponent,
         params: {
@@ -897,6 +1321,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         title: archiveTabs.find(t => t.id === tabId)?.name || component,
         closeable: true // ✅ Abilita pulsante close sulla tab
       })
+      console.log('[DOCK-V3] ➕ Pannello archivio creato:', panelId, 'Component:', panelComponent, 'Gruppo:', newPanel?.group?.id, 'Gruppo locked:', newPanel?.group?.locked)
+      // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
+      if (newPanel?.group?.locked) {
+        newPanel.group.locked = false
+        console.log('[DOCK-V3] 🔓 Gruppo archivio sbloccato:', newPanel.group.id)
+      }
     }
 
     if (onLeftBorderTabChange) {
@@ -915,7 +1345,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       if (existingPanel) {
         dockviewApiRef.current.setActivePanel(existingPanel)
       } else {
-        dockviewApiRef.current.addPanel({
+        const newPanel = dockviewApiRef.current.addPanel({
           id: panelId,
           component: 'doc',
           params: {
@@ -925,6 +1355,10 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           title: doc.title,
           closeable: true // ✅ Abilita pulsante close sulla tab
         })
+        // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
+        if (newPanel?.group?.locked) {
+          newPanel.group.locked = false
+        }
       }
     },
     openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
@@ -936,7 +1370,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       if (existingPanel) {
         dockviewApiRef.current.setActivePanel(existingPanel)
       } else {
-        dockviewApiRef.current.addPanel({
+        const newPanel = dockviewApiRef.current.addPanel({
           id: panelId,
           component: 'tmpdoc',
           params: {
@@ -946,12 +1380,16 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           title: meta.title || 'Documento temporaneo',
           closeable: true // ✅ Abilita pulsante close sulla tab
         })
+        // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
+        if (newPanel?.group?.locked) {
+          newPanel.group.locked = false
+        }
       }
     }
   }), [])
 
   return (
-    <div className="dockv3-root w-full h-full relative">
+    <div className={`dockv3-root w-full h-full relative ${isDragActiveRef.current ? 'drag-active' : ''}`}>
       {/* Sidebar Archivi (left) */}
       {archiveTabs.length > 0 && (
         <SidebarArchivi
@@ -986,13 +1424,14 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       )}
 
       {/* Main Dockview Area */}
-      <div className="w-full h-full">
+      <div className="w-full h-full relative">
         <DockviewReact
           components={components}
           defaultTabComponent={defaultTabComponent}
           onReady={onReady}
           className="dockview-theme-light"
         />
+
       </div>
 
       {/* Drawer Tab Strip (bottom) */}

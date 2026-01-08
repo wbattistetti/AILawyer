@@ -203,6 +203,15 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         fileEntry.compartoKey = classification.compartoKey;
         fileEntry.compartoNome = classification.compartoNome;
         fileEntry.classificationSource = 'auto';
+
+        // ✅ NOVO: Salva anche in memoria globale per mostrare nei cassetti
+        const updateFn = (window as any).__updatePendingClassification;
+        if (updateFn && typeof updateFn === 'function') {
+          updateFn(fileEntry.path, {
+            compartoKey: classification.compartoKey,
+            compartoNome: classification.compartoNome
+          });
+        }
       }
     } catch (error) {
       console.warn('Failed to classify file:', file.path, error);

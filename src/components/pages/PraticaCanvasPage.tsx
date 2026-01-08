@@ -86,6 +86,23 @@ export function PraticaCanvasPage() {
     persistViewMode
   } = useWorkspaceManager(id)
 
+  // ✅ Stato globale per classificazioni pendenti (in memoria, non ancora nel database)
+  // Map<filePath, { compartoKey, compartoNome }>
+  const pendingFileClassificationsRef = useRef<Map<string, { compartoKey: string; compartoNome: string }>>(new Map())
+  const [pendingClassificationsVersion, setPendingClassificationsVersion] = useState(0) // Per forzare re-render
+
+  // ✅ Funzione per aggiornare classificazioni pendenti
+  const updatePendingClassification = useCallback((filePath: string, classification: { compartoKey: string; compartoNome: string } | null) => {
+    if (classification) {
+      pendingFileClassificationsRef.current.set(filePath, classification)
+    } else {
+      pendingFileClassificationsRef.current.delete(filePath)
+    }
+    setPendingClassificationsVersion(prev => prev + 1) // Forza re-render
+    // Notifica che le classificazioni sono cambiate
+    window.dispatchEvent(new CustomEvent('app:file-classifications-changed'))
+  }, [])
+
   // Verify mode state (completely removed)
 
   // Usa il nuovo hook per gestire tutti gli event listeners
@@ -96,7 +113,7 @@ export function PraticaCanvasPage() {
     handleFileDrop
   })
 
-  // ✅ Esponi dati globalmente per DrawerViewer (cassetti)
+  // ✅ Esponi dati globalmente per DrawerViewer (cassetti) e Explorer
   useEffect(() => {
     const archiveData = {
       praticaId: id, // ✅ Aggiunto per DrawerViewer se vuole usare gli hook direttamente
@@ -114,10 +131,16 @@ export function PraticaCanvasPage() {
       ocrCancellingByDoc,
       transcribedPctByDoc,
       dockV2Ref,
-      toast
+      toast,
+      // ✅ NOVO: Esponi classificazioni pendenti per ArchiveRenderer
+      pendingFileClassifications: pendingFileClassificationsRef.current,
+      pendingClassificationsVersion
     }
 
     ;(window as any).__archiveData = archiveData
+
+    // ✅ NOVO: Esponi funzione per aggiornare classificazioni pendenti (per Explorer)
+    ;(window as any).__updatePendingClassification = updatePendingClassification
 
     // ✅ Emetti evento per notificare DrawerViewer dell'aggiornamento
     window.dispatchEvent(new CustomEvent('app:archive-data-updated'))
@@ -137,7 +160,9 @@ export function PraticaCanvasPage() {
     ocrCancellingByDoc,
     transcribedPctByDoc,
     dockV2Ref,
-    toast
+    toast,
+    updatePendingClassification,
+    pendingClassificationsVersion
   ])
 
 
@@ -666,6 +691,41 @@ export function PraticaCanvasPage() {
           try {
             // Salva i dati modificati della pratica
             const updated = await api.updatePratica(id, dataToSave)
+
+            // ✅ NOVO: Salva classificazioni pendenti nel database
+            const classificationsToSave = Array.from(pendingFileClassificationsRef.current.entries())
+            console.log('[SAVE][CLASSIFICATIONS][START]', { count: classificationsToSave.length })
+
+            for (const [filePath, classification] of classificationsToSave) {
+              try {
+                const comparto = comparti.find(c => c.key === classification.compartoKey)
+                if (!comparto) {
+                  console.warn('[SAVE][CLASSIFICATIONS][SKIP] Comparto non trovato', { filePath, compartoKey: classification.compartoKey })
+                  continue
+                }
+
+                // Cerca se il file esiste già nel database (per filePath)
+                const existingDoc = documenti.find(d => d.filePath === filePath)
+
+                if (existingDoc) {
+                  // ✅ File già nel database: aggiorna compartoId
+                  console.log('[SAVE][CLASSIFICATIONS][UPDATE] Aggiorno documento esistente', { docId: existingDoc.id, compartoId: comparto.id })
+                  await api.updateDocumento(existingDoc.id, { compartoId: comparto.id })
+                } else {
+                  // ✅ File non ancora nel database: nota per il futuro
+                  // Per ora, l'utente dovrà fare drag & drop per caricare il file
+                  // Quando viene caricato, il compartoId verrà impostato correttamente
+                  console.log('[SAVE][CLASSIFICATIONS][NOTE] File non ancora caricato, classificazione verrà applicata al caricamento', { filePath })
+                }
+              } catch (error) {
+                console.error('[SAVE][CLASSIFICATIONS][ERROR]', { filePath, error })
+              }
+            }
+
+            // ✅ Pulisci classificazioni pendenti dopo il salvataggio
+            pendingFileClassificationsRef.current.clear()
+            setPendingClassificationsVersion(prev => prev + 1)
+            console.log('[SAVE][CLASSIFICATIONS][DONE] Classificazioni salvate e pulite')
 
             // Log rimosso (troppo rumoroso)
 

@@ -195,8 +195,24 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   }, []);
 
   const handleFileClassificationChange = useCallback((fileId: string, compartoKey: string, compartoNome: string) => {
+    // ✅ Aggiorna stato locale (già fatto)
     updateFileClassification(fileId, compartoKey, compartoNome);
-  }, [updateFileClassification]);
+
+    // ✅ NOVO: Salva in memoria globale per mostrare nei cassetti
+    const file = state.files.find(f => f.id === fileId);
+    if (file) {
+      const updateFn = (window as any).__updatePendingClassification;
+      if (updateFn && typeof updateFn === 'function') {
+        if (compartoKey) {
+          updateFn(file.path, { compartoKey, compartoNome });
+        } else {
+          updateFn(file.path, null); // Rimuovi classificazione
+        }
+      } else {
+        console.warn('[EXPLORER][CLASSIFICATION] updatePendingClassification non disponibile')
+      }
+    }
+  }, [updateFileClassification, state.files]);
 
   // Error handling
   if (drivesError) {

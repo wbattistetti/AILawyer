@@ -76,6 +76,19 @@ export function ArchiveRenderer({
         }
     }, [filteredComparti])
 
+    // ✅ NOVO: Listener per aggiornamenti classificazioni pendenti
+    useEffect(() => {
+        const handleClassificationsChanged = () => {
+            // Forza re-render quando cambiano le classificazioni
+            setOpenMap(prev => ({ ...prev })); // Trigger re-render
+        };
+
+        window.addEventListener('app:file-classifications-changed', handleClassificationsChanged);
+        return () => {
+            window.removeEventListener('app:file-classifications-changed', handleClassificationsChanged);
+        };
+    }, []);
+
     // ✅ Nascondi header accordion se è singleCompartoId (modo drawer)
     const hideHeaders = !!singleCompartoId
 
@@ -196,8 +209,60 @@ export function ArchiveRenderer({
             } : undefined}
         >
             {filteredComparti.sort((a, b) => a.ordine - b.ordine).map(comparto => {
-                // Filtra documenti del comparto
-                const rawDocs = documenti.filter(d => d.compartoId === comparto.id)
+                // ✅ Documenti dal database con questo compartoId
+                const dbDocs = documenti.filter(d => d.compartoId === comparto.id)
+
+                // ✅ NOVO: File classificati in memoria (non ancora nel database)
+                const archiveData = (window as any).__archiveData
+                const pendingClassifications = archiveData?.pendingFileClassifications as Map<string, { compartoKey: string; compartoNome: string }> | undefined
+                const praticaIdFromArchive = archiveData?.praticaId as string | undefined
+
+                const classifiedFiles: Documento[] = []
+                if (pendingClassifications) {
+                  pendingClassifications.forEach((classification, filePath) => {
+                    // Verifica se questo file appartiene a questo comparto
+                    if (classification.compartoKey === comparto.key) {
+                      // Verifica che il file non sia già nel database
+                      const alreadyInDb = documenti.some(d => d.filePath === filePath)
+                      if (!alreadyInDb) {
+                        const fileName = filePath.split(/[/\\]/).pop() || 'Unknown'
+                        // Estrai estensione
+                        const ext = fileName.split('.').pop()?.toLowerCase() || ''
+                        const mime = ext === 'pdf' ? 'application/pdf' :
+                                   ext === 'doc' || ext === 'docx' ? 'application/msword' :
+                                   ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+                                   ext === 'png' ? 'image/png' :
+                                   ext === 'mp3' || ext === 'wav' ? 'audio/mpeg' :
+                                   ext === 'mp4' ? 'video/mp4' :
+                                   'application/octet-stream'
+
+                        // ✅ NOVO: Crea URL per accedere al file dal filesystem
+                        const fileUrl = `http://localhost:3001/api/filesystem/file/${encodeURIComponent(filePath)}`
+
+                        classifiedFiles.push({
+                          id: `pending:${filePath}`,
+                          filename: fileName,
+                          compartoId: comparto.id,
+                          praticaId: praticaIdFromArchive || '',
+                          mime,
+                          size: 0, // Size non disponibile senza caricare il file
+                          s3Key: '', // Non ancora caricato
+                          hash: '',
+                          ocrStatus: 'pending' as const,
+                          tags: [],
+                          createdAt: new Date().toISOString(),
+                          filePath: filePath, // ✅ IMPORTANTE: salva il path per il salvataggio
+                          classificationSource: 'pending', // Flag per distinguere
+                          // ✅ NOVO: Aggiungi localUrl per generazione thumbnail
+                          localUrl: fileUrl
+                        } as Documento)
+                      }
+                    }
+                  })
+                }
+
+                // Combina documenti dal database e file classificati
+                const rawDocs = [...dbDocs, ...classifiedFiles]
 
                 // ✅ LOGICA SEMPLIFICATA: Mantieni il documento temporaneo visibile finché non c'è un documento reale
                 // ✅ effettivamente presente nello stesso array che lo sostituisce
@@ -280,6 +345,11 @@ export function ArchiveRenderer({
                                             const clientThumb = clientThumbByS3[d.s3Key];
                                             const thumb = thumbnailFromDb || clientThumb || '';
                                             const localUrl = (d as any).localUrl || undefined
+
+                                            // ✅ NOVO: Se è un file virtuale PDF senza thumbnail, abilita auto-generazione
+                                            const isPendingFile = d.id.startsWith('pending:')
+                                            const shouldAutoGenerate = isPendingFile && isPdf && !thumb && !!localUrl
+
                                             const docItem = {
                                                 id: d.id,
                                                 filename: d.filename,
@@ -288,7 +358,9 @@ export function ArchiveRenderer({
                                                 thumb,
                                                 localUrl,
                                                 hasNativeText: d.hasNativeText, // NON convertire undefined in false!
-                                                ocrStatus: d.ocrStatus
+                                                ocrStatus: d.ocrStatus,
+                                                // ✅ NOVO: Passa flag per auto-generazione thumbnail
+                                                autoGenerateThumbnail: shouldAutoGenerate
                                             }
 
                                             // Log solo se hasNativeText è undefined (non dovrebbe succedere dopo salvataggio)
