@@ -245,6 +245,7 @@ export function DocumentCollection({
   draggableItems,
   onDragStartItem,
   extraNodesTop,
+  compartoId,
 }: {
   title?: string
   items: DocItem[]
@@ -262,6 +263,7 @@ export function DocumentCollection({
   draggableItems?: boolean
   onDragStartItem?: (docId: string, e: React.DragEvent) => void
   extraNodesTop?: React.ReactNode
+  compartoId?: string // ✅ ID del comparto per gestire drop Explorer
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState<boolean>(false)
@@ -271,6 +273,8 @@ export function DocumentCollection({
   const [isSearching, setIsSearching] = useState<boolean>(false)
 
   // Quiet: rimuovi log rumorosi, mantieni solo diagnostica su drop
+
+  const [isExplorerDragOver, setIsExplorerDragOver] = useState(false)
 
   const onDropCb = useCallback((accepted: File[]) => {
     try {
@@ -290,8 +294,60 @@ export function DocumentCollection({
     },
   })
 
+  // ✅ Handler per drop di file Explorer (oltre a react-dropzone)
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    // react-dropzone gestisce già i file normali, ma dobbiamo gestire anche Explorer
+    if (e.dataTransfer.types.includes('application/x-explorer-file')) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
+      setIsExplorerDragOver(true)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-explorer-file')) {
+      e.preventDefault()
+      e.stopPropagation()
+      // Solo se lasciamo completamente il container
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        setIsExplorerDragOver(false)
+      }
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    // Controlla se è un file dall'Explorer
+    const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
+    if (explorerFileData && compartoId) {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsExplorerDragOver(false)
+
+      try {
+        const fileData = JSON.parse(explorerFileData)
+        // Emetti evento per gestire il drop di file Explorer
+        const event = new CustomEvent('explorer:file-drop-to-drawer', {
+          detail: { fileData, drawerId: compartoId }
+        })
+        window.dispatchEvent(event)
+        return
+      } catch (error) {
+        console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
+      }
+    }
+    // Se non è un file Explorer, react-dropzone lo gestirà
+  }, [compartoId])
+
   return (
-    <div className="w-full h-full flex flex-col relative" data-component="document-collection" {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}>
+    <div
+      className={`w-full h-full flex flex-col relative ${isExplorerDragOver ? 'bg-blue-50' : ''}`}
+      data-component="document-collection"
+      {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {title && (
         <div className="px-3 py-2 text-sm font-medium border-b bg-white flex items-center gap-2">
           {isSearching ? (

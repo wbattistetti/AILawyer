@@ -462,6 +462,7 @@ export function ArchiveRenderer({
                                         e.dataTransfer.setData('application/x-doc-id', docId)
                                         e.dataTransfer.effectAllowed = 'move'
                                     }}
+                                    compartoId={comparto.id}
                                 />
                             </div>
                         )}

@@ -11,6 +11,75 @@ interface ScanOptions {
   maxInFlight?: number;
 }
 
+// ✅ Tipo per mappare filePath -> classificazione esistente
+type ExistingClassification = {
+  compartoId: string;
+  compartoKey: string;
+  compartoNome: string;
+};
+
+// ✅ Funzione per recuperare classificazioni esistenti dalla pratica
+async function loadExistingClassifications(praticaId: string | undefined): Promise<Map<string, ExistingClassification>> {
+  const classifications = new Map<string, ExistingClassification>();
+
+  if (!praticaId) {
+    return classifications;
+  }
+
+  try {
+    // Recupera documenti dalla pratica
+    const archiveData = (window as any).__archiveData as {
+      praticaId?: string;
+      documenti?: Array<{ filePath?: string; compartoId?: string }>;
+      comparti?: Array<{ id: string; key: string; nome: string }>;
+    } | undefined;
+
+    if (!archiveData || !archiveData.documenti || !archiveData.comparti) {
+      // Prova a caricare direttamente dall'API
+      const { api } = await import('../../../lib/api');
+      const documenti = await api.getDocumentiByPratica(praticaId);
+      const comparti = await api.getComparti(praticaId);
+
+      // Crea mappa comparti per lookup veloce
+      const compartiMap = new Map(comparti.map(c => [c.id, c]));
+
+      // Mappa filePath -> classificazione
+      documenti.forEach(doc => {
+        if (doc.filePath && doc.compartoId) {
+          const comparto = compartiMap.get(doc.compartoId);
+          if (comparto) {
+            classifications.set(doc.filePath, {
+              compartoId: doc.compartoId,
+              compartoKey: comparto.key,
+              compartoNome: comparto.nome
+            });
+          }
+        }
+      });
+    } else {
+      // Usa dati già caricati
+      const compartiMap = new Map(archiveData.comparti.map(c => [c.id, c]));
+
+      archiveData.documenti.forEach(doc => {
+        if (doc.filePath && doc.compartoId) {
+          const comparto = compartiMap.get(doc.compartoId);
+          if (comparto) {
+            classifications.set(doc.filePath, {
+              compartoId: doc.compartoId,
+              compartoKey: comparto.key,
+              compartoNome: comparto.nome
+            });
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.warn('[EXPLORER][CLASSIFICATION] Errore nel caricamento classificazioni esistenti:', error);
+  }
+
+  return classifications;
+}
+
 export function useScanFiles(adapter: FileSystemAdapter) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [progress, setProgress] = useState<ScanProgress>({
@@ -23,6 +92,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const existingClassificationsRef = useRef<Map<string, ExistingClassification>>(new Map());
   const scanIdRef = useRef(0);
 
   // Fase 1: Conta tutte le directory ricorsivamente
@@ -196,25 +266,43 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       parentDirName
     };
 
-    // Prova a classificare automaticamente
-    try {
-      const classification = await ClassificationService.classifyFile(fileEntry);
-      if (classification) {
-        fileEntry.compartoKey = classification.compartoKey;
-        fileEntry.compartoNome = classification.compartoNome;
-        fileEntry.classificationSource = 'auto';
+    // ✅ PRIMA: Controlla se esiste già una classificazione nel database
+    const existingClassification = existingClassificationsRef.current.get(file.path);
+    if (existingClassification) {
+      // Usa la classificazione esistente dal database
+      fileEntry.compartoKey = existingClassification.compartoKey;
+      fileEntry.compartoNome = existingClassification.compartoNome;
+      fileEntry.classificationSource = 'manual'; // Considera come manuale perché già salvata
 
-        // ✅ NOVO: Salva anche in memoria globale per mostrare nei cassetti
-        const updateFn = (window as any).__updatePendingClassification;
-        if (updateFn && typeof updateFn === 'function') {
-          updateFn(fileEntry.path, {
-            compartoKey: classification.compartoKey,
-            compartoNome: classification.compartoNome
-          });
-        }
+      // ✅ Salva anche in memoria globale per mostrare nei cassetti
+      const updateFn = (window as any).__updatePendingClassification;
+      if (updateFn && typeof updateFn === 'function') {
+        updateFn(fileEntry.path, {
+          compartoKey: existingClassification.compartoKey,
+          compartoNome: existingClassification.compartoNome
+        });
       }
-    } catch (error) {
-      console.warn('Failed to classify file:', file.path, error);
+    } else {
+      // ✅ SECONDO: Se non esiste, prova classificazione automatica
+      try {
+        const classification = await ClassificationService.classifyFile(fileEntry);
+        if (classification) {
+          fileEntry.compartoKey = classification.compartoKey;
+          fileEntry.compartoNome = classification.compartoNome;
+          fileEntry.classificationSource = 'auto';
+
+          // ✅ Salva anche in memoria globale per mostrare nei cassetti
+          const updateFn = (window as any).__updatePendingClassification;
+          if (updateFn && typeof updateFn === 'function') {
+            updateFn(fileEntry.path, {
+              compartoKey: classification.compartoKey,
+              compartoNome: classification.compartoNome
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to classify file:', file.path, error);
+      }
     }
 
     return fileEntry;
@@ -222,6 +310,19 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
   const startScan = useCallback(async (options: ScanOptions) => {
     console.log('🔍 Starting scan with options:', options);
+
+    // ✅ Carica classificazioni esistenti prima di iniziare la scansione
+    const archiveData = (window as any).__archiveData as { praticaId?: string } | undefined;
+    const praticaId = archiveData?.praticaId;
+    if (praticaId) {
+      try {
+        const classifications = await loadExistingClassifications(praticaId);
+        existingClassificationsRef.current = classifications;
+        console.log('[EXPLORER][CLASSIFICATION] Caricate classificazioni esistenti:', classifications.size);
+      } catch (error) {
+        console.warn('[EXPLORER][CLASSIFICATION] Errore nel caricamento classificazioni:', error);
+      }
+    }
 
     // Cancel any existing scan
     if (abortControllerRef.current) {

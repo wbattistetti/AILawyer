@@ -191,6 +191,7 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       title={title}
       items={displayItems}
       uploadingCount={uploadingCount}
+      compartoId={id}
       onOpen={(doc) => {
         try {
           // Se è una memoria difensiva, apri il compositore

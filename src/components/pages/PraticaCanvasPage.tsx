@@ -34,6 +34,119 @@ import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
 import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
 import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemoriaRenderer';
 
+// ✅ Helper: calcola hash SHA-256 del file (client-side)
+async function calculateFileHash(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer()
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  return hashHex
+}
+
+// ✅ Helper: genera thumbnail PDF client-side
+async function generateClientPdfThumb(file: File, targetW = 300): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const task = pdfjsLib.getDocument({ data: arrayBuffer })
+    const pdf = await task.promise
+    const page = await pdf.getPage(1)
+    const vp1 = page.getViewport({ scale: 1 })
+    const scale = targetW / vp1.width
+    const viewport = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    const ctx = canvas.getContext('2d')!
+    await page.render({ canvasContext: ctx as any, viewport }).promise
+    return canvas.toDataURL('image/png')
+  } catch {
+    return ''
+  }
+}
+
+// ✅ Helper: detect native text in PDF
+async function detectNativeTextClient(file: File): Promise<boolean> {
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const task = pdfjsLib.getDocument({ data: arrayBuffer })
+    const pdf = await task.promise
+    const page = await pdf.getPage(1)
+    const textContent = await page.getTextContent()
+    const textItemCount = textContent.items.length
+    return textItemCount > 10
+  } catch {
+    return false
+  }
+}
+
+// ✅ Helper: carica file da filesystem e crea documento nel database
+async function uploadFileFromPath(
+  filePath: string,
+  praticaId: string,
+  compartoId: string,
+  api: typeof import('../../lib/api').api
+): Promise<Documento> {
+  // 1. Leggi file dal filesystem
+  const response = await fetch('http://localhost:3001/api/filesystem/read-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to read file: ${response.status}`)
+  }
+
+  const fileBlob = await response.blob()
+  const fileName = filePath.split(/[/\\]/).pop() || 'unknown'
+  const fileObj = new File([fileBlob], fileName, { type: fileBlob.type || 'application/octet-stream' })
+
+  // 2. Calcola hash
+  const fileHash = await calculateFileHash(fileObj)
+
+  // 3. Genera thumbnail e rileva testo nativo se PDF
+  const isPdf = fileObj.type?.startsWith('application/pdf') || fileName.toLowerCase().endsWith('.pdf')
+  let thumbnailDataUrl: string | undefined = undefined
+  let hasNativeText: boolean | undefined = undefined
+
+  if (isPdf) {
+    try {
+      const [thumb, nativeText] = await Promise.all([
+        generateClientPdfThumb(fileObj, 220),
+        detectNativeTextClient(fileObj)
+      ])
+      thumbnailDataUrl = thumb || undefined
+      hasNativeText = nativeText
+    } catch (error) {
+      console.warn('[UPLOAD-FROM-PATH] PDF processing failed', { fileName, error })
+    }
+  }
+
+  // 4. Carica file in uploads
+  const ext = fileName.substring(fileName.lastIndexOf('.')) || '.bin'
+  const s3Key = `${fileHash}${ext}`
+  const { uploadUrl } = await api.getUploadUrl(fileName, fileObj.type)
+  await api.uploadFile(uploadUrl, fileObj)
+
+  // 5. Crea documento nel database
+  const documento = await api.createDocumento({
+    praticaId,
+    compartoId,
+    filename: fileName,
+    mime: fileObj.type,
+    size: fileObj.size,
+    s3Key,
+    hash: fileHash,
+    ocrStatus: 'pending',
+    tags: [],
+    thumbnailDataUrl,
+    hasNativeText,
+    filePath, // ✅ IMPORTANTE: salva il path originale
+  })
+
+  return documento
+}
+
 export function PraticaCanvasPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -666,13 +779,11 @@ export function PraticaCanvasPage() {
     <div className="h-screen overflow-hidden bg-background">
 
       {/* Header */}
-      {/* ✅ TEMPORANEO: Nascondo la toolbar principale per test */}
-      {false && (
-        <HeaderToolbar
-          pratica={pratica}
-          onHomeClick={() => navigate('/')}
-          onOpenPratica={() => navigate('/')}
-          onSavePratica={async () => {
+      <HeaderToolbar
+        pratica={pratica}
+        onHomeClick={() => navigate('/')}
+        onOpenPratica={() => navigate('/')}
+        onSavePratica={async () => {
           if (!id || !pratica) {
             console.warn('[SAVE][PRATICA][FRONTEND] Dati mancanti', { id, pratica })
             return
@@ -712,10 +823,20 @@ export function PraticaCanvasPage() {
                   console.log('[SAVE][CLASSIFICATIONS][UPDATE] Aggiorno documento esistente', { docId: existingDoc.id, compartoId: comparto.id })
                   await api.updateDocumento(existingDoc.id, { compartoId: comparto.id })
                 } else {
-                  // ✅ File non ancora nel database: nota per il futuro
-                  // Per ora, l'utente dovrà fare drag & drop per caricare il file
-                  // Quando viene caricato, il compartoId verrà impostato correttamente
-                  console.log('[SAVE][CLASSIFICATIONS][NOTE] File non ancora caricato, classificazione verrà applicata al caricamento', { filePath })
+                  // ✅ File non ancora nel database: carica automaticamente
+                  console.log('[SAVE][CLASSIFICATIONS][UPLOAD] Carico file automaticamente', { filePath, compartoId: comparto.id })
+                  try {
+                    await uploadFileFromPath(filePath, id!, comparto.id, api)
+                    console.log('[SAVE][CLASSIFICATIONS][UPLOAD][SUCCESS] File caricato e documento creato', { filePath })
+                  } catch (error) {
+                    console.error('[SAVE][CLASSIFICATIONS][UPLOAD][ERROR] Errore nel caricamento file', { filePath, error })
+                    // Non bloccare il salvataggio per un singolo file, ma mostra un warning
+                    toast({
+                      title: 'Attenzione',
+                      description: `Impossibile caricare il file: ${filePath.split(/[/\\]/).pop()}`,
+                      variant: 'destructive'
+                    })
+                  }
                 }
               } catch (error) {
                 console.error('[SAVE][CLASSIFICATIONS][ERROR]', { filePath, error })
@@ -756,8 +877,7 @@ export function PraticaCanvasPage() {
         onSaveFilesToDbChange={setSaveFilesToDb}
         isSaving={isSaving}
         onUploadDocuments={() => open()}
-        />
-      )}
+      />
 
       {/* Spacer per l'header fisso */}
       <div style={{ height: headerH }} />
