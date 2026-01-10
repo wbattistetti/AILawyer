@@ -14,6 +14,7 @@ import { usePdfNativeTextDetection } from './hooks/usePdfNativeTextDetection';
 import { usePdfObjectExtraction } from './hooks/usePdfObjectExtraction';
 import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
+import { CompartiService } from './services/CompartiService';
 import { FileEntry } from './types';
 
 interface ExplorerProps {
@@ -213,6 +214,54 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
       }
     }
   }, [updateFileClassification, state.files]);
+
+  // ✅ Listener per drop di file Explorer sui cassetti
+  useEffect(() => {
+    const handleExplorerFileDrop = (event: CustomEvent) => {
+      const { fileData, drawerId } = event.detail;
+
+      // Trova il file nello stato
+      const file = state.files.find(f => f.id === fileData.fileId || f.path === fileData.filePath);
+      if (!file) {
+        console.warn('[EXPLORER][DROP] File non trovato:', fileData);
+        return;
+      }
+
+      // Trova il comparto corrispondente al drawerId
+      // drawerId può essere:
+      // - una chiave (es. 'parti_anagrafiche') in DockWorkspaceV2
+      // - un ID del database in DockWorkspaceV3
+      let comparto = CompartiService.getByKey(drawerId);
+
+      // Se non trovato per chiave, potrebbe essere un ID - prova a cercare nei comparti globali
+      if (!comparto) {
+        // Prova a ottenere i comparti dal contesto globale se disponibili
+        const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }> } | undefined;
+        const globalComparti = archiveData?.comparti;
+        if (globalComparti) {
+          const compartoById = globalComparti.find(c => c.id === drawerId);
+          if (compartoById) {
+            // Usa la chiave del comparto trovato per ottenere i dati completi
+            comparto = CompartiService.getByKey(compartoById.key);
+          }
+        }
+      }
+
+      if (!comparto) {
+        console.warn('[EXPLORER][DROP] Comparto non trovato per drawerId:', drawerId);
+        return;
+      }
+
+      // Aggiorna la classificazione del file
+      handleFileClassificationChange(file.id, comparto.key, comparto.nome);
+    };
+
+    window.addEventListener('explorer:file-drop-to-drawer', handleExplorerFileDrop as EventListener);
+
+    return () => {
+      window.removeEventListener('explorer:file-drop-to-drawer', handleExplorerFileDrop as EventListener);
+    };
+  }, [state.files, handleFileClassificationChange]);
 
   // Error handling
   if (drivesError) {

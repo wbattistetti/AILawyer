@@ -18,6 +18,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   const [tempFileName, setTempFileName] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   if (!file) {
     return (
@@ -85,6 +86,32 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
     }
   };
 
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!file) return;
+
+    setIsDragging(true);
+    // Imposta i dati del drag con un formato speciale per identificare i file dall'Explorer
+    e.dataTransfer.setData('application/x-explorer-file', JSON.stringify({
+      fileId: file.id,
+      filePath: file.path,
+      fileName: file.name
+    }));
+    e.dataTransfer.effectAllowed = 'copy';
+
+    // Crea un'immagine di drag personalizzata
+    const dragImage = document.createElement('div');
+    dragImage.textContent = file.name;
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-1000px';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
   const renderViewer = () => {
     switch (file.kind) {
       case 'pdf':
@@ -102,7 +129,12 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   };
 
   return (
-    <div className={`h-full w-full flex flex-col bg-white ${className}`}>
+    <div
+      className={`h-full w-full flex flex-col bg-white ${className} ${isDragging ? 'opacity-50' : ''}`}
+      draggable={!!file}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
         <div className="flex-1 min-w-0">

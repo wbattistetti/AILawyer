@@ -275,11 +275,13 @@ function FileRow({ index, style, data }: FileRowProps) {
             autoFocus
           >
             <option value="">-- Nessuno --</option>
-            {CompartiService.getAll().map(comparto => (
-              <option key={comparto.key} value={comparto.key}>
-                {comparto.nome}
-              </option>
-            ))}
+            {CompartiService.getAll()
+              .sort((a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }))
+              .map(comparto => (
+                <option key={comparto.key} value={comparto.key}>
+                  {comparto.nome}
+                </option>
+              ))}
           </select>
         ) : (
           <div

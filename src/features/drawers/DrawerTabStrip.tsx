@@ -186,7 +186,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   const handleDragOver = (e: React.DragEvent, drawerId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    if (e.dataTransfer.types.includes('Files')) {
+    // Supporta sia file normali che file dall'Explorer
+    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-explorer-file')) {
       e.dataTransfer.dropEffect = 'copy'
       setDraggedOverId(drawerId)
     }
@@ -203,6 +204,23 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     e.stopPropagation()
     setDraggedOverId(null)
 
+    // Controlla se è un file dall'Explorer
+    const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
+    if (explorerFileData) {
+      try {
+        const fileData = JSON.parse(explorerFileData)
+        // Emetti un evento custom per gestire il drop di file Explorer
+        const event = new CustomEvent('explorer:file-drop-to-drawer', {
+          detail: { fileData, drawerId }
+        })
+        window.dispatchEvent(event)
+        return
+      } catch (error) {
+        console.error('[DRAWER-TAB-STRIP] Error parsing explorer file data:', error)
+      }
+    }
+
+    // Gestione normale per file dal filesystem
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0 && onDrop) {
       onDrop(files, drawerId)
