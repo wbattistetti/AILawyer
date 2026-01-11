@@ -56,7 +56,7 @@ export const api = {
     return fetchApi('/pratiche')
   },
 
-  async updatePratica(id: string, data: { numeroRuolo?: string; foro?: string; pmGiudice?: string }): Promise<Pratica> {
+  async updatePratica(id: string, data: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string }): Promise<Pratica> {
     return fetchApi(`/pratiche/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data)

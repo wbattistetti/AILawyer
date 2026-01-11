@@ -33,6 +33,7 @@ model Pratica {
   foro        String
   pmGiudice   String?
   status      String   @default("draft")
+  explorerState String? // JSON: { selectedPath?: string, isOpen?: boolean }
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

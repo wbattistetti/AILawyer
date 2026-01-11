@@ -160,6 +160,7 @@ export function PraticaCanvasPage() {
   const [syncPage, setSyncPage] = useState<number | null>(null)
   const [saveFilesToDb, setSaveFilesToDb] = useState<boolean>(false) // Default: false (privacy mode)
   const [isSaving, setIsSaving] = useState<boolean>(false)
+  const [explorerSelectedPath, setExplorerSelectedPath] = useState<string | undefined>(undefined)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
@@ -344,6 +345,17 @@ export function PraticaCanvasPage() {
         }))
         setComparti(normalizedComparti)
         setClienti(clientiData.clienti)
+        // ✅ Ripristina lo stato Explorer se presente
+        if (p.explorerState) {
+          try {
+            const explorerState = JSON.parse(p.explorerState)
+            if (explorerState.selectedPath) {
+              setExplorerSelectedPath(explorerState.selectedPath)
+            }
+          } catch (err) {
+            console.warn('[EXPLORER] Errore parsing explorerState:', err)
+          }
+        }
         // Clienti caricati
       } catch (error) {
         console.error('Failed to load pratica:', error)
@@ -791,10 +803,14 @@ export function PraticaCanvasPage() {
 
           setIsSaving(true)
 
+          // ✅ Salva anche lo stato Explorer
+          const explorerState = explorerSelectedPath ? JSON.stringify({ selectedPath: explorerSelectedPath }) : undefined
+
           const dataToSave = {
             numeroRuolo: pratica.numeroRuolo,
             foro: pratica.foro,
-            pmGiudice: pratica.pmGiudice || undefined
+            pmGiudice: pratica.pmGiudice || undefined,
+            explorerState
           }
 
           // Log rimosso (troppo rumoroso)
@@ -894,7 +910,24 @@ export function PraticaCanvasPage() {
           storageKey={`ws_dock_v3_${id}`}
           headerHeight={headerH} // ✅ Passa altezza header per posizionare sidebar
           // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
-          renderExplorer={() => <Explorer {...ExplorerProps} />}
+          renderExplorer={() => (
+            <Explorer
+              {...ExplorerProps}
+              praticaId={id}
+              initialSelectedPath={explorerSelectedPath}
+              onStateChange={(path) => {
+                setExplorerSelectedPath(path)
+                // ✅ Salva automaticamente lo stato quando cambia (debounced)
+                if (id && path) {
+                  const explorerState = JSON.stringify({ selectedPath: path })
+                  // Salva in background senza bloccare l'UI
+                  api.updatePratica(id, { explorerState }).catch(err => {
+                    console.warn('[EXPLORER] Errore salvataggio stato:', err)
+                  })
+                }
+              }}
+            />
+          )}
           // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
           // onLeftBorderTabChange removed - fullscreen now handled by PanelWithFullscreenToggle
           praticaId={id} // Aggiungi questa prop

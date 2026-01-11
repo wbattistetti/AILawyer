@@ -21,9 +21,12 @@ import { FileEntry } from './types';
 interface ExplorerProps {
   adapter: FileSystemAdapter;
   className?: string;
+  praticaId?: string; // ID pratica per salvare/caricare stato
+  initialSelectedPath?: string; // Path iniziale da ripristinare
+  onStateChange?: (selectedPath: string | undefined) => void; // Callback quando cambia la directory selezionata
 }
 
-export function Explorer({ adapter, className = '' }: ExplorerProps) {
+export function Explorer({ adapter, className = '', praticaId, initialSelectedPath, onStateChange }: ExplorerProps) {
   const [previewFile, setPreviewFile] = useState<FileEntry | undefined>();
   const [highlightPath, setHighlightPath] = useState<string | undefined>();
   const [centerWidth, setCenterWidth] = useState<number>(500);
@@ -122,6 +125,41 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
       analyzedFilesRef.current.clear();
     }
   }, [state.selectedNode?.path]);
+
+  // ✅ Ripristina lo stato iniziale se fornito
+  useEffect(() => {
+    if (initialSelectedPath && !state.selectedNode && drives.length > 0) {
+      // Verifica se il path è ancora disponibile
+      const drive = drives.find(d => initialSelectedPath.startsWith(d.path));
+      if (drive) {
+        // Verifica se la directory esiste ancora
+        adapter.listDir(initialSelectedPath).then(() => {
+          setSelectedNode({ type: 'dir', path: initialSelectedPath });
+          startScan({
+            rootPath: initialSelectedPath,
+            kinds: undefined,
+            search: state.filters.search || undefined
+          });
+        }).catch((err) => {
+          console.warn('[EXPLORER] Path non più disponibile:', initialSelectedPath, err);
+          // Mostra un avviso all'utente
+          setError(`Il percorso salvato non è più disponibile: ${initialSelectedPath}. Verifica che il drive/dispositivo sia collegato.`);
+          // Non ripristinare se il path non è più disponibile
+        });
+      } else {
+        // Drive non trovato - mostra avviso
+        const driveLetter = initialSelectedPath.split(/[/\\]/)[0];
+        setError(`Il drive/dispositivo "${driveLetter}" non è più disponibile. Verifica che sia collegato.`);
+      }
+    }
+  }, [initialSelectedPath, drives, state.selectedNode, adapter, setSelectedNode, startScan, state.filters.search, setError]);
+
+  // ✅ Salva lo stato quando cambia la directory selezionata
+  useEffect(() => {
+    if (onStateChange) {
+      onStateChange(state.selectedNode?.path);
+    }
+  }, [state.selectedNode?.path, onStateChange]);
 
   // Event handlers
   const handleNodeSelect = useCallback((node: { type: 'drive' | 'dir'; path: string }) => {
