@@ -7,6 +7,7 @@ import { SearchPanelTree } from '../../components/search/SearchPanelTree'
 import * as pdfjsLib from 'pdfjs-dist'
 import { api } from '../../lib/api'
 import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
+import { DragAndDropService } from '../../services/DragAndDropService'
 
 type DocItem = {
   id: string
@@ -297,22 +298,20 @@ export function DocumentCollection({
 
   // ✅ Handler per drop di file Explorer (oltre a react-dropzone)
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    // Gestisci sia file Explorer che file normali
-    if (e.dataTransfer.types.includes('application/x-explorer-file')) {
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'copy'
+    // ✅ Usa il servizio centralizzato per gestire dragOver
+    const handled = DragAndDropService.handleDragOver(e, [
+      DragAndDropService.EXPLORER_FILE_TYPE,
+      DragAndDropService.DOC_ID_TYPE,
+      'Files'
+    ])
+
+    if (handled && DragAndDropService.isExplorerFile(e)) {
       setIsExplorerDragOver(true)
-    } else if (e.dataTransfer.types.includes('Files')) {
-      // ✅ Permetti anche file normali (react-dropzone li gestirà)
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'copy'
     }
   }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-explorer-file')) {
+    if (DragAndDropService.isExplorerFile(e)) {
       e.preventDefault()
       e.stopPropagation()
       // Solo se lasciamo completamente il container
@@ -323,87 +322,95 @@ export function DocumentCollection({
   }, [])
 
   // ✅ Handler unificato per drop: gestisce sia file Explorer che file normali
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     console.log('[DOCUMENT-COLLECTION] handleDrop chiamato', {
       compartoId,
       compartoIdType: typeof compartoId,
       compartoIdLength: compartoId?.length,
       dataTransferTypes: Array.from(e.dataTransfer.types),
-      hasExplorerFile: e.dataTransfer.types.includes('application/x-explorer-file'),
-      hasFiles: e.dataTransfer.types.includes('Files'),
+      hasExplorerFile: DragAndDropService.isExplorerFile(e),
+      hasDocId: DragAndDropService.isDocId(e),
+      hasFiles: DragAndDropService.isFiles(e),
       target: e.target,
       currentTarget: e.currentTarget
     })
 
-    // ✅ Controlla PRIMA se è un file dall'Explorer
-    const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
-    console.log('[DOCUMENT-COLLECTION] explorerFileData:', explorerFileData ? 'presente' : 'assente', 'compartoId:', compartoId)
-
-    if (explorerFileData) {
-      // ✅ Se c'è explorerFileData ma non compartoId, logga un errore dettagliato
-      if (!compartoId) {
-        console.error('[DOCUMENT-COLLECTION] ❌ Drop Explorer ricevuto ma compartoId è undefined/null!', {
-          compartoId,
-          title,
-          explorerFileData: explorerFileData.substring(0, 100)
-        })
-        // ✅ Prova comunque a emettere l'evento - Explorer potrebbe gestirlo comunque
-        try {
-          const fileData = JSON.parse(explorerFileData)
-          const event = new CustomEvent('explorer:file-drop-to-drawer', {
-            detail: { fileData, drawerId: null } // ✅ Passa null se compartoId non disponibile
+    if (!compartoId) {
+      // ✅ Se non c'è compartoId ma è un file Explorer, prova comunque a emettere l'evento
+      if (DragAndDropService.isExplorerFile(e)) {
+        const explorerFileData = e.dataTransfer.getData(DragAndDropService.EXPLORER_FILE_TYPE)
+        const fileData = DragAndDropService.parseExplorerFileData(explorerFileData)
+        if (fileData) {
+          console.error('[DOCUMENT-COLLECTION] ❌ Drop Explorer ricevuto ma compartoId è undefined/null!', {
+            compartoId,
+            title,
+            fileData
           })
-          window.dispatchEvent(event)
-        } catch (error) {
-          console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
+          try {
+            const event = new CustomEvent('explorer:file-drop-to-drawer', {
+              detail: { fileData, drawerId: null }
+            })
+            window.dispatchEvent(event)
+          } catch (error) {
+            console.error('[DOCUMENT-COLLECTION] Error dispatching explorer event:', error)
+          }
         }
-        return
-      }
-
-      // ✅ Se abbiamo sia explorerFileData che compartoId, procedi normalmente
-      e.preventDefault()
-      e.stopPropagation()
-      setIsExplorerDragOver(false)
-
-      try {
-        const fileData = JSON.parse(explorerFileData)
-        console.log('[DOCUMENT-COLLECTION] ✅ Emetto evento explorer:file-drop-to-drawer', { fileData, drawerId: compartoId })
-        // Emetti evento per gestire il drop di file Explorer
-        const event = new CustomEvent('explorer:file-drop-to-drawer', {
-          detail: { fileData, drawerId: compartoId }
-        })
-        window.dispatchEvent(event)
-        return
-      } catch (error) {
-        console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
-        // Se c'è errore, continua con la gestione normale
-      }
-    } else {
-      console.warn('[DOCUMENT-COLLECTION] Drop Explorer non gestito:', {
-        hasExplorerFileData: !!explorerFileData,
-        hasCompartoId: !!compartoId
-      })
-    }
-
-    // ✅ Se non è un file Explorer, verifica se ci sono file normali
-    const files = Array.from(e.dataTransfer.files || [])
-    if (files.length > 0) {
-      // ✅ Gestisci i file normali
-      e.preventDefault()
-      e.stopPropagation()
-
-      // ✅ Se onDrop (prop) è disponibile, usalo (emette app:upload-files)
-      // Altrimenti usa onDropCb (react-dropzone callback interno)
-      if (onDrop) {
-        onDrop(files) // ✅ Chiama la prop onDrop che emette app:upload-files
-      } else {
-        onDropCb(files) // ✅ Fallback: usa react-dropzone callback
       }
       return
     }
 
-    // ✅ Se non ci sono file, lascia che react-dropzone gestisca (potrebbe essere un drop interno)
-  }, [compartoId, onDrop, onDropCb]) // ✅ Aggiungi onDrop e onDropCb alle dipendenze
+    // ✅ Usa il servizio centralizzato per gestire il drop
+    const handled = await DragAndDropService.handleDrop(e, compartoId, {
+      onExplorerFile: (fileData) => {
+        setIsExplorerDragOver(false)
+        console.log('[DOCUMENT-COLLECTION] ✅ Emetto evento explorer:file-drop-to-drawer', { fileData, drawerId: compartoId })
+        const event = new CustomEvent('explorer:file-drop-to-drawer', {
+          detail: { fileData, drawerId: compartoId }
+        })
+        window.dispatchEvent(event)
+      },
+      onDocId: async (docId) => {
+        // ✅ Usa il servizio centralizzato per spostare il documento
+        try {
+          const archiveData = (window as any).__archiveData as {
+            comparti?: Array<{ id: string; key: string; nome: string }>
+            documenti?: Array<{ id: string; filePath?: string; [key: string]: any }>
+          } | undefined
+
+          const comparti = archiveData?.comparti || []
+          const documenti = archiveData?.documenti || []
+
+          // Verifica che il compartoId sia valido
+          const targetComparto = comparti.find(c => c.id === compartoId)
+          if (targetComparto) {
+            const api = (await import('../../lib/api')).api
+            await DragAndDropService.moveDocumentToComparto(docId, compartoId, {
+              documenti,
+              comparti,
+              api
+            })
+            console.log('[DOCUMENT-COLLECTION] Documento spostato con successo', { docId, compartoId })
+          } else {
+            console.warn('[DOCUMENT-COLLECTION] Comparto non trovato per compartoId:', compartoId)
+          }
+        } catch (error) {
+          console.error('[DOCUMENT-COLLECTION] Errore spostamento documento:', error)
+        }
+      },
+      onFiles: (files) => {
+        // ✅ Gestisci file OS normali
+        if (onDrop) {
+          onDrop(files)
+        } else {
+          onDropCb(files)
+        }
+      }
+    })
+
+    if (handled) {
+      setIsExplorerDragOver(false)
+    }
+  }, [compartoId, onDrop, onDropCb])
 
   // ✅ Estrai getRootProps ma sovrascrivi onDrop con il nostro handler unificato
   const rootProps = getRootProps()

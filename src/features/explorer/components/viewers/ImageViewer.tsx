@@ -55,7 +55,7 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
               Image • {file.sizeBytes ? formatFileSize(file.sizeBytes) : 'Unknown size'}
             </p>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button
               onClick={handleZoomOut}
@@ -64,11 +64,11 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
             >
               <ZoomOut className="w-4 h-4" />
             </button>
-            
+
             <span className="text-xs text-gray-500 min-w-[3rem] text-center">
               {Math.round(scale * 100)}%
             </span>
-            
+
             <button
               onClick={handleZoomIn}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
@@ -76,7 +76,7 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
             >
               <ZoomIn className="w-4 h-4" />
             </button>
-            
+
             <button
               onClick={handleRotate}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
@@ -84,7 +84,7 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
             >
               <RotateCw className="w-4 h-4" />
             </button>
-            
+
             <button
               onClick={handleDownload}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
@@ -101,10 +101,10 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
         {isLoading && (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-            <p className="text-sm text-gray-500">Loading image...</p>
+            <p className="text-sm text-gray-500">Sto caricando il documento...</p>
           </div>
         )}
-        
+
         {error && (
           <div className="text-center">
             <p className="text-sm text-red-600 mb-2">{error}</p>
@@ -119,7 +119,7 @@ export function ImageViewer({ file, className = '' }: ImageViewerProps) {
             </button>
           </div>
         )}
-        
+
         {!error && (
           <img
             src={file.path}
@@ -141,12 +141,12 @@ function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
-  
+
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex++;
   }
-  
+
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 

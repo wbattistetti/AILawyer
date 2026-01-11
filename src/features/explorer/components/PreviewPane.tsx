@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Archive, Trash2, Download } from 'lucide-react';
 import { FileEntry } from '../types';
 import { PdfViewerAdapter } from './viewers/PdfViewerAdapter';
@@ -6,6 +6,7 @@ import { ImageViewer } from './viewers/ImageViewer';
 import { MediaViewer } from './viewers/MediaViewer';
 import { WordViewer } from './viewers/WordViewer';
 import { UnknownViewer } from './viewers/UnknownViewer';
+import { DragAndDropService } from '../../../services/DragAndDropService';
 
 interface PreviewPaneProps {
   file?: FileEntry;
@@ -19,6 +20,30 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const previousFileIdRef = useRef<string | null>(null);
+
+  // ✅ Mostra spinner iniziale quando cambia il file - DEVE essere prima dell'early return!
+  useEffect(() => {
+    if (!file) {
+      setIsInitializing(false);
+      previousFileIdRef.current = null;
+      return;
+    }
+
+    // Se è un file diverso, mostra lo spinner iniziale
+    if (file.id !== previousFileIdRef.current) {
+      setIsInitializing(true);
+      previousFileIdRef.current = file.id;
+
+      // Nascondi lo spinner dopo un breve delay per permettere al viewer di iniziare a caricare
+      const timer = setTimeout(() => {
+        setIsInitializing(false);
+      }, 300); // 300ms dovrebbe essere sufficiente per vedere lo spinner
+
+      return () => clearTimeout(timer);
+    }
+  }, [file?.id]);
 
   if (!file) {
     return (
@@ -90,22 +115,12 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
     if (!file) return;
 
     setIsDragging(true);
-    // Imposta i dati del drag con un formato speciale per identificare i file dall'Explorer
-    e.dataTransfer.setData('application/x-explorer-file', JSON.stringify({
-      fileId: file.id,
-      filePath: file.path,
-      fileName: file.name
-    }));
-    e.dataTransfer.effectAllowed = 'copy';
-
-    // Crea un'immagine di drag personalizzata
-    const dragImage = document.createElement('div');
-    dragImage.textContent = file.name;
-    dragImage.style.position = 'absolute';
-    dragImage.style.top = '-1000px';
-    document.body.appendChild(dragImage);
-    e.dataTransfer.setDragImage(dragImage, 0, 0);
-    setTimeout(() => document.body.removeChild(dragImage), 0);
+    // ✅ Usa il servizio centralizzato per setup drag
+    DragAndDropService.setupExplorerFileDragStart(e, {
+      id: file.id,
+      path: file.path,
+      name: file.name
+    });
   };
 
   const handleDragEnd = () => {
@@ -184,8 +199,19 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
       </div>
 
       {/* Viewer Content */}
-      <div className="flex-1 overflow-hidden">
-        {renderViewer()}
+      <div className="flex-1 overflow-hidden relative">
+        {/* ✅ Spinner iniziale quando si apre un nuovo file */}
+        {isInitializing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-600">Sto caricando il documento...</p>
+            </div>
+          </div>
+        )}
+        <div className={isInitializing ? 'opacity-0' : 'opacity-100 transition-opacity duration-200'}>
+          {renderViewer()}
+        </div>
       </div>
     </div>
   );

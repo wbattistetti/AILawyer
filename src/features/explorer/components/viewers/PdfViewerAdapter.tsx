@@ -101,7 +101,7 @@ export function PdfViewerAdapter({ file, className = '', onTempFileCreated }: Pd
       <div className={`h-full flex items-center justify-center ${className}`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-          <p className="text-sm text-gray-600">Preparing file for preview...</p>
+          <p className="text-sm text-gray-600">Sto caricando il documento...</p>
           <p className="text-xs text-gray-500 mt-1">File: {file.name}</p>
         </div>
       </div>

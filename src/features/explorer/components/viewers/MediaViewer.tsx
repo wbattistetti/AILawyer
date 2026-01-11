@@ -97,7 +97,7 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
               {isVideo ? 'Video' : 'Audio'} • {file.sizeBytes ? formatFileSize(file.sizeBytes) : 'Unknown size'}
             </p>
           </div>
-          
+
           <button
             onClick={handleDownload}
             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
@@ -113,10 +113,10 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
         {isLoading && (
           <div className="text-center text-white">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-            <p className="text-sm">Loading {isVideo ? 'video' : 'audio'}...</p>
+            <p className="text-sm">Sto caricando il documento...</p>
           </div>
         )}
-        
+
         {error && (
           <div className="text-center text-white">
             <p className="text-sm mb-2">{error}</p>
@@ -131,7 +131,7 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
             </button>
           </div>
         )}
-        
+
         {!error && (
           <div className="w-full h-full flex items-center justify-center">
             {isVideo ? (
@@ -227,12 +227,12 @@ function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
-  
+
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex++;
   }
-  
+
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 

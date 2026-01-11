@@ -3,6 +3,7 @@ import { Search } from 'lucide-react'
 import type { DrawerType } from './types'
 import type { Documento, Comparto } from '../../types'
 import './DrawerTabStrip.css'
+import { DragAndDropService } from '../../services/DragAndDropService'
 
 // ✅ Componente helper per applicare il colore all'icona SVG
 function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: string; size: number }) {
@@ -186,11 +187,12 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   }
 
   const handleDragOver = (e: React.DragEvent, drawerId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    // Supporta sia file normali che file dall'Explorer
-    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-explorer-file')) {
-      e.dataTransfer.dropEffect = 'copy'
+    // ✅ Usa il servizio centralizzato per gestire dragOver
+    if (DragAndDropService.handleDragOver(e, [
+      DragAndDropService.EXPLORER_FILE_TYPE,
+      DragAndDropService.DOC_ID_TYPE,
+      'Files'
+    ])) {
       setDraggedOverId(drawerId)
     }
   }
@@ -201,32 +203,53 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     setDraggedOverId(null)
   }
 
-  const handleDrop = (e: React.DragEvent, drawerId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const handleDrop = async (e: React.DragEvent, drawerId: string) => {
     setDraggedOverId(null)
 
-    // Controlla se è un file dall'Explorer
-    const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
-    if (explorerFileData) {
-      try {
-        const fileData = JSON.parse(explorerFileData)
+    // ✅ Usa il servizio centralizzato per gestire il drop
+    // drawerId può essere una chiave o un ID - il servizio lo gestirà
+    await DragAndDropService.handleDrop(e, drawerId, {
+      onExplorerFile: (fileData) => {
         // Emetti un evento custom per gestire il drop di file Explorer
         const event = new CustomEvent('explorer:file-drop-to-drawer', {
           detail: { fileData, drawerId }
         })
         window.dispatchEvent(event)
-        return
-      } catch (error) {
-        console.error('[DRAWER-TAB-STRIP] Error parsing explorer file data:', error)
-      }
-    }
+      },
+      onDocId: async (docId) => {
+        // ✅ Usa il servizio centralizzato per spostare il documento
+        try {
+          const archiveData = (window as any).__archiveData as {
+            comparti?: Array<{ id: string; key: string; nome: string }>
+            documenti?: Array<{ id: string; filePath?: string; [key: string]: any }>
+          } | undefined
 
-    // Gestione normale per file dal filesystem
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0 && onDrop) {
-      onDrop(files, drawerId)
-    }
+          const comparti = archiveData?.comparti || []
+          const documenti = archiveData?.documenti || []
+
+          // Trova il comparto corrispondente al drawerId (può essere key o id)
+          const comparto = comparti.find(c => c.id === drawerId || c.key === drawerId)
+          if (comparto) {
+            const api = (await import('../../lib/api')).api
+            await DragAndDropService.moveDocumentToComparto(docId, comparto.id, {
+              documenti,
+              comparti,
+              api
+            })
+          } else {
+            console.warn('[DRAWER-TAB-STRIP] Comparto non trovato per drawerId:', drawerId)
+          }
+        } catch (error) {
+          console.error('[DRAWER-TAB-STRIP] Errore spostamento documento:', error)
+        }
+      },
+      onFiles: (files) => {
+        // Gestione normale per file dal filesystem
+        if (onDrop) {
+          onDrop(files, drawerId)
+        }
+      }
+    })
   }
 
   // ✅ Costanti per il calcolo
@@ -572,8 +595,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
                   />
                 )}
 
-                {/* ✅ Conteggio documenti in piccolo tra parentesi */}
-                {typeof item.documentCount === 'number' && (
+                {/* ✅ Conteggio documenti in piccolo tra parentesi - mostra solo se > 0 */}
+                {typeof item.documentCount === 'number' && item.documentCount > 0 && (
                   <span
                     style={{
                       fontSize: '11px',

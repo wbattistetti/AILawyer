@@ -46,7 +46,7 @@ export function WordViewer({ file, onOpenInSystem, className = '' }: WordViewerP
               Word Document • {file.sizeBytes ? formatFileSize(file.sizeBytes) : 'Unknown size'}
             </p>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownload}
@@ -55,7 +55,7 @@ export function WordViewer({ file, onOpenInSystem, className = '' }: WordViewerP
             >
               <Download className="w-4 h-4" />
             </button>
-            
+
             <button
               onClick={handleOpenInSystem}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
@@ -72,10 +72,10 @@ export function WordViewer({ file, onOpenInSystem, className = '' }: WordViewerP
         {isLoading && (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-            <p className="text-sm text-gray-500">Loading document...</p>
+            <p className="text-sm text-gray-500">Sto caricando il documento...</p>
           </div>
         )}
-        
+
         {error && (
           <div className="text-center max-w-md">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -110,12 +110,12 @@ function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let size = bytes;
   let unitIndex = 0;
-  
+
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex++;
   }
-  
+
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 

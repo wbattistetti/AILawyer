@@ -17,6 +17,7 @@ import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
 import { CompartiService, CompartoOption } from '../services/CompartiService';
 import { ObjectExtractionStatus } from '../hooks/usePdfObjectExtraction';
+import { DragAndDropService } from '../../../services/DragAndDropService';
 
 // Hook per colonna "Oggetto" ridimensionabile
 function useOggettoColumnWidth() {
@@ -94,7 +95,10 @@ function FileRow({ index, style, data }: FileRowProps) {
   const file = files[index];
   const isSelected = selectedIds.has(file.id);
   const [isEditingComparto, setIsEditingComparto] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const selectRef = useRef<HTMLSelectElement>(null);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const hasDraggedRef = useRef(false);
 
   // Focus sul select quando entra in modalità edit
   useEffect(() => {
@@ -103,9 +107,50 @@ function FileRow({ index, style, data }: FileRowProps) {
     }
   }, [isEditingComparto]);
 
-  const handleClick = useCallback(() => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Salva la posizione iniziale del mouse solo se non è un click su checkbox o altri elementi interattivi
+    if (e.target === e.currentTarget || (e.target as HTMLElement).closest('button, select, input')) {
+      return;
+    }
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    hasDraggedRef.current = false;
+  }, []);
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Se c'è stato un drag significativo, non aprire la preview
+    if (hasDraggedRef.current) {
+      return;
+    }
+    // Se il mouse si è mosso più di 5px, considera come drag, non click
+    if (dragStartPosRef.current) {
+      const dx = Math.abs(e.clientX - dragStartPosRef.current.x);
+      const dy = Math.abs(e.clientY - dragStartPosRef.current.y);
+      if (dx > 5 || dy > 5) {
+        return;
+      }
+    }
     onOpenPreview(file);
   }, [file, onOpenPreview]);
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    setIsDragging(true);
+    hasDraggedRef.current = true;
+    // ✅ Usa il servizio centralizzato per setup drag
+    DragAndDropService.setupExplorerFileDragStart(e, {
+      id: file.id,
+      path: file.path,
+      name: file.name
+    });
+  }, [file]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    dragStartPosRef.current = null;
+    // Reset dopo un breve delay per permettere al click di verificare hasDraggedRef
+    setTimeout(() => {
+      hasDraggedRef.current = false;
+    }, 100);
+  }, []);
 
   const handleCheckboxClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -185,7 +230,12 @@ function FileRow({ index, style, data }: FileRowProps) {
       className={`
         flex items-center px-4 py-2 border-b border-gray-100 hover:bg-gray-50 cursor-pointer
         ${isSelected ? 'bg-blue-50' : ''}
+        ${isDragging ? 'opacity-50' : ''}
       `}
+      draggable={true}
+      onMouseDown={handleMouseDown}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onClick={handleClick}
     >
       {/* Checkbox */}
@@ -221,9 +271,12 @@ function FileRow({ index, style, data }: FileRowProps) {
         <div className="text-sm font-medium text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
           {file.name}
         </div>
-        <div className="text-xs text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
-          {file.parentDirName}
-        </div>
+        {/* ✅ Mostra parentDirName solo se è diverso dal nome del file (senza estensione) */}
+        {file.parentDirName && file.parentDirName !== file.name.replace(/\.[^/.]+$/, '') && (
+          <div className="text-xs text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
+            {file.parentDirName}
+          </div>
+        )}
       </div>
 
       {/* Oggetto - con wrap text e ridimensionabile */}

@@ -180,6 +180,21 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const [drawerPanelsUpdateTrigger, setDrawerPanelsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i pannelli cambiano
   const [documentsUpdateTrigger, setDocumentsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i documenti cambiano
 
+  // ✅ Listener per aggiornare drawerTabs quando cambiano i documenti
+  useEffect(() => {
+    const handleDocumentsChange = () => {
+      setDocumentsUpdateTrigger(prev => prev + 1)
+    }
+    window.addEventListener('app:documents' as any, handleDocumentsChange)
+    window.addEventListener('app:upload-files' as any, handleDocumentsChange)
+    window.addEventListener('app:documents-updated' as any, handleDocumentsChange) // ✅ Aggiungi questo per aggiornare immediatamente
+    return () => {
+      window.removeEventListener('app:documents' as any, handleDocumentsChange)
+      window.removeEventListener('app:upload-files' as any, handleDocumentsChange)
+      window.removeEventListener('app:documents-updated' as any, handleDocumentsChange) // ✅ Rimuovi anche questo
+    }
+  }, [])
+
   // State per la sidebar archivi
   const [isArchiveSidebarOpen, setIsArchiveSidebarOpen] = useState(false)
   const [selectedArchiveTabId, setSelectedArchiveTabId] = useState<string | null>(null)

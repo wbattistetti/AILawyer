@@ -5,6 +5,7 @@ import { DocumentCollection } from '../../../../features/documents/DocumentColle
 import { api } from '../../../../lib/api';
 import { colorFor, iconFor } from '../../../../features/drawers/drawerPalette';
 import { RefreshCw } from 'lucide-react';
+import { DragAndDropService } from '../../../../services/DragAndDropService';
 
 // Helper per convertire HEX in RGBA con alpha
 function hexToRgba(hex: string, alpha = 0.1) {
@@ -102,13 +103,12 @@ export function ArchiveRenderer({
 
     const onDropDocIdToComparto = async (docId: string, compartoId: string) => {
         try {
-            console.log('[MOVE][DOCUMENTO][ARCHIVE][START]', { docId, compartoId })
-            await api.updateDocumento(docId, { compartoId })
-            console.log('[MOVE][DOCUMENTO][ARCHIVE][SUCCESS]', { docId, compartoId })
-            try {
-                console.log('[MOVE][DOCUMENTO][ARCHIVE] Emetto app:request-documents per ricaricare')
-                window.dispatchEvent(new CustomEvent('app:request-documents'))
-            } catch { }
+            // ✅ Usa il servizio centralizzato per spostare il documento
+            await DragAndDropService.moveDocumentToComparto(docId, compartoId, {
+                documenti,
+                comparti,
+                api
+            })
         } catch (e) {
             console.error('[MOVE][DOCUMENTO][ARCHIVE][ERROR]', { docId, compartoId, error: e })
         }
@@ -154,10 +154,10 @@ export function ArchiveRenderer({
         onDragEnter: (e: React.DragEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            // ✅ Gestisci anche file Explorer (application/x-explorer-file)
-            if (e.dataTransfer.types.includes('Files') ||
-                e.dataTransfer.types.includes('application/x-doc-id') ||
-                e.dataTransfer.types.includes('application/x-explorer-file')) {
+            // ✅ Usa il servizio per verificare tipi supportati
+            if (DragAndDropService.isExplorerFile(e) ||
+                DragAndDropService.isDocId(e) ||
+                DragAndDropService.isFiles(e)) {
                 setIsDragging(true)
                 if (filteredComparti.length === 1) {
                     setHoverBody(filteredComparti[0].id)
@@ -165,14 +165,12 @@ export function ArchiveRenderer({
             }
         },
         onDragOver: (e: React.DragEvent) => {
-            e.preventDefault()
-            e.stopPropagation()
-            // ✅ Gestisci anche file Explorer (application/x-explorer-file)
-            if (e.dataTransfer.types.includes('Files') ||
-                e.dataTransfer.types.includes('application/x-doc-id') ||
-                e.dataTransfer.types.includes('application/x-explorer-file')) {
-                e.dataTransfer.dropEffect = 'copy'
-            }
+            // ✅ Usa il servizio centralizzato per gestire dragOver
+            DragAndDropService.handleDragOver(e, [
+                DragAndDropService.EXPLORER_FILE_TYPE,
+                DragAndDropService.DOC_ID_TYPE,
+                'Files'
+            ])
         },
         onDragLeave: (e: React.DragEvent) => {
             e.preventDefault()
@@ -186,46 +184,32 @@ export function ArchiveRenderer({
             }
         },
         onDrop: async (e: React.DragEvent) => {
-            e.preventDefault()
-            e.stopPropagation()
             setIsDragging(false)
             if (filteredComparti.length === 1) {
                 const comparto = filteredComparti[0]
                 setHoverBody(null)
 
-                // ✅ PRIMA: Controlla se è un file Explorer
-                const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
-                if (explorerFileData) {
-                    console.log('[ARCHIVE-RENDERER][DROP] File Explorer rilevato, dispatching explorer:file-drop-to-drawer', {
-                        compartoId: comparto.id,
-                        compartoNome: comparto.nome,
-                        explorerFileDataLength: explorerFileData.length
-                    })
-                    try {
-                        const fileData = JSON.parse(explorerFileData)
+                // ✅ Usa il servizio centralizzato per gestire il drop
+                await DragAndDropService.handleDrop(e, comparto.id, {
+                    onExplorerFile: (fileData) => {
+                        console.log('[ARCHIVE-RENDERER][DROP] File Explorer rilevato, dispatching explorer:file-drop-to-drawer', {
+                            compartoId: comparto.id,
+                            compartoNome: comparto.nome,
+                            fileData
+                        })
                         const event = new CustomEvent('explorer:file-drop-to-drawer', {
                             detail: { fileData, drawerId: comparto.id }
                         })
                         window.dispatchEvent(event)
                         console.log('[ARCHIVE-RENDERER][DROP] Evento explorer:file-drop-to-drawer emesso con drawerId:', comparto.id)
-                    } catch (error) {
-                        console.error('[ARCHIVE-RENDERER][DROP] Errore parsing explorer file data:', error)
+                    },
+                    onDocId: async (docId) => {
+                        await onDropDocIdToComparto(docId, comparto.id)
+                    },
+                    onFiles: (files) => {
+                        onDropFilesToComparto(files as any, comparto.id)
                     }
-                    return
-                }
-
-                // ✅ POI: Controlla se è un documento da spostare
-                const docId = e.dataTransfer.getData('application/x-doc-id')
-                if (docId) {
-                    await onDropDocIdToComparto(docId, comparto.id)
-                    return
-                }
-
-                // ✅ INFINE: Controlla se sono file normali
-                const files = Array.from(e.dataTransfer.files || [])
-                if (files.length) {
-                    onDropFilesToComparto(files as any, comparto.id)
-                }
+                })
             }
         }
     } : {}
@@ -352,16 +336,31 @@ export function ArchiveRenderer({
                                 // ✅ In modalità drawer (hideHeaders), i drop sono gestiti dal container padre
                                 // ✅ In modalità archivio normale, gestisci drop qui
                                 {...(hideHeaders ? {} : {
-                                    onDragEnter: (e: React.DragEvent) => { e.preventDefault(); setHoverBody(comparto.id) },
-                                    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' },
+                                    onDragEnter: (e: React.DragEvent) => {
+                                        if (DragAndDropService.handleDragOver(e)) {
+                                            setHoverBody(comparto.id)
+                                        }
+                                    },
+                                    onDragOver: (e: React.DragEvent) => {
+                                        DragAndDropService.handleDragOver(e)
+                                    },
                                     onDragLeave: () => { setHoverBody(h => (h === comparto.id ? null : h)) },
                                     onDrop: async (e: React.DragEvent) => {
-                                        e.preventDefault();
                                         setHoverBody(null)
-                                        const docId = e.dataTransfer.getData('application/x-doc-id')
-                                        if (docId) { await onDropDocIdToComparto(docId, comparto.id); return }
-                                        const files = Array.from(e.dataTransfer.files || [])
-                                        if (files.length) { onDropFilesToComparto(files as any, comparto.id) }
+                                        await DragAndDropService.handleDrop(e, comparto.id, {
+                                            onExplorerFile: (fileData) => {
+                                                const event = new CustomEvent('explorer:file-drop-to-drawer', {
+                                                    detail: { fileData, drawerId: comparto.id }
+                                                })
+                                                window.dispatchEvent(event)
+                                            },
+                                            onDocId: async (docId) => {
+                                                await onDropDocIdToComparto(docId, comparto.id)
+                                            },
+                                            onFiles: (files) => {
+                                                onDropFilesToComparto(files as any, comparto.id)
+                                            }
+                                        })
                                     }
                                 })}
                             >
@@ -490,8 +489,8 @@ export function ArchiveRenderer({
                                     uploadingCount={0}
                                     draggableItems
                                     onDragStartItem={(docId, e) => {
-                                        e.dataTransfer.setData('application/x-doc-id', docId)
-                                        e.dataTransfer.effectAllowed = 'move'
+                                        // ✅ Usa il servizio centralizzato per setup drag
+                                        DragAndDropService.setupDocIdDragStart(e, docId)
                                     }}
                                     compartoId={comparto.id}
                                 />

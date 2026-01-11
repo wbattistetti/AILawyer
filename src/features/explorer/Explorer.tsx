@@ -569,6 +569,53 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
       // ✅ Aggiorna la classificazione del file
       handleFileClassificationChange(file.id, comparto.key, comparto.nome);
 
+      // ✅ Aggiorna immediatamente il conteggio creando un documento temporaneo
+      const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }>; documenti?: Array<any> } | undefined;
+      const globalComparti = archiveData?.comparti;
+      const compartoId = globalComparti?.find(c => c.key === comparto.key)?.id;
+
+      if (compartoId && archiveData) {
+        // Crea un documento temporaneo per aggiornare immediatamente il conteggio
+        const tempDoc = {
+          id: `temp:explorer-${file.id}-${Date.now()}`,
+          filename: file.name,
+          s3Key: '', // Sarà popolato dopo l'upload
+          mime: file.kind === 'pdf' ? 'application/pdf' :
+                file.kind === 'image' ? 'image/png' :
+                'application/octet-stream',
+          compartoId: compartoId,
+          praticaId: praticaId || '',
+          size: file.sizeBytes || 0,
+          hash: '',
+          ocrStatus: 'pending' as const,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          filePath: file.path
+        };
+
+        // Aggiungi il documento temporaneo all'array documenti in window.__archiveData
+        const currentDocumenti = archiveData.documenti || [];
+        const updatedDocumenti = [...currentDocumenti, tempDoc];
+        archiveData.documenti = updatedDocumenti;
+
+        // Emetti evento per aggiornare il conteggio immediatamente (sia app:documents che app:documents-updated)
+        window.dispatchEvent(new CustomEvent('app:documents-updated', {
+          detail: { documenti: updatedDocumenti }
+        }));
+
+        window.dispatchEvent(new CustomEvent('app:documents', {
+          detail: { items: updatedDocumenti.map(d => ({
+            id: d.id,
+            filename: d.filename,
+            s3Key: d.s3Key,
+            mime: d.mime,
+            compartoId: d.compartoId
+          })) }
+        }));
+
+        console.log('[EXPLORER][DROP] Documento temporaneo creato per aggiornare conteggio:', tempDoc.id)
+      }
+
       // ✅ Carica il file nel cassetto leggendolo dal filesystem
       const loadAndUploadFile = async () => {
         try {
