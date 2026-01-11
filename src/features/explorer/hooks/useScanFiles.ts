@@ -9,6 +9,7 @@ interface ScanOptions {
   kinds?: Set<FileKind>;
   search?: string;
   maxInFlight?: number;
+  autoClassify?: boolean; // ✅ Se true, fa classificazione automatica durante la scansione
 }
 
 // ✅ Tipo per mappare filePath -> classificazione esistente
@@ -168,7 +169,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
           console.log('🔍 File', file.name, 'should include:', shouldInclude);
 
           if (shouldInclude) {
-            const fileEntry = await createFileEntry(file, adapter);
+            const fileEntry = await createFileEntry(file, adapter, options);
             console.log('🔍 Adding file to list:', fileEntry);
 
             setFiles(prev => [...prev, fileEntry]);
@@ -231,7 +232,8 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
   const createFileEntry = async (
     file: { name: string; path: string; size?: number; mtime?: number },
-    adapter: FileSystemAdapter
+    adapter: FileSystemAdapter,
+    options?: ScanOptions
   ): Promise<FileEntry> => {
     const kind = await MimeService.detectKind({
       name: file.name,
@@ -283,25 +285,28 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         });
       }
     } else {
-      // ✅ SECONDO: Se non esiste, prova classificazione automatica
-      try {
-        const classification = await ClassificationService.classifyFile(fileEntry);
-        if (classification) {
-          fileEntry.compartoKey = classification.compartoKey;
-          fileEntry.compartoNome = classification.compartoNome;
-          fileEntry.classificationSource = 'auto';
+      // ✅ SECONDO: Se non esiste e autoClassify è abilitato, prova classificazione automatica
+      // ✅ MODIFICATO: Non fa classificazione automatica di default
+      if (options?.autoClassify) {
+        try {
+          const classification = await ClassificationService.classifyFile(fileEntry);
+          if (classification) {
+            fileEntry.compartoKey = classification.compartoKey;
+            fileEntry.compartoNome = classification.compartoNome;
+            fileEntry.classificationSource = 'auto';
 
-          // ✅ Salva anche in memoria globale per mostrare nei cassetti
-          const updateFn = (window as any).__updatePendingClassification;
-          if (updateFn && typeof updateFn === 'function') {
-            updateFn(fileEntry.path, {
-              compartoKey: classification.compartoKey,
-              compartoNome: classification.compartoNome
-            });
+            // ✅ Salva anche in memoria globale per mostrare nei cassetti
+            const updateFn = (window as any).__updatePendingClassification;
+            if (updateFn && typeof updateFn === 'function') {
+              updateFn(fileEntry.path, {
+                compartoKey: classification.compartoKey,
+                compartoNome: classification.compartoNome
+              });
+            }
           }
+        } catch (error) {
+          console.warn('Failed to classify file:', file.path, error);
         }
-      } catch (error) {
-        console.warn('Failed to classify file:', file.path, error);
       }
     }
 

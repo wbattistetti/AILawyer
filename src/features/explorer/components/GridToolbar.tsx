@@ -5,10 +5,7 @@ import {
   CheckSquare,
   Square,
   Upload,
-  Pause,
-  Play,
   Square as Stop,
-  RotateCcw,
   X,
   FileText,
   Image,
@@ -25,17 +22,21 @@ interface GridToolbarProps {
   filters: GridFilters;
   onFiltersChange: (filters: Partial<GridFilters>) => void;
   selectedCount: number;
-  totalFiles: number; // Total files found (all files in memory)
+  totalFiles: number; // Total files found (all files in memory) - non più usato direttamente, ma mantenuto per compatibilità
   visibleFiles: number; // Files visible after filtering
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onUploadToArchive: () => void;
-  scanning: boolean;
-  progress: ScanProgress;
-  onPause: () => void;
-  onResume: () => void;
-  onStop: () => void;
-  onRescan: () => void;
+  scanning: boolean; // Usato solo per nascondere lo status durante la scansione
+  progress: ScanProgress; // Usato solo per la progress bar
+  onPause?: () => void; // ✅ Opzionale, non più usato
+  onResume?: () => void; // ✅ Opzionale, non più usato
+  onStop?: () => void; // ✅ Opzionale, non più usato
+  onRescan?: () => void; // ✅ Opzionale, non più usato
+  onAnalyzeDocuments?: () => void; // ✅ Avvia analisi e classificazione
+  isAnalyzing?: boolean; // ✅ Indica se l'analisi è in corso
+  onStopAnalysis?: () => void; // ✅ Ferma l'analisi
+  canAnalyze?: boolean; // ✅ Se false, disabilita "Analizza documenti" (tutti i file sono già analizzati)
   className?: string;
 }
 
@@ -98,6 +99,10 @@ export function GridToolbar({
   onResume,
   onStop,
   onRescan,
+  onAnalyzeDocuments,
+  isAnalyzing = false,
+  onStopAnalysis,
+  canAnalyze = true, // ✅ Default: abilitato
   className = ''
 }: GridToolbarProps) {
   const handleKindFilterClick = (kind: FileKind, e: React.MouseEvent) => {
@@ -215,10 +220,17 @@ export function GridToolbar({
         )}
       </div>
 
-      {/* Actions Row */}
+      {/* Actions Row - Riorganizzato come richiesto */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Selection Controls */}
+          {/* ✅ 1. Status - SOLO conteggio file filtrati (più chiaro) */}
+          {!scanning && (
+            <div className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
+              <span>{visibleFiles} file{visibleFiles !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+
+          {/* ✅ 2. Select All / Deselect All */}
           <button
             onClick={onSelectAll}
             className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
@@ -235,17 +247,6 @@ export function GridToolbar({
             Deselect All
           </button>
 
-          {/* File Count Info */}
-          {!scanning && totalFiles > 0 && (
-            <div className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
-              {totalFiles === visibleFiles ? (
-                <span>{totalFiles} file{totalFiles !== 1 ? 's' : ''} found</span>
-              ) : (
-                <span>{totalFiles} found, {visibleFiles} visible</span>
-              )}
-            </div>
-          )}
-
           {/* Selected Count */}
           {selectedCount > 0 && (
             <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
@@ -255,46 +256,44 @@ export function GridToolbar({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Scan Controls */}
-          {scanning ? (
+          {/* ✅ RIMOSSO: Resume/Rescan/Pause/Stop per scansione (la scansione parte automaticamente) */}
+
+          {/* ✅ 3. Analizza documenti + Stop (quando isAnalyzing) */}
+          {onAnalyzeDocuments && (
             <>
               <button
-                onClick={onPause}
-                className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
+                onClick={onAnalyzeDocuments}
+                disabled={isAnalyzing || !canAnalyze}
+                className={`flex items-center gap-2 px-3 py-1 text-sm rounded transition-colors ${
+                  isAnalyzing || !canAnalyze
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+                title={
+                  !canAnalyze
+                    ? "Tutti i documenti visibili sono già stati analizzati"
+                    : "Analizza documenti: estrae oggetto e classifica automaticamente"
+                }
               >
-                <Pause className="w-4 h-4" />
-                Pause
+                <FileText className="w-4 h-4" />
+                Analizza documenti
               </button>
 
-              <button
-                onClick={onStop}
-                className="flex items-center gap-2 px-3 py-1 text-sm text-red-600 hover:text-red-900"
-              >
-                <Stop className="w-4 h-4" />
-                Stop
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={onResume}
-                className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
-              >
-                <Play className="w-4 h-4" />
-                Resume
-              </button>
-
-              <button
-                onClick={onRescan}
-                className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
-              >
-                <RotateCcw className="w-4 h-4" />
-                Rescan
-              </button>
+              {/* ✅ Stop appare SOLO quando isAnalyzing è true, A DESTRA di Analizza */}
+              {isAnalyzing && onStopAnalysis && (
+                <button
+                  onClick={onStopAnalysis}
+                  className="flex items-center gap-2 px-3 py-1 text-sm bg-red-600 text-white hover:bg-red-700 rounded"
+                  title="Ferma l'analisi in corso"
+                >
+                  <Stop className="w-4 h-4" />
+                  Stop
+                </button>
+              )}
             </>
           )}
 
-          {/* Upload Button */}
+          {/* ✅ 4. Upload to Archive */}
           <button
             onClick={onUploadToArchive}
             disabled={selectedCount === 0}

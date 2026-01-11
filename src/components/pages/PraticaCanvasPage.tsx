@@ -848,6 +848,12 @@ export function PraticaCanvasPage() {
             setPendingClassificationsVersion(prev => prev + 1)
             console.log('[SAVE][CLASSIFICATIONS][DONE] Classificazioni salvate e pulite')
 
+            // ✅ Salva definitivamente la pratica (cambia status da draft a committed)
+            if (updated.status === 'draft') {
+              console.log('[SAVE][COMMIT] Cambio status da draft a committed')
+              await api.commitPratica(id)
+            }
+
             // Log rimosso (troppo rumoroso)
 
             // Ricarica i dati aggiornati

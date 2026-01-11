@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { File } from 'lucide-react';
 import { SplitLayout } from './components/SplitLayout';
 import { DirectoryTree } from './components/DirectoryTree';
@@ -15,6 +15,7 @@ import { usePdfObjectExtraction } from './hooks/usePdfObjectExtraction';
 import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
 import { CompartiService } from './services/CompartiService';
+import { ClassificationService } from './services/ClassificationService';
 import { FileEntry } from './types';
 
 interface ExplorerProps {
@@ -70,11 +71,26 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     onFileUpdate: updateFileNativeText
   });
 
+  // ✅ Stato per tracciare se l'estrazione è stata avviata manualmente
+  const [isExtractionManuallyEnabled, setIsExtractionManuallyEnabled] = useState(false);
+
+  // ✅ Traccia i file già analizzati (per evitare ri-analisi)
+  const analyzedFilesRef = useRef<Set<string>>(new Set());
+
+  // ✅ Stato per indicare se l'analisi è in corso
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // ✅ Ref per fermare la classificazione
+  const classificationAbortRef = useRef(false);
+
   // Hook per l'estrazione lazy dell'oggetto dai PDF
-  const { status: objectExtractionStatus } = usePdfObjectExtraction({
+  // ✅ MODIFICATO: Disabilitato di default (non parte automaticamente)
+  // ✅ Si abilita solo quando isExtractionManuallyEnabled è true
+  const { status: objectExtractionStatus, startExtraction, stopExtraction } = usePdfObjectExtraction({
     files: state.files,
     scanning: state.scanning,
-    onFileUpdate: updateFileObject
+    onFileUpdate: updateFileObject,
+    enabled: isExtractionManuallyEnabled // ✅ Si abilita solo quando avviata manualmente
   });
 
   // Sync scan results with state
@@ -95,6 +111,17 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
       setError(scanError);
     }
   }, [scanError, setError]);
+
+  // ✅ NON tracciare automaticamente i file con oggetto estratto
+  // ✅ analyzedFilesRef traccia solo i file esplicitamente analizzati tramite il pulsante
+  // ✅ L'estrazione oggetto è gestita separatamente da usePdfObjectExtraction
+
+  // ✅ Reset analyzedFilesRef quando cambia la directory selezionata
+  useEffect(() => {
+    if (state.selectedNode) {
+      analyzedFilesRef.current.clear();
+    }
+  }, [state.selectedNode?.path]);
 
   // Event handlers
   const handleNodeSelect = useCallback((node: { type: 'drive' | 'dir'; path: string }) => {
@@ -179,6 +206,124 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
     // Type filters (kinds) are applied instantly in memory via filteredFiles
   }, [setFilters, state.selectedNode, state.filters, startScan]);
 
+  // ✅ Funzione per fermare l'analisi
+  const stopAnalysis = useCallback(() => {
+    console.log('[ANALYZE] Stop richiesto - fermo analisi');
+    setIsAnalyzing(false);
+    setIsExtractionManuallyEnabled(false); // ✅ Disabilita estrazione per nascondere "Sto analizzando l'oggetto..."
+    classificationAbortRef.current = true;
+    if (stopExtraction) {
+      stopExtraction();
+    }
+  }, [stopExtraction]);
+
+  // ✅ Logica centralizzata per determinare se l'analisi è realmente in corso
+  const isAnalysisInProgress = useMemo(() => {
+    if (!isExtractionManuallyEnabled) return false;
+
+    // Controlla se ci sono PDF senza oggetto ancora da processare
+    const pdfsWithoutObject = state.files.filter(
+      file => file.kind === 'pdf' && file.oggetto === undefined
+    );
+
+    // Controlla se ci sono file senza classificazione
+    const filesNeedingClassification = state.files.filter(
+      file => !file.compartoKey && !file.compartoNome
+    );
+
+    // L'estrazione è attiva se:
+    // - Ci sono PDF senza oggetto
+    // - E l'estrazione è abilitata
+    // - E (ci sono file in coda/processing O total > 0 E non è completa)
+    const extractionActive = pdfsWithoutObject.length > 0 &&
+                           (!objectExtractionStatus.isComplete &&
+                            (objectExtractionStatus.inQueue > 0 ||
+                             objectExtractionStatus.inProcessing > 0 ||
+                             objectExtractionStatus.total > 0));
+
+    // La classificazione è attiva se ci sono file da classificare
+    const classificationActive = filesNeedingClassification.length > 0;
+
+    return extractionActive || classificationActive;
+  }, [isExtractionManuallyEnabled, state.files, objectExtractionStatus]);
+
+  // ✅ useEffect semplificato: sincronizza isAnalyzing con lo stato reale dell'analisi
+  useEffect(() => {
+    if (isAnalyzing && !isAnalysisInProgress) {
+      // L'analisi è stata completata
+      console.log('[ANALYZE] Analisi completata - nessun file da processare');
+      setIsAnalyzing(false);
+    } else if (!isAnalyzing && isAnalysisInProgress && isExtractionManuallyEnabled) {
+      // L'analisi dovrebbe essere in corso ma isAnalyzing è false (ripristina)
+      // Questo può succedere se l'estrazione è ancora in corso dopo che la classificazione è finita
+      console.log('[ANALYZE] Ripristino isAnalyzing perché analisi ancora in corso');
+      setIsAnalyzing(true);
+    }
+  }, [isAnalyzing, isAnalysisInProgress, isExtractionManuallyEnabled]);
+
+  // ✅ Funzione per avviare analisi e classificazione manualmente
+  const handleAnalyzeDocuments = useCallback(async () => {
+    console.log('[ANALYZE] Avvio analisi');
+    setIsAnalyzing(true);
+    classificationAbortRef.current = false;
+
+    // 1. Abilita estrazione e avvia estrazione oggetto dai PDF (solo quelli senza oggetto)
+    setIsExtractionManuallyEnabled(true);
+
+    // Conta PDF senza oggetto per debug
+    const pdfsWithoutObject = state.files.filter(
+      file => file.kind === 'pdf' && file.oggetto === undefined
+    );
+    console.log('[ANALYZE] PDF senza oggetto trovati:', pdfsWithoutObject.length);
+
+    if (startExtraction) {
+      startExtraction(); // ✅ startExtraction già filtra solo PDF con oggetto === undefined
+    }
+
+    // 2. Classifica solo i file che non hanno ancora una classificazione
+    const filesToClassify = state.files.filter(
+      file => !file.compartoKey && !file.compartoNome
+    );
+
+    console.log('[ANALYZE] File senza classificazione trovati:', filesToClassify.length);
+    console.log('[ANALYZE] Avvio classificazione per', filesToClassify.length, 'file');
+
+    // ✅ Classifica i file in modo asincrono
+    for (const file of filesToClassify) {
+      // ✅ Controlla se l'analisi è stata fermata
+      if (classificationAbortRef.current) {
+        console.log('[ANALYZE] Analisi fermata dall\'utente');
+        break;
+      }
+
+      try {
+        const classification = await ClassificationService.classifyFile(file);
+        if (classification) {
+          updateFileClassification(file.id, classification.compartoKey, classification.compartoNome);
+
+          // Salva anche in memoria globale
+          const updateFn = (window as any).__updatePendingClassification;
+          if (updateFn && typeof updateFn === 'function') {
+            updateFn(file.path, {
+              compartoKey: classification.compartoKey,
+              compartoNome: classification.compartoNome
+            });
+          }
+        }
+
+        // ✅ Marca il file come analizzato (solo per la classificazione)
+        analyzedFilesRef.current.add(file.id);
+      } catch (error) {
+        console.warn('[ANALYZE] Errore classificazione file:', file.path, error);
+        // ✅ Marca comunque come analizzato per evitare loop infiniti
+        analyzedFilesRef.current.add(file.id);
+      }
+    }
+
+    console.log('[ANALYZE] Classificazione completata');
+    // ✅ isAnalyzing verrà impostato a false automaticamente dal useEffect quando l'analisi è completata
+  }, [state.files, updateFileClassification, startExtraction]);
+
   const handleSelectAll = useCallback(() => {
     selectAll();
   }, [selectAll]);
@@ -186,6 +331,20 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
   const handleDeselectAll = useCallback(() => {
     deselectAll();
   }, [deselectAll]);
+
+  // ✅ Calcola se ci sono file visibili (filtrati) che necessitano ancora di analisi
+  const hasFilesToAnalyze = useMemo(() => {
+    // Controlla solo i file filtrati (visibili)
+    const pdfsNeedingObject = filteredFiles.filter(
+      file => file.kind === 'pdf' && file.oggetto === undefined
+    );
+
+    const filesNeedingClassification = filteredFiles.filter(
+      file => !file.compartoKey && !file.compartoNome
+    );
+
+    return pdfsNeedingObject.length > 0 || filesNeedingClassification.length > 0;
+  }, [filteredFiles]);
 
   const handleOpenInSystem = useCallback((filePath: string) => {
     adapter.openInSystem(filePath);
@@ -302,8 +461,8 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
         minRightWidth={400}
         center={
           <div className="flex flex-col h-full">
-            {/* Mostra toolbar solo se c'è directory selezionata E ci sono file da mostrare */}
-            {state.selectedNode && filteredFiles.length > 0 && (
+            {/* ✅ Mostra toolbar se c'è directory selezionata (indipendentemente dai file filtrati) */}
+            {state.selectedNode && (
               <GridToolbar
                 filters={state.filters}
                 onFiltersChange={handleFiltersChange}
@@ -319,6 +478,10 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
                 onResume={() => handleScanControls('resume')}
                 onStop={() => handleScanControls('stop')}
                 onRescan={() => handleScanControls('rescan')}
+                onAnalyzeDocuments={handleAnalyzeDocuments}
+                isAnalyzing={isAnalyzing}
+                onStopAnalysis={stopAnalysis}
+                canAnalyze={hasFilesToAnalyze}
               />
             )}
 
@@ -350,6 +513,7 @@ export function Explorer({ adapter, className = '' }: ExplorerProps) {
                   onFileClassificationChange={handleFileClassificationChange}
                   onWidthChange={setCenterWidth}
                   objectExtractionStatus={objectExtractionStatus}
+                  isExtractionEnabled={isExtractionManuallyEnabled} // ✅ Si attiva solo quando clicchi "Analizza documenti"
                 />
               )}
             </div>

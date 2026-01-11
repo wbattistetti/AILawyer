@@ -5,6 +5,7 @@ interface UsePdfObjectExtractionOptions {
   files: FileEntry[];
   scanning: boolean;
   onFileUpdate: (fileId: string, oggetto: string | null) => void;
+  enabled?: boolean; // ✅ Se false, non parte automaticamente
 }
 
 export interface ObjectExtractionStatus {
@@ -23,7 +24,8 @@ export interface ObjectExtractionStatus {
 export function usePdfObjectExtraction({
   files,
   scanning,
-  onFileUpdate
+  onFileUpdate,
+  enabled = false // ✅ Default: disabilitato (non parte automaticamente)
 }: UsePdfObjectExtractionOptions) {
   const processingRef = useRef<Set<string>>(new Set());
   const queueRef = useRef<FileEntry[]>([]);
@@ -79,14 +81,45 @@ export function usePdfObjectExtraction({
 
   // Funzione per calcolare lo stato di completamento
   const calculateStatus = useCallback(() => {
-    // Conta solo i PDF che hanno già hasNativeText determinato (pronti per l'estrazione)
-    const pdfFiles = files.filter(f => f.kind === 'pdf' && f.hasNativeText !== undefined);
-    const total = pdfFiles.length;
-    const completed = pdfFiles.filter(f => f.oggetto !== undefined).length;
+    // ✅ Se disabilitato, non mostrare nessuno stato di estrazione
+    if (!enabled) {
+      setStatus({
+        total: 0,
+        completed: 0,
+        inQueue: 0,
+        inProcessing: 0,
+        isComplete: true,
+        percentage: 0
+      });
+      return;
+    }
+
+    // ✅ Conta TUTTI i PDF
+    const allPdfFiles = files.filter(f => f.kind === 'pdf');
+
+    // ✅ PDF completati (oggetto già estratto)
+    const completed = allPdfFiles.filter(f => f.oggetto !== undefined).length;
+
+    // ✅ PDF da processare (oggetto non ancora estratto)
+    const toProcess = allPdfFiles.filter(f => f.oggetto === undefined);
+    const total = toProcess.length;
+
+    // PDF in queue e in processing (solo per info, non per il calcolo percentuale)
     const inQueue = queueRef.current.length;
     const inProcessing = processingRef.current.size;
-    const isComplete = !scanning && total > 0 && completed === total && inQueue === 0 && inProcessing === 0;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // ✅ Percentuale semplice: completati / (completati + da processare)
+    // La percentuale aumenta solo quando un file completa l'analisi
+    const totalFiles = completed + total;
+    const percentage = totalFiles > 0
+      ? Math.round((completed / totalFiles) * 100)
+      : 100; // Se non ci sono da processare, è 100%
+
+    // ✅ isComplete: tutti i PDF sono stati processati
+    const isComplete = !scanning &&
+                       total === 0 &&
+                       inQueue === 0 &&
+                       inProcessing === 0;
 
     setStatus({
       total,
@@ -96,7 +129,7 @@ export function usePdfObjectExtraction({
       isComplete,
       percentage
     });
-  }, [files, scanning]);
+  }, [files, scanning, enabled]);
 
   // Aggiorna lo stato quando cambiano i file, lo scanning o il processing
   useEffect(() => {
@@ -206,6 +239,19 @@ export function usePdfObjectExtraction({
 
   // Sostituisci processNext con processNextWithStatus nel useEffect
   useEffect(() => {
+    // ✅ Se disabilitato, non fare nulla
+    if (!enabled) {
+      abortRef.current = true;
+      queueRef.current = [];
+      processingRef.current.clear();
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      calculateStatus();
+      return;
+    }
+
     // Reset quando cambia la directory o si inizia un nuovo scan
     if (scanning) {
       abortRef.current = true;
@@ -273,10 +319,63 @@ export function usePdfObjectExtraction({
     } else {
       calculateStatus();
     }
-  }, [files, scanning, processNextWithStatus, calculateStatus]);
+  }, [files, scanning, enabled, processNextWithStatus, calculateStatus]);
 
-  // Ritorna lo stato
-  return { status };
+  // ✅ Funzione per avviare manualmente l'estrazione
+  const startExtraction = useCallback(() => {
+    // ✅ Abilita temporaneamente l'estrazione anche se enabled è false
+    abortRef.current = false;
+
+    // Filtra solo i PDF che non sono ancora stati controllati
+    const pdfsToCheck = files.filter(
+      file => file.kind === 'pdf' &&
+      file.oggetto === undefined &&
+      file.hasNativeText !== undefined
+    );
+
+    // Aggiungi alla queue solo i PDF nuovi
+    const queueIds = new Set(queueRef.current.map(f => f.id));
+    const newPdfs = pdfsToCheck.filter(
+      pdf => !processingRef.current.has(pdf.id) && !queueIds.has(pdf.id)
+    );
+
+    if (newPdfs.length > 0) {
+      queueRef.current.push(...newPdfs);
+      calculateStatus();
+
+      const currentProcessingOCR = Array.from(processingRef.current).filter(id => {
+        const file = files.find(f => f.id === id);
+        return file && file.kind === 'pdf' && file.hasNativeText === false;
+      }).length;
+
+      const hasOcrPdfs = newPdfs.some(p => p.hasNativeText === false) || currentProcessingOCR > 0;
+      const maxParallel = hasOcrPdfs ? 3 : 5;
+
+      // ✅ Avvia il processing anche se enabled è false (chiamata manuale)
+      if (!timeoutRef.current && queueRef.current.length > 0 && currentProcessingOCR < maxParallel) {
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          (window as any).requestIdleCallback(processNextWithStatus, { timeout: 1000 });
+        } else {
+          timeoutRef.current = setTimeout(processNextWithStatus, 200);
+        }
+      }
+    }
+  }, [files, processNextWithStatus, calculateStatus]);
+
+  // ✅ Funzione per fermare l'estrazione
+  const stopExtraction = useCallback(() => {
+    abortRef.current = true;
+    queueRef.current = [];
+    processingRef.current.clear();
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    calculateStatus();
+  }, [calculateStatus]);
+
+  // Ritorna lo stato e le funzioni per avviare/fermare manualmente
+  return { status, startExtraction, stopExtraction };
 }
 
 

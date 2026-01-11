@@ -70,6 +70,7 @@ interface FileGridProps {
   onFileClassificationChange?: (fileId: string, compartoKey: string, compartoNome: string) => void;
   className?: string;
   objectExtractionStatus?: ObjectExtractionStatus;
+  isExtractionEnabled?: boolean; // ✅ Se false, non mostrare "Sto analizzando l'oggetto..."
 }
 
 interface FileRowProps {
@@ -89,7 +90,7 @@ interface FileRowProps {
 }
 
 function FileRow({ index, style, data }: FileRowProps) {
-  const { files, selectedIds, onToggleSelection, onOpenPreview, onRowMenu, onFileClassificationChange, compartoColumnWidth, oggettoColumnWidth } = data;
+  const { files, selectedIds, onToggleSelection, onOpenPreview, onRowMenu, onFileClassificationChange, compartoColumnWidth, oggettoColumnWidth, isExtractionEnabled, objectExtractionStatus } = data;
   const file = files[index];
   const isSelected = selectedIds.has(file.id);
   const [isEditingComparto, setIsEditingComparto] = useState(false);
@@ -230,10 +231,15 @@ function FileRow({ index, style, data }: FileRowProps) {
         className="flex-shrink-0 mr-4 min-w-0 relative"
         style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
       >
-        {file.kind === 'pdf' && file.oggetto === undefined ? (
+        {file.kind === 'pdf' && file.oggetto === undefined && isExtractionEnabled && objectExtractionStatus && !objectExtractionStatus.isComplete ? (
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="whitespace-nowrap">Sto analizzando l'oggetto...</span>
+          </div>
+        ) : file.kind === 'pdf' && file.oggetto === undefined ? (
+          // ✅ Se estrazione disabilitata, mostra solo "Oggetto non disponibile"
+          <div className="text-xs text-gray-400 italic">
+            Oggetto non disponibile
           </div>
         ) : file.kind === 'pdf' && (file.oggetto === null || file.oggetto === '') ? (
           <div className="text-xs text-gray-400 italic">
@@ -333,7 +339,8 @@ export function FileGrid({
   onRowMenu,
   onFileClassificationChange,
   className = '',
-  objectExtractionStatus
+  objectExtractionStatus,
+  isExtractionEnabled = false // ✅ Default: disabilitato
 }: FileGridProps) {
   // Hook per colonna "Oggetto" ridimensionabile
   const { width: oggettoColumnWidth, handleResizeStart: handleOggettoResizeStart } = useOggettoColumnWidth();
@@ -375,7 +382,9 @@ export function FileGrid({
     onFileClassificationChange,
     compartoColumnWidth,
     oggettoColumnWidth,
-    handleOggettoResizeStart
+    handleOggettoResizeStart,
+    isExtractionEnabled, // ✅ Passa flag estrazione
+    objectExtractionStatus // ✅ Passa status estrazione
   };
 
   return (
@@ -390,10 +399,10 @@ export function FileGrid({
           style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
         >
           <div className="flex items-center gap-2">
-            {objectExtractionStatus && !objectExtractionStatus.isComplete ? (
+            {objectExtractionStatus && isExtractionEnabled && !objectExtractionStatus.isComplete ? (
               <>
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Ricerca oggetti... ({objectExtractionStatus.percentage}%)</span>
+                <span>Analisi documenti ({objectExtractionStatus.percentage}%)</span>
               </>
             ) : (
               <span>Oggetto</span>

@@ -14,6 +14,7 @@ interface FileGridWithAutoWidthProps {
   className?: string;
   onWidthChange?: (width: number) => void;
   objectExtractionStatus?: ObjectExtractionStatus;
+  isExtractionEnabled?: boolean; // ✅ Se false, non mostrare "Sto analizzando l'oggetto..."
 }
 
 export function FileGridWithAutoWidth({
@@ -25,7 +26,8 @@ export function FileGridWithAutoWidth({
   onFileClassificationChange,
   className = '',
   onWidthChange,
-  objectExtractionStatus
+  objectExtractionStatus,
+  isExtractionEnabled = false // ✅ Default: disabilitato
 }: FileGridWithAutoWidthProps) {
   // Estrai i nomi dei file per calcolare la larghezza ottimale
   const fileNames = useMemo(() => {
@@ -57,6 +59,7 @@ export function FileGridWithAutoWidth({
         onRowMenu={onRowMenu}
         onFileClassificationChange={onFileClassificationChange}
         objectExtractionStatus={objectExtractionStatus}
+        isExtractionEnabled={isExtractionEnabled}
       />
     </div>
   );
