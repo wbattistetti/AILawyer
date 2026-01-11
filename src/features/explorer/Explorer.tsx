@@ -518,42 +518,121 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
   // ✅ Listener per drop di file Explorer sui cassetti
   useEffect(() => {
     const handleExplorerFileDrop = (event: CustomEvent) => {
+      console.log('[EXPLORER][DROP] Evento ricevuto:', event.detail)
       const { fileData, drawerId } = event.detail;
+
+      if (!fileData || !drawerId) {
+        console.error('[EXPLORER][DROP] Dati mancanti:', { fileData, drawerId })
+        return
+      }
 
       // Trova il file nello stato
       const file = state.files.find(f => f.id === fileData.fileId || f.path === fileData.filePath);
       if (!file) {
-        console.warn('[EXPLORER][DROP] File non trovato:', fileData);
+        console.warn('[EXPLORER][DROP] File non trovato:', fileData, 'File disponibili:', state.files.map(f => ({ id: f.id, path: f.path })));
         return;
       }
+
+      console.log('[EXPLORER][DROP] File trovato:', file.name, 'drawerId:', drawerId)
 
       // Trova il comparto corrispondente al drawerId
       // drawerId può essere:
       // - una chiave (es. 'parti_anagrafiche') in DockWorkspaceV2
       // - un ID del database in DockWorkspaceV3
       let comparto = CompartiService.getByKey(drawerId);
+      console.log('[EXPLORER][DROP] Comparto cercato per chiave:', drawerId, 'trovato:', !!comparto)
 
       // Se non trovato per chiave, potrebbe essere un ID - prova a cercare nei comparti globali
       if (!comparto) {
         // Prova a ottenere i comparti dal contesto globale se disponibili
         const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }> } | undefined;
         const globalComparti = archiveData?.comparti;
+        console.log('[EXPLORER][DROP] Comparti globali disponibili:', globalComparti?.length || 0)
         if (globalComparti) {
           const compartoById = globalComparti.find(c => c.id === drawerId);
+          console.log('[EXPLORER][DROP] Comparto cercato per ID:', drawerId, 'trovato:', !!compartoById, compartoById)
           if (compartoById) {
             // Usa la chiave del comparto trovato per ottenere i dati completi
             comparto = CompartiService.getByKey(compartoById.key);
+            console.log('[EXPLORER][DROP] Comparto trovato per chiave dopo ricerca per ID:', compartoById.key, 'trovato:', !!comparto)
           }
         }
       }
 
       if (!comparto) {
-        console.warn('[EXPLORER][DROP] Comparto non trovato per drawerId:', drawerId);
+        console.error('[EXPLORER][DROP] Comparto non trovato per drawerId:', drawerId, 'Comparti disponibili:', (window as any).__archiveData?.comparti);
         return;
       }
 
-      // Aggiorna la classificazione del file
+      console.log('[EXPLORER][DROP] Comparto trovato:', comparto.nome, 'chiave:', comparto.key, 'Aggiorno classificazione file:', file.name)
+
+      // ✅ Aggiorna la classificazione del file
       handleFileClassificationChange(file.id, comparto.key, comparto.nome);
+
+      // ✅ Carica il file nel cassetto leggendolo dal filesystem
+      const loadAndUploadFile = async () => {
+        try {
+          console.log('[EXPLORER][DROP] Caricamento file dal filesystem:', file.path)
+
+          // Leggi il file dal filesystem usando l'endpoint backend
+          const response = await fetch('http://localhost:3001/api/filesystem/read-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: file.path }),
+          })
+
+          if (!response.ok) {
+            console.error('[EXPLORER][DROP] Impossibile leggere il file:', file.path, response.status)
+            return
+          }
+
+          // Converti il blob in un File object
+          const fileBlob = await response.blob()
+          const mimeType = file.kind === 'pdf' ? 'application/pdf' :
+                          file.kind === 'image' ? 'image/png' :
+                          'application/octet-stream'
+          const fileObj = new File([fileBlob], file.name, {
+            type: mimeType,
+            lastModified: file.mtime || Date.now()
+          })
+
+          console.log('[EXPLORER][DROP] File convertito, emetto app:upload-files', {
+            fileName: fileObj.name,
+            fileSize: fileObj.size,
+            compartoKey: comparto.key,
+            compartoNome: comparto.nome
+          })
+
+          // Trova l'ID del comparto dal database
+          const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }> } | undefined;
+          const globalComparti = archiveData?.comparti;
+          const compartoId = globalComparti?.find(c => c.key === comparto.key)?.id;
+
+          if (!compartoId) {
+            console.error('[EXPLORER][DROP] Comparto ID non trovato per chiave:', comparto.key, 'Comparti disponibili:', globalComparti)
+            return
+          }
+
+          // Emetti l'evento per caricare il file nel cassetto
+          const ev = new CustomEvent('app:upload-files', {
+            detail: {
+              files: [fileObj],
+              target: {
+                type: 'drawer',
+                id: compartoId, // ✅ Usa l'ID del comparto dal database
+                title: comparto.nome
+              }
+            }
+          })
+          window.dispatchEvent(ev)
+          console.log('[EXPLORER][DROP] Evento app:upload-files emesso con compartoId:', compartoId)
+        } catch (error) {
+          console.error('[EXPLORER][DROP] Errore nel caricamento file:', error)
+        }
+      }
+
+      // ✅ Carica il file in background
+      loadAndUploadFile()
     };
 
     window.addEventListener('explorer:file-drop-to-drawer', handleExplorerFileDrop as EventListener);

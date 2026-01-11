@@ -191,7 +191,7 @@ function DocumentCollectionView({ id, title }: { id: string; title?: string }) {
       title={title}
       items={displayItems}
       uploadingCount={uploadingCount}
-      compartoId={id}
+      compartoId={id} // ✅ Passa l'ID del comparto per gestire drop Explorer
       onOpen={(doc) => {
         try {
           // Se è una memoria difensiva, apri il compositore
@@ -265,6 +265,15 @@ export function DrawerViewer({
   icon?: React.ReactNode
   color?: string
 }) {
+  // ✅ Log per debug: verifica che l'ID venga passato correttamente
+  console.log('[DRAWER-VIEWER] Renderizzato', {
+    id,
+    title,
+    compartoId: id,
+    idType: typeof id,
+    idLength: id?.length
+  })
+
   const [archiveData, setArchiveData] = useState<any>(null)
   // ✅ Usa un ref per tracciare l'ultimo snapshot dei dati per evitare aggiornamenti inutili
   const lastDataRef = useRef<string | null>(null)

@@ -177,6 +177,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const [selectedDrawerId, setSelectedDrawerId] = useState<string | undefined>(undefined)
   const [isDrawerStripVisible, setIsDrawerStripVisible] = useState(false)
   const [isDrawerStripPinned, setIsDrawerStripPinned] = useState(false) // ✅ PIN per fissare i cassetti
+  const [drawerPanelsUpdateTrigger, setDrawerPanelsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i pannelli cambiano
+  const [documentsUpdateTrigger, setDocumentsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i documenti cambiano
 
   // State per la sidebar archivi
   const [isArchiveSidebarOpen, setIsArchiveSidebarOpen] = useState(false)
@@ -398,21 +400,46 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
   // Prepara le tab per DrawerTabStrip
   const drawerTabs = useMemo<DrawerTabItem[]>(() => {
+    // ✅ Ottieni i documenti da window.__archiveData per contare i documenti per comparto
+    const archiveData = (window as any).__archiveData
+    const documenti: Array<{ compartoId?: string }> = archiveData?.documenti || []
+
+    // ✅ Calcola quali cassetti hanno un dock pane aperto
+    const openDrawerIds = new Set<string>()
+    if (dockviewApiRef.current) {
+      comparti.forEach(comparto => {
+        const panelId = `drawer-${comparto.id}`
+        const panel = dockviewApiRef.current?.getPanel(panelId)
+        if (panel) {
+          openDrawerIds.add(comparto.id)
+        }
+      })
+    }
+
     const tabs = comparti.map(comparto => {
       const IconComponent = iconFor(comparto.nome)
       const drawerColor = colorFor(comparto.chiave as DrawerType)
+
+      // ✅ Conta i documenti per questo comparto
+      const documentCount = documenti.filter(doc => doc.compartoId === comparto.id).length
+
+      // ✅ Verifica se il cassetto ha un dock pane aperto
+      const isOpen = openDrawerIds.has(comparto.id)
+
       // ✅ NON passare il colore qui - sarà gestito da DrawerTabStrip
       return {
         id: comparto.id,
         label: comparto.nome,
         icon: <IconComponent size={24} />, // ✅ Icona senza colore, sarà colorata da DrawerTabStrip
         color: drawerColor,
-        type: comparto.chiave as DrawerType
+        type: comparto.chiave as DrawerType,
+        documentCount, // ✅ Numero di documenti nel cassetto
+        isOpen // ✅ Se il cassetto ha un dock pane aperto
       }
     })
     console.log('[DOCK-V3] DrawerTabs computed:', tabs, 'from comparti:', comparti)
     return tabs
-  }, [comparti])
+  }, [comparti, drawerPanelsUpdateTrigger, documentsUpdateTrigger]) // ✅ Aggiungi trigger per forzare re-calcolo quando i pannelli o i documenti cambiano
 
   // ✅ Wrapper per il contenuto dei pannelli: inietta overlay durante il drag
   const PanelContentWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -426,16 +453,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           <div
             className="absolute inset-0 z-50"
             style={{
-              pointerEvents: 'auto',
+              // ✅ Cambia a 'none' per NON intercettare eventi - lascia che Dockview gestisca tutto
+              pointerEvents: 'none',
               background: 'transparent'
             }}
-            onDrop={(e) => {
-              // ✅ NON fare preventDefault - lascia che il drop propaghi a Dockview
-              console.log('[DOCK-V3] 📦 OVERLAY INTERNO - Drop intercettato, lascio propagare')
-            }}
-            onDragOver={(e) => {
-              // ✅ NON fare preventDefault - lascia che il dragover propaghi a Dockview
-            }}
+            // ✅ RIMOSSI onDrop e onDragOver - non devono intercettare nulla
+            // L'overlay serve solo come placeholder visivo, non per intercettare eventi
           />
         )}
       </div>
@@ -546,11 +569,38 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const drawerTitle = props.params?.drawerTitle || props.api.title || 'Cassetto'
         // ✅ Trova il comparto per ottenere i dati completi
         const comparto = comparti.find(c => c.id === drawerId)
+        console.log('[DOCK-V3] Rendering drawer-content', {
+          panelId: props.api.id,
+          paramsDrawerId: props.params?.drawerId,
+          extractedDrawerId: drawerId,
+          drawerTitle,
+          compartoFound: !!comparto,
+          compartoId: comparto?.id,
+          compartiTotali: comparti.length,
+          compartiIds: comparti.map(c => c.id)
+        })
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div
+              className="w-full h-full overflow-auto bg-white"
+              onDragOver={(e) => {
+                // ✅ Se è un file Explorer, permettere il drop anche qui (fallback)
+                if (e.dataTransfer.types.includes('application/x-explorer-file')) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  e.dataTransfer.dropEffect = 'copy'
+                }
+              }}
+              onDrop={(e) => {
+                // ✅ Se è un file Explorer, NON intercettare qui - lascia che arrivi a DocumentCollection
+                if (e.dataTransfer.types.includes('application/x-explorer-file')) {
+                  // Non fare preventDefault qui - lascia propagare a DocumentCollection
+                  return
+                }
+              }}
+            >
               <DrawerViewer
-                id={drawerId}
+                id={drawerId} // ✅ Questo ID viene passato come compartoId a DocumentCollection
                 title={drawerTitle}
                 type={comparto?.chiave as DrawerType}
               />
@@ -981,6 +1031,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         panel.group.locked = false
         console.log('[DOCK-V3] 🔓 Gruppo del pannello sbloccato:', panel.group.id)
       }
+      setDrawerPanelsUpdateTrigger(prev => prev + 1) // ✅ Aggiorna trigger quando viene aggiunto un pannello
+    })
+
+    // ✅ Listener per quando viene rimosso un pannello
+    const disposablePanelsRemove = event.api.onDidRemovePanel(() => {
+      setDrawerPanelsUpdateTrigger(prev => prev + 1) // ✅ Aggiorna trigger quando viene rimosso un pannello
     })
 
     // ✅ Verifica metodi disponibili sull'API per debug
@@ -1003,7 +1059,13 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     // ✅ Listener GLOBALE per drop - SEMPRE attivo per intercettare TUTTI i drop
     const globalDropHandler = (e: DragEvent) => {
-      // ✅ Log SEMPRE per vedere se il drop viene chiamato
+      // ✅ Se è un file Explorer, NON intercettare - lascia che arrivi a DocumentCollection
+      if (e.dataTransfer?.types.includes('application/x-explorer-file')) {
+        console.log('[DOCK-V3] 🌐 GLOBAL DROP - File Explorer rilevato, lascio propagare a DocumentCollection')
+        return // Non fare nulla, lascia propagare
+      }
+
+      // ✅ Log SEMPRE per vedere se il drop viene chiamato (solo per drag Dockview)
       console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target:', e.target, 'Default prevented:', e.defaultPrevented)
       console.log('[DOCK-V3] 🌐 GLOBAL DROP - dropEffect:', e.dataTransfer?.dropEffect)
       console.log('[DOCK-V3] 🌐 GLOBAL DROP - isDragging:', dragState.isDragging)
@@ -1042,13 +1104,15 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     // ✅ Listener GLOBALE per dragover - SEMPRE attivo
     const globalDragOverHandler = (e: DragEvent) => {
-      // ✅ Se è un drag di Dockview, imposta dropEffect per permettere il drop
+      // ✅ Se è un file Explorer, NON intercettare - lascia che arrivi a DocumentCollection
+      if (e.dataTransfer?.types.includes('application/x-explorer-file')) {
+        return // Non fare nulla, lascia propagare
+      }
+
+      // ✅ Se è un drag di Dockview, NON mostrare overlay - Dockview gestisce tutto
       if (dragState.isDragging) {
-        // ✅ Abilita drag mode quando il drag è effettivamente in corso (dragover chiamato)
-        // Questo significa che Dockview ha già inizializzato il drag e mostrato il preview
-        if (!isDragActiveRef.current) {
-          enableDragMode()
-        }
+        // ✅ NON abilitare drag mode per drag di pannelli Dockview
+        // L'overlay serve solo per drag di elementi DENTRO i pannelli (es. documenti), non per drag dei pannelli stessi
 
         const target = e.target as HTMLElement
 
@@ -1067,6 +1131,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           e.dataTransfer.dropEffect = 'move'
         }
         // ✅ NON fare preventDefault qui - Dockview lo gestisce
+        return // ✅ Esci subito per non interferire
       }
     }
 
@@ -1281,6 +1346,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       cleanupGlobalListeners() // ✅ Cleanup listener globali
       disposableGroups.dispose()
       disposablePanels.dispose()
+      if (disposablePanelsRemove) disposablePanelsRemove.dispose()
       if (disposableWillDrag) disposableWillDrag.dispose()
       if (disposableWillDrop) disposableWillDrop.dispose()
       if (disposableDidMove) disposableDidMove.dispose()

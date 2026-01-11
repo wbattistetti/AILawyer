@@ -63,6 +63,8 @@ export type DrawerTabItem = {
   icon?: React.ReactNode
   color: string
   type?: DrawerType
+  documentCount?: number // ✅ Numero di documenti nel cassetto
+  isOpen?: boolean // ✅ Se il cassetto ha un dock pane aperto
 }
 
 type Props = {
@@ -504,12 +506,16 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             onDrop={(e) => handleDrop(e, item.id)}
             className="flex flex-col items-center justify-start transition-all flex-shrink-0"
             style={{
-              // ✅ Sfondo scuro (dark brownish-grey) come nella seconda figura, leggermente più chiaro se selezionata
-              backgroundColor: isSelected ? '#3a3a3a' : '#2d2d2d', // leggermente più chiaro se selezionata
-              // ✅ Bordino golden-brown solo per tab selezionata, altrimenti sottile grigio
-              border: isSelected
-                ? `2px solid #d4a574` // golden-brown per tab selezionata
-                : `1px solid #4a4a4a`, // bordo sottile grigio per tab non selezionate
+              // ✅ Sfondo arancione smorzato se il cassetto ha un dock pane aperto, altrimenti scuro
+              backgroundColor: item.isOpen
+                ? '#3a2d1f' // arancione smorzato/scuro per cassetti aperti (simile al golden-brown ma più arancione)
+                : (isSelected ? '#3a3a3a' : '#2d2d2d'), // scuro normale
+              // ✅ Bordino arancione per cassetti aperti, golden-brown per selezionata, altrimenti sottile grigio
+              border: item.isOpen
+                ? `2px solid #f97316` // arancione per bordo cassetti aperti
+                : (isSelected
+                  ? `2px solid #d4a574` // golden-brown per tab selezionata
+                  : `1px solid #4a4a4a`), // bordo sottile grigio per tab non selezionate
               borderRadius: '8px', // ✅ Angoli arrotondati
               borderBottomLeftRadius: '0', // ✅ Angoli in basso senza arrotondamento
               borderBottomRightRadius: '0',
@@ -564,6 +570,20 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
                     color={isSelected ? '#d4a574' : (item.color || '#60a5fa')}
                     size={20}
                   />
+                )}
+
+                {/* ✅ Conteggio documenti in piccolo tra parentesi */}
+                {typeof item.documentCount === 'number' && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: isSelected ? '#d4a574' : '#9ca3af', // golden-brown se selezionata, grigio se non
+                      fontWeight: 500,
+                      marginLeft: '2px'
+                    }}
+                  >
+                    ({item.documentCount})
+                  </span>
                 )}
               </div>
 

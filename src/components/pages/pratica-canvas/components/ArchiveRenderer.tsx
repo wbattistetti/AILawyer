@@ -154,7 +154,10 @@ export function ArchiveRenderer({
         onDragEnter: (e: React.DragEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-doc-id')) {
+            // ✅ Gestisci anche file Explorer (application/x-explorer-file)
+            if (e.dataTransfer.types.includes('Files') ||
+                e.dataTransfer.types.includes('application/x-doc-id') ||
+                e.dataTransfer.types.includes('application/x-explorer-file')) {
                 setIsDragging(true)
                 if (filteredComparti.length === 1) {
                     setHoverBody(filteredComparti[0].id)
@@ -164,7 +167,10 @@ export function ArchiveRenderer({
         onDragOver: (e: React.DragEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-doc-id')) {
+            // ✅ Gestisci anche file Explorer (application/x-explorer-file)
+            if (e.dataTransfer.types.includes('Files') ||
+                e.dataTransfer.types.includes('application/x-doc-id') ||
+                e.dataTransfer.types.includes('application/x-explorer-file')) {
                 e.dataTransfer.dropEffect = 'copy'
             }
         },
@@ -186,11 +192,36 @@ export function ArchiveRenderer({
             if (filteredComparti.length === 1) {
                 const comparto = filteredComparti[0]
                 setHoverBody(null)
+
+                // ✅ PRIMA: Controlla se è un file Explorer
+                const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
+                if (explorerFileData) {
+                    console.log('[ARCHIVE-RENDERER][DROP] File Explorer rilevato, dispatching explorer:file-drop-to-drawer', {
+                        compartoId: comparto.id,
+                        compartoNome: comparto.nome,
+                        explorerFileDataLength: explorerFileData.length
+                    })
+                    try {
+                        const fileData = JSON.parse(explorerFileData)
+                        const event = new CustomEvent('explorer:file-drop-to-drawer', {
+                            detail: { fileData, drawerId: comparto.id }
+                        })
+                        window.dispatchEvent(event)
+                        console.log('[ARCHIVE-RENDERER][DROP] Evento explorer:file-drop-to-drawer emesso con drawerId:', comparto.id)
+                    } catch (error) {
+                        console.error('[ARCHIVE-RENDERER][DROP] Errore parsing explorer file data:', error)
+                    }
+                    return
+                }
+
+                // ✅ POI: Controlla se è un documento da spostare
                 const docId = e.dataTransfer.getData('application/x-doc-id')
                 if (docId) {
                     await onDropDocIdToComparto(docId, comparto.id)
                     return
                 }
+
+                // ✅ INFINE: Controlla se sono file normali
                 const files = Array.from(e.dataTransfer.files || [])
                 if (files.length) {
                     onDropFilesToComparto(files as any, comparto.id)

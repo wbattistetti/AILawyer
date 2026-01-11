@@ -324,15 +324,50 @@ export function DocumentCollection({
 
   // ✅ Handler unificato per drop: gestisce sia file Explorer che file normali
   const handleDrop = useCallback((e: React.DragEvent) => {
+    console.log('[DOCUMENT-COLLECTION] handleDrop chiamato', {
+      compartoId,
+      compartoIdType: typeof compartoId,
+      compartoIdLength: compartoId?.length,
+      dataTransferTypes: Array.from(e.dataTransfer.types),
+      hasExplorerFile: e.dataTransfer.types.includes('application/x-explorer-file'),
+      hasFiles: e.dataTransfer.types.includes('Files'),
+      target: e.target,
+      currentTarget: e.currentTarget
+    })
+
     // ✅ Controlla PRIMA se è un file dall'Explorer
     const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
-    if (explorerFileData && compartoId) {
+    console.log('[DOCUMENT-COLLECTION] explorerFileData:', explorerFileData ? 'presente' : 'assente', 'compartoId:', compartoId)
+
+    if (explorerFileData) {
+      // ✅ Se c'è explorerFileData ma non compartoId, logga un errore dettagliato
+      if (!compartoId) {
+        console.error('[DOCUMENT-COLLECTION] ❌ Drop Explorer ricevuto ma compartoId è undefined/null!', {
+          compartoId,
+          title,
+          explorerFileData: explorerFileData.substring(0, 100)
+        })
+        // ✅ Prova comunque a emettere l'evento - Explorer potrebbe gestirlo comunque
+        try {
+          const fileData = JSON.parse(explorerFileData)
+          const event = new CustomEvent('explorer:file-drop-to-drawer', {
+            detail: { fileData, drawerId: null } // ✅ Passa null se compartoId non disponibile
+          })
+          window.dispatchEvent(event)
+        } catch (error) {
+          console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
+        }
+        return
+      }
+
+      // ✅ Se abbiamo sia explorerFileData che compartoId, procedi normalmente
       e.preventDefault()
       e.stopPropagation()
       setIsExplorerDragOver(false)
 
       try {
         const fileData = JSON.parse(explorerFileData)
+        console.log('[DOCUMENT-COLLECTION] ✅ Emetto evento explorer:file-drop-to-drawer', { fileData, drawerId: compartoId })
         // Emetti evento per gestire il drop di file Explorer
         const event = new CustomEvent('explorer:file-drop-to-drawer', {
           detail: { fileData, drawerId: compartoId }
@@ -343,6 +378,11 @@ export function DocumentCollection({
         console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
         // Se c'è errore, continua con la gestione normale
       }
+    } else {
+      console.warn('[DOCUMENT-COLLECTION] Drop Explorer non gestito:', {
+        hasExplorerFileData: !!explorerFileData,
+        hasCompartoId: !!compartoId
+      })
     }
 
     // ✅ Se non è un file Explorer, verifica se ci sono file normali
