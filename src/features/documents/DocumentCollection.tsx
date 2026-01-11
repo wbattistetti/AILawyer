@@ -282,6 +282,7 @@ export function DocumentCollection({
     } catch { }
     onDrop?.(accepted)
   }, [onDrop])
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop: onDropCb,
     onDragEnter: () => { try { console.info('🟦 [DC] drag enter') } catch { } },
@@ -296,12 +297,17 @@ export function DocumentCollection({
 
   // ✅ Handler per drop di file Explorer (oltre a react-dropzone)
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    // react-dropzone gestisce già i file normali, ma dobbiamo gestire anche Explorer
+    // Gestisci sia file Explorer che file normali
     if (e.dataTransfer.types.includes('application/x-explorer-file')) {
       e.preventDefault()
       e.stopPropagation()
       e.dataTransfer.dropEffect = 'copy'
       setIsExplorerDragOver(true)
+    } else if (e.dataTransfer.types.includes('Files')) {
+      // ✅ Permetti anche file normali (react-dropzone li gestirà)
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
     }
   }, [])
 
@@ -316,8 +322,9 @@ export function DocumentCollection({
     }
   }, [])
 
+  // ✅ Handler unificato per drop: gestisce sia file Explorer che file normali
   const handleDrop = useCallback((e: React.DragEvent) => {
-    // Controlla se è un file dall'Explorer
+    // ✅ Controlla PRIMA se è un file dall'Explorer
     const explorerFileData = e.dataTransfer.getData('application/x-explorer-file')
     if (explorerFileData && compartoId) {
       e.preventDefault()
@@ -334,16 +341,32 @@ export function DocumentCollection({
         return
       } catch (error) {
         console.error('[DOCUMENT-COLLECTION] Error parsing explorer file data:', error)
+        // Se c'è errore, continua con la gestione normale
       }
     }
-    // Se non è un file Explorer, react-dropzone lo gestirà
-  }, [compartoId])
+
+    // ✅ Se non è un file Explorer, verifica se ci sono file normali
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length > 0) {
+      // ✅ Gestisci i file normali chiamando onDropCb
+      e.preventDefault()
+      e.stopPropagation()
+      onDropCb(files)
+      return
+    }
+
+    // ✅ Se non ci sono file, lascia che react-dropzone gestisca (potrebbe essere un drop interno)
+  }, [compartoId, onDropCb])
+
+  // ✅ Estrai getRootProps ma sovrascrivi onDrop con il nostro handler unificato
+  const rootProps = getRootProps()
+  const { onDrop: _, onDragOver: __, ...restRootProps } = rootProps
 
   return (
     <div
-      className={`w-full h-full flex flex-col relative ${isExplorerDragOver ? 'bg-blue-50' : ''}`}
+      className={`w-full h-full flex flex-col relative ${isExplorerDragOver || isDragActive ? 'bg-blue-50' : ''}`}
       data-component="document-collection"
-      {...getRootProps({ onDragOver: (e: any) => { e.preventDefault() } })}
+      {...restRootProps}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -612,7 +635,7 @@ export function DocumentCollection({
           <div className="text-sm text-neutral-800">{uploadingCount === 1 ? 'Sto caricando il file…' : `Sto caricando i ${uploadingCount} file…`}</div>
         </div>
       )}
-      <div className="p-2 text-xs text-muted-foreground border-t bg-white">Trascina qui i file per aggiungerli alla raccolta</div>
+      {/* ✅ Footer rimosso: l'intera area è già una drop zone per il cassetto specifico */}
     </div>
   )
 }
