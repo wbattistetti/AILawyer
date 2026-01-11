@@ -179,7 +179,6 @@ export function DirectoryTree({
   return (
     <div className={`h-full overflow-y-auto ${className}`}>
       <div className="p-3">
-        <h3 className="text-sm font-medium text-gray-700 mb-3 border-b pb-2">Directory Tree</h3>
         <div className="space-y-1">
           {tree.length === 0 ? (
             <div className="text-sm text-gray-500 p-2">

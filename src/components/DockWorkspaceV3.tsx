@@ -176,12 +176,49 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [selectedDrawerId, setSelectedDrawerId] = useState<string | undefined>(undefined)
   const [isDrawerStripVisible, setIsDrawerStripVisible] = useState(false)
+  const [isDrawerStripPinned, setIsDrawerStripPinned] = useState(false) // ✅ PIN per fissare i cassetti
 
   // State per la sidebar archivi
   const [isArchiveSidebarOpen, setIsArchiveSidebarOpen] = useState(false)
   const [selectedArchiveTabId, setSelectedArchiveTabId] = useState<string | null>(null)
   const archiveSidebarTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const drawerStripTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // ✅ Handler per mouse enter/leave della zona cassetti (solo se non fissato)
+  const handleDrawerStripMouseEnter = useCallback(() => {
+    if (!isDrawerStripPinned) {
+      setIsDrawerStripVisible(true)
+      if (drawerStripTimeoutRef.current) {
+        clearTimeout(drawerStripTimeoutRef.current)
+        drawerStripTimeoutRef.current = null
+      }
+    }
+  }, [isDrawerStripPinned])
+
+  const handleDrawerStripMouseLeave = useCallback(() => {
+    if (!isDrawerStripPinned) {
+      drawerStripTimeoutRef.current = setTimeout(() => {
+        setIsDrawerStripVisible(false)
+      }, 300)
+    }
+  }, [isDrawerStripPinned])
+
+  // ✅ Handler per toggle PIN
+  const handleTogglePin = useCallback(() => {
+    setIsDrawerStripPinned(prev => {
+      const newPinned = !prev
+      if (newPinned) {
+        // ✅ Quando si fissa, assicurati che siano visibili
+        setIsDrawerStripVisible(true)
+      } else {
+        // ✅ Quando si sfissa, nascondi dopo un breve delay
+        drawerStripTimeoutRef.current = setTimeout(() => {
+          setIsDrawerStripVisible(false)
+        }, 300)
+      }
+      return newPinned
+    })
+  }, [])
 
   // ✅ Ref per gestire il drag attivo (per evitare re-render continui)
   const isDragActiveRef = useRef(false)
@@ -1424,32 +1461,102 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       )}
 
       {/* Main Dockview Area */}
-      <div className="w-full h-full relative">
+      <div
+        className="w-full h-full relative transition-all duration-300"
+        style={{
+          paddingBottom: isDrawerStripPinned && isDrawerStripVisible ? '120px' : '0px' // ✅ Spinge su il contenuto quando fissati
+        }}
+      >
         <DockviewReact
           components={components}
           defaultTabComponent={defaultTabComponent}
           onReady={onReady}
           className="dockview-theme-light"
         />
-
       </div>
 
-      {/* Drawer Tab Strip (bottom) */}
-      {drawerTabs.length > 0 && (
+      {/* ✅ Linguetta "Cassetti" quando nascosti (Stato 1) */}
+      {drawerTabs.length > 0 && !isDrawerStripVisible && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-50"
+          className="fixed bottom-0 left-1/2 transform -translate-x-1/2 z-50"
+          style={{
+            pointerEvents: 'auto',
+          }}
           onMouseEnter={() => {
             setIsDrawerStripVisible(true)
             if (drawerStripTimeoutRef.current) {
               clearTimeout(drawerStripTimeoutRef.current)
+              drawerStripTimeoutRef.current = null
             }
           }}
-          onMouseLeave={() => {
-            drawerStripTimeoutRef.current = setTimeout(() => {
-              setIsDrawerStripVisible(false)
-            }, 300)
-          }}
         >
+          <div
+            className="flex items-center gap-2 px-4 py-2 rounded-t-lg cursor-pointer transition-all"
+            style={{
+              background: 'rgba(241, 245, 249, 0.95)',
+              border: '1px solid #cbd5e1',
+              borderBottom: 'none',
+              boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <span className="text-sm font-medium text-gray-700">Cassetti</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                handleTogglePin()
+              }}
+              className="p-1 rounded hover:bg-gray-200 transition-colors"
+              title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
+            >
+              {isDrawerStripPinned ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4V4h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 1.1.9 2 2 2s2-.9 2-2z"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Drawer Tab Strip (bottom) - Stati 2 e 3 */}
+      {drawerTabs.length > 0 && isDrawerStripVisible && (
+        <div
+          className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ${
+            isDrawerStripVisible ? 'translate-y-0' : 'translate-y-full'
+          }`}
+          onMouseEnter={handleDrawerStripMouseEnter}
+          onMouseLeave={handleDrawerStripMouseLeave}
+        >
+          {/* ✅ Pulsante PIN in alto a destra sopra i cassetti (sempre visibile quando i cassetti sono aperti) */}
+          <div
+            className="absolute top-0 right-0 z-10"
+            style={{
+              transform: 'translateY(-100%)',
+              marginTop: '4px',
+              marginRight: '4px'
+            }}
+          >
+            <button
+              onClick={handleTogglePin}
+              className="p-2 rounded-lg bg-white/90 hover:bg-white border border-gray-300 shadow-md transition-all"
+              title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
+            >
+              {isDrawerStripPinned ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                  <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4V4h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 1.1.9 2 2 2s2-.9 2-2z"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600">
+                  <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
+                </svg>
+              )}
+            </button>
+          </div>
+
           <DrawerTabStrip
             items={drawerTabs}
             selectedId={selectedDrawerId}
