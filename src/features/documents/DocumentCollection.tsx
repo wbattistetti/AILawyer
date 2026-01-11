@@ -348,15 +348,22 @@ export function DocumentCollection({
     // ✅ Se non è un file Explorer, verifica se ci sono file normali
     const files = Array.from(e.dataTransfer.files || [])
     if (files.length > 0) {
-      // ✅ Gestisci i file normali chiamando onDropCb
+      // ✅ Gestisci i file normali
       e.preventDefault()
       e.stopPropagation()
-      onDropCb(files)
+
+      // ✅ Se onDrop (prop) è disponibile, usalo (emette app:upload-files)
+      // Altrimenti usa onDropCb (react-dropzone callback interno)
+      if (onDrop) {
+        onDrop(files) // ✅ Chiama la prop onDrop che emette app:upload-files
+      } else {
+        onDropCb(files) // ✅ Fallback: usa react-dropzone callback
+      }
       return
     }
 
     // ✅ Se non ci sono file, lascia che react-dropzone gestisca (potrebbe essere un drop interno)
-  }, [compartoId, onDropCb])
+  }, [compartoId, onDrop, onDropCb]) // ✅ Aggiungi onDrop e onDropCb alle dipendenze
 
   // ✅ Estrai getRootProps ma sovrascrivi onDrop con il nostro handler unificato
   const rootProps = getRootProps()

@@ -37,11 +37,11 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
         },
         body: JSON.stringify({ path: dirPath }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       return await response.json();
     } catch (error) {
       console.error(`Failed to list directory ${dirPath}:`, error);
@@ -58,11 +58,11 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
         },
         body: JSON.stringify({ path }),
       });
-      
+
       if (!response.ok) {
         return false;
       }
-      
+
       const result = await response.json();
       return result.exists;
     } catch (error) {
@@ -106,21 +106,72 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          path: filePath, 
-          start, 
-          length: len 
+        body: JSON.stringify({
+          path: filePath,
+          start,
+          length: len
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       return await response.arrayBuffer();
     } catch (error) {
       console.error(`Failed to read chunk from ${filePath}:`, error);
       throw error;
     }
+  }
+
+  // ✅ Implementa watchDrives per aggiornamento dinamico
+  watchDrives(cb: (drives: DriveInfo[]) => void): () => void {
+    let intervalId: NodeJS.Timeout;
+    let lastDrives: DriveInfo[] = [];
+    let isActive = true;
+
+    const poll = async () => {
+      if (!isActive) return;
+
+      try {
+        const drives = await this.listDrives();
+
+        // Controlla se i drive sono cambiati (numero, lettere, mounted status)
+        const drivesChanged =
+          drives.length !== lastDrives.length ||
+          drives.some((d, i) => {
+            const last = lastDrives[i];
+            return !last ||
+              d.id !== last.id ||
+              d.mounted !== last.mounted ||
+              d.serialNumber !== last.serialNumber;
+          }) ||
+          lastDrives.some((last, i) => {
+            const current = drives[i];
+            return !current ||
+              last.id !== current.id ||
+              last.mounted !== current.mounted;
+          });
+
+        if (drivesChanged) {
+          lastDrives = drives;
+          cb(drives);
+        }
+      } catch (error) {
+        console.error('[BackendFileSystemAdapter] Error polling drives:', error);
+      }
+    };
+
+    // Poll ogni 2 secondi
+    intervalId = setInterval(poll, 2000);
+    poll(); // Controlla immediatamente
+
+    // Restituisci funzione di cleanup
+    return () => {
+      isActive = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }
 }

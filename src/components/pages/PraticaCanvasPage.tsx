@@ -350,10 +350,15 @@ export function PraticaCanvasPage() {
           try {
             const explorerState = JSON.parse(p.explorerState)
             if (explorerState.selectedPath) {
-              setExplorerSelectedPath(explorerState.selectedPath)
+              // ✅ Passa l'intero oggetto stato per permettere a Explorer di cercare per volume label
+              setExplorerSelectedPath(JSON.stringify(explorerState))
             }
           } catch (err) {
             console.warn('[EXPLORER] Errore parsing explorerState:', err)
+            // ✅ Fallback: se non è JSON, potrebbe essere solo il path (vecchio formato)
+            if (typeof p.explorerState === 'string' && !p.explorerState.startsWith('{')) {
+              setExplorerSelectedPath(p.explorerState)
+            }
           }
         }
         // Clienti caricati
@@ -803,8 +808,18 @@ export function PraticaCanvasPage() {
 
           setIsSaving(true)
 
-          // ✅ Salva anche lo stato Explorer
-          const explorerState = explorerSelectedPath ? JSON.stringify({ selectedPath: explorerSelectedPath }) : undefined
+          // ✅ Salva anche lo stato Explorer (mantieni formato completo se già presente)
+          let explorerState: string | undefined = undefined
+          if (explorerSelectedPath) {
+            try {
+              // Se è già un JSON string, parsalo e mantieni tutti i campi
+              const parsed = JSON.parse(explorerSelectedPath)
+              explorerState = JSON.stringify(parsed)
+            } catch {
+              // Se non è JSON, crea nuovo oggetto con solo selectedPath
+              explorerState = JSON.stringify({ selectedPath: explorerSelectedPath })
+            }
+          }
 
           const dataToSave = {
             numeroRuolo: pratica.numeroRuolo,
@@ -915,15 +930,28 @@ export function PraticaCanvasPage() {
               {...ExplorerProps}
               praticaId={id}
               initialSelectedPath={explorerSelectedPath}
-              onStateChange={(path) => {
+              onStateChange={async (path) => {
                 setExplorerSelectedPath(path)
-                // ✅ Salva automaticamente lo stato quando cambia (debounced)
+                // ✅ Salva automaticamente lo stato quando cambia (con volume label e serial number)
                 if (id && path) {
-                  const explorerState = JSON.stringify({ selectedPath: path })
-                  // Salva in background senza bloccare l'UI
-                  api.updatePratica(id, { explorerState }).catch(err => {
+                  try {
+                    // ✅ Ottieni i drive per trovare il label del volume e serial number
+                    const drives = await ExplorerProps.adapter.listDrives()
+                    const matchingDrive = drives.find(d => path.startsWith(d.path))
+
+                    const explorerState = JSON.stringify({
+                      selectedPath: path,
+                      driveLetter: matchingDrive?.id, // Es. "E:"
+                      driveLabel: matchingDrive?.label, // Es. "Pippo" (nome del volume)
+                      driveType: matchingDrive?.type, // 'removable' | 'fixed' | 'optical'
+                      serialNumber: matchingDrive?.serialNumber // ✅ Identificatore univoco del dispositivo
+                    })
+
+                    // Salva in background senza bloccare l'UI
+                    await api.updatePratica(id, { explorerState })
+                  } catch (err) {
                     console.warn('[EXPLORER] Errore salvataggio stato:', err)
-                  })
+                  }
                 }
               }}
             />

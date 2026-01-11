@@ -196,8 +196,8 @@ export function SidebarArchivi({ tabs, selectedId, onSelect, isOpen, onToggle, o
                     relatedTarget: e.relatedTarget,
                   })
                   // ✅ Reset solo se non stiamo entrando in un'altra tab
-                  const relatedTarget = e.relatedTarget as HTMLElement
-                  const isEnteringAnotherTab = relatedTarget?.closest('button[data-tab-id]') !== null
+                  const relatedTarget = e.relatedTarget as HTMLElement | null
+                  const isEnteringAnotherTab = relatedTarget && 'closest' in relatedTarget && relatedTarget.closest('button[data-tab-id]') !== null
                   if (!isEnteringAnotherTab) {
                     setHoveredTabId(null)
                   }

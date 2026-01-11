@@ -57,7 +57,7 @@ export function SplashPage() {
           </div>
 
           {/* CTA / Open */}
-          <div className={`grid gap-3 max-w-xl mx-auto ${all.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          <div className={`flex gap-3 max-w-xl mx-auto justify-center ${all.length > 0 ? 'md:grid md:grid-cols-2' : ''}`}>
             <Button
               size="lg"
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 text-lg font-semibold"
@@ -66,6 +66,7 @@ export function SplashPage() {
               <Upload className="w-5 h-5 mr-2" /> Nuova pratica
             </Button>
 
+            {/* ✅ Mostra "Apri pratica" solo se ci sono pratiche nel database */}
             {all.length > 0 && (
               <PraticheDropdown
                 pratiche={all}
@@ -76,15 +77,13 @@ export function SplashPage() {
             )}
           </div>
 
-          {/* Recenti */}
-          <div className="mt-8 max-w-2xl mx-auto w-full">
-            <div className="flex items-center gap-2 text-slate-200 mb-2">
-              <Clock className="w-4 h-4" />
-              <span className="text-sm">Pratiche recenti</span>
-            </div>
-            {recent.length === 0 ? (
-              <div className="text-slate-400 text-sm">Nessuna pratica recente.</div>
-            ) : (
+          {/* ✅ Mostra "Pratiche recenti" solo se ci sono pratiche nel database E pratiche recenti */}
+          {all.length > 0 && recent.length > 0 && (
+            <div className="mt-8 max-w-2xl mx-auto w-full">
+              <div className="flex items-center gap-2 text-slate-200 mb-2">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm">Pratiche recenti</span>
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 {recent.slice(0, 4).map(p => (
                   <button
@@ -97,8 +96,8 @@ export function SplashPage() {
                   </button>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

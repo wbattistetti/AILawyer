@@ -26,14 +26,21 @@ export function DirectoryTree({
 
   // Initialize tree with drives
   useEffect(() => {
-    const driveNodes: TreeNode[] = drives.map(drive => ({
-      id: drive.id,
-      name: drive.label,
-      path: drive.path,
-      type: 'drive' as const,
-      expanded: false,
-      children: []
-    }));
+    const driveNodes: TreeNode[] = drives.map(drive => {
+      // ✅ Debug: log per verificare il tipo di drive
+      console.log('[DIRECTORY-TREE] Drive:', { id: drive.id, label: drive.label, type: drive.type, serialNumber: drive.serialNumber });
+      return {
+        id: drive.id,
+        // ✅ Mostra lettera del drive e nome del volume (se diverso dalla lettera)
+        name: drive.label !== drive.id ? `${drive.id} ${drive.label}` : drive.id,
+        path: drive.path,
+        type: 'drive' as const,
+        expanded: false,
+        children: [],
+        // ✅ Salva anche il driveInfo per accesso rapido
+        driveInfo: drive
+      };
+    });
     setTree(driveNodes);
   }, [drives]);
 
@@ -60,7 +67,7 @@ export function DirectoryTree({
       console.log('🌳 Calling adapter.listDir for:', node.path);
       const { files } = await adapter.listDir(node.path);
       console.log('🌳 Got files from adapter:', files);
-      
+
       const dirs = files
         .filter(file => file.isDir)
         .map(file => ({
@@ -69,7 +76,8 @@ export function DirectoryTree({
           path: file.path,
           type: 'dir' as const,
           expanded: false,
-          children: []
+          children: [],
+          driveInfo: undefined // ✅ Le directory non hanno driveInfo
         }));
 
       console.log('🌳 Created directory nodes:', dirs);
@@ -127,10 +135,24 @@ export function DirectoryTree({
           {/* Node Icon */}
           <div className="w-4 h-4 flex items-center justify-center mr-2">
             {node.type === 'drive' ? (
-              <DriveIcon 
-                type={drives.find(d => d.id === node.id)?.type || 'fixed'}
-                mounted={drives.find(d => d.id === node.id)?.mounted || false}
-              />
+              (() => {
+                const driveType = node.driveInfo?.type || drives.find(d => d.id === node.id)?.type || 'fixed';
+                // ✅ Debug: log per verificare quale tipo viene passato
+                if (node.id === 'D:') {
+                  console.log('[DIRECTORY-TREE] Rendering D: drive icon', {
+                    nodeId: node.id,
+                    driveInfoType: node.driveInfo?.type,
+                    foundType: drives.find(d => d.id === node.id)?.type,
+                    finalType: driveType
+                  });
+                }
+                return (
+                  <DriveIcon
+                    type={driveType}
+                    mounted={node.driveInfo?.mounted || drives.find(d => d.id === node.id)?.mounted || false}
+                  />
+                );
+              })()
             ) : node.expanded ? (
               <FolderOpen className="w-4 h-4 text-yellow-500" />
             ) : (

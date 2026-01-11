@@ -8,58 +8,150 @@ import { extractObject } from '../lib/extractObject';
 
 const execAsync = promisify(exec);
 
-export async function filesystemRoutes(fastify: FastifyInstance) {
-  // List drives
-  fastify.get('/filesystem/drives', async (request, reply) => {
-    try {
-      const drives = [];
+// ✅ Funzione helper per ottenere la lista dei drive (riutilizzabile)
+async function getDrivesList(fastify?: FastifyInstance): Promise<any[]> {
+  const drives = [];
+  const log = fastify?.log || console;
 
       // Windows drives
       if (process.platform === 'win32') {
         try {
-          const { stdout } = await execAsync('wmic logicaldisk get size,freespace,caption,drivetype');
-          const lines = stdout.split('\n').filter(line => line.trim());
+          // ✅ Usa PowerShell con Get-CimInstance (wmic è deprecato e non disponibile)
+          const psScript = `$disks = Get-CimInstance -ClassName Win32_LogicalDisk; foreach ($disk in $disks) { $caption = $disk.DeviceID; $drivetype = $disk.DriveType; $size = $disk.Size; $freespace = $disk.FreeSpace; $volumename = $disk.VolumeName; Write-Output ($caption + '|' + $drivetype + '|' + $size + '|' + $freespace + '|' + $volumename) }`;
 
-          for (const line of lines.slice(1)) { // Skip header
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 4) {
-              const [caption, drivetype, freespace, size] = parts;
-              const driveType = getDriveType(parseInt(drivetype));
-              if (driveType) {
-                drives.push({
-                  id: caption,
-                  label: caption,
-                  path: caption + '\\',
-                  type: driveType,
-                  capacityBytes: size ? parseInt(size) : undefined,
-                  freeBytes: freespace ? parseInt(freespace) : undefined,
-                  mounted: true
-                });
+          const { stdout: diskInfo } = await execAsync(`powershell -NoProfile -Command "${psScript}"`);
+          const lines = diskInfo.split('\n').filter(line => line.trim());
+
+          // ✅ Ottieni anche il volume label (nome del volume) per USB/DVD
+          // ✅ Il volume label è già incluso nell'output PowerShell sopra
+          let volumeLabels: Map<string, string> = new Map();
+
+          // Parsa l'output PowerShell: "caption|drivetype|size|freespace|volumename"
+          for (const line of lines) {
+            const parts = line.split('|');
+            if (parts.length >= 5) {
+              const caption = parts[0].trim();
+              const volumename = parts[4].trim();
+
+              // Verifica che caption sia una lettera di drive valida (es. "D:")
+              if (caption && caption.match(/^[A-Z]:$/)) {
+                // Salva solo se il volume name non è vuoto e non è uguale alla caption
+                if (volumename && volumename !== caption && volumename !== '') {
+                  volumeLabels.set(caption, volumename);
+                }
               }
             }
           }
-        } catch (wmicError) {
-          // Log rimosso - wmic fallback è normale su Windows, non è un errore
 
-          // Fallback: try to access common drive letters
-          const commonDrives = ['C:', 'D:', 'E:', 'F:'];
-          for (const drive of commonDrives) {
-            try {
-              await fs.access(drive + '\\');
-              drives.push({
-                id: drive,
-                label: drive,
-                path: drive + '\\',
-                type: 'fixed' as const,
-                mounted: true
-              });
-            } catch {
-              // Drive doesn't exist or not accessible
+      // ✅ Ottieni interfaccia e serial number dei drive per distinguere USB da hard disk fissi
+      // ✅ Mappa drive letter -> interfaccia (USB, SATA, ecc.) per distinguere USB da hard disk fissi
+      let driveInterfaces: Map<string, string> = new Map();
+      // ✅ Mappa drive letter -> serial number del dispositivo
+      let driveSerials: Map<string, string> = new Map();
+
+      try {
+        // ✅ Usa PowerShell con Get-CimInstance (wmic è deprecato e non disponibile)
+        const psScript = `$result = @(); $logicalDisks = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 -or $_.DriveType -eq 3 }; foreach ($logicalDisk in $logicalDisks) { $letter = $logicalDisk.DeviceID; $partition = Get-CimInstance -ClassName Win32_LogicalDiskToPartition | Where-Object { $_.Dependent -like ('*' + $letter + '*') } | Select-Object -First 1; if ($partition) { $diskId = ($partition.Antecedent -split '"')[1]; $disk = Get-CimInstance -ClassName Win32_DiskDrive | Where-Object { $_.DeviceID -eq $diskId } | Select-Object -First 1; if ($disk) { $interface = $disk.InterfaceType; $serial = $disk.SerialNumber; $result += ($letter + '|' + $interface + '|' + $serial) } } }; $result -join [Environment]::NewLine`;
+
+        const { stdout: psOutput } = await execAsync(`powershell -NoProfile -Command "${psScript}"`);
+        const psLines = psOutput.split('\n').filter(line => line.trim());
+        log.info('[DRIVES] PowerShell output lines:', psLines.length);
+
+        for (const line of psLines) {
+          const parts = line.split('|');
+          if (parts.length >= 3) {
+            const driveLetter = parts[0].trim();
+            const interfaceType = parts[1].trim();
+            const serialNumber = parts[2].trim();
+
+            log.info(`[DRIVES] Drive ${driveLetter}: interfaceType="${interfaceType}", serialNumber="${serialNumber}"`);
+
+            if (interfaceType && interfaceType.toUpperCase().includes('USB')) {
+              driveInterfaces.set(driveLetter, 'USB');
+              log.info(`[DRIVES] ✅ Drive ${driveLetter} riconosciuto come USB (interfaccia: ${interfaceType})`);
+            }
+
+            if (serialNumber && serialNumber !== 'SerialNumber' && serialNumber.length > 0) {
+              driveSerials.set(driveLetter, serialNumber);
+              log.info(`[DRIVES] ✅ Drive ${driveLetter} serial number: ${serialNumber}`);
             }
           }
         }
+      } catch (interfaceError) {
+        log.error('[DRIVES] ❌ Could not get drive interfaces/serials:', interfaceError);
       }
 
+      // ✅ Parsa l'output PowerShell: "caption|drivetype|size|freespace|volumename"
+      for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length >= 5) {
+          const caption = parts[0].trim();
+          const drivetype = parts[1].trim();
+          const size = parts[2].trim();
+          const freespace = parts[3].trim();
+          const volumename = parts[4].trim();
+
+          let driveType = getDriveType(parseInt(drivetype));
+          const originalDriveType = driveType;
+          const interfaceType = driveInterfaces.get(caption);
+
+          // ✅ Se è un drive fisso (type 3) ma ha interfaccia USB, è una chiavetta/hard disk USB esterno
+          if (driveType === 'fixed' && interfaceType === 'USB') {
+            driveType = 'removable'; // Tratta come removable (chiavetta/hard disk USB esterno)
+            log.info(`[DRIVES] Drive ${caption} riconosciuto come USB (interfaccia: ${interfaceType}), tipo cambiato da ${originalDriveType} a ${driveType}`);
+          } else if (caption === 'D:') {
+            // ✅ Debug specifico per D:
+            log.info(`[DRIVES] Drive D: - drivetype: ${drivetype}, driveType: ${driveType}, interface: ${interfaceType}, serialNumber: ${driveSerials.get(caption)}`);
+          }
+
+          if (driveType) {
+            // ✅ Usa il volume label se disponibile, altrimenti usa la caption
+            const volumeLabel = volumename && volumename !== '' ? volumename : (volumeLabels.get(caption) || caption);
+            const serialNumber = driveSerials.get(caption);
+
+            drives.push({
+              id: caption,
+              label: volumeLabel, // ✅ Ora contiene il nome del volume (es. "Pippo" per USB, "DVD_NAME" per DVD)
+              path: caption + '\\',
+              type: driveType,
+              capacityBytes: size && size !== '' ? parseInt(size) : undefined,
+              freeBytes: freespace && freespace !== '' ? parseInt(freespace) : undefined,
+              mounted: true,
+              serialNumber: serialNumber // ✅ Identificatore univoco del dispositivo
+            });
+          }
+        }
+      }
+    } catch (wmicError) {
+      // Log rimosso - wmic fallback è normale su Windows, non è un errore
+
+      // Fallback: try to access common drive letters
+      const commonDrives = ['C:', 'D:', 'E:', 'F:'];
+      for (const drive of commonDrives) {
+        try {
+          await fs.access(drive + '\\');
+          drives.push({
+            id: drive,
+            label: drive,
+            path: drive + '\\',
+            type: 'fixed' as const,
+            mounted: true
+          });
+        } catch {
+          // Drive doesn't exist or not accessible
+        }
+      }
+    }
+  }
+
+  return drives;
+}
+
+export async function filesystemRoutes(fastify: FastifyInstance) {
+  // List drives
+  fastify.get('/filesystem/drives', async (request, reply) => {
+    try {
+      const drives = await getDrivesList(fastify);
       return drives;
     } catch (error) {
       fastify.log.error('Failed to list drives:', error);

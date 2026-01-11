@@ -16,7 +16,7 @@ import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
 import { CompartiService } from './services/CompartiService';
 import { ClassificationService } from './services/ClassificationService';
-import { FileEntry } from './types';
+import { FileEntry, DriveInfo } from './types';
 
 interface ExplorerProps {
   adapter: FileSystemAdapter;
@@ -86,6 +86,15 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
   // ✅ Ref per fermare la classificazione
   const classificationAbortRef = useRef(false);
 
+  // ✅ Stato per tracciare se il path salvato non è disponibile
+  const [savedPathUnavailable, setSavedPathUnavailable] = useState<{
+    path: string;
+    driveLetter: string;
+    driveLabel?: string;
+    driveType?: 'fixed' | 'removable' | 'optical';
+    savedDriveLabel?: string; // ✅ Nome del volume salvato nel database
+  } | null>(null);
+
   // Hook per l'estrazione lazy dell'oggetto dai PDF
   // ✅ MODIFICATO: Disabilitato di default (non parte automaticamente)
   // ✅ Si abilita solo quando isExtractionManuallyEnabled è true
@@ -129,30 +138,124 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
   // ✅ Ripristina lo stato iniziale se fornito
   useEffect(() => {
     if (initialSelectedPath && !state.selectedNode && drives.length > 0) {
-      // Verifica se il path è ancora disponibile
-      const drive = drives.find(d => initialSelectedPath.startsWith(d.path));
+      // ✅ Parse dello stato salvato per ottenere driveLabel, driveType e serialNumber
+      let actualPath: string = initialSelectedPath;
+      let savedDriveLabel: string | undefined;
+      let savedDriveType: 'fixed' | 'removable' | 'optical' | undefined;
+      let savedDriveLetter: string | undefined;
+      let savedDriveSerial: string | undefined;
+
+      try {
+        // Se initialSelectedPath è un JSON string, parsalo
+        const parsedState = typeof initialSelectedPath === 'string' && initialSelectedPath.startsWith('{')
+          ? JSON.parse(initialSelectedPath)
+          : null;
+
+        if (parsedState) {
+          actualPath = parsedState.selectedPath;
+          savedDriveLabel = parsedState.driveLabel;
+          savedDriveType = parsedState.driveType;
+          savedDriveLetter = parsedState.driveLetter;
+          savedDriveSerial = parsedState.serialNumber; // ✅ Serial number per identificazione univoca
+        }
+      } catch (e) {
+        // Se non è JSON, usa initialSelectedPath come path diretto
+        actualPath = initialSelectedPath;
+      }
+
+      // ✅ Prima cerca per path esatto
+      const drive = drives.find(d => actualPath.startsWith(d.path));
+
       if (drive) {
         // Verifica se la directory esiste ancora
-        adapter.listDir(initialSelectedPath).then(() => {
-          setSelectedNode({ type: 'dir', path: initialSelectedPath });
+        adapter.listDir(actualPath).then(() => {
+          setSelectedNode({ type: 'dir', path: actualPath });
+          setSavedPathUnavailable(null); // ✅ Reset flag se path disponibile
           startScan({
-            rootPath: initialSelectedPath,
+            rootPath: actualPath,
             kinds: undefined,
             search: state.filters.search || undefined
           });
         }).catch((err) => {
-          console.warn('[EXPLORER] Path non più disponibile:', initialSelectedPath, err);
-          // Mostra un avviso all'utente
-          setError(`Il percorso salvato non è più disponibile: ${initialSelectedPath}. Verifica che il drive/dispositivo sia collegato.`);
-          // Non ripristinare se il path non è più disponibile
+          console.warn('[EXPLORER] Path non più disponibile:', actualPath, err);
+          // ✅ Salva informazioni dettagliate sul drive non disponibile
+          const driveLetter = actualPath.split(/[/\\]/)[0];
+          setSavedPathUnavailable({
+            path: actualPath,
+            driveLetter,
+            driveLabel: drive.label,
+            driveType: drive.type,
+            savedDriveLabel: savedDriveLabel || drive.label
+          });
+          setError(`Il percorso salvato non è più disponibile: ${actualPath}. Verifica che il drive/dispositivo sia collegato.`);
         });
       } else {
-        // Drive non trovato - mostra avviso
-        const driveLetter = initialSelectedPath.split(/[/\\]/)[0];
-        setError(`Il drive/dispositivo "${driveLetter}" non è più disponibile. Verifica che sia collegato.`);
+        // ✅ Drive non trovato per path - cerca per volume label se disponibile
+        const driveLetter = actualPath.split(/[/\\]/)[0];
+        let foundByLabel: DriveInfo | undefined;
+
+        // ✅ Prima cerca per serial number (più affidabile)
+        let foundBySerial: DriveInfo | undefined;
+        if (savedDriveSerial && (savedDriveType === 'removable' || savedDriveType === 'optical')) {
+          foundBySerial = drives.find(d =>
+            (d.type === 'removable' || d.type === 'optical') &&
+            d.serialNumber === savedDriveSerial
+          );
+        }
+
+        // ✅ Se non trovato per serial, cerca per volume label
+        if (!foundBySerial && savedDriveLabel && (savedDriveType === 'removable' || savedDriveType === 'optical')) {
+          foundByLabel = drives.find(d =>
+            (d.type === 'removable' || d.type === 'optical') &&
+            d.label === savedDriveLabel &&
+            d.label !== d.id // Assicurati che sia un volume label reale, non solo la lettera
+          );
+        }
+
+        if (foundBySerial) {
+          // ✅ Trovato per serial number! È la stessa chiavetta anche se su lettera diversa
+          setSavedPathUnavailable({
+            path: actualPath,
+            driveLetter: foundBySerial.id, // ✅ Nuova lettera del drive
+            driveLabel: foundBySerial.label,
+            driveType: foundBySerial.type,
+            savedDriveLabel: savedDriveLabel || foundBySerial.label
+          });
+          const deviceType = foundBySerial.type === 'removable' ? 'chiavetta USB' : 'DVD/CD';
+          setError(`La ${deviceType} "${savedDriveLabel || foundBySerial.label}" è stata trovata ma su un drive diverso (${foundBySerial.id} invece di ${savedDriveLetter || driveLetter}). Seleziona la directory corretta.`);
+        } else if (foundByLabel) {
+          // ✅ Trovato per volume label (fallback se serial number non disponibile)
+          setSavedPathUnavailable({
+            path: actualPath,
+            driveLetter: foundByLabel.id, // ✅ Nuova lettera del drive
+            driveLabel: foundByLabel.label,
+            driveType: foundByLabel.type,
+            savedDriveLabel: savedDriveLabel
+          });
+          const deviceType = foundByLabel.type === 'removable' ? 'chiavetta USB' : 'DVD/CD';
+          setError(`La ${deviceType} "${savedDriveLabel}" è stata trovata ma su un drive diverso (${foundByLabel.id} invece di ${savedDriveLetter || driveLetter}). Seleziona la directory corretta.`);
+        } else {
+          // Drive non trovato né per path né per label
+          const deviceType = savedDriveType === 'removable' ? 'chiavetta USB' : savedDriveType === 'optical' ? 'DVD/CD' : 'drive';
+          setSavedPathUnavailable({
+            path: actualPath,
+            driveLetter,
+            driveType: savedDriveType || 'removable',
+            savedDriveLabel: savedDriveLabel
+          });
+          setError(`Il ${deviceType} "${driveLetter}"${savedDriveLabel ? ` (${savedDriveLabel})` : ''} non è più disponibile. Verifica che sia collegato.`);
+        }
       }
     }
   }, [initialSelectedPath, drives, state.selectedNode, adapter, setSelectedNode, startScan, state.filters.search, setError]);
+
+  // ✅ Reset flag quando l'utente seleziona una nuova directory
+  useEffect(() => {
+    if (state.selectedNode && savedPathUnavailable) {
+      setSavedPathUnavailable(null);
+      clearError();
+    }
+  }, [state.selectedNode?.path, savedPathUnavailable, clearError]);
 
   // ✅ Salva lo stato quando cambia la directory selezionata
   useEffect(() => {
@@ -524,8 +627,72 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
             )}
 
             <div className="flex-1 overflow-hidden">
-              {/* Stato 1: Nessuna directory selezionata */}
-              {!state.selectedNode ? (
+              {/* ✅ Stato 0: Path salvato non disponibile - mostra messaggio informativo */}
+              {savedPathUnavailable && !state.selectedNode ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-md p-6 bg-amber-50 border border-amber-200 rounded-lg">
+                    <File className="w-12 h-12 mx-auto mb-4 text-amber-500" />
+                    <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                      {savedPathUnavailable.driveType === 'removable'
+                        ? 'Chiavetta USB non disponibile'
+                        : savedPathUnavailable.driveType === 'optical'
+                        ? 'DVD/CD non disponibile'
+                        : 'Dispositivo non disponibile'}
+                    </h3>
+                    <p className="text-sm text-amber-800 mb-4">
+                      L'ultimo lavoro su questa pratica è stato fatto su{' '}
+                      {savedPathUnavailable.savedDriveLabel && savedPathUnavailable.savedDriveLabel !== savedPathUnavailable.driveLetter
+                        ? savedPathUnavailable.driveType === 'removable'
+                          ? `la chiavetta USB "${savedPathUnavailable.savedDriveLabel}"`
+                          : savedPathUnavailable.driveType === 'optical'
+                          ? `il DVD/CD "${savedPathUnavailable.savedDriveLabel}"`
+                          : `il dispositivo "${savedPathUnavailable.savedDriveLabel}"`
+                        : savedPathUnavailable.driveType === 'removable'
+                        ? 'una chiavetta USB'
+                        : savedPathUnavailable.driveType === 'optical'
+                        ? 'un DVD/CD'
+                        : 'un dispositivo esterno'
+                      } che ora non è più disponibile.
+                    </p>
+                    <div className="bg-white rounded p-3 mb-4 text-left">
+                      {savedPathUnavailable.savedDriveLabel && savedPathUnavailable.savedDriveLabel !== savedPathUnavailable.driveLetter && (
+                        <p className="text-xs text-gray-600 mb-1">
+                          <strong>Nome dispositivo:</strong> {savedPathUnavailable.savedDriveLabel}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-600 mb-1">
+                        <strong>Drive:</strong> {savedPathUnavailable.driveLetter}
+                      </p>
+                      <p className="text-xs text-gray-600 mb-1">
+                        <strong>Tipo:</strong> {
+                          savedPathUnavailable.driveType === 'removable' ? 'Chiavetta USB' :
+                          savedPathUnavailable.driveType === 'optical' ? 'DVD/CD' :
+                          'Drive fisso'
+                        }
+                      </p>
+                      <p className="text-xs text-gray-600 mb-1 mt-2">
+                        <strong>Percorso salvato:</strong>
+                      </p>
+                      <p className="text-xs font-mono text-gray-800 break-all">
+                        {savedPathUnavailable.path}
+                      </p>
+                    </div>
+                    <p className="text-sm text-amber-800 mb-4">
+                      Per continuare, collega il dispositivo e seleziona una nuova directory, oppure seleziona una directory diversa.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setSavedPathUnavailable(null);
+                        clearError();
+                      }}
+                      className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 text-sm"
+                    >
+                      Ho capito
+                    </button>
+                  </div>
+                </div>
+              ) : !state.selectedNode ? (
+                /* Stato 1: Nessuna directory selezionata */
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <File className="w-12 h-12 mx-auto mb-4 text-gray-400" />

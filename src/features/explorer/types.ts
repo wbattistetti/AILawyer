@@ -8,6 +8,7 @@ export interface DriveInfo {
   capacityBytes?: number;
   freeBytes?: number;
   mounted: boolean;
+  serialNumber?: string; // ✅ Identificatore univoco del dispositivo hardware
 }
 
 export type FileKind = 'pdf' | 'word' | 'image' | 'video' | 'audio' | 'unknown';
@@ -67,6 +68,7 @@ export interface TreeNode {
   expanded: boolean;
   children?: TreeNode[];
   loading?: boolean;
+  driveInfo?: DriveInfo; // ✅ Salva info del drive per accesso rapido
 }
 
 export interface RowAction {
