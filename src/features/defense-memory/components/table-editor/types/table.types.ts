@@ -1,3 +1,6 @@
+// Import types per blocchi
+import { Block } from './blocks.types'
+
 export type CellType =
     | 'reato-contestato'
     | 'fatto'
@@ -37,6 +40,7 @@ export interface TableRow {
     extract?: ExtractData
     motivations?: Motivation[]
     observations: string
+    blocks?: Block[]  // ✅ NUOVO: Blocchi riorganizzabili (estratti + osservazioni)
 }
 
 export interface DefenseMemoryTableData {

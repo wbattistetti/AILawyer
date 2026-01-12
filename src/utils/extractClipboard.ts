@@ -24,8 +24,23 @@ export const extractClipboardManager = {
      */
     copy: (data: ExtractClipboardData) => {
         extractClipboard = data
-        listeners.forEach(listener => listener(data))
-        console.log('[CLIPBOARD] Estratto copiato:', data)
+        console.log('[CLIPBOARD] 📋 Estratto copiato, listeners attivi:', listeners.size, {
+            source: data.source,
+            page: data.page,
+            hasImage: !!data.imageDataUrl,
+            contentLength: data.content?.length || 0
+        })
+        // ✅ Notifica tutti i listener sincronamente
+        const listenersArray = Array.from(listeners)
+        listenersArray.forEach((listener, index) => {
+            console.log(`[CLIPBOARD] 📬 Notifico listener ${index + 1}/${listenersArray.length}`)
+            try {
+                listener(data)
+            } catch (error) {
+                console.error(`[CLIPBOARD] ❌ Errore notificando listener ${index + 1}:`, error)
+            }
+        })
+        console.log('[CLIPBOARD] ✅ Tutti i listener notificati')
     },
 
     /**

@@ -249,6 +249,17 @@ export const useNativeSelection = ({
 		}
 
 		const onMouseUp = async (ev: MouseEvent) => {
+			// ✅ CRITICO: Verifica se il click è sul pulsante "Estratto" prima di processare
+			const target = ev.target as HTMLElement
+			if (target && (
+				target.closest('button[data-extract-button="true"]') ||
+				target.textContent?.includes('Estratto') ||
+				target.closest('.extract-button-container')
+			)) {
+				console.log('🔥 [useNativeSelection] Click sul pulsante Estratto, ignoro onMouseUp')
+				return // ✅ NON processare il mouseUp se è sul pulsante
+			}
+
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
 			if (ev.clientX < hostR.left || ev.clientX > hostR.right || ev.clientY < hostR.top || ev.clientY > hostR.bottom) return
@@ -469,17 +480,37 @@ export const useNativeSelection = ({
 							} else {
 								setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
 							}
-						} catch (e) {
-							console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
-							setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+					} catch (e) {
+						console.warn('[DRAG][EXTRACT][pdfbox][err]', e)
+						setLastSelection({ pdfPageNumber: pageNum, bboxPdf: undefined, viewportBox, text })
+					}
+
+					// ✅ Crea una PersistentSelection per mostrare il FloatingExtractButton
+					// ✅ Riutilizza pageLayer già dichiarato sopra (riga 317)
+					if (pageLayer && viewportBox) {
+						const pr = pageLayer.getBoundingClientRect()
+							const persistentSelection: PersistentSelection = {
+								id: `persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+								page: pageNum,
+								x0Pct: viewportBox.x / pr.width,
+								y0Pct: viewportBox.y / pr.height,
+								x1Pct: (viewportBox.x + viewportBox.w) / pr.width,
+								y1Pct: (viewportBox.y + viewportBox.h) / pr.height,
+								text: text || '',
+								viewportBox: {
+									x: viewportBox.x,
+									y: viewportBox.y,
+									w: viewportBox.w,
+									h: viewportBox.h
+								},
+								source: docId || 'Documento'
+							}
+							console.log('✅ [NATIVE-SEL] Creando PersistentSelection:', persistentSelection)
+							setPersistentSelections(prev => [...prev, persistentSelection])
 						}
 
-						// ✅ Il draft rimane visibile - non creare una selezione persistente separata
-						// Il draft è l'unico rettangolo che serve
-
-						// Apri il context menu invece del dialog
+						// ✅ NON aprire più il context menu - il FloatingExtractButton appare automaticamente
 						selectionHandledRef.current = true
-						setContextMenu({ x: ev.clientX, y: ev.clientY, visible: true })
 
 					} catch (error) {
 						console.error('[DRAG][EXTRACT][ERROR]', error)

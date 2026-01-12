@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { Annotation } from '../hooks/usePdfAnnotations'
 import type { PersistentSelection } from '../types'
+import { FloatingExtractButton } from './FloatingExtractButton'
 
 interface AnnotationOverlaysProps {
 	selectedAnnot: Annotation | null
 	annots: Annotation[]
 	draft: Annotation | Annotation[] | null  // ✅ Support array for multi-page
 	persistentSelections: PersistentSelection[]
-	setPersistentSelections: (selections: PersistentSelection[]) => void
+	setPersistentSelections: (selections: PersistentSelection[] | ((prev: PersistentSelection[]) => PersistentSelection[])) => void
 	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
+	pageElsRef: React.MutableRefObject<Map<number, HTMLElement>>
+	lastSelection: any
+	docName?: string
+	hasNativeText?: boolean
 }
 
 export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
@@ -18,7 +23,11 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	draft,
 	persistentSelections,
 	setPersistentSelections,
-	overlayRootsRef
+	overlayRootsRef,
+	pageElsRef,
+	lastSelection,
+	docName,
+	hasNativeText
 }) => {
 	const [hoveredSelectionId, setHoveredSelectionId] = useState<string | null>(null)
 	const [draggingSelectionId, setDraggingSelectionId] = useState<string | null>(null)
@@ -223,6 +232,21 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					<span>↔</span>
 					<span>Estratto</span>
 				</div>
+			)}
+
+			{/* Floating extract button for the last persistent selection */}
+			{persistentSelections.length > 0 && (
+				<FloatingExtractButton
+					selection={persistentSelections[persistentSelections.length - 1]}
+					pageElsRef={pageElsRef}
+					lastSelection={lastSelection}
+					onClose={() => {
+						setPersistentSelections(prev => prev.slice(0, -1))
+					}}
+					setPersistentSelections={setPersistentSelections}
+					docName={docName}
+					hasNativeText={hasNativeText}
+				/>
 			)}
 		</>
 	)

@@ -300,6 +300,10 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         persistentSelections={shell.persistentSelections}
         setPersistentSelections={shell.setPersistentSelections}
         overlayRootsRef={shell.overlayRootsRef}
+        pageElsRef={shell.pageElsRef}
+        lastSelection={shell.lastSelection}
+        docName={docName}
+        hasNativeText={shell.hasNativeText}
       />
 
       {/* Debug: mostra prima parola di ogni pagina */}
@@ -335,20 +339,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         onSelectionHandledChange={shell.setSelectionHandled}
       />
 
-      <ContextMenu
-        contextMenu={shell.contextMenu}
-        lastSelection={shell.lastSelection}
-        persistentSelections={shell.persistentSelections}
-        setPersistentSelections={shell.setPersistentSelections}
-        pageElsRef={shell.pageElsRef}
-        onContextMenuChange={shell.setContextMenu}
-        onOcrInspectOpenChange={shell.setOcrInspectOpen}
-        onExtractPosChange={shell.setExtractPos}
-        onExtractPageChange={shell.setExtractPage}
-        onExtractOpenChange={shell.setExtractOpen}
-        docName={docName}
-        hasNativeText={hasNativeText}
-      />
+      {/* ContextMenu rimosso - ora usiamo FloatingExtractButton che appare automaticamente */}
 
       <OcrInspector
         docId={docId}

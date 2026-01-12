@@ -158,6 +158,12 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         }
 
         if (!file.isDir) {
+          // Skip files without a valid path
+          if (!file.path || typeof file.path !== 'string') {
+            console.warn('🔍 Skipping file without valid path:', file);
+            continue;
+          }
+
           // Process file
           setProgress(prev => ({
             ...prev,
@@ -222,7 +228,12 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         if (!adapter.readChunk) {
           throw new Error('readChunk not available');
         }
-        return adapter.readChunk(file.path, start, len);
+        // Ensure file.path is a string
+        const pathStr = typeof file.path === 'string' ? file.path : String(file.path || '');
+        if (!pathStr) {
+          throw new Error(`Invalid file path for file ${file.name}: ${file.path}`);
+        }
+        return adapter.readChunk(pathStr, start, len);
       };
 
       const kind = await MimeService.detectKind({
@@ -250,7 +261,12 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       if (!adapter.readChunk) {
         throw new Error('readChunk not available');
       }
-      return adapter.readChunk(file.path, start, len);
+      // Ensure file.path is a string
+      const pathStr = typeof file.path === 'string' ? file.path : String(file.path || '');
+      if (!pathStr) {
+        throw new Error(`Invalid file path for file ${file.name}: ${file.path}`);
+      }
+      return adapter.readChunk(pathStr, start, len);
     };
 
     const kind = await MimeService.detectKind({

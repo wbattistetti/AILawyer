@@ -8,6 +8,8 @@ import { TableHeader } from './components/TableHeader'
 import { AccordionRow } from './components/AccordionRow'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
 import { cn } from '@/lib/utils'
+import { ExtractDrawer } from './components/ExtractDrawer'
+import { ExtractData } from './types/blocks.types'
 
 export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> = ({
     praticaId,
@@ -70,6 +72,9 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     })
 
     const { widths, handleResizeStart } = useResizableColumns()
+
+    // ✅ Stato per estratti nel cassetto
+    const [extracts, setExtracts] = useState<ExtractData[]>([])
 
     // Stato per zoom locale (Ctrl + rotella)
     const [zoomLevel, setZoomLevel] = useState(1.0) // 1.0 = 100%, 1.2 = 120%, etc.
@@ -276,7 +281,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         <div
             ref={containerRef}
             className={cn(
-                "flex flex-col h-full bg-white border border-gray-200 rounded-lg overflow-hidden",
+                "flex flex-col h-full bg-white border border-gray-200 rounded-lg",
                 className
             )}
             style={{
@@ -350,7 +355,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             </div>
 
             {/* Footer con statistiche */}
-            <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+            <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex-shrink-0">
                 <div className="flex justify-between items-center">
                     <span>
                         Totale righe: {getRowCount()} |
@@ -365,6 +370,27 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         Ultimo aggiornamento: {new Date(tableData.lastUpdated).toLocaleString('it-IT')}
                     </span>
                 </div>
+            </div>
+
+            {/* ✅ NUOVO: ExtractDrawer (cassetto estratti) - sempre visibile in fondo */}
+            <div className="flex-shrink-0">
+                <ExtractDrawer
+                    extracts={extracts}
+                    onExtractAdd={(extract) => {
+                        setExtracts(prev => [...prev, extract])
+                    }}
+                    onExtractRemove={(extractId) => {
+                        setExtracts(prev => prev.filter(e => e.id !== extractId))
+                    }}
+                    onExtractReorder={(fromIndex, toIndex) => {
+                        setExtracts(prev => {
+                            const newExtracts = [...prev]
+                            const [moved] = newExtracts.splice(fromIndex, 1)
+                            newExtracts.splice(toIndex, 0, moved)
+                            return newExtracts
+                        })
+                    }}
+                />
             </div>
 
         </div>

@@ -1313,7 +1313,13 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     const existingPanel = dockviewApiRef.current.getPanel(panelId)
 
     if (existingPanel) {
-      dockviewApiRef.current.setActivePanel(existingPanel)
+      // ✅ Verifica che setActivePanel esista prima di chiamarlo
+      if (typeof dockviewApiRef.current.setActivePanel === 'function') {
+        dockviewApiRef.current.setActivePanel(existingPanel)
+      } else if (existingPanel.api) {
+        // Fallback: usa l'API del pannello direttamente
+        existingPanel.api.setActive()
+      }
       } else {
         // Crea nuovo pannello nella zona drawer (bottom)
         const comparto = comparti.find(c => c.id === drawerId)
@@ -1352,7 +1358,13 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     const existingPanel = dockviewApiRef.current.getPanel(panelId)
 
     if (existingPanel) {
-      dockviewApiRef.current.setActivePanel(existingPanel)
+      // ✅ Verifica che setActivePanel esista prima di chiamarlo
+      if (typeof dockviewApiRef.current.setActivePanel === 'function') {
+        dockviewApiRef.current.setActivePanel(existingPanel)
+      } else if (existingPanel.api) {
+        // Fallback: usa l'API del pannello direttamente
+        existingPanel.api.setActive()
+      }
     } else {
       // Crea nuovo pannello nella zona left
       let panelComponent = component
@@ -1390,13 +1402,24 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   // Expose API methods
   useImperativeHandle(ref, () => ({
     openDoc: (doc: DocTab) => {
-      if (!dockviewApiRef.current) return
+      if (!dockviewApiRef.current) {
+        console.warn('[DockWorkspaceV3] openDoc: dockviewApiRef.current è null')
+        return
+      }
 
       const panelId = `doc-${doc.id}`
       const existingPanel = dockviewApiRef.current.getPanel(panelId)
 
       if (existingPanel) {
-        dockviewApiRef.current.setActivePanel(existingPanel)
+        // ✅ Verifica che setActivePanel esista prima di chiamarlo
+        if (typeof dockviewApiRef.current.setActivePanel === 'function') {
+          dockviewApiRef.current.setActivePanel(existingPanel)
+        } else if (existingPanel.api) {
+          // Fallback: usa l'API del pannello direttamente
+          existingPanel.api.setActive()
+        } else {
+          console.warn('[DockWorkspaceV3] openDoc: setActivePanel non disponibile, pannello:', existingPanel)
+        }
       } else {
         const newPanel = dockviewApiRef.current.addPanel({
           id: panelId,

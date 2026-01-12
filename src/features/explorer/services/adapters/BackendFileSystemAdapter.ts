@@ -101,11 +101,20 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
 
   readChunk = async (filePath: string, start: number, len: number): Promise<ArrayBuffer> => {
     try {
+      // Ensure filePath is a string
+      const pathStr = typeof filePath === 'string' ? filePath : String(filePath || '');
+
+      if (!pathStr) {
+        throw new Error('filePath is required and must be a non-empty string');
+      }
+
       const url = `${this.baseUrl}/api/filesystem/read-chunk`;
       console.log('[BackendFileSystemAdapter][readChunk]', {
         baseUrl: this.baseUrl,
         url,
-        filePath: filePath.substring(0, 50)
+        filePath: pathStr.substring(0, 50),
+        filePathType: typeof filePath,
+        filePathValue: filePath
       });
 
       const response = await fetch(url, {
@@ -114,7 +123,7 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          path: filePath,
+          path: pathStr,
           start,
           length: len
         }),
@@ -126,9 +135,12 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
 
       return await response.arrayBuffer();
     } catch (error) {
-      console.error(`[BackendFileSystemAdapter][readChunk] Failed to read chunk from ${filePath}:`, error, {
+      const pathStr = typeof filePath === 'string' ? filePath : String(filePath || '');
+      console.error(`[BackendFileSystemAdapter][readChunk] Failed to read chunk from ${pathStr}:`, error, {
         baseUrl: this.baseUrl,
-        url: `${this.baseUrl}/api/filesystem/read-chunk`
+        url: `${this.baseUrl}/api/filesystem/read-chunk`,
+        filePathType: typeof filePath,
+        filePathValue: filePath
       });
       throw error;
     }

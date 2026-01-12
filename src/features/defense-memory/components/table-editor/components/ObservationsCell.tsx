@@ -7,6 +7,9 @@ import { FileText } from 'lucide-react'
 import { extractClipboardManager } from '@/utils/extractClipboard'
 import { MotivationItem } from './MotivationItem'
 import { MotivationObservation } from './MotivationObservation'
+import { CardBody } from './CardBody'
+import { Block, ExtractData, ExtractBlock } from '../types/blocks.types'
+import { convertClipboardToExtract } from '../../../services/ExtractDrawerService'
 
 export const ObservationsCell: React.FC<ObservationsCellProps> = ({
     row,
@@ -363,6 +366,47 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                     )}
                 </div>
             )}
+
+            {/* ✅ NUOVO: CardBody con blocchi riorganizzabili */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+                <CardBody
+                    blocks={row.blocks || []}
+                    onBlocksChange={(blocks) => {
+                        onUpdate({ blocks })
+                    }}
+                    onExtractDrop={(extract, insertIndex) => {
+                        // Se extract è undefined, prova a prendere dalla clipboard
+                        if (!extract) {
+                            const clipboardData = extractClipboardManager.paste()
+                            if (clipboardData) {
+                                extract = convertClipboardToExtract(clipboardData)
+                                extractClipboardManager.clear()
+                            } else {
+                                return
+                            }
+                        }
+
+                        // Aggiungi estratto come ExtractBlock
+                        const newBlocks = [...(row.blocks || [])]
+                        const extractBlock: ExtractBlock = {
+                            type: 'extract',
+                            id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                            order: insertIndex !== undefined ? insertIndex : newBlocks.length,
+                            extract
+                        }
+
+                        if (insertIndex !== undefined) {
+                            newBlocks.splice(insertIndex, 0, extractBlock)
+                            newBlocks.forEach((b, i) => { b.order = i })
+                        } else {
+                            newBlocks.push(extractBlock)
+                        }
+
+                        onUpdate({ blocks: newBlocks })
+                    }}
+                    readOnly={readOnly}
+                />
+            </div>
         </div>
     )
 }
