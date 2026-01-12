@@ -8,6 +8,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { api } from '../../lib/api'
 import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
 import { DragAndDropService } from '../../services/DragAndDropService'
+import { useDocumentStore } from '../../stores/documentStore/store'
 
 type DocItem = {
   id: string
@@ -282,6 +283,7 @@ export function DocumentCollection({
   // Quiet: rimuovi log rumorosi, mantieni solo diagnostica su drop
 
   const [isExplorerDragOver, setIsExplorerDragOver] = useState(false)
+  const store = useDocumentStore()
 
   const onDropCb = useCallback((accepted: File[]) => {
     try {
@@ -426,7 +428,8 @@ export function DocumentCollection({
             await DragAndDropService.moveDocumentToComparto(docId, compartoId, {
               documenti,
               comparti,
-              api
+              api,
+              store
             })
             console.log('[DOCUMENT-COLLECTION] Documento spostato con successo', { docId, compartoId })
           } else {
@@ -658,15 +661,16 @@ export function DocumentCollection({
                         Vuoi spostarlo qui?
                       </div>
                       <div className="flex gap-1.5 mt-auto mb-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onConfirmMove?.(moveConfirmation)
-                          }}
-                          className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px] font-medium flex-shrink-0"
-                        >
-                          Conferma
-                        </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        console.log('🟢 [DOC-COLLECTION][CONFIRM] Click su Conferma', { confirmation: moveConfirmation })
+                        onConfirmMove?.(moveConfirmation)
+                      }}
+                      className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px] font-medium flex-shrink-0"
+                    >
+                      Conferma
+                    </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -763,6 +767,7 @@ export function DocumentCollection({
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
+                        console.log('🟢 [DOC-COLLECTION][CONFIRM] Click su Conferma (ghost)', { confirmation })
                         onConfirmMove?.(confirmation)
                       }}
                       className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px] font-medium flex-shrink-0"

@@ -381,6 +381,7 @@ export class DragAndDropService {
       documenti: Array<{ id: string; filePath?: string; [key: string]: any }>
       comparti: Array<{ id: string; key: string; nome: string }>
       api: { updateDocumento: (id: string, data: Partial<any>) => Promise<any> }
+      store?: { updateDocument: (id: string, data: Partial<any>) => void }
     }
   ): Promise<void> {
     try {
@@ -478,45 +479,14 @@ export class DragAndDropService {
         return // ✅ Esci senza creare miniatura ghost
       }
 
-      // ✅ CRITICO: Se il documento ha un compartoId (anche se vuoto), verifica se è già classificato
-      // ✅ Se il documento ha filePath, potrebbe essere già classificato tramite Explorer
-      // ✅ In questo caso, NON aggiornare immediatamente, ma richiedi conferma
+      // ✅ CRITICO: Se trascini una miniatura da un cassetto all'altro, sposta SUBITO (nessuna conferma)
+      // ✅ La conferma serve SOLO quando trascini un file dall'Explorer che esiste già in un altro cassetto
+      // ✅ Questo viene gestito in useArchive.ts / useFileUpload.ts quando si droppa un file Explorer
       const hasCompartoId = doc?.compartoId && doc.compartoId.trim() !== ''
       const hasFilePath = !!(doc as any)?.filePath
 
-      // ✅ Se il documento è associato a un altro comparto, emetti evento per creare miniatura ghost
-      if (hasCompartoId && doc.compartoId !== targetCompartoId) {
-        // ✅ Usa la funzione helper per trovare il nome del comparto sorgente
-        const sourceCompartoNome = this.findCompartoNome(doc.compartoId, options) || (doc.compartoId ? 'Cassetto sconosciuto' : 'Nessun cassetto')
-
-        if (!this.findCompartoNome(doc.compartoId, options)) {
-          console.warn('⚠️ [DRAG-DROP-SERVICE][MOVE-DOC] Comparto sorgente non trovato', {
-            docId,
-            compartoId: doc.compartoId,
-            compartiDisponibili: options.comparti.map(c => ({ id: c.id, nome: c.nome }))
-          })
-        }
-
-        // ✅ Emetti evento per creare miniatura ghost (gestito da useArchive)
-        window.dispatchEvent(new CustomEvent('app:request-move-confirmation', {
-          detail: {
-            docId,
-            doc,
-            sourceCompartoId: doc.compartoId,
-            sourceCompartoNome,
-            targetCompartoId,
-            targetCompartoNome: targetComparto.nome
-          }
-        }))
-
-        console.log('[DRAG-DROP-SERVICE][MOVE-DOC] Richiesta conferma spostamento (miniatura ghost)', {
-          docId,
-          sourceCompartoNome,
-          targetCompartoNome: targetComparto.nome
-        })
-
-        return // ✅ Esci senza spostare, aspetta conferma
-      }
+      // ✅ RIMOSSO: Non richiedere conferma per spostamento miniatura tra cassetti
+      // ✅ Se il documento ha compartoId diverso, sposta SUBITO (è uno spostamento di miniatura)
 
       // ✅ CRITICO: Se il documento ha filePath ma non ha compartoId, potrebbe essere già classificato
       // ✅ Verifica se esiste un documento con lo stesso filePath che ha già un compartoId
@@ -569,24 +539,31 @@ export class DragAndDropService {
       // ✅ Preserva thumbnailDataUrl durante lo spostamento
       const preservedThumbnail = (doc as any)?.thumbnailDataUrl
 
+      // ✅ CRITICO: Aggiorna PRIMA lo store (reattivo) per aggiornamento immediato UI
+      if (options.store) {
+        options.store.updateDocument(docId, {
+          compartoId: targetCompartoId,
+          thumbnailDataUrl: preservedThumbnail
+        } as any)
+        console.log('[DRAG-DROP-SERVICE][MOVE-DOC] Store aggiornato immediatamente', { docId, targetCompartoId })
+      }
+
       if (isPendingOrTemp) {
         // ✅ Documento temporaneo: aggiorna solo in memoria, non chiamare API
         console.log('[DRAG-DROP-SERVICE][MOVE-DOC] Documento temporaneo/pending, aggiorno solo in memoria', { docId, targetCompartoId, docTrovato: !!doc })
       } else {
-        // ✅ Documento esistente nel DB: aggiorna tramite API
-        try {
-          await options.api.updateDocumento(docId, { compartoId: targetCompartoId })
-          console.log('[DRAG-DROP-SERVICE][MOVE-DOC] Documento aggiornato nel DB', { docId, targetCompartoId })
-        } catch (error) {
-          // Se l'API fallisce, continua comunque con l'aggiornamento in memoria
-          console.warn('[DRAG-DROP-SERVICE][MOVE-DOC] Errore aggiornamento DB, continuo con aggiornamento in memoria', { docId, error })
-        }
+        // ✅ Documento esistente nel DB: aggiorna tramite API (in background, non blocca UI)
+        // ✅ NON aspettare l'API - lo store è già aggiornato, l'API è solo per persistenza
+        options.api.updateDocumento(docId, { compartoId: targetCompartoId }).catch(error => {
+          console.warn('[DRAG-DROP-SERVICE][MOVE-DOC] Errore aggiornamento DB (non critico)', { docId, error })
+        })
+        console.log('[DRAG-DROP-SERVICE][MOVE-DOC] Richiesta aggiornamento DB (non bloccante)', { docId, targetCompartoId })
       }
 
       // ✅ Trova il comparto di origine (se esiste) per loggare il cambio
       const sourceCompartoId = doc?.compartoId
 
-      // Aggiorna immediatamente window.__archiveData.documenti per aggiornare il conteggio
+      // ✅ Aggiorna anche window.__archiveData per retrocompatibilità (se necessario)
       try {
         const archiveData = (window as any).__archiveData as { documenti?: Array<any> } | undefined
         if (archiveData?.documenti) {

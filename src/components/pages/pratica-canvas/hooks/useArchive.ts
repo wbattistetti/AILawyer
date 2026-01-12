@@ -17,19 +17,19 @@ export function useArchive(
   const { toast } = useToast()
   const store = useDocumentStore()
 
+  // ✅ CRITICO: Usa selettori reattivi Zustand per aggiornamenti automatici
+  const documenti = useDocumentStore(state => Array.from(state.documents.values()))
+  const uploads = useDocumentStore(state => Array.from(state.uploads.values()))
+  const clientThumbByS3 = useDocumentStore(state => state.clientThumbByS3)
+  const pendingMoveConfirmations = useDocumentStore(state => state.pendingMoveConfirmations)
+
   // ✅ Usa useFileUpload per gestire l'upload dei file
   const { handleFileDrop } = useFileUpload({
     praticaId,
     comparti,
-    documenti: store.getAllDocuments(),
+    documenti,
     store
   })
-
-  // State from store
-  const documenti = store.getAllDocuments()
-  const uploads = Array.from(store.uploads.values())
-  const clientThumbByS3 = store.clientThumbByS3
-  const pendingMoveConfirmations = store.pendingMoveConfirmations // ✅ Mantieni come Map per DocumentCollection
 
   // ✅ LOG DETTAGLIATO: Documenti recuperati dallo store
   useEffect(() => {

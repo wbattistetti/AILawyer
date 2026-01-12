@@ -6,6 +6,7 @@ import { api } from '../../../../lib/api';
 import { colorFor, iconFor } from '../../../../features/drawers/drawerPalette';
 import { RefreshCw } from 'lucide-react';
 import { DragAndDropService } from '../../../../services/DragAndDropService';
+import { useDocumentStore } from '../../../../stores/documentStore/store';
 
 // Helper per convertire HEX in RGBA con alpha
 function hexToRgba(hex: string, alpha = 0.1) {
@@ -59,6 +60,7 @@ export function ArchiveRenderer({
     onConfirmMove,
     onCancelMove
 }: ArchiveRendererProps) {
+    const store = useDocumentStore()
     const showOverlay = false;
     const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
     const [hoverHeader, setHoverHeader] = useState<string | null>(null)
@@ -103,7 +105,8 @@ export function ArchiveRenderer({
             await DragAndDropService.moveDocumentToComparto(docId, compartoId, {
                 documenti,
                 comparti,
-                api
+                api,
+                store
             })
         } catch (e) {
             console.error('[MOVE][DOCUMENTO][ARCHIVE][ERROR]', { docId, compartoId, error: e })
