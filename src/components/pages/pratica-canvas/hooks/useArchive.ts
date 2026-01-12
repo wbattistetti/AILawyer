@@ -255,6 +255,39 @@ export function useArchive(
     })
   }, [store, toast])
 
+  // ✅ Listener per conferme dalla TAB (DrawerTabStrip)
+  useEffect(() => {
+    const handleConfirmFromTab = (e: CustomEvent) => {
+      const confirmation = e.detail
+      if (confirmation) {
+        handleConfirmMove(confirmation)
+        // Emetti evento per rimuovere ghost dalla TAB
+        window.dispatchEvent(new CustomEvent('app:move-confirmed', {
+          detail: { targetCompartoId: confirmation.targetCompartoId }
+        }))
+      }
+    }
+
+    const handleCancelFromTab = (e: CustomEvent) => {
+      const confirmation = e.detail
+      if (confirmation) {
+        handleCancelMove(confirmation)
+        // Emetti evento per rimuovere ghost dalla TAB
+        window.dispatchEvent(new CustomEvent('app:move-cancelled', {
+          detail: { targetCompartoId: confirmation.targetCompartoId }
+        }))
+      }
+    }
+
+    window.addEventListener('app:confirm-move-from-tab', handleConfirmFromTab as EventListener)
+    window.addEventListener('app:cancel-move-from-tab', handleCancelFromTab as EventListener)
+
+    return () => {
+      window.removeEventListener('app:confirm-move-from-tab', handleConfirmFromTab as EventListener)
+      window.removeEventListener('app:cancel-move-from-tab', handleCancelFromTab as EventListener)
+    }
+  }, [handleConfirmMove, handleCancelMove])
+
   return {
     documenti,
     uploads,

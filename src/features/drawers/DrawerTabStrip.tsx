@@ -4,6 +4,7 @@ import type { DrawerType } from './types'
 import type { Documento, Comparto } from '../../types'
 import './DrawerTabStrip.css'
 import { DragAndDropService } from '../../services/DragAndDropService'
+import { useDocumentStore } from '../../stores/documentStore/store'
 
 // ✅ Componente helper per applicare il colore all'icona SVG
 function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: string; size: number }) {
@@ -77,6 +78,7 @@ type Props = {
 }
 
 export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop }: Props) {
+  const store = useDocumentStore()
   const [draggedOverId, setDraggedOverId] = React.useState<string | null>(null)
   const [hoveredDrawerId, setHoveredDrawerId] = React.useState<string | null>(null)
   const [showSearchIcon, setShowSearchIcon] = React.useState(false)
@@ -86,6 +88,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   const containerRef = React.useRef<HTMLDivElement>(null)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
   const [availableWidth, setAvailableWidth] = React.useState<number | null>(null)
+  // ✅ Stato per tracciare conferme pendenti per TAB (ghost sopra la TAB)
+  const [pendingConfirmationsByTab, setPendingConfirmationsByTab] = React.useState<Map<string, any>>(new Map())
 
   // ✅ Focus input quando si apre la search box
   React.useEffect(() => {
@@ -106,6 +110,22 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     window.addEventListener('resize', updateWidth)
     return () => window.removeEventListener('resize', updateWidth)
   }, [])
+
+  // ✅ Ascolta direttamente lo store per pendingMoveConfirmations (reattivo)
+  const pendingMoveConfirmations = useDocumentStore(state => state.pendingMoveConfirmations)
+
+  // ✅ Aggiorna pendingConfirmationsByTab quando cambia lo store
+  React.useEffect(() => {
+    const newMap = new Map<string, any>()
+    pendingMoveConfirmations.forEach((confirmation, key) => {
+      // Trova il drawerId corrispondente al targetCompartoId
+      const drawerId = items.find(item => item.id === confirmation.targetCompartoId)?.id
+      if (drawerId) {
+        newMap.set(drawerId, confirmation)
+      }
+    })
+    setPendingConfirmationsByTab(newMap)
+  }, [pendingMoveConfirmations, items])
 
   // ✅ Gestisce la ricerca di documenti
   const handleSearch = React.useCallback(async () => {
@@ -267,7 +287,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
             await DragAndDropService.moveDocumentToComparto(docId, comparto.id, {
               documenti,
               comparti,
-              api
+              api,
+              store
             })
             console.log('[DRAWER-TAB-STRIP][DROP] ✅ Documento spostato con successo', { docId, compartoId: comparto.id })
           } else {
@@ -542,7 +563,11 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
       <div
         data-drawer-strip="true"
         className="flex items-end"
-        style={{ gap: `${getGapBetweenDrawers}px` }}
+        style={{
+          gap: `${getGapBetweenDrawers}px`,
+          position: 'relative',
+          overflow: 'visible' // ✅ Permette alla ghost di apparire sopra
+        }}
       >
       {items.map((item, index) => {
         const isSelected = item.id === selectedId
@@ -552,8 +577,10 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
 
         // ✅ Determina lo stato di highlight: selezionato > hover > dragged > normale
         const isHighlighted = isSelected || isHovered || isDraggedOver
+        const confirmation = pendingConfirmationsByTab.get(item.id)
 
         return (
+          <div key={item.id} style={{ position: 'relative' }}>
           <button
             key={item.id}
             data-drawer-tab="true"
@@ -671,6 +698,116 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
               </span>
             </div>
           </button>
+
+          {/* ✅ Miniatura ghost sopra la TAB quando serve conferma */}
+          {confirmation && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '-140px', // Sopra la TAB
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 1000,
+                width: '12rem',
+                minWidth: '12rem',
+                aspectRatio: '3/4',
+                border: '2px solid #f97316',
+                borderStyle: 'dashed',
+                borderRadius: '8px',
+                backgroundColor: '#fff7ed',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px',
+                gap: '6px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                pointerEvents: 'auto'
+              }}
+            >
+              <div style={{
+                fontSize: '10px',
+                fontWeight: 500,
+                textAlign: 'center',
+                padding: '6px',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                lineHeight: '1.3'
+              }}>
+                Il documento "{confirmation.filename}" è già in "{confirmation.sourceCompartoNome}".
+              </div>
+              <div style={{
+                fontSize: '9px',
+                color: '#6b7280',
+                textAlign: 'center',
+                padding: '6px'
+              }}>
+                Vuoi spostarlo qui?
+              </div>
+              <div style={{
+                display: 'flex',
+                gap: '6px',
+                marginTop: 'auto',
+                marginBottom: '8px'
+              }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    // Emetti evento per conferma (gestito da useArchive)
+                    window.dispatchEvent(new CustomEvent('app:confirm-move-from-tab', {
+                      detail: confirmation
+                    }))
+                    setPendingConfirmationsByTab(prev => {
+                      const next = new Map(prev)
+                      next.delete(item.id)
+                      return next
+                    })
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#2563eb',
+                    color: 'white',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Conferma
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    // Emetti evento per annullamento (gestito da useArchive)
+                    window.dispatchEvent(new CustomEvent('app:cancel-move-from-tab', {
+                      detail: confirmation
+                    }))
+                    setPendingConfirmationsByTab(prev => {
+                      const next = new Map(prev)
+                      next.delete(item.id)
+                      return next
+                    })
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#d1d5db',
+                    color: '#374151',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annulla
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
         )
       })}
       </div>
