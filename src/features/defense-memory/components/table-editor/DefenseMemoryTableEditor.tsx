@@ -76,6 +76,27 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     // ✅ Stato per estratti nel cassetto
     const [extracts, setExtracts] = useState<ExtractData[]>([])
 
+    // ✅ Listener per eventi 'app:extract-add' dal PDF viewer
+    useEffect(() => {
+        const handleExtractAdd = (event: CustomEvent) => {
+            const { extract } = event.detail
+            console.log('[DefenseMemoryTableEditor] 📬 Evento app:extract-add ricevuto:', extract)
+            setExtracts(prev => {
+                // ✅ Evita duplicati controllando l'ID
+                if (prev.some(e => e.id === extract.id)) {
+                    console.log('[DefenseMemoryTableEditor] ⚠️ Estratto già presente, skip:', extract.id)
+                    return prev
+                }
+                return [...prev, extract]
+            })
+        }
+
+        window.addEventListener('app:extract-add', handleExtractAdd as EventListener)
+        return () => {
+            window.removeEventListener('app:extract-add', handleExtractAdd as EventListener)
+        }
+    }, [])
+
     // Stato per zoom locale (Ctrl + rotella)
     const [zoomLevel, setZoomLevel] = useState(1.0) // 1.0 = 100%, 1.2 = 120%, etc.
     const containerRef = useRef<HTMLDivElement>(null)

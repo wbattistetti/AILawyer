@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { Annotation } from '../hooks/usePdfAnnotations'
 import type { PersistentSelection } from '../types'
-import { FloatingExtractButton } from './FloatingExtractButton'
+import { ExtractBlockOverlay } from './ExtractBlockOverlay'
 
 interface AnnotationOverlaysProps {
 	selectedAnnot: Annotation | null
@@ -131,9 +131,16 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 			})}
 
 			{/* Render persistent selections with interactivity */}
-			{persistentSelections.map(selection => {
+			{persistentSelections.map((selection, index) => {
 				const root = overlayRootsRef.current.get(selection.page)
 				if (!root) return null
+
+				// ✅ Nascondi l'ultima selezione se c'è un overlay (ExtractBlockOverlay)
+				// L'overlay sostituisce visivamente il rettangolo blu
+				const isLastSelection = index === persistentSelections.length - 1
+				if (isLastSelection) {
+					return null // ✅ Non renderizzare il rettangolo blu per l'ultima selezione
+				}
 
 				const left = `${selection.x0Pct * 100}%`
 				const top = `${selection.y0Pct * 100}%`
@@ -234,11 +241,12 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 				</div>
 			)}
 
-			{/* Floating extract button for the last persistent selection */}
+			{/* ExtractBlock overlay for the last persistent selection */}
 			{persistentSelections.length > 0 && (
-				<FloatingExtractButton
+				<ExtractBlockOverlay
 					selection={persistentSelections[persistentSelections.length - 1]}
 					pageElsRef={pageElsRef}
+					overlayRootsRef={overlayRootsRef}
 					lastSelection={lastSelection}
 					onClose={() => {
 						setPersistentSelections(prev => prev.slice(0, -1))
@@ -246,6 +254,10 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					setPersistentSelections={setPersistentSelections}
 					docName={docName}
 					hasNativeText={hasNativeText}
+					onExtractAdd={(extract) => {
+						// ✅ Dispatch evento per aggiungere al cassetto
+						window.dispatchEvent(new CustomEvent('app:extract-add', { detail: { extract } }))
+					}}
 				/>
 			)}
 		</>

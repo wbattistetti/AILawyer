@@ -56,11 +56,13 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
 
         console.log('[ExtractDrawer] 🔍 Controllo duplicati, extracts attuali:', currentExtracts.length)
 
+        // ✅ Controlla duplicati usando source, page, bbox O ID (se presente)
         const isDuplicate = currentExtracts.some(e =>
-          e.source === extract.source &&
+          (extract.id && e.id === extract.id) || // ✅ Controlla ID se presente
+          (e.source === extract.source &&
           e.page === extract.page &&
           e.bbox.x0Pct === extract.bbox.x0Pct &&
-          e.bbox.y0Pct === extract.bbox.y0Pct
+          e.bbox.y0Pct === extract.bbox.y0Pct)
         )
 
         if (!isDuplicate) {
@@ -91,11 +93,13 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
           const extract = convertClipboardToExtract(clipboardData)
           const currentExtracts = extractsRef.current
           const currentOnExtractAdd = onExtractAddRef.current
+          // ✅ Controlla duplicati usando source, page, bbox O ID (se presente)
           const isDuplicate = currentExtracts.some(e =>
-            e.source === extract.source &&
+            (extract.id && e.id === extract.id) || // ✅ Controlla ID se presente
+            (e.source === extract.source &&
             e.page === extract.page &&
             e.bbox.x0Pct === extract.bbox.x0Pct &&
-            e.bbox.y0Pct === extract.bbox.y0Pct
+            e.bbox.y0Pct === extract.bbox.y0Pct)
           )
           if (!isDuplicate) {
             console.log('[ExtractDrawer] ➕ Aggiungo estratto pendente al cassetto:', extract.id)
