@@ -183,55 +183,60 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        'border-t border-gray-300 bg-gray-50 p-4 space-y-3 min-h-[120px]',
+        'border-t border-gray-300 bg-gray-50 flex flex-col',
+        'min-h-[120px] max-h-[400px]', // ✅ Altezza minima e massima fissa
         className
       )}
     >
-      <div className="flex items-center justify-between">
+      {/* ✅ Header fisso */}
+      <div className="flex items-center justify-between p-4 pb-2 flex-shrink-0">
         <h3 className="text-sm font-semibold text-gray-900">
           📋 Cassetto Estratti {extracts.length > 0 && `(${extracts.length})`}
         </h3>
         {/* ✅ Rimossa aggiunta manuale - ora è automatica */}
       </div>
 
-      {extracts.length === 0 ? (
-        <div
-          className={cn(
-            'p-4 border-2 border-dashed rounded-lg text-center transition-colors',
-            'border-gray-300 bg-white'
-          )}
-        >
-          <p className="text-sm text-gray-500">
-            ✅ Gli estratti copiati vengono aggiunti automaticamente qui
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            (Puoi eliminarli se non ti servono)
-          </p>
-        </div>
-      ) : (
-        <div
-          className={cn(
-            'grid gap-3',
-            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-            isDragOver && 'ring-2 ring-blue-500 rounded-lg p-2'
-          )}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
-          {extracts.map((extract, index) => (
-            <ExtractCard
-              key={extract.id}
-              extract={extract}
-              index={index}
-              isDragging={draggedIndex === index}
-              onDragStart={(e) => handleExtractDragStart(e, index)}
-              onDragEnd={handleExtractDragEnd}
-              onRemove={() => onExtractRemove(extract.id)}
-            />
-          ))}
-        </div>
-      )}
+      {/* ✅ Contenuto scrollabile */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
+        {extracts.length === 0 ? (
+          <div
+            className={cn(
+              'p-4 border-2 border-dashed rounded-lg text-center transition-colors',
+              'border-gray-300 bg-white'
+            )}
+          >
+            <p className="text-sm text-gray-500">
+              ✅ Gli estratti copiati vengono aggiunti automaticamente qui
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              (Puoi eliminarli se non ti servono)
+            </p>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'grid gap-3',
+              'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+              isDragOver && 'ring-2 ring-blue-500 rounded-lg p-2'
+            )}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            {extracts.map((extract, index) => (
+              <ExtractCard
+                key={extract.id}
+                extract={extract}
+                index={index}
+                isDragging={draggedIndex === index}
+                onDragStart={(e) => handleExtractDragStart(e, index)}
+                onDragEnd={handleExtractDragEnd}
+                onRemove={() => onExtractRemove(extract.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
