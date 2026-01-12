@@ -21,6 +21,11 @@ export interface ExtractData {
     y1Pct: number
   }
   createdAt: Date                    // Data/ora creazione
+  // ✅ Metadati opzionali per qualificare l'estratto (nel cassetto e nelle righe)
+  title?: string                     // Titolo editabile
+  observation?: string               // Campo osservazione editabile
+  hasObservation?: boolean           // Se true, mostra il campo osservazione
+  collapsed?: boolean                // Stato collassato/espanso
 }
 
 /**
@@ -36,6 +41,10 @@ export interface ExtractBlock {
   id: string
   order: number                      // Ordine nella lista (per riorganizzazione)
   extract: ExtractData               // Dati dell'estratto
+  title?: string                     // ✅ Titolo editabile (es. "Estratto", "Estratto chiave")
+  observation?: string               // ✅ Campo osservazione editabile
+  hasObservation?: boolean           // ✅ Se true, mostra il campo osservazione
+  collapsed?: boolean                // ✅ Stato collassato/espanso
 }
 
 /**
@@ -77,6 +86,7 @@ export interface BlockTemplate {
 export interface ExtractDrawerProps {
   extracts: ExtractData[]
   onExtractAdd: (extract: ExtractData) => void
+  onExtractUpdate?: (extract: ExtractData) => void  // ✅ Callback per aggiornare metadati (titolo, osservazione)
   onExtractRemove: (extractId: string) => void
   onExtractReorder?: (fromIndex: number, toIndex: number) => void
   className?: string
@@ -98,8 +108,10 @@ export interface CardBodyProps {
  */
 export interface ExtractBlockProps {
   block: ExtractBlock
+  onUpdate?: (block: ExtractBlock) => void  // ✅ Callback per aggiornare titolo/osservazione
   onRemove?: () => void
   onDragStart?: (e: React.DragEvent) => void
+  onDragEnd?: () => void  // ✅ Callback quando il drag termina
   readOnly?: boolean
 }
 

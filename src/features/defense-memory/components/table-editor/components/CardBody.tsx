@@ -88,7 +88,12 @@ export const CardBody: React.FC<CardBodyProps> = ({
             type: 'extract',
             id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
             order: insertIndex,
-            extract: data.extract as ExtractData
+            extract: data.extract as ExtractData,
+            // ✅ Trasporta anche i metadati dal cassetto (titolo, osservazione, etc.)
+            title: data.title || data.extract.title,
+            observation: data.observation || data.extract.observation,
+            hasObservation: data.hasObservation ?? data.extract.hasObservation ?? false,
+            collapsed: data.collapsed ?? data.extract.collapsed ?? false
           }
           const newBlocks = [...blocks]
           newBlocks.splice(insertIndex, 0, extractBlock)
@@ -214,6 +219,12 @@ export const CardBody: React.FC<CardBodyProps> = ({
               {block.type === 'extract' ? (
                 <ExtractBlockComponent
                   block={block}
+                  onUpdate={!readOnly ? (updatedBlock) => {
+                    const newBlocks = blocks.map(b =>
+                      b.id === block.id ? updatedBlock : b
+                    )
+                    onBlocksChange(newBlocks)
+                  } : undefined}
                   onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
                   onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
                   readOnly={readOnly}

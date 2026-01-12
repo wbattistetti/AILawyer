@@ -379,6 +379,12 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                     onExtractAdd={(extract) => {
                         setExtracts(prev => [...prev, extract])
                     }}
+                    onExtractUpdate={(updatedExtract) => {
+                        // ✅ Aggiorna l'estratto con i nuovi metadati (titolo, osservazione, etc.)
+                        setExtracts(prev => prev.map(e =>
+                            e.id === updatedExtract.id ? updatedExtract : e
+                        ))
+                    }}
                     onExtractRemove={(extractId) => {
                         setExtracts(prev => prev.filter(e => e.id !== extractId))
                     }}

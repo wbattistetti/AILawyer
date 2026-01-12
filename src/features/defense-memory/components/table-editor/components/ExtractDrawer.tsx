@@ -7,15 +7,16 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react'
-import { ExtractDrawerProps, ExtractData } from '../types/blocks.types'
+import { ExtractDrawerProps, ExtractData, ExtractBlock as ExtractBlockType } from '../types/blocks.types'
 import { extractClipboardManager } from '@/utils/extractClipboard'
 import { addExtractFromClipboard, reorderExtracts, convertClipboardToExtract } from '../../../services/ExtractDrawerService'
+import { ExtractBlock } from './ExtractBlock'
 import { cn } from '@/lib/utils'
-import { X, FileText, Image as ImageIcon } from 'lucide-react'
 
 export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
   extracts,
   onExtractAdd,
+  onExtractUpdate,
   onExtractRemove,
   onExtractReorder,
   className
@@ -156,20 +157,50 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
 
   const handleExtractDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index)
+    const extract = extracts[index]
+
+    // ✅ Passa anche title, observation, hasObservation, collapsed
     e.dataTransfer.setData('application/json', JSON.stringify({
       type: 'extract',
-      extract: extracts[index]
+      extract: extract,  // ✅ ExtractData ora include title, observation, etc.
+      title: extract.title,
+      observation: extract.observation,
+      hasObservation: extract.hasObservation,
+      collapsed: extract.collapsed
     }))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Crea drag image personalizzata
-    const dragImage = document.createElement('div')
-    dragImage.style.position = 'absolute'
-    dragImage.style.top = '-1000px'
-    dragImage.textContent = extracts[index].source
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 0, 0)
-    setTimeout(() => document.body.removeChild(dragImage), 0)
+    // ✅ Crea drag image personalizzata con dimensioni controllate
+    const dragElement = e.currentTarget as HTMLElement
+    const rect = dragElement.getBoundingClientRect()
+
+    // ✅ Crea un clone dell'elemento con dimensioni fisse
+    const clone = dragElement.cloneNode(true) as HTMLElement
+    clone.style.position = 'absolute'
+    clone.style.top = '-1000px'
+    clone.style.left = '-1000px'
+    clone.style.opacity = '0.8'
+    clone.style.pointerEvents = 'none'
+    clone.style.zIndex = '10000'
+    // ✅ Mantieni le dimensioni originali (non ingrandire)
+    clone.style.width = `${rect.width}px`
+    clone.style.height = `${rect.height}px`
+    clone.style.maxWidth = `${rect.width}px`
+    clone.style.maxHeight = `${rect.height}px`
+
+    document.body.appendChild(clone)
+
+    // ✅ Usa il centro dell'elemento come offset per il drag image
+    const offsetX = rect.width / 2
+    const offsetY = rect.height / 2
+    e.dataTransfer.setDragImage(clone, offsetX, offsetY)
+
+    // ✅ Rimuovi il clone dopo un breve delay
+    setTimeout(() => {
+      if (document.body.contains(clone)) {
+        document.body.removeChild(clone)
+      }
+    }, 0)
   }
 
   const handleExtractDragEnd = () => {
@@ -223,17 +254,43 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
           >
-            {extracts.map((extract, index) => (
-              <ExtractCard
-                key={extract.id}
-                extract={extract}
-                index={index}
-                isDragging={draggedIndex === index}
-                onDragStart={(e) => handleExtractDragStart(e, index)}
-                onDragEnd={handleExtractDragEnd}
-                onRemove={() => onExtractRemove(extract.id)}
-              />
-            ))}
+            {extracts.map((extract, index) => {
+              // ✅ Converti ExtractData in ExtractBlock per usare lo stesso componente
+              const extractBlock: ExtractBlockType = {
+                type: 'extract',
+                id: extract.id,
+                order: index,
+                extract: extract,
+                title: extract.title,
+                observation: extract.observation,
+                hasObservation: extract.hasObservation,
+                collapsed: extract.collapsed
+              }
+
+              return (
+                <ExtractBlock
+                  key={extract.id}
+                  block={extractBlock}
+                  onUpdate={(updatedBlock) => {
+                    // ✅ Aggiorna l'estratto con i nuovi metadati
+                    if (onExtractUpdate) {
+                      const updatedExtract: ExtractData = {
+                        ...extract,
+                        title: updatedBlock.title,
+                        observation: updatedBlock.observation,
+                        hasObservation: updatedBlock.hasObservation,
+                        collapsed: updatedBlock.collapsed
+                      }
+                      onExtractUpdate(updatedExtract)
+                    }
+                  }}
+                  onRemove={() => onExtractRemove(extract.id)}
+                  onDragStart={(e) => handleExtractDragStart(e, index)}
+                  onDragEnd={handleExtractDragEnd}
+                  readOnly={false}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -241,81 +298,4 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
   )
 }
 
-/**
- * Card singolo estratto
- */
-interface ExtractCardProps {
-  extract: ExtractData
-  index: number
-  isDragging: boolean
-  onDragStart: (e: React.DragEvent) => void
-  onDragEnd: () => void
-  onRemove: () => void
-}
-
-const ExtractCard: React.FC<ExtractCardProps> = ({
-  extract,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onRemove
-}) => {
-  const hasImage = !!extract.imageDataUrl
-  const hasText = !!extract.content && extract.content.trim().length > 0
-
-  return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      className={cn(
-        'bg-white border border-gray-300 rounded-lg p-3 shadow-sm',
-        'cursor-move hover:shadow-md transition-all',
-        isDragging && 'opacity-50 scale-95'
-      )}
-    >
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {hasImage ? (
-            <ImageIcon className="h-4 w-4 text-blue-500 flex-shrink-0" />
-          ) : (
-            <FileText className="h-4 w-4 text-gray-500 flex-shrink-0" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-gray-900 truncate">
-              {extract.source}
-            </p>
-            <p className="text-xs text-gray-500">
-              Pag. {extract.page}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove()
-          }}
-          className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {hasImage && extract.imageDataUrl && (
-        <div className="mb-2 rounded overflow-hidden border border-gray-200">
-          <img
-            src={extract.imageDataUrl}
-            alt="Estratto"
-            className="w-full h-auto max-h-32 object-contain"
-          />
-        </div>
-      )}
-
-      {hasText && (
-        <div className="text-xs text-gray-700 line-clamp-3">
-          {extract.content}
-        </div>
-      )}
-    </div>
-  )
-}
+// ✅ ExtractCard rimosso - ora usiamo ExtractBlock unificato
