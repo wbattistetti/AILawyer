@@ -99,9 +99,16 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
     }
   }
 
-  async readChunk(filePath: string, start: number, len: number): Promise<ArrayBuffer> {
+  readChunk = async (filePath: string, start: number, len: number): Promise<ArrayBuffer> => {
     try {
-      const response = await fetch(`${this.baseUrl}/api/filesystem/read-chunk`, {
+      const url = `${this.baseUrl}/api/filesystem/read-chunk`;
+      console.log('[BackendFileSystemAdapter][readChunk]', {
+        baseUrl: this.baseUrl,
+        url,
+        filePath: filePath.substring(0, 50)
+      });
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,7 +126,10 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
 
       return await response.arrayBuffer();
     } catch (error) {
-      console.error(`Failed to read chunk from ${filePath}:`, error);
+      console.error(`[BackendFileSystemAdapter][readChunk] Failed to read chunk from ${filePath}:`, error, {
+        baseUrl: this.baseUrl,
+        url: `${this.baseUrl}/api/filesystem/read-chunk`
+      });
       throw error;
     }
   }

@@ -247,6 +247,9 @@ export function DocumentCollection({
   onDragStartItem,
   extraNodesTop,
   compartoId,
+  pendingMoveConfirmations,
+  onConfirmMove,
+  onCancelMove,
 }: {
   title?: string
   items: DocItem[]
@@ -262,9 +265,12 @@ export function DocumentCollection({
   etaById?: Record<string, string>
   statusById?: Record<string, string>
   draggableItems?: boolean
-  onDragStartItem?: (docId: string, e: React.DragEvent) => void
+  onDragStartItem?: (docId: string, e: React.DragEvent, dragElement?: HTMLElement) => void
   extraNodesTop?: React.ReactNode
   compartoId?: string // ✅ ID del comparto per gestire drop Explorer
+  pendingMoveConfirmations?: Map<string, any> // ✅ Miniature ghost in attesa di conferma
+  onConfirmMove?: (confirmation: any) => void // ✅ Callback per conferma spostamento
+  onCancelMove?: (confirmation: any) => void // ✅ Callback per annullamento spostamento
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState<boolean>(false)
@@ -305,10 +311,20 @@ export function DocumentCollection({
       'Files'
     ])
 
-    if (handled && DragAndDropService.isExplorerFile(e)) {
+    if (handled && DragAndDropService.isDocId(e) && compartoId) {
+      // ✅ Controlla se il documento esiste già in questo comparto
+      const docId = e.dataTransfer.getData(DragAndDropService.DOC_ID_TYPE)
+      if (docId) {
+        const doc = items.find(d => d.id === docId)
+        if (doc && doc.compartoId === compartoId) {
+          // ✅ Cambia icona mouse a "no-drop" (rosso)
+          e.dataTransfer.dropEffect = 'no-drop'
+        }
+      }
+    } else if (handled && DragAndDropService.isExplorerFile(e)) {
       setIsExplorerDragOver(true)
     }
-  }, [])
+  }, [compartoId, items])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     if (DragAndDropService.isExplorerFile(e)) {
@@ -323,6 +339,29 @@ export function DocumentCollection({
 
   // ✅ Handler unificato per drop: gestisce sia file Explorer che file normali
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    console.log('[DOCUMENT-COLLECTION][DROP][START] Drop ricevuto', {
+      compartoId,
+      target: (e.target as HTMLElement)?.tagName,
+      currentTarget: (e.currentTarget as HTMLElement)?.tagName,
+      types: Array.from(e.dataTransfer?.types || [])
+    })
+
+    // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
+    const { isDockviewDrag } = await import('../../utils/dragEventUtils')
+    const isDockview = isDockviewDrag(e)
+    console.log('[DOCUMENT-COLLECTION][DROP] isDockviewDrag result:', isDockview)
+
+    if (isDockview) {
+      console.log('[DOCUMENT-COLLECTION][DROP] ❌ Ignorato - è drag Dockview')
+      return // Lascia che Dockview gestisca il drop del pannello
+    }
+
+    console.log('[DOCUMENT-COLLECTION][DROP] ✅ Procedo con gestione drop')
+
+    // ✅ CRITICO: Ferma la propagazione per evitare gestione duplicata
+    e.stopPropagation()
+    e.preventDefault()
+
     console.log('[DOCUMENT-COLLECTION] handleDrop chiamato', {
       compartoId,
       compartoIdType: typeof compartoId,
@@ -598,30 +637,51 @@ export function DocumentCollection({
         <div className="flex-1 overflow-auto" data-component="document-collection-thumbnails">
           <input {...getInputProps()} />
           <div className={`grid [grid-template-columns:repeat(auto-fill,minmax(12rem,1fr))] gap-6 items-start p-3 ${isDragActive ? 'bg-blue-50' : ''}`}>
+            {/* ✅ Prima tutti i documenti normali */}
             {items.map(doc => {
-              // ✅ Gestisci Ghost (upload placeholder) come elemento speciale
-              if ((doc as any)._isUploadGhost) {
-                const uploadData = (doc as any)._uploadData
-                const color = uploadData?.compartoColor || '#3b82f6' // Colore di default se non disponibile
-                const dashedStyle = { borderColor: color }
-                const name = doc.filename || ''
+              // ✅ Rimosso rettangolo punteggiato "Carico...": i documenti temporanei vengono creati SUBITO con miniatura
+              // ✅ Non serve più il placeholder, la miniatura appare immediatamente
 
-                return (
-                  <div
-                    key={doc.id}
-                    className="relative w-full min-w-[12rem] aspect-[3/4] border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden"
-                    style={dashedStyle}
-                  >
-                    {uploadData?.preview ? (
-                      <img src={uploadData.preview} alt={name} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                    ) : null}
-                    <div className="relative z-10 flex flex-col items-center gap-2 p-2 text-center">
-                      <span className="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      <div className="text-xs font-medium">Carico…</div>
-                      <div className="text-[11px] text-neutral-600 line-clamp-2">{name}</div>
+              // ✅ Gestisci miniatura ghost per conferma spostamento (sostituisce la miniatura esistente)
+              if (compartoId && pendingMoveConfirmations) {
+                const moveConfirmation = pendingMoveConfirmations.get(`${doc.id}-${compartoId}`)
+                if (moveConfirmation && moveConfirmation.targetCompartoId === compartoId) {
+                  return (
+                    <div
+                      key={`move-confirmation-${moveConfirmation.docId}-${moveConfirmation.targetCompartoId}`}
+                      className="relative w-full min-w-[12rem] max-w-[12rem] aspect-[3/4] border-2 border-orange-400 border-dashed rounded-md bg-orange-50 flex flex-col items-center justify-center p-2 gap-1.5 overflow-hidden"
+                    >
+                      <div className="text-[10px] font-medium text-gray-900 text-center px-1.5 line-clamp-2 flex-1 flex items-center">
+                        Il documento "{moveConfirmation.filename}" è già in "{moveConfirmation.sourceCompartoNome}".
+                      </div>
+                      <div className="text-[9px] text-gray-600 text-center px-1.5">
+                        Vuoi spostarlo qui?
+                      </div>
+                      <div className="flex gap-1.5 mt-auto mb-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onConfirmMove?.(moveConfirmation)
+                          }}
+                          className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px] font-medium flex-shrink-0"
+                        >
+                          Conferma
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            console.log('🔄 [DOC-COLLECTION][CANCEL] Click su Annulla (doc esistente)', { moveConfirmation })
+                            onCancelMove?.(moveConfirmation)
+                          }}
+                          className="px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 text-[10px] font-medium flex-shrink-0"
+                        >
+                          Annulla
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )
+                  )
+                }
               }
 
               // ✅ Documento normale
@@ -639,19 +699,23 @@ export function DocumentCollection({
               // NON convertire undefined in false! Passa undefined così com'è
               const hasNativeTextValue = doc.hasNativeText
 
-              // ✅ Priorità thumbnail: 1) doc.thumbnailDataUrl dal DB (client-side generata), 2) generazione client on-demand
+              // ✅ Priorità thumbnail: 1) doc.thumb passato da ArchiveRenderer (già estratto da thumbnailDataUrl), 2) generazione client on-demand
               // ❌ Rimossa generazione backend ridondante (server thumb)
-              const thumbnailFromDb = (doc as any).thumbnailDataUrl || undefined
+              const thumbnailFromDb = doc.thumb || (doc as any).thumbnailDataUrl || undefined
               const finalImgSrc = isExtract ? '' : thumbnailFromDb
-              const isTempDoc = doc.id?.startsWith('temp:')
-              // ✅ Per documenti temporanei, non fare lazy loading dal backend (thumbnail generata client-side)
+              const isTempDoc = doc.id?.startsWith('temp:') || doc.id?.startsWith('pending:')
+              // ✅ Per documenti temporanei/pending, non fare lazy loading dal backend (thumbnail generata client-side)
               // ✅ NOVO: Usa autoGenerateThumbnail dal docItem se presente (per file virtuali), altrimenti calcola
               const shouldAutoGenerate = doc.autoGenerateThumbnail ?? (isPdf && !thumbnailFromDb && computedFileUrl)
               const shouldLoadLazyThumbnail = !isExtract && isPdf && !thumbnailFromDb && !isTempDoc
 
+              // ✅ Key stabile per evitare re-mount quando l'ID cambia (tempIdImmediato → tempIdFinale → documento reale)
+              // Priorità: s3Key > hash > filePath > id
+              const stableKey = doc.s3Key || (doc as any).hash || (doc as any).filePath || doc.id
+
               return (
                 <ThumbCardWithLazyThumbnail
-                  key={doc.id}
+                  key={stableKey}
                   doc={doc}
                   isExtract={isExtract}
                   titleText={titleText}
@@ -680,6 +744,45 @@ export function DocumentCollection({
                 />
               )
             })}
+            {/* ✅ Miniature ghost per conferma spostamento IN CODA (dopo tutti i documenti) */}
+            {compartoId && pendingMoveConfirmations && Array.from(pendingMoveConfirmations.values())
+              .filter(confirmation => confirmation.targetCompartoId === compartoId)
+              .filter(confirmation => !items.some(doc => doc.id === confirmation.docId))
+              .map(confirmation => (
+                <div
+                  key={`move-confirmation-ghost-${confirmation.docId}-${confirmation.targetCompartoId}`}
+                  className="relative w-full min-w-[12rem] max-w-[12rem] aspect-[3/4] border-2 border-orange-400 border-dashed rounded-md bg-orange-50 flex flex-col items-center justify-center p-2 gap-1.5 overflow-hidden"
+                >
+                  <div className="text-[10px] font-medium text-gray-900 text-center px-1.5 line-clamp-2 flex-1 flex items-center">
+                    Il documento "{confirmation.filename}" è già in "{confirmation.sourceCompartoNome}".
+                  </div>
+                  <div className="text-[9px] text-gray-600 text-center px-1.5">
+                    Vuoi spostarlo qui?
+                  </div>
+                  <div className="flex gap-1.5 mt-auto mb-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onConfirmMove?.(confirmation)
+                      }}
+                      className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px] font-medium flex-shrink-0"
+                    >
+                      Conferma
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        console.log('🔄 [DOC-COLLECTION][CANCEL] Click su Annulla', { confirmation })
+                        onCancelMove?.(confirmation)
+                      }}
+                      className="px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 text-[10px] font-medium flex-shrink-0"
+                    >
+                      Annulla
+                    </button>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       </div>
@@ -722,6 +825,9 @@ function ThumbCardWithLazyThumbnail({
   cancellingById,
   transcribedPctById,
 }: any) {
+  // ✅ Stato per tracciare se questo documento è in drag
+  const [isDragging, setIsDragging] = useState(false)
+
   // Lazy load thumbnail dal DB se necessario
   const { thumbnail: lazyThumbnail } = useDocumentThumbnail(
     shouldLoadLazyThumbnail ? doc.id : undefined,
@@ -744,7 +850,24 @@ function ThumbCardWithLazyThumbnail({
   return (
     <div
       draggable={!!draggableItems}
-      onDragStart={(e) => onDragStartItem?.(doc.id, e)}
+      onDragStart={(e) => {
+        // ✅ Imposta stato dragging
+        setIsDragging(true)
+        // ✅ Passa l'elemento DOM per creare il drag image
+        const dragElement = e.currentTarget as HTMLElement
+        onDragStartItem?.(doc.id, e, dragElement)
+      }}
+      onDragEnd={(e) => {
+        // ✅ Rimuovi stato dragging quando il drag termina
+        setIsDragging(false)
+      }}
+      className={isDragging ? 'opacity-50 brightness-75 transition-opacity' : 'transition-opacity'}
+      ref={(el) => {
+        // ✅ Salva riferimento per accesso diretto se necessario
+        if (el && draggableItems) {
+          (el as any).__thumbCardElement = el
+        }
+      }}
     >
                   <ThumbCard
                     title={isExtract ? titleText : doc.filename}

@@ -33,6 +33,9 @@ interface ArchiveRendererProps {
     uploads?: UploadProgress[];
     toast: any;
     singleCompartoId?: string; // ✅ Se presente, mostra solo questo comparto (senza header accordion)
+    pendingMoveConfirmations?: Map<string, any>; // ✅ Miniature ghost in attesa di conferma
+    onConfirmMove?: (confirmation: any) => void; // ✅ Callback per conferma spostamento
+    onCancelMove?: (confirmation: any) => void; // ✅ Callback per annullamento spostamento
 }
 
 export function ArchiveRenderer({
@@ -51,7 +54,10 @@ export function ArchiveRenderer({
     comparti,
     uploads,
     toast,
-    singleCompartoId // ✅ Nuovo prop
+    singleCompartoId, // ✅ Nuovo prop
+    pendingMoveConfirmations,
+    onConfirmMove,
+    onCancelMove
 }: ArchiveRendererProps) {
     const showOverlay = false;
     const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
@@ -77,18 +83,8 @@ export function ArchiveRenderer({
         }
     }, [filteredComparti])
 
-    // ✅ NOVO: Listener per aggiornamenti classificazioni pendenti
-    useEffect(() => {
-        const handleClassificationsChanged = () => {
-            // Forza re-render quando cambiano le classificazioni
-            setOpenMap(prev => ({ ...prev })); // Trigger re-render
-        };
-
-        window.addEventListener('app:file-classifications-changed', handleClassificationsChanged);
-        return () => {
-            window.removeEventListener('app:file-classifications-changed', handleClassificationsChanged);
-        };
-    }, []);
+    // ✅ SEMPLIFICATO: Non serve più listener per classificazioni pendenti
+    // ✅ I documenti vengono creati SUBITO nello store quando viene fatto il drop
 
     // ✅ Nascondi header accordion se è singleCompartoId (modo drawer)
     const hideHeaders = !!singleCompartoId
@@ -185,6 +181,30 @@ export function ArchiveRenderer({
         },
         onDrop: async (e: React.DragEvent) => {
             setIsDragging(false)
+
+            console.log('[ARCHIVE-RENDERER][DROP][START] Drop ricevuto', {
+                compartoId: filteredComparti[0]?.id,
+                target: (e.target as HTMLElement)?.tagName,
+                currentTarget: (e.currentTarget as HTMLElement)?.tagName,
+                types: Array.from(e.dataTransfer?.types || [])
+            })
+
+            // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
+            const { isDockviewDrag } = await import('../../../../utils/dragEventUtils')
+            const isDockview = isDockviewDrag(e)
+            console.log('[ARCHIVE-RENDERER][DROP] isDockviewDrag result:', isDockview)
+
+            if (isDockview) {
+                console.log('[ARCHIVE-RENDERER][DROP] ❌ Ignorato - è drag Dockview')
+                return // Lascia che Dockview gestisca il drop del pannello
+            }
+
+            console.log('[ARCHIVE-RENDERER][DROP] ✅ Procedo con gestione drop')
+
+            // ✅ CRITICO: Ferma la propagazione per evitare che DocumentCollection gestisca anche il drop
+            e.stopPropagation()
+            e.preventDefault()
+
             if (filteredComparti.length === 1) {
                 const comparto = filteredComparti[0]
                 setHoverBody(null)
@@ -224,97 +244,10 @@ export function ArchiveRenderer({
             } : undefined}
         >
             {filteredComparti.sort((a, b) => a.ordine - b.ordine).map(comparto => {
-                // ✅ Documenti dal database con questo compartoId
-                const dbDocs = documenti.filter(d => d.compartoId === comparto.id)
-
-                // ✅ NOVO: File classificati in memoria (non ancora nel database)
-                const archiveData = (window as any).__archiveData
-                const pendingClassifications = archiveData?.pendingFileClassifications as Map<string, { compartoKey: string; compartoNome: string }> | undefined
-                const praticaIdFromArchive = archiveData?.praticaId as string | undefined
-
-                const classifiedFiles: Documento[] = []
-                if (pendingClassifications) {
-                  pendingClassifications.forEach((classification, filePath) => {
-                    // Verifica se questo file appartiene a questo comparto
-                    if (classification.compartoKey === comparto.key) {
-                      // Verifica che il file non sia già nel database
-                      const alreadyInDb = documenti.some(d => d.filePath === filePath)
-                      if (!alreadyInDb) {
-                        const fileName = filePath.split(/[/\\]/).pop() || 'Unknown'
-                        // Estrai estensione
-                        const ext = fileName.split('.').pop()?.toLowerCase() || ''
-                        const mime = ext === 'pdf' ? 'application/pdf' :
-                                   ext === 'doc' || ext === 'docx' ? 'application/msword' :
-                                   ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
-                                   ext === 'png' ? 'image/png' :
-                                   ext === 'mp3' || ext === 'wav' ? 'audio/mpeg' :
-                                   ext === 'mp4' ? 'video/mp4' :
-                                   'application/octet-stream'
-
-                        // ✅ NOVO: Crea URL per accedere al file dal filesystem
-                        const fileUrl = `http://localhost:3001/api/filesystem/file/${encodeURIComponent(filePath)}`
-
-                        classifiedFiles.push({
-                          id: `pending:${filePath}`,
-                          filename: fileName,
-                          compartoId: comparto.id,
-                          praticaId: praticaIdFromArchive || '',
-                          mime,
-                          size: 0, // Size non disponibile senza caricare il file
-                          s3Key: '', // Non ancora caricato
-                          hash: '',
-                          ocrStatus: 'pending' as const,
-                          tags: [],
-                          createdAt: new Date().toISOString(),
-                          filePath: filePath, // ✅ IMPORTANTE: salva il path per il salvataggio
-                          classificationSource: 'pending', // Flag per distinguere
-                          // ✅ NOVO: Aggiungi localUrl per generazione thumbnail
-                          localUrl: fileUrl
-                        } as Documento)
-                      }
-                    }
-                  })
-                }
-
-                // Combina documenti dal database e file classificati
-                const rawDocs = [...dbDocs, ...classifiedFiles]
-
-                // ✅ LOGICA SEMPLIFICATA: Mantieni il documento temporaneo visibile finché non c'è un documento reale
-                // ✅ effettivamente presente nello stesso array che lo sostituisce
-                const seenIds = new Set<string>()
-                const docs = rawDocs.filter(d => {
-                    const isTemp = d.id.startsWith('temp:')
-
-                    // ✅ Deduplica per ID (ogni documento deve avere un ID univoco)
-                    if (seenIds.has(d.id)) {
-                        return false // ID già visto, escludi
-                    }
-                    seenIds.add(d.id)
-
-                    // ✅ Se è un documento temporaneo, verifica se esiste un documento REALE nello stesso array
-                    // ✅ con lo stesso s3Key. Solo in quel caso escludi il temporaneo.
-                    if (isTemp && d.s3Key) {
-                        const realDocWithSameS3Key = rawDocs.find(rd =>
-                            !rd.id.startsWith('temp:') &&
-                            rd.s3Key === d.s3Key &&
-                            rd.id !== d.id // Deve essere un documento diverso
-                        )
-
-                        if (realDocWithSameS3Key) {
-                            // ✅ Log solo quando viene escluso (situazione critica)
-                            console.log('❌ [ARCHIVE-RENDERER][TEMP-EXCLUDED] Escluso documento temporaneo', {
-                                compartoId: comparto.id,
-                                tempId: d.id,
-                                tempFilename: d.filename,
-                                realId: realDocWithSameS3Key.id,
-                                realFilename: realDocWithSameS3Key.filename
-                            })
-                            return false
-                        }
-                    }
-
-                    return true
-                })
+                // ✅ SEMPLIFICATO: Mostra solo i documenti dallo store (già processati con hash)
+                // ✅ Non creiamo più documenti "pending:" virtuali - quando viene fatto il drop,
+                // ✅ il documento viene creato SUBITO nello store con hash, anche se senza thumbnail
+                const docs = documenti.filter(d => d.compartoId === comparto.id)
 
                 return (
                     <div key={comparto.id} className={hideHeaders ? "" : "border rounded-md overflow-hidden"}>
@@ -369,12 +302,46 @@ export function ArchiveRenderer({
                                         // ✅ Prima tutti i documenti normali
                                         const docItems = docs.map(d => {
                                             const isPdf = d.mime?.startsWith('application/pdf') || d.filename.toLowerCase().endsWith('.pdf');
+
+                                            // ✅ LOG DETTAGLIATO: Documento ricevuto da documenti array
+                                            const isHashId = /^[0-9a-f]{64}$/i.test(d.id)
+                                            console.log('🎨 [ARCHIVE-RENDERER][DOC-MAP][INPUT]', {
+                                                docId: d.id.substring(0, 16) + '...',
+                                                docIdLength: d.id.length,
+                                                isHashId: isHashId,
+                                                filename: d.filename,
+                                                isPdf: isPdf,
+                                                hasS3Key: !!d.s3Key,
+                                                s3Key: d.s3Key || 'NULL',
+                                                rawThumbnailDataUrl: !!(d as any).thumbnailDataUrl,
+                                                rawThumbnailLength: (d as any).thumbnailDataUrl?.length || 0,
+                                                rawThumbnailType: typeof (d as any).thumbnailDataUrl,
+                                                rawThumbnailPreview: (d as any).thumbnailDataUrl?.substring(0, 50) || 'NULL',
+                                                rawHash: !!(d as any).hash,
+                                                rawHashLength: (d as any).hash?.length || 0,
+                                                rawHashPreview: (d as any).hash?.substring(0, 16) + '...' || 'NULL'
+                                            })
+
                                             // ✅ Usa solo thumbnailDataUrl dal DB (client-side generata) o clientThumbByS3 per temp docs
                                             // ❌ Rimossa generazione backend ridondante (server thumb)
                                             const thumbnailFromDb = (d as any).thumbnailDataUrl || undefined;
                                             const clientThumb = clientThumbByS3[d.s3Key];
                                             const thumb = thumbnailFromDb || clientThumb || '';
                                             const localUrl = (d as any).localUrl || undefined
+
+                                            // ✅ LOG DETTAGLIATO: Dopo estrazione thumbnail
+                                            console.log('🎨 [ARCHIVE-RENDERER][DOC-MAP][THUMB-EXTRACT]', {
+                                                docId: d.id.substring(0, 16) + '...',
+                                                filename: d.filename,
+                                                thumbnailFromDb: !!thumbnailFromDb,
+                                                thumbnailFromDbLength: thumbnailFromDb?.length || 0,
+                                                thumbnailFromDbPreview: thumbnailFromDb?.substring(0, 50) || 'NULL',
+                                                clientThumb: !!clientThumb,
+                                                clientThumbLength: clientThumb?.length || 0,
+                                                finalThumb: !!thumb,
+                                                finalThumbLength: thumb?.length || 0,
+                                                finalThumbPreview: thumb?.substring(0, 50) || 'NULL'
+                                            })
 
                                             // ✅ NOVO: Se è un file virtuale PDF senza thumbnail, abilita auto-generazione
                                             const isPendingFile = d.id.startsWith('pending:')
@@ -385,12 +352,24 @@ export function ArchiveRenderer({
                                                 filename: d.filename,
                                                 s3Key: d.s3Key,
                                                 mime: d.mime,
-                                                thumb,
+                                                thumb, // ✅ CRITICO: Passa thumbnail estratta
                                                 localUrl,
                                                 hasNativeText: d.hasNativeText, // NON convertire undefined in false!
                                                 ocrStatus: d.ocrStatus,
                                                 // ✅ NOVO: Passa flag per auto-generazione thumbnail
                                                 autoGenerateThumbnail: shouldAutoGenerate
+                                            }
+
+                                            // ✅ LOG FINALE: Verifica che la thumbnail sia presente
+                                            if (isHashId && isPdf && !thumb) {
+                                                console.warn('⚠️ [ARCHIVE-RENDERER][MISSING-THUMB] Documento con hash senza thumbnail', {
+                                                    docId: d.id.substring(0, 16) + '...',
+                                                    filename: d.filename,
+                                                    hasThumbnailDataUrl: !!thumbnailFromDb,
+                                                    thumbnailDataUrlLength: thumbnailFromDb?.length || 0,
+                                                    hasClientThumb: !!clientThumb,
+                                                    clientThumbLength: clientThumb?.length || 0
+                                                })
                                             }
 
                                             // Log solo se hasNativeText è undefined (non dovrebbe succedere dopo salvataggio)
@@ -405,47 +384,11 @@ export function ArchiveRenderer({
                                             return docItem
                                         })
 
-                                        // ✅ Poi aggiungi i Ghost (upload placeholders) alla fine
-                                        const allUploads = uploads || []
-                                        const compartoColor = colorFor(comparto.nome)
-                                        const ghostItems = allUploads
-                                            .filter(u => {
-                                                if (!u || u.compartoId !== comparto.id) return false
-                                                if (u.status === 'error' || u.status === 'completed') return false
-                                                if (u.hasTempDoc) return false
-                                                // ✅ Escludi upload se esiste già un documento (temporaneo o reale) con lo stesso s3Key O stesso file name
-                                                if (u.s3Key && documenti.some(d => d.s3Key === u.s3Key)) return false
-                                                // ✅ Escludi anche se il documento temporaneo ha lo stesso filename nello stesso comparto
-                                                if (u.file?.name && documenti.some(d =>
-                                                    d.compartoId === comparto.id &&
-                                                    d.filename === u.file.name &&
-                                                    d.id.startsWith('temp:')
-                                                )) return false
-                                                return true
-                                            })
-                                            .map((u, idx) => ({
-                                                id: `upload-ghost-${comparto.id}-${idx}`,
-                                                filename: (u.filenameBase || u.file?.name || '').replace(/\.[^.]+$/, ''),
-                                                s3Key: u.s3Key || '',
-                                                mime: u.file?.type || '',
-                                                thumb: u.preview || '',
-                                                localUrl: undefined,
-                                                hasNativeText: undefined,
-                                                ocrStatus: 'pending' as const,
-                                                _isUploadGhost: true, // ✅ Flag per distinguere il Ghost
-                                                _uploadData: {
-                                                    ...u,
-                                                    compartoColor // ✅ Aggiungi colore del comparto
-                                                }
-                                            }))
-
-                                        // ✅ Ritorna documenti + Ghost alla fine
-                                        return [...docItems, ...ghostItems]
+                                        // ✅ Rimosso ghost items: i documenti temporanei vengono creati SUBITO con miniatura
+                                        // ✅ Non serve più il rettangolo punteggiato "Carico..."
+                                        return docItems
                                     })()}
                                     onOpen={(doc) => {
-                                        // ✅ Ignora Ghost (non sono documenti reali)
-                                        if ((doc as any)._isUploadGhost) return
-
                                         const trovato = documenti.find(x => x.id === doc.id);
                                         if (trovato) {
                                             dockV2Ref.current?.openDoc({ id: trovato.id, title: trovato.filename });
@@ -454,21 +397,13 @@ export function ArchiveRenderer({
                                     }}
                                     // onDrop gestito dal body dell'accordion per evitare doppi eventi
                                     onRemove={(doc) => {
-                                        // ✅ Ignora Ghost (non sono documenti reali)
-                                        if ((doc as any)._isUploadGhost) return
                                         handleRemoveThumb(doc.id)
                                     }}
                                     onOcr={(doc) => {
-                                        // ✅ Ignora Ghost (non sono documenti reali)
-                                        if ((doc as any)._isUploadGhost) return
-
                                         const d = documenti.find(x => x.id === doc.id);
                                         if (d) handleOcr(d, 'full');
                                     }}
                                     onOcrCancel={async (doc) => {
-                                        // ✅ Ignora Ghost (non sono documenti reali)
-                                        if ((doc as any)._isUploadGhost) return
-
                                         const d = documenti.find(x => x.id === doc.id);
                                         if (!d) return;
                                         await handleOcrCancel(d);
@@ -488,11 +423,14 @@ export function ArchiveRenderer({
                                     transcribedPctById={transcribedPctByDoc as any}
                                     uploadingCount={0}
                                     draggableItems
-                                    onDragStartItem={(docId, e) => {
-                                        // ✅ Usa il servizio centralizzato per setup drag
-                                        DragAndDropService.setupDocIdDragStart(e, docId)
+                                    onDragStartItem={(docId, e, dragElement) => {
+                                        // ✅ Usa il servizio centralizzato per setup drag con drag image
+                                        DragAndDropService.setupDocIdDragStart(e, docId, dragElement)
                                     }}
                                     compartoId={comparto.id}
+                                    pendingMoveConfirmations={pendingMoveConfirmations}
+                                    onConfirmMove={onConfirmMove}
+                                    onCancelMove={onCancelMove}
                                 />
                             </div>
                         )}

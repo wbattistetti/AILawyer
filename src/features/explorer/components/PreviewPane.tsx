@@ -112,7 +112,17 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   };
 
   const handleDragStart = (e: React.DragEvent) => {
-    if (!file) return;
+    if (!file) {
+      console.log('[PREVIEW-PANE][DRAG-START] ❌ File non disponibile')
+      return;
+    }
+
+    console.log('[PREVIEW-PANE][DRAG-START] ✅ Inizio drag', {
+      fileId: file.id,
+      fileName: file.name,
+      filePath: file.path,
+      target: (e.target as HTMLElement)?.tagName
+    })
 
     setIsDragging(true);
     // ✅ Usa il servizio centralizzato per setup drag
@@ -121,6 +131,8 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
       path: file.path,
       name: file.name
     });
+
+    console.log('[PREVIEW-PANE][DRAG-START] ✅ Setup completato, types:', Array.from(e.dataTransfer?.types || []))
   };
 
   const handleDragEnd = () => {
@@ -199,7 +211,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
       </div>
 
       {/* Viewer Content */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-auto relative">
         {/* ✅ Spinner iniziale quando si apre un nuovo file */}
         {isInitializing && (
           <div className="absolute inset-0 flex items-center justify-center bg-white z-10">

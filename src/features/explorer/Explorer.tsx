@@ -12,18 +12,23 @@ import { useScanFiles } from './hooks/useScanFiles';
 import { useExplorerState } from './hooks/useExplorerState';
 import { usePdfNativeTextDetection } from './hooks/usePdfNativeTextDetection';
 import { usePdfObjectExtraction } from './hooks/usePdfObjectExtraction';
+import { useExplorerDriveRestore } from './hooks/useExplorerDriveRestore';
+import { useExplorerPersistence } from './hooks/useExplorerPersistence';
+import { useExplorerTreeExpansion } from './hooks/useExplorerTreeExpansion';
+import { useExplorerClassification } from './hooks/useExplorerClassification';
+import { useExplorerDragDrop } from './hooks/useExplorerDragDrop';
 import { FileSystemAdapter } from './services/FileSystemAdapter';
 import { LocalizeService } from './services/LocalizeService';
-import { CompartiService } from './services/CompartiService';
 import { ClassificationService } from './services/ClassificationService';
-import { FileEntry, DriveInfo } from './types';
+import { ExplorerStateService } from './services/ExplorerStateService';
+import { FileEntry } from './types';
 
 interface ExplorerProps {
   adapter: FileSystemAdapter;
   className?: string;
   praticaId?: string; // ID pratica per salvare/caricare stato
   initialSelectedPath?: string; // Path iniziale da ripristinare
-  onStateChange?: (selectedPath: string | undefined) => void; // Callback quando cambia la directory selezionata
+  onStateChange?: (selectedPath: string | undefined, expandedPaths?: string[]) => void; // Callback quando cambia la directory selezionata o i path espansi
 }
 
 export function Explorer({ adapter, className = '', praticaId, initialSelectedPath, onStateChange }: ExplorerProps) {
@@ -86,14 +91,17 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
   // ✅ Ref per fermare la classificazione
   const classificationAbortRef = useRef(false);
 
-  // ✅ Stato per tracciare se il path salvato non è disponibile
-  const [savedPathUnavailable, setSavedPathUnavailable] = useState<{
-    path: string;
-    driveLetter: string;
-    driveLabel?: string;
-    driveType?: 'fixed' | 'removable' | 'optical';
-    savedDriveLabel?: string; // ✅ Nome del volume salvato nel database
-  } | null>(null);
+  // ✅ Nuovi hook per persistenza e ripristino
+  const parsedState = ExplorerStateService.deserialize(initialSelectedPath)
+  const { expandedPaths, handleExpandedPathsChange } = useExplorerTreeExpansion(parsedState?.expandedPaths)
+  const { restoreStatus, restoreState } = useExplorerDriveRestore(parsedState, drives, adapter)
+  const { saveState } = useExplorerPersistence(praticaId, state.selectedNode?.path, expandedPaths, drives)
+
+  // ✅ Hook per classificazione
+  const { handleFileClassificationChange } = useExplorerClassification(state.files, updateFileClassification)
+
+  // ✅ Hook per drag-and-drop
+  useExplorerDragDrop(state.files, praticaId, handleFileClassificationChange)
 
   // Hook per l'estrazione lazy dell'oggetto dai PDF
   // ✅ MODIFICATO: Disabilitato di default (non parte automaticamente)
@@ -135,134 +143,42 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
     }
   }, [state.selectedNode?.path]);
 
-  // ✅ Ripristina lo stato iniziale se fornito
+  // ✅ Ripristina lo stato iniziale usando il nuovo hook
   useEffect(() => {
-    if (initialSelectedPath && !state.selectedNode && drives.length > 0) {
-      // ✅ Parse dello stato salvato per ottenere driveLabel, driveType e serialNumber
-      let actualPath: string = initialSelectedPath;
-      let savedDriveLabel: string | undefined;
-      let savedDriveType: 'fixed' | 'removable' | 'optical' | undefined;
-      let savedDriveLetter: string | undefined;
-      let savedDriveSerial: string | undefined;
-
-      try {
-        // Se initialSelectedPath è un JSON string, parsalo
-        const parsedState = typeof initialSelectedPath === 'string' && initialSelectedPath.startsWith('{')
-          ? JSON.parse(initialSelectedPath)
-          : null;
-
-        if (parsedState) {
-          actualPath = parsedState.selectedPath;
-          savedDriveLabel = parsedState.driveLabel;
-          savedDriveType = parsedState.driveType;
-          savedDriveLetter = parsedState.driveLetter;
-          savedDriveSerial = parsedState.serialNumber; // ✅ Serial number per identificazione univoca
-        }
-      } catch (e) {
-        // Se non è JSON, usa initialSelectedPath come path diretto
-        actualPath = initialSelectedPath;
-      }
-
-      // ✅ Prima cerca per path esatto
-      const drive = drives.find(d => actualPath.startsWith(d.path));
-
-      if (drive) {
-        // Verifica se la directory esiste ancora
-        adapter.listDir(actualPath).then(() => {
-          setSelectedNode({ type: 'dir', path: actualPath });
-          setSavedPathUnavailable(null); // ✅ Reset flag se path disponibile
+    if (parsedState && !state.selectedNode && drives.length > 0) {
+      restoreState(
+        (path) => {
+          setSelectedNode({ type: 'dir', path });
+          clearError();
           startScan({
-            rootPath: actualPath,
+            rootPath: path,
             kinds: undefined,
             search: state.filters.search || undefined
           });
-        }).catch((err) => {
-          console.warn('[EXPLORER] Path non più disponibile:', actualPath, err);
-          // ✅ Salva informazioni dettagliate sul drive non disponibile
-          const driveLetter = actualPath.split(/[/\\]/)[0];
-          setSavedPathUnavailable({
-            path: actualPath,
-            driveLetter,
-            driveLabel: drive.label,
-            driveType: drive.type,
-            savedDriveLabel: savedDriveLabel || drive.label
-          });
-          setError(`Il percorso salvato non è più disponibile: ${actualPath}. Verifica che il drive/dispositivo sia collegato.`);
-        });
-      } else {
-        // ✅ Drive non trovato per path - cerca per volume label se disponibile
-        const driveLetter = actualPath.split(/[/\\]/)[0];
-        let foundByLabel: DriveInfo | undefined;
-
-        // ✅ Prima cerca per serial number (più affidabile)
-        let foundBySerial: DriveInfo | undefined;
-        if (savedDriveSerial && (savedDriveType === 'removable' || savedDriveType === 'optical')) {
-          foundBySerial = drives.find(d =>
-            (d.type === 'removable' || d.type === 'optical') &&
-            d.serialNumber === savedDriveSerial
-          );
+        },
+        (error, unavailableDrive) => {
+          setError(error);
+          // unavailableDrive è già gestito da restoreStatus
         }
-
-        // ✅ Se non trovato per serial, cerca per volume label
-        if (!foundBySerial && savedDriveLabel && (savedDriveType === 'removable' || savedDriveType === 'optical')) {
-          foundByLabel = drives.find(d =>
-            (d.type === 'removable' || d.type === 'optical') &&
-            d.label === savedDriveLabel &&
-            d.label !== d.id // Assicurati che sia un volume label reale, non solo la lettera
-          );
-        }
-
-        if (foundBySerial) {
-          // ✅ Trovato per serial number! È la stessa chiavetta anche se su lettera diversa
-          setSavedPathUnavailable({
-            path: actualPath,
-            driveLetter: foundBySerial.id, // ✅ Nuova lettera del drive
-            driveLabel: foundBySerial.label,
-            driveType: foundBySerial.type,
-            savedDriveLabel: savedDriveLabel || foundBySerial.label
-          });
-          const deviceType = foundBySerial.type === 'removable' ? 'chiavetta USB' : 'DVD/CD';
-          setError(`La ${deviceType} "${savedDriveLabel || foundBySerial.label}" è stata trovata ma su un drive diverso (${foundBySerial.id} invece di ${savedDriveLetter || driveLetter}). Seleziona la directory corretta.`);
-        } else if (foundByLabel) {
-          // ✅ Trovato per volume label (fallback se serial number non disponibile)
-          setSavedPathUnavailable({
-            path: actualPath,
-            driveLetter: foundByLabel.id, // ✅ Nuova lettera del drive
-            driveLabel: foundByLabel.label,
-            driveType: foundByLabel.type,
-            savedDriveLabel: savedDriveLabel
-          });
-          const deviceType = foundByLabel.type === 'removable' ? 'chiavetta USB' : 'DVD/CD';
-          setError(`La ${deviceType} "${savedDriveLabel}" è stata trovata ma su un drive diverso (${foundByLabel.id} invece di ${savedDriveLetter || driveLetter}). Seleziona la directory corretta.`);
-        } else {
-          // Drive non trovato né per path né per label
-          const deviceType = savedDriveType === 'removable' ? 'chiavetta USB' : savedDriveType === 'optical' ? 'DVD/CD' : 'drive';
-          setSavedPathUnavailable({
-            path: actualPath,
-            driveLetter,
-            driveType: savedDriveType || 'removable',
-            savedDriveLabel: savedDriveLabel
-          });
-          setError(`Il ${deviceType} "${driveLetter}"${savedDriveLabel ? ` (${savedDriveLabel})` : ''} non è più disponibile. Verifica che sia collegato.`);
-        }
-      }
+      );
     }
-  }, [initialSelectedPath, drives, state.selectedNode, adapter, setSelectedNode, startScan, state.filters.search, setError]);
+  }, [parsedState, drives, state.selectedNode, restoreState, setSelectedNode, startScan, state.filters.search, setError, clearError]);
 
-  // ✅ Reset flag quando l'utente seleziona una nuova directory
+  // ✅ Reset error quando l'utente seleziona una nuova directory
   useEffect(() => {
-    if (state.selectedNode && savedPathUnavailable) {
-      setSavedPathUnavailable(null);
+    if (state.selectedNode && restoreStatus.status === 'error') {
       clearError();
     }
-  }, [state.selectedNode?.path, savedPathUnavailable, clearError]);
+  }, [state.selectedNode?.path, restoreStatus.status, clearError]);
 
-  // ✅ Salva lo stato quando cambia la directory selezionata
+  // ✅ Notifica cambiamenti di stato al parent (per salvataggio manuale se necessario)
   useEffect(() => {
     if (onStateChange) {
-      onStateChange(state.selectedNode?.path);
+      onStateChange(state.selectedNode?.path, expandedPaths);
     }
-  }, [state.selectedNode?.path, onStateChange]);
+  }, [state.selectedNode?.path, expandedPaths, onStateChange]);
+
+  // ✅ Il salvataggio automatico è gestito da useExplorerPersistence
 
   // Event handlers
   const handleNodeSelect = useCallback((node: { type: 'drive' | 'dir'; path: string }) => {
@@ -495,199 +411,9 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
     setPreviewFile(undefined);
   }, []);
 
-  const handleFileClassificationChange = useCallback((fileId: string, compartoKey: string, compartoNome: string) => {
-    // ✅ Aggiorna stato locale (già fatto)
-    updateFileClassification(fileId, compartoKey, compartoNome);
-
-    // ✅ NOVO: Salva in memoria globale per mostrare nei cassetti
-    const file = state.files.find(f => f.id === fileId);
-    if (file) {
-      const updateFn = (window as any).__updatePendingClassification;
-      if (updateFn && typeof updateFn === 'function') {
-        if (compartoKey) {
-          updateFn(file.path, { compartoKey, compartoNome });
-        } else {
-          updateFn(file.path, null); // Rimuovi classificazione
-        }
-      } else {
-        console.warn('[EXPLORER][CLASSIFICATION] updatePendingClassification non disponibile')
-      }
-    }
-  }, [updateFileClassification, state.files]);
-
-  // ✅ Listener per drop di file Explorer sui cassetti
-  useEffect(() => {
-    const handleExplorerFileDrop = (event: CustomEvent) => {
-      console.log('[EXPLORER][DROP] Evento ricevuto:', event.detail)
-      const { fileData, drawerId } = event.detail;
-
-      if (!fileData || !drawerId) {
-        console.error('[EXPLORER][DROP] Dati mancanti:', { fileData, drawerId })
-        return
-      }
-
-      // Trova il file nello stato
-      const file = state.files.find(f => f.id === fileData.fileId || f.path === fileData.filePath);
-      if (!file) {
-        console.warn('[EXPLORER][DROP] File non trovato:', fileData, 'File disponibili:', state.files.map(f => ({ id: f.id, path: f.path })));
-        return;
-      }
-
-      console.log('[EXPLORER][DROP] File trovato:', file.name, 'drawerId:', drawerId)
-
-      // Trova il comparto corrispondente al drawerId
-      // drawerId può essere:
-      // - una chiave (es. 'parti_anagrafiche') in DockWorkspaceV2
-      // - un ID del database in DockWorkspaceV3
-      let comparto = CompartiService.getByKey(drawerId);
-      console.log('[EXPLORER][DROP] Comparto cercato per chiave:', drawerId, 'trovato:', !!comparto)
-
-      // Se non trovato per chiave, potrebbe essere un ID - prova a cercare nei comparti globali
-      if (!comparto) {
-        // Prova a ottenere i comparti dal contesto globale se disponibili
-        const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }> } | undefined;
-        const globalComparti = archiveData?.comparti;
-        console.log('[EXPLORER][DROP] Comparti globali disponibili:', globalComparti?.length || 0)
-        if (globalComparti) {
-          const compartoById = globalComparti.find(c => c.id === drawerId);
-          console.log('[EXPLORER][DROP] Comparto cercato per ID:', drawerId, 'trovato:', !!compartoById, compartoById)
-          if (compartoById) {
-            // Usa la chiave del comparto trovato per ottenere i dati completi
-            comparto = CompartiService.getByKey(compartoById.key);
-            console.log('[EXPLORER][DROP] Comparto trovato per chiave dopo ricerca per ID:', compartoById.key, 'trovato:', !!comparto)
-          }
-        }
-      }
-
-      if (!comparto) {
-        console.error('[EXPLORER][DROP] Comparto non trovato per drawerId:', drawerId, 'Comparti disponibili:', (window as any).__archiveData?.comparti);
-        return;
-      }
-
-      console.log('[EXPLORER][DROP] Comparto trovato:', comparto.nome, 'chiave:', comparto.key, 'Aggiorno classificazione file:', file.name)
-
-      // ✅ Aggiorna la classificazione del file
-      handleFileClassificationChange(file.id, comparto.key, comparto.nome);
-
-      // ✅ Aggiorna immediatamente il conteggio creando un documento temporaneo
-      const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }>; documenti?: Array<any> } | undefined;
-      const globalComparti = archiveData?.comparti;
-      const compartoId = globalComparti?.find(c => c.key === comparto.key)?.id;
-
-      if (compartoId && archiveData) {
-        // Crea un documento temporaneo per aggiornare immediatamente il conteggio
-        const tempDoc = {
-          id: `temp:explorer-${file.id}-${Date.now()}`,
-          filename: file.name,
-          s3Key: '', // Sarà popolato dopo l'upload
-          mime: file.kind === 'pdf' ? 'application/pdf' :
-                file.kind === 'image' ? 'image/png' :
-                'application/octet-stream',
-          compartoId: compartoId,
-          praticaId: praticaId || '',
-          size: file.sizeBytes || 0,
-          hash: '',
-          ocrStatus: 'pending' as const,
-          tags: [],
-          createdAt: new Date().toISOString(),
-          filePath: file.path
-        };
-
-        // Aggiungi il documento temporaneo all'array documenti in window.__archiveData
-        const currentDocumenti = archiveData.documenti || [];
-        const updatedDocumenti = [...currentDocumenti, tempDoc];
-        archiveData.documenti = updatedDocumenti;
-
-        // Emetti evento per aggiornare il conteggio immediatamente (sia app:documents che app:documents-updated)
-        window.dispatchEvent(new CustomEvent('app:documents-updated', {
-          detail: { documenti: updatedDocumenti }
-        }));
-
-        window.dispatchEvent(new CustomEvent('app:documents', {
-          detail: { items: updatedDocumenti.map(d => ({
-            id: d.id,
-            filename: d.filename,
-            s3Key: d.s3Key,
-            mime: d.mime,
-            compartoId: d.compartoId
-          })) }
-        }));
-
-        console.log('[EXPLORER][DROP] Documento temporaneo creato per aggiornare conteggio:', tempDoc.id)
-      }
-
-      // ✅ Carica il file nel cassetto leggendolo dal filesystem
-      const loadAndUploadFile = async () => {
-        try {
-          console.log('[EXPLORER][DROP] Caricamento file dal filesystem:', file.path)
-
-          // Leggi il file dal filesystem usando l'endpoint backend
-          const response = await fetch('http://localhost:3001/api/filesystem/read-file', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: file.path }),
-          })
-
-          if (!response.ok) {
-            console.error('[EXPLORER][DROP] Impossibile leggere il file:', file.path, response.status)
-            return
-          }
-
-          // Converti il blob in un File object
-          const fileBlob = await response.blob()
-          const mimeType = file.kind === 'pdf' ? 'application/pdf' :
-                          file.kind === 'image' ? 'image/png' :
-                          'application/octet-stream'
-          const fileObj = new File([fileBlob], file.name, {
-            type: mimeType,
-            lastModified: file.mtime || Date.now()
-          })
-
-          console.log('[EXPLORER][DROP] File convertito, emetto app:upload-files', {
-            fileName: fileObj.name,
-            fileSize: fileObj.size,
-            compartoKey: comparto.key,
-            compartoNome: comparto.nome
-          })
-
-          // Trova l'ID del comparto dal database
-          const archiveData = (window as any).__archiveData as { comparti?: Array<{ id: string; key: string; nome: string }> } | undefined;
-          const globalComparti = archiveData?.comparti;
-          const compartoId = globalComparti?.find(c => c.key === comparto.key)?.id;
-
-          if (!compartoId) {
-            console.error('[EXPLORER][DROP] Comparto ID non trovato per chiave:', comparto.key, 'Comparti disponibili:', globalComparti)
-            return
-          }
-
-          // Emetti l'evento per caricare il file nel cassetto
-          const ev = new CustomEvent('app:upload-files', {
-            detail: {
-              files: [fileObj],
-              target: {
-                type: 'drawer',
-                id: compartoId, // ✅ Usa l'ID del comparto dal database
-                title: comparto.nome
-              }
-            }
-          })
-          window.dispatchEvent(ev)
-          console.log('[EXPLORER][DROP] Evento app:upload-files emesso con compartoId:', compartoId)
-        } catch (error) {
-          console.error('[EXPLORER][DROP] Errore nel caricamento file:', error)
-        }
-      }
-
-      // ✅ Carica il file in background
-      loadAndUploadFile()
-    };
-
-    window.addEventListener('explorer:file-drop-to-drawer', handleExplorerFileDrop as EventListener);
-
-    return () => {
-      window.removeEventListener('explorer:file-drop-to-drawer', handleExplorerFileDrop as EventListener);
-    };
-  }, [state.files, handleFileClassificationChange]);
+  // ✅ La logica di classificazione e drag-and-drop è ora gestita dai hook:
+  // - useExplorerClassification: gestisce handleFileClassificationChange
+  // - useExplorerDragDrop: gestisce explorer:file-drop-to-drawer
 
   // Error handling
   if (drivesError) {
@@ -718,6 +444,8 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
             onSelect={handleNodeSelect}
             selectedPath={state.selectedNode?.path}
             highlightPath={highlightPath}
+            initialExpandedPaths={expandedPaths}
+            onExpandedPathsChange={handleExpandedPathsChange}
           />
         }
         centerAutoWidth={true}
@@ -754,45 +482,33 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
 
             <div className="flex-1 overflow-hidden">
               {/* ✅ Stato 0: Path salvato non disponibile - mostra messaggio informativo */}
-              {savedPathUnavailable && !state.selectedNode ? (
+              {restoreStatus.unavailableDrive && !state.selectedNode ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center max-w-md p-6 bg-amber-50 border border-amber-200 rounded-lg">
                     <File className="w-12 h-12 mx-auto mb-4 text-amber-500" />
                     <h3 className="text-lg font-semibold text-amber-900 mb-2">
-                      {savedPathUnavailable.driveType === 'removable'
+                      {restoreStatus.unavailableDrive.driveType === 'removable'
                         ? 'Chiavetta USB non disponibile'
-                        : savedPathUnavailable.driveType === 'optical'
+                        : restoreStatus.unavailableDrive.driveType === 'optical'
                         ? 'DVD/CD non disponibile'
                         : 'Dispositivo non disponibile'}
                     </h3>
                     <p className="text-sm text-amber-800 mb-4">
-                      L'ultimo lavoro su questa pratica è stato fatto su{' '}
-                      {savedPathUnavailable.savedDriveLabel && savedPathUnavailable.savedDriveLabel !== savedPathUnavailable.driveLetter
-                        ? savedPathUnavailable.driveType === 'removable'
-                          ? `la chiavetta USB "${savedPathUnavailable.savedDriveLabel}"`
-                          : savedPathUnavailable.driveType === 'optical'
-                          ? `il DVD/CD "${savedPathUnavailable.savedDriveLabel}"`
-                          : `il dispositivo "${savedPathUnavailable.savedDriveLabel}"`
-                        : savedPathUnavailable.driveType === 'removable'
-                        ? 'una chiavetta USB'
-                        : savedPathUnavailable.driveType === 'optical'
-                        ? 'un DVD/CD'
-                        : 'un dispositivo esterno'
-                      } che ora non è più disponibile.
+                      {restoreStatus.error || 'Il dispositivo salvato non è più disponibile. Seleziona la directory corretta per continuare.'}
                     </p>
                     <div className="bg-white rounded p-3 mb-4 text-left">
-                      {savedPathUnavailable.savedDriveLabel && savedPathUnavailable.savedDriveLabel !== savedPathUnavailable.driveLetter && (
+                      {restoreStatus.unavailableDrive.savedDriveLabel && restoreStatus.unavailableDrive.savedDriveLabel !== restoreStatus.unavailableDrive.driveLetter && (
                         <p className="text-xs text-gray-600 mb-1">
-                          <strong>Nome dispositivo:</strong> {savedPathUnavailable.savedDriveLabel}
+                          <strong>Nome dispositivo:</strong> {restoreStatus.unavailableDrive.savedDriveLabel}
                         </p>
                       )}
                       <p className="text-xs text-gray-600 mb-1">
-                        <strong>Drive:</strong> {savedPathUnavailable.driveLetter}
+                        <strong>Drive:</strong> {restoreStatus.unavailableDrive.driveLetter}
                       </p>
                       <p className="text-xs text-gray-600 mb-1">
                         <strong>Tipo:</strong> {
-                          savedPathUnavailable.driveType === 'removable' ? 'Chiavetta USB' :
-                          savedPathUnavailable.driveType === 'optical' ? 'DVD/CD' :
+                          restoreStatus.unavailableDrive.driveType === 'removable' ? 'Chiavetta USB' :
+                          restoreStatus.unavailableDrive.driveType === 'optical' ? 'DVD/CD' :
                           'Drive fisso'
                         }
                       </p>
@@ -800,7 +516,7 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
                         <strong>Percorso salvato:</strong>
                       </p>
                       <p className="text-xs font-mono text-gray-800 break-all">
-                        {savedPathUnavailable.path}
+                        {restoreStatus.unavailableDrive.path}
                       </p>
                     </div>
                     <p className="text-sm text-amber-800 mb-4">
@@ -808,7 +524,6 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
                     </p>
                     <button
                       onClick={() => {
-                        setSavedPathUnavailable(null);
                         clearError();
                       }}
                       className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 text-sm"

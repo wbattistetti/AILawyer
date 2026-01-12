@@ -19,7 +19,16 @@ export function ArchivePanel({
 }: ArchivePanelProps) {
 
   // Usa l'hook useArchive per la gestione documenti
-  const { documenti, uploads, clientThumbByS3, handleFileDrop, handleRemoveThumb } = useArchive(praticaId, comparti)
+  const {
+    documenti,
+    uploads,
+    clientThumbByS3,
+    handleFileDrop,
+    handleRemoveThumb,
+    pendingMoveConfirmations,
+    handleConfirmMove,
+    handleCancelMove
+  } = useArchive(praticaId, comparti)
 
   // Usa l'hook useOcr per la gestione OCR
   const {
@@ -101,6 +110,9 @@ export function ArchivePanel({
             transcribedPctByDoc={transcribedPctByDoc as any}
             comparti={comparti}
             toast={() => { }}
+            pendingMoveConfirmations={pendingMoveConfirmations}
+            onConfirmMove={handleConfirmMove}
+            onCancelMove={handleCancelMove}
           />
         </div>
       )}

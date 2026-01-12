@@ -206,9 +206,40 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   const handleDrop = async (e: React.DragEvent, drawerId: string) => {
     setDraggedOverId(null)
 
+    console.log('[DRAWER-TAB-STRIP][DROP][START] Drop ricevuto', {
+      drawerId,
+      target: (e.target as HTMLElement)?.tagName,
+      currentTarget: (e.currentTarget as HTMLElement)?.tagName,
+      types: Array.from(e.dataTransfer?.types || [])
+    })
+
+    // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
+    const { isDockviewDrag } = await import('../../utils/dragEventUtils')
+    const isDockview = isDockviewDrag(e)
+    console.log('[DRAWER-TAB-STRIP][DROP] isDockviewDrag result:', isDockview)
+
+    if (isDockview) {
+      console.log('[DRAWER-TAB-STRIP][DROP] ❌ Ignorato - è drag Dockview')
+      return // Lascia che Dockview gestisca il drop del pannello
+    }
+
+    console.log('[DRAWER-TAB-STRIP][DROP] ✅ Procedo con gestione drop')
+
+    // ✅ CRITICO: Ferma la propagazione per evitare gestione duplicata
+    e.stopPropagation()
+    e.preventDefault()
+
+    console.log('[DRAWER-TAB-STRIP][DROP] Start', {
+      drawerId,
+      types: Array.from(e.dataTransfer.types),
+      hasDocId: DragAndDropService.isDocId(e),
+      hasExplorerFile: DragAndDropService.isExplorerFile(e),
+      hasFiles: DragAndDropService.isFiles(e)
+    })
+
     // ✅ Usa il servizio centralizzato per gestire il drop
     // drawerId può essere una chiave o un ID - il servizio lo gestirà
-    await DragAndDropService.handleDrop(e, drawerId, {
+    const handled = await DragAndDropService.handleDrop(e, drawerId, {
       onExplorerFile: (fileData) => {
         // Emetti un evento custom per gestire il drop di file Explorer
         const event = new CustomEvent('explorer:file-drop-to-drawer', {
@@ -217,6 +248,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         window.dispatchEvent(event)
       },
       onDocId: async (docId) => {
+        console.log('[DRAWER-TAB-STRIP][DROP] ✅ onDocId chiamato', { docId, drawerId })
         // ✅ Usa il servizio centralizzato per spostare il documento
         try {
           const archiveData = (window as any).__archiveData as {
@@ -230,12 +262,14 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
           // Trova il comparto corrispondente al drawerId (può essere key o id)
           const comparto = comparti.find(c => c.id === drawerId || c.key === drawerId)
           if (comparto) {
+            console.log('[DRAWER-TAB-STRIP][DROP] ✅ Comparto trovato, sposto documento', { docId, compartoId: comparto.id })
             const api = (await import('../../lib/api')).api
             await DragAndDropService.moveDocumentToComparto(docId, comparto.id, {
               documenti,
               comparti,
               api
             })
+            console.log('[DRAWER-TAB-STRIP][DROP] ✅ Documento spostato con successo', { docId, compartoId: comparto.id })
           } else {
             console.warn('[DRAWER-TAB-STRIP] Comparto non trovato per drawerId:', drawerId)
           }
@@ -250,6 +284,12 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         }
       }
     })
+
+    if (!handled) {
+      console.warn('[DRAWER-TAB-STRIP][DROP] ⚠️ Drop non gestito dal servizio', { drawerId, types: Array.from(e.dataTransfer?.types || []) })
+    } else {
+      console.log('[DRAWER-TAB-STRIP][DROP] ✅ Drop gestito con successo', { drawerId })
+    }
   }
 
   // ✅ Costanti per il calcolo
@@ -393,6 +433,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   return (
     <div
       ref={containerRef}
+      data-drawer-strip="true"
       className={`relative flex items-end gap-3 px-2 py-1 overflow-visible ${className || ''}`}
       style={{
         minHeight: 'auto',
@@ -515,6 +556,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         return (
           <button
             key={item.id}
+            data-drawer-tab="true"
+            data-drawer-id={item.id}
             onClick={() => {
               onSelect(item.id)
             }}

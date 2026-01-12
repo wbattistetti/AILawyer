@@ -11,8 +11,12 @@ export function useDocumentThumbnail(docId: string | undefined, enabled: boolean
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // ✅ Salta documenti temporanei - la loro thumbnail viene generata client-side
-    if (!docId || !enabled || thumbnail || docId.startsWith('temp:')) return
+    // ✅ Salta documenti temporanei/pending - la loro thumbnail viene generata client-side
+    // ✅ CRITICO: Se l'ID è solo un hash (64 caratteri hex), è probabilmente un documento temporaneo
+    // ✅ Non cercare di caricare thumbnail dal DB per documenti temporanei
+    const isTempOrPending = docId?.startsWith('temp:') || docId?.startsWith('pending:')
+    const isHashOnly = docId && /^[0-9a-f]{64}$/i.test(docId) // Hash SHA-256 completo (64 caratteri hex)
+    if (!docId || !enabled || thumbnail || isTempOrPending || isHashOnly) return
 
     let cancelled = false
     setLoading(true)

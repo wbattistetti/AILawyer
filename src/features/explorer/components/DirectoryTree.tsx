@@ -11,6 +11,9 @@ interface DirectoryTreeProps {
   selectedPath?: string;
   highlightPath?: string;
   className?: string;
+  // ✅ Nuovo: path espansi iniziali e callback per notificare cambiamenti
+  initialExpandedPaths?: string[];
+  onExpandedPathsChange?: (expandedPaths: string[]) => void;
 }
 
 export function DirectoryTree({
@@ -19,10 +22,81 @@ export function DirectoryTree({
   onSelect,
   selectedPath,
   highlightPath,
-  className = ''
+  className = '',
+  initialExpandedPaths = [],
+  onExpandedPathsChange
 }: DirectoryTreeProps) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
+
+  // ✅ Helper per ottenere tutti i path espansi dall'albero
+  const getExpandedPaths = useCallback((nodes: TreeNode[]): string[] => {
+    const paths: string[] = [];
+    for (const node of nodes) {
+      if (node.expanded) {
+        paths.push(node.path);
+        if (node.children) {
+          paths.push(...getExpandedPaths(node.children));
+        }
+      } else if (node.children) {
+        paths.push(...getExpandedPaths(node.children));
+      }
+    }
+    return paths;
+  }, []);
+
+  // ✅ Notifica cambiamenti nello stato di espansione
+  useEffect(() => {
+    if (onExpandedPathsChange && tree.length > 0) {
+      const expandedPaths = getExpandedPaths(tree);
+      onExpandedPathsChange(expandedPaths);
+    }
+  }, [tree, onExpandedPathsChange, getExpandedPaths]);
+
+  // ✅ Helper per espandere un path ricorsivamente e caricare i suoi children
+  const expandPathRecursive = useCallback(async (
+    nodes: TreeNode[],
+    pathToExpand: string
+  ): Promise<TreeNode[]> => {
+    const results = await Promise.all(nodes.map(async (node) => {
+      // Se questo nodo è un parent del path da espandere
+      if (pathToExpand.startsWith(node.path + '\\') || pathToExpand === node.path) {
+        // Carica children se non già caricati
+        let children = node.children || [];
+        if (children.length === 0 && !node.path.endsWith('\\')) {
+          try {
+            const { files } = await adapter.listDir(node.path);
+            children = files
+              .filter(file => file.isDir)
+              .map(file => ({
+                id: file.path,
+                name: file.name,
+                path: file.path,
+                type: 'dir' as const,
+                expanded: false,
+                children: [],
+                driveInfo: undefined
+              }));
+          } catch (error) {
+            console.error(`Failed to load directory ${node.path}:`, error);
+          }
+        }
+
+        // Espandi questo nodo e continua ricorsivamente
+        const updatedChildren = await expandPathRecursive(children, pathToExpand);
+        return { ...node, expanded: true, children: updatedChildren };
+      }
+
+      // Continua ricorsivamente nei children
+      if (node.children) {
+        return { ...node, children: await expandPathRecursive(node.children, pathToExpand) };
+      }
+
+      return node;
+    }));
+
+    return results;
+  }, [adapter]);
 
   // Initialize tree with drives
   useEffect(() => {
@@ -43,6 +117,21 @@ export function DirectoryTree({
     });
     setTree(driveNodes);
   }, [drives]);
+
+  // ✅ Ripristina lo stato di espansione iniziale quando cambiano initialExpandedPaths o drives
+  useEffect(() => {
+    if (initialExpandedPaths.length > 0 && tree.length > 0) {
+      // Espandi tutti i path salvati ricorsivamente
+      const restoreExpansion = async () => {
+        let updatedTree = [...tree];
+        for (const path of initialExpandedPaths) {
+          updatedTree = await expandPathRecursive(updatedTree, path);
+        }
+        setTree(updatedTree);
+      };
+      restoreExpansion();
+    }
+  }, [initialExpandedPaths, drives.length]); // ✅ Dipende da drives.length per assicurarsi che l'albero sia inizializzato
 
   // Handle highlight effect
   useEffect(() => {
@@ -137,15 +226,6 @@ export function DirectoryTree({
             {node.type === 'drive' ? (
               (() => {
                 const driveType = node.driveInfo?.type || drives.find(d => d.id === node.id)?.type || 'fixed';
-                // ✅ Debug: log per verificare quale tipo viene passato
-                if (node.id === 'D:') {
-                  console.log('[DIRECTORY-TREE] Rendering D: drive icon', {
-                    nodeId: node.id,
-                    driveInfoType: node.driveInfo?.type,
-                    foundType: drives.find(d => d.id === node.id)?.type,
-                    finalType: driveType
-                  });
-                }
                 return (
                   <DriveIcon
                     type={driveType}

@@ -10,6 +10,7 @@ import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Has
 import type { Comparto } from '@/types'
 import { api } from '@/lib/api'
 import type { DrawerType } from '../features/drawers/types'
+import { deduplicateDocuments } from '@/utils/documentDeduplication'
 import './DockWorkspaceV3.css'
 
 type DocTab = { id: string; title: string }
@@ -419,6 +420,21 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     const archiveData = (window as any).__archiveData
     const documenti: Array<{ compartoId?: string }> = archiveData?.documenti || []
 
+    console.log('[DOCK-V3] DrawerTabs computing with:', {
+      documentiCount: documenti.length,
+      documentsUpdateTrigger,
+      drawerPanelsUpdateTrigger,
+      compartiCount: comparti.length,
+      documentiSample: documenti.slice(0, 5).map(d => ({ id: (d as any).id?.substring(0, 30), compartoId: (d as any).compartoId }))
+    })
+
+    // ✅ Log dettagliato per debug: mostra tutti i documenti con il loro compartoId
+    console.log('[DOCK-V3] All documenti with compartoId:', documenti.map(d => ({
+      id: (d as any).id?.substring(0, 30),
+      compartoId: (d as any).compartoId,
+      filename: (d as any).filename
+    })))
+
     // ✅ Calcola quali cassetti hanno un dock pane aperto
     const openDrawerIds = new Set<string>()
     if (dockviewApiRef.current) {
@@ -435,8 +451,25 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       const IconComponent = iconFor(comparto.nome)
       const drawerColor = colorFor(comparto.chiave as DrawerType)
 
-      // ✅ Conta i documenti per questo comparto
-      const documentCount = documenti.filter(doc => doc.compartoId === comparto.id).length
+      // ✅ Conta i documenti per questo comparto CON deduplicazione
+      const matchingDocs = documenti.filter(doc => {
+        const matches = (doc as any).compartoId === comparto.id
+        if (matches) {
+          console.log('[DOCK-V3] ✅ Documento match per comparto', comparto.nome, ':', {
+            id: (doc as any).id?.substring(0, 30),
+            compartoId: (doc as any).compartoId,
+            filename: (doc as any).filename
+          })
+        }
+        return matches
+      })
+      // ✅ Deduplica per evitare di contare documenti temporanei duplicati
+      const deduplicatedDocs = deduplicateDocuments(matchingDocs)
+      const documentCount = deduplicatedDocs.length
+
+      console.log('[DOCK-V3] Comparto:', comparto.nome, 'documentCount:', documentCount, 'matchingDocs:', matchingDocs.length, 'deduplicatedDocs:', deduplicatedDocs.length, 'documenti:',
+        matchingDocs.map(d => ({ id: (d as any).id?.substring(0, 30), compartoId: (d as any).compartoId, filename: (d as any).filename }))
+      )
 
       // ✅ Verifica se il cassetto ha un dock pane aperto
       const isOpen = openDrawerIds.has(comparto.id)
@@ -452,7 +485,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         isOpen // ✅ Se il cassetto ha un dock pane aperto
       }
     })
-    console.log('[DOCK-V3] DrawerTabs computed:', tabs, 'from comparti:', comparti)
+    console.log('[DOCK-V3] DrawerTabs computed:', tabs.map(t => ({ label: t.label, count: t.documentCount })))
     return tabs
   }, [comparti, drawerPanelsUpdateTrigger, documentsUpdateTrigger]) // ✅ Aggiungi trigger per forzare re-calcolo quando i pannelli o i documenti cambiano
 
@@ -1072,107 +1105,9 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     const dragState = { isDragging: false }
     let panelPositionsBeforeDrag = new Map<string, string>()
 
-    // ✅ Listener GLOBALE per drop - SEMPRE attivo per intercettare TUTTI i drop
-    const globalDropHandler = (e: DragEvent) => {
-      // ✅ Se è un file Explorer, NON intercettare - lascia che arrivi a DocumentCollection
-      if (e.dataTransfer?.types.includes('application/x-explorer-file')) {
-        console.log('[DOCK-V3] 🌐 GLOBAL DROP - File Explorer rilevato, lascio propagare a DocumentCollection')
-        return // Non fare nulla, lascia propagare
-      }
-
-      // ✅ Log SEMPRE per vedere se il drop viene chiamato (solo per drag Dockview)
-      console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target:', e.target, 'Default prevented:', e.defaultPrevented)
-      console.log('[DOCK-V3] 🌐 GLOBAL DROP - dropEffect:', e.dataTransfer?.dropEffect)
-      console.log('[DOCK-V3] 🌐 GLOBAL DROP - isDragging:', dragState.isDragging)
-
-      // ✅ Se è un drag di Dockview, verifica se il target è un'area valida
-      if (dragState.isDragging) {
-        const target = e.target as HTMLElement
-
-        // ✅ Verifica se il target è dentro Dockview (cerca elementi con classi Dockview)
-        const dockviewContainer = target.closest('.dockview-react')
-        const isDockviewArea = dockviewContainer !== null
-
-        // ✅ Verifica se il target è un elemento interno del pannello (non un'area di drop valida)
-        const isInternalElement = target.closest('[data-component]') !== null &&
-                                  !target.closest('.dv-tabs-and-actions-container') &&
-                                  !target.closest('.dv-group-view')
-
-        console.log('[DOCK-V3] 🌐 GLOBAL DROP - isDockviewArea:', isDockviewArea, 'isInternalElement:', isInternalElement)
-        console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target classes:', target.className)
-        console.log('[DOCK-V3] 🌐 GLOBAL DROP - Target data-component:', target.getAttribute('data-component'))
-
-        // ✅ Se è un elemento interno, Dockview non gestisce il drop
-        // Il problema è che pointer-events: none non blocca gli eventi di drag and drop
-        // Quindi dobbiamo assicurarci che il drop avvenga su un'area valida
-        // Per ora, non facciamo nulla - Dockview ignorerà il drop su elementi interni
-        // e il pannello rimarrà nella posizione originale
-        if (isInternalElement) {
-          console.log('[DOCK-V3] ⚠️ GLOBAL DROP - Drop su elemento interno. Dockview non gestisce il drop su elementi interni.')
-          console.log('[DOCK-V3] ⚠️ GLOBAL DROP - Il pannello rimarrà nella posizione originale.')
-          // ✅ NON fare preventDefault - lasciamo che Dockview gestisca comunque
-          // Anche se Dockview non gestisce il drop su elementi interni, potrebbe comunque
-          // gestirlo se l'evento raggiunge un'area valida durante la propagazione
-        }
-      }
-    }
-
-    // ✅ Listener GLOBALE per dragover - SEMPRE attivo
-    const globalDragOverHandler = (e: DragEvent) => {
-      // ✅ Se è un file Explorer, NON intercettare - lascia che arrivi a DocumentCollection
-      if (e.dataTransfer?.types.includes('application/x-explorer-file')) {
-        return // Non fare nulla, lascia propagare
-      }
-
-      // ✅ Se è un drag di Dockview, NON mostrare overlay - Dockview gestisce tutto
-      if (dragState.isDragging) {
-        // ✅ NON abilitare drag mode per drag di pannelli Dockview
-        // L'overlay serve solo per drag di elementi DENTRO i pannelli (es. documenti), non per drag dei pannelli stessi
-
-        const target = e.target as HTMLElement
-
-        // ✅ Verifica se il target è dentro Dockview
-        const isDockviewArea = target.closest('.dockview-react') ||
-                                target.closest('.dv-group-view') ||
-                                target.closest('.dv-tabs-and-actions-container') ||
-                                target.closest('[class*="dockview"]')
-
-        // ✅ Se è un'area Dockview valida, imposta dropEffect
-        if (isDockviewArea && e.dataTransfer) {
-          e.dataTransfer.dropEffect = 'move'
-        } else if (e.dataTransfer) {
-          // ✅ Anche se non è un'area Dockview, prova a permettere il drop
-          // Dockview potrebbe gestirlo comunque se è un'area valida internamente
-          e.dataTransfer.dropEffect = 'move'
-        }
-        // ✅ NON fare preventDefault qui - Dockview lo gestisce
-        return // ✅ Esci subito per non interferire
-      }
-    }
-
-    // ✅ Listener GLOBALE per dragend - SEMPRE attivo
-    const globalDragEndHandler = (e: DragEvent) => {
-      console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - dropEffect:', e.dataTransfer?.dropEffect)
-      console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - isDragging:', dragState.isDragging)
-
-      if (dragState.isDragging) {
-        console.log('[DOCK-V3] 🏁 GLOBAL DRAG END - Drag di Dockview terminato')
-        dragState.isDragging = false
-        disableDragMode() // ✅ Disabilita drag mode quando il drag finisce
-      }
-    }
-
-    // ✅ Aggiungi listener globali PRIMA di tutto, sempre attivi
-    document.addEventListener('drop', globalDropHandler, { capture: true, passive: false })
-    document.addEventListener('dragover', globalDragOverHandler, { capture: true, passive: false })
-    document.addEventListener('dragend', globalDragEndHandler, { capture: true })
-
-    // ✅ Cleanup per listener globali
-    const cleanupGlobalListeners = () => {
-      document.removeEventListener('drop', globalDropHandler, { capture: true })
-      document.removeEventListener('dragover', globalDragOverHandler, { capture: true })
-      document.removeEventListener('dragend', globalDragEndHandler, { capture: true })
-    }
+    // ✅ RIMOSSI handler globali - Dockview gestisce internamente i suoi drag
+    // ✅ I componenti locali (DocumentCollection, DrawerTabStrip, ecc.) gestiscono i loro drop
+    // ✅ Nessun conflitto: ogni sistema gestisce solo i suoi eventi
 
     // ✅ Listener per eventi di drag (se disponibile)
     let disposableWillDrag: any = null
@@ -1358,7 +1293,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     return () => {
       document.removeEventListener('mouseup', handleMouseUp)
-      cleanupGlobalListeners() // ✅ Cleanup listener globali
+      // ✅ RIMOSSO cleanupGlobalListeners - non ci sono più handler globali
       disposableGroups.dispose()
       disposablePanels.dispose()
       if (disposablePanelsRemove) disposablePanelsRemove.dispose()

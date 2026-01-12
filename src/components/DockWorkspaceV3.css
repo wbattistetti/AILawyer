@@ -78,18 +78,14 @@
   background-color: #9ca3af !important;
 }
 
-/* ✅ Disabilita drop sul contenuto dei pannelli durante il drag (solo per drag Dockview, non file Explorer) */
-.dockv3-root.drag-active .dv-group-view > div[class*="overflow"] {
-  pointer-events: none !important;
-}
+/* ✅ RIMOSSO: CSS che interferiva con Dockview
+ * Dockview gestisce internamente i suoi drag, non serve disabilitare pointer-events
+ * I componenti locali (DocumentCollection, ecc.) verificano isDockviewDrag prima di gestire
+ */
 
-/* ✅ NON disabilitare pointer-events per document-collection - deve sempre ricevere drop di file Explorer */
+/* ✅ MANTIENI solo per document-collection - deve sempre ricevere drop di file Explorer */
 .dockv3-root.drag-active [data-component="document-collection"] {
-  pointer-events: auto !important; /* ✅ Forza pointer-events per document-collection anche durante drag Dockview */
-}
-
-.dockv3-root.drag-active [data-component]:not([data-component="document-collection"]) {
-  pointer-events: none !important;
+  pointer-events: auto !important;
 }
 
 /* ✅ Overlay di drop durante il drag - copre il contenuto dei pannelli */

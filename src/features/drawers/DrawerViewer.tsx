@@ -306,7 +306,10 @@ export function DrawerViewer({
           ocrProgressByDoc: data.ocrProgressByDoc || {},
           ocrEtaByDoc: data.ocrEtaByDoc || {},
           ocrStatusByDoc: data.ocrStatusByDoc || {},
-          transcribedPctByDoc: data.transcribedPctByDoc || {}
+          transcribedPctByDoc: data.transcribedPctByDoc || {},
+          // ✅ CRITICO: Includi pendingMoveConfirmations per rilevare cambiamenti nelle miniature ghost
+          pendingMoveConfirmationsSize: data.pendingMoveConfirmations?.size || 0,
+          pendingMoveConfirmationsKeys: data.pendingMoveConfirmations ? Array.from(data.pendingMoveConfirmations.keys()) : []
         })
 
         // ✅ Aggiorna solo se i dati sono realmente cambiati
@@ -431,6 +434,9 @@ export function DrawerViewer({
           uploads={archiveData.uploads}
           toast={archiveData.toast}
           singleCompartoId={id} // ✅ Mostra solo questo comparto!
+          pendingMoveConfirmations={archiveData.pendingMoveConfirmations}
+          onConfirmMove={archiveData.handleConfirmMove}
+          onCancelMove={archiveData.handleCancelMove}
         />
       </div>
     </div>

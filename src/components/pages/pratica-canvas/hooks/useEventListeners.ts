@@ -1,6 +1,8 @@
 import { useEffect, RefObject } from 'react';
 import { Documento } from '../../../../types';
 import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
+import { FileSystemService } from '../../../../services/filesystem/FileSystemService';
+import { useDocumentStore } from '../../../../stores/documentStore/store';
 
 interface UseEventListenersProps {
     documenti: Documento[];
@@ -28,13 +30,25 @@ export function useEventListeners({
             try {
                 const files: File[] = e?.detail?.files || []
                 const target = e?.detail?.target || null
+                const sourceFilePath = e?.detail?.sourceFilePath // ✅ Estrai filePath originale se presente
                 if (!files || files.length === 0) return
-                await handleFileDrop(files, null, target)
+                // ✅ CORRETTO: Passa target.id come compartoId invece di null, così il documento viene salvato nel comparto corretto
+                await handleFileDrop(files, target?.id, { ...target, sourceFilePath })
             } catch { }
         }
 
         const broadcastDocs = () => {
             try {
+                // ✅ CRITICO: Sincronizza window.__archiveData.documenti con documenti state
+                try {
+                    const archiveData = (window as any).__archiveData
+                    if (archiveData) {
+                        archiveData.documenti = documenti
+                    }
+                } catch (error) {
+                    console.error('[BROADCAST][SYNC] Errore sincronizzazione window.__archiveData:', error)
+                }
+
                 const items = documenti.map(d => {
                     // ✅ Usa solo thumbnailDataUrl dal DB (client-side generata) o clientThumbByS3 per temp docs
                     // ❌ Rimossa generazione backend ridondante (server thumb)
@@ -102,10 +116,11 @@ export function useEventListeners({
         // initial broadcast so drawers get the list immediately
         broadcastDocs()
 
-        const onOpen = (e: any) => {
+        const onOpen = async (e: any) => {
             try {
                 const d = e?.detail || {}
                 if (!d?.docId) return
+                
                 // If tmp doc, open temporary tab
                 if (String(d.docId).startsWith('tmp:')) {
                     const title = d?.meta?.title || 'Estratto'
@@ -115,14 +130,93 @@ export function useEventListeners({
                     dockV2Ref.current?.openTmpDoc({ id: d.docId, title, content: text, text, source })
                     return
                 }
-                const doc = documenti.find(x => x.id === d.docId)
+                
+                // ✅ Cerca prima nell'array documenti
+                let doc = documenti.find(x => x.id === d.docId)
+                
+                // ✅ Se non trovato, cerca anche in window.__archiveData.documenti (documenti temporanei)
+                if (!doc) {
+                    try {
+                        const archiveData = (window as any).__archiveData as { documenti?: Array<any> } | undefined
+                        if (archiveData?.documenti) {
+                            doc = archiveData.documenti.find((d: any) => d.id === d.docId)
+                        }
+                    } catch (error) {
+                        console.warn('[OPEN][DOC] Errore accesso archiveData:', error)
+                    }
+                }
+                
+                // ✅ Se ancora non trovato e il documento è temp: o pending:, caricalo dal filesystem IN MEMORIA
+                if (!doc && (String(d.docId).startsWith('temp:') || String(d.docId).startsWith('pending:'))) {
+                    try {
+                        console.log('[OPEN][DOC] Documento temp: non trovato, carico dal filesystem IN MEMORIA', { docId: d.docId })
+                        
+                        // Estrai filePath
+                        const archiveData = (window as any).__archiveData as { 
+                            documenti?: Array<any>
+                            praticaId?: string
+                        } | undefined
+                        
+                        const tempDoc = archiveData?.documenti?.find((d: any) => d.id === d.docId)
+                        const filePath = (tempDoc as any)?.filePath || d.docId.replace(/^(temp|pending):/, '')
+                        
+                        if (!filePath) {
+                            console.error('[OPEN][DOC] Impossibile trovare filePath per documento temp:', { docId: d.docId })
+                            return
+                        }
+                        
+                        // ✅ Carica il file dal filesystem IN MEMORIA (blob)
+                        const { file, blobUrl } = await FileSystemService.loadFileAsBlobUrl(filePath)
+                        
+                        // ✅ Crea documento virtuale IN MEMORIA (non nel database)
+                        doc = {
+                            id: d.docId,
+                            filename: file.name,
+                            mime: file.type,
+                            size: file.size,
+                            s3Key: '', // Non salvato nel DB
+                            hash: '', // Non salvato nel DB
+                            ocrStatus: 'pending',
+                            tags: [],
+                            compartoId: tempDoc?.compartoId || '',
+                            praticaId: archiveData?.praticaId || '',
+                            createdAt: new Date().toISOString(),
+                            localUrl: blobUrl, // ✅ Blob URL per visualizzazione immediata
+                        } as any
+                        
+                        // ✅ Aggiorna anche lo store con il blob URL (per future aperture)
+                        const store = useDocumentStore.getState()
+                        const existingDoc = store.documents.get(d.docId)
+                        if (existingDoc) {
+                            store.updateDocument(d.docId, { localUrl: blobUrl } as any)
+                        } else {
+                            // Se non esiste nello store, aggiungilo
+                            store.addDocument(doc)
+                        }
+                        
+                        console.log('[OPEN][DOC] Documento temp: caricato IN MEMORIA e pronto per visualizzazione', { docId: doc.id, filename: doc.filename })
+                    } catch (error) {
+                        console.error('[OPEN][DOC] Errore caricamento documento temp: dal filesystem:', error)
+                        return
+                    }
+                }
+                
                 if (doc && dockV2Ref.current) {
+                    console.log('[OPEN][DOC] Documento trovato, apro tab IMMEDIATAMENTE', { docId: doc.id, filename: doc.filename })
                     dockV2Ref.current.openDoc({ id: doc.id, title: doc.filename })
                     const ev = new CustomEvent('app:goto-match', { detail: { docId: d.docId, match: d.match, q: d.q } })
                     try { console.log('[OPEN][persisted][goto-match][dispatch]', ev.detail) } catch { }
                     window.dispatchEvent(ev)
+                } else {
+                    console.warn('[OPEN][DOC] Documento non trovato o dockV2Ref non disponibile', {
+                        docId: d.docId,
+                        trovato: !!doc,
+                        dockV2RefAvailable: !!dockV2Ref.current
+                    })
                 }
-            } catch { }
+            } catch (error) {
+                console.error('[OPEN][DOC] Errore apertura documento:', error)
+            }
         }
 
         const onGotoSource = (e: any) => {

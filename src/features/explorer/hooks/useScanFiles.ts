@@ -216,10 +216,19 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
     // Check kind filter
     if (options.kinds && options.kinds.size > 0) {
+      // ✅ Wrapper per adattare la firma: MimeService si aspetta readChunk(start, len)
+      // ma BackendFileSystemAdapter.readChunk ha la firma (filePath, start, len)
+      const readChunkWrapper = async (start: number, len: number): Promise<ArrayBuffer> => {
+        if (!adapter.readChunk) {
+          throw new Error('readChunk not available');
+        }
+        return adapter.readChunk(file.path, start, len);
+      };
+
       const kind = await MimeService.detectKind({
         name: file.name,
         path: file.path,
-        readChunk: adapter.readChunk
+        readChunk: readChunkWrapper
       });
 
       if (!options.kinds.has(kind)) {
@@ -235,23 +244,32 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     adapter: FileSystemAdapter,
     options?: ScanOptions
   ): Promise<FileEntry> => {
+    // ✅ Wrapper per adattare la firma: MimeService si aspetta readChunk(start, len)
+    // ma BackendFileSystemAdapter.readChunk ha la firma (filePath, start, len)
+    const readChunkWrapper = async (start: number, len: number): Promise<ArrayBuffer> => {
+      if (!adapter.readChunk) {
+        throw new Error('readChunk not available');
+      }
+      return adapter.readChunk(file.path, start, len);
+    };
+
     const kind = await MimeService.detectKind({
       name: file.name,
       path: file.path,
-      readChunk: adapter.readChunk
+      readChunk: readChunkWrapper
     });
 
     const ext = file.name.split('.').pop()?.toLowerCase();
 
-    // Rimuovi l'estensione
-    let nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+    // ✅ Mantieni il nome completo con estensione
+    let fileName = file.name;
 
     // Se il nome contiene timestamp-uuid-nomeReale, estrai solo il nome reale
-    // Pattern: 1758383831848-4af3a8fa-12bd-44b6-9bba-a18fc9f4f9d6-Catania
+    // Pattern: 1758383831848-4af3a8fa-12bd-44b6-9bba-a18fc9f4f9d6-Catania.pdf
     const timestampUuidPattern = /^\d+-[a-f0-9-]{36}-(.+)$/i;
-    const match = nameWithoutExt.match(timestampUuidPattern);
+    const match = fileName.match(timestampUuidPattern);
     if (match) {
-      nameWithoutExt = match[1]; // Prendi solo la parte dopo l'ultimo trattino
+      fileName = match[1]; // Prendi solo la parte dopo l'ultimo trattino (mantiene estensione)
     }
 
     const parentDirName = file.path.split(/[/\\]/).slice(-2, -1)[0] || '';
@@ -259,7 +277,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     // Classificazione automatica
     const fileEntry: FileEntry = {
       id: file.path,
-      name: nameWithoutExt,
+      name: fileName, // ✅ Nome completo con estensione
       ext,
       kind,
       sizeBytes: file.size,

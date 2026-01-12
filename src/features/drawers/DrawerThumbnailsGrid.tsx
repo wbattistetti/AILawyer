@@ -48,8 +48,9 @@ function ThumbCardWithLazyThumbnail({
   const clientThumb = clientThumbByS3?.[doc.s3Key] || ''
   const existingThumb = thumbnailFromDb || clientThumb
 
-  // Lazy load thumbnail solo se non c'è già una thumbnail e il documento non è temporaneo
-  const shouldLoadLazy = !existingThumb && !doc.id.startsWith('temp:')
+  // Lazy load thumbnail solo se non c'è già una thumbnail e il documento non è temporaneo/pending
+  const isTempOrPending = doc.id.startsWith('temp:') || doc.id.startsWith('pending:')
+  const shouldLoadLazy = !existingThumb && !isTempOrPending
   const { thumbnail: lazyThumbnail } = useDocumentThumbnail(shouldLoadLazy ? doc.id : undefined, true)
 
   const thumb = existingThumb || lazyThumbnail || ''
@@ -137,9 +138,14 @@ export function DrawerThumbnailsGrid({
           outline: '1px solid lime',
           outlineOffset: '-1px'
         }}>
-          {docs.map(doc => (
+          {docs.map(doc => {
+            // ✅ Key stabile per evitare re-mount quando l'ID cambia (tempIdImmediato → tempIdFinale → documento reale)
+            // Priorità: s3Key > hash > filePath > id
+            const stableKey = doc.s3Key || (doc as any).hash || (doc as any).filePath || doc.id
+
+            return (
             <ThumbCardWithLazyThumbnail
-              key={doc.id}
+              key={stableKey}
               doc={doc}
               clientThumbByS3={clientThumbByS3}
               ocrProgressByDoc={ocrProgressByDoc}
@@ -152,7 +158,8 @@ export function DrawerThumbnailsGrid({
               onOcr={onOcr}
               onOcrCancel={onOcrCancel}
             />
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>
