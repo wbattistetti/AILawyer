@@ -129,15 +129,23 @@ export function useArchive(
   }, [documenti, store, toast])
 
   const handleConfirmMove = useCallback(async (confirmation: PendingMoveConfirmation) => {
+    const confirmationKey = `${confirmation.docId}-${confirmation.targetCompartoId}`
+
     try {
-      console.info('↪️ [ARCH] Conferma spostamento documento', {
+      console.info('↪️ [ARCH][CONFIRM-MOVE][START] Conferma spostamento documento', {
         docId: confirmation.docId,
         from: confirmation.sourceCompartoId,
-        to: confirmation.targetCompartoId
+        to: confirmation.targetCompartoId,
+        confirmationKey
       })
 
       // ✅ Verifica se il documento è temporaneo (non ancora nel database)
-      const isPendingOrTemp = confirmation.docId.startsWith('pending:') || confirmation.docId.startsWith('temp:')
+      // ✅ CRITICO: Un ID che è un hash completo (64 caratteri hex) indica un documento temporaneo
+      // ✅ che non è ancora nel database, quindi non deve chiamare l'API
+      const isHashOnly = /^[0-9a-f]{64}$/i.test(confirmation.docId) // Hash SHA-256 completo
+      const isPendingOrTemp = confirmation.docId.startsWith('pending:') ||
+                              confirmation.docId.startsWith('temp:') ||
+                              isHashOnly
 
       // ✅ Verifica che il documento esista nello store
       const docToUpdate = store.getDocument(confirmation.docId)
@@ -149,28 +157,54 @@ export function useArchive(
           variant: 'destructive'
         })
         // ✅ Rimuovi comunque la miniatura ghost
-        const confirmationKey = `${confirmation.docId}-${confirmation.targetCompartoId}`
         store.removePendingMoveConfirmation(confirmationKey)
+        console.log('✅ [ARCH][CONFIRM-MOVE] Miniatura ghost rimossa (documento non trovato)', { confirmationKey })
         return
       }
 
-      // ✅ Aggiorna lo stato preservando la miniatura
+      // ✅ CRITICO: Verifica che il documento sia ancora nel comparto sorgente
+      // ✅ Se non è nel comparto sorgente, potrebbe essere già stato spostato o rimosso
+      if (docToUpdate.compartoId !== confirmation.sourceCompartoId) {
+        console.warn('⚠️ [ARCH][CONFIRM-MOVE] Documento non è più nel comparto sorgente', {
+          docId: confirmation.docId,
+          expectedSource: confirmation.sourceCompartoId,
+          actualComparto: docToUpdate.compartoId,
+          filename: docToUpdate.filename
+        })
+        // ✅ Rimuovi comunque la miniatura ghost
+        store.removePendingMoveConfirmation(confirmationKey)
+        console.log('✅ [ARCH][CONFIRM-MOVE] Miniatura ghost rimossa (documento già spostato)', { confirmationKey })
+        toast({
+          title: 'Attenzione',
+          description: 'Il documento è già stato spostato',
+          variant: 'default'
+        })
+        return
+      }
+
+      console.log('✅ [ARCH][CONFIRM-MOVE] Documento trovato e nel comparto sorgente corretto', {
+        docId: confirmation.docId,
+        currentComparto: docToUpdate.compartoId,
+        targetComparto: confirmation.targetCompartoId
+      })
+
+      // ✅ CRITICO: Aggiorna SOLO in memoria - NESSUNA chiamata API
+      // ✅ Lo spostamento verrà salvato nel database solo quando si salva esplicitamente la pratica
       store.updateDocument(confirmation.docId, {
         compartoId: confirmation.targetCompartoId,
         thumbnailDataUrl: confirmation.preservedThumbnail
       } as any)
+      console.log('✅ [ARCH][CONFIRM-MOVE] Documento aggiornato in memoria (salvataggio DB al salvataggio pratica)', {
+        docId: confirmation.docId,
+        newCompartoId: confirmation.targetCompartoId,
+        hasThumbnail: !!confirmation.preservedThumbnail,
+        isHashOnly,
+        isTempPrefix: confirmation.docId.startsWith('temp:') || confirmation.docId.startsWith('pending:')
+      })
 
-      // ✅ Se non è un documento temporaneo, chiama l'API
-      if (!isPendingOrTemp) {
-        await api.updateDocumento(confirmation.docId, { compartoId: confirmation.targetCompartoId })
-        console.log('✅ [ARCH][CONFIRM-MOVE] API updateDocumento chiamato', { docId: confirmation.docId })
-      } else {
-        console.log('✅ [ARCH][CONFIRM-MOVE] Documento temporaneo, aggiornato solo in memoria', { docId: confirmation.docId })
-      }
-
-      // ✅ Rimuovi la miniatura ghost
-      const confirmationKey = `${confirmation.docId}-${confirmation.targetCompartoId}`
+      // ✅ Rimuovi la miniatura ghost DOPO l'aggiornamento riuscito
       store.removePendingMoveConfirmation(confirmationKey)
+      console.log('✅ [ARCH][CONFIRM-MOVE] Miniatura ghost rimossa con successo', { confirmationKey })
 
       // ✅ Aggiorna la classificazione nell'Explorer se il documento ha un filePath
       if (docToUpdate && (docToUpdate as any).filePath) {
@@ -193,8 +227,17 @@ export function useArchive(
         title: 'Documento spostato',
         description: `Documento spostato da "${confirmation.sourceCompartoNome}" a "${confirmation.targetCompartoNome}"`
       })
+
+      console.log('✅ [ARCH][CONFIRM-MOVE][SUCCESS] Spostamento completato con successo', {
+        docId: confirmation.docId,
+        from: confirmation.sourceCompartoNome,
+        to: confirmation.targetCompartoNome
+      })
     } catch (error) {
-      console.error('❌ [ARCH][CONFIRM-MOVE] Errore:', error)
+      console.error('❌ [ARCH][CONFIRM-MOVE][ERROR] Errore durante spostamento:', error)
+      // ✅ Assicurati che la miniatura ghost venga rimossa anche in caso di errore
+      store.removePendingMoveConfirmation(confirmationKey)
+      console.log('✅ [ARCH][CONFIRM-MOVE] Miniatura ghost rimossa (errore)', { confirmationKey })
       toast({
         title: 'Errore',
         description: 'Impossibile spostare il documento',

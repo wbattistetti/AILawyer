@@ -33,6 +33,7 @@ import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
 import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
 import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemoriaRenderer';
+import { useDocumentStore } from '../../stores/documentStore/store';
 
 // ✅ Helper: calcola hash SHA-256 del file (client-side)
 async function calculateFileHash(file: File): Promise<string> {
@@ -173,6 +174,9 @@ export function PraticaCanvasPage() {
     handleConfirmMove,
     handleCancelMove
   } = useArchive(id, comparti)
+
+  // ✅ Accesso diretto allo store per ottenere tutti i documenti in memoria (inclusi temporanei)
+  const store = useDocumentStore()
 
   const {
     ocrProgressByDoc,
@@ -540,6 +544,104 @@ export function PraticaCanvasPage() {
             pendingFileClassificationsRef.current.clear()
             setPendingClassificationsVersion(prev => prev + 1)
             console.log('[SAVE][CLASSIFICATIONS][DONE] Classificazioni salvate e pulite')
+
+            // ✅ CONFRONTO DIFFERENZIALE: Sincronizza documenti in memoria con database
+            console.log('[SAVE][DIFF][START] Avvio confronto differenziale documenti')
+            try {
+              // 1. Carica documenti dal database
+              const dbDocs = await api.getDocumentiByPratica(id!)
+              console.log('[SAVE][DIFF] Documenti nel DB:', dbDocs.length)
+
+              // 2. Ottieni tutti i documenti in memoria (inclusi temporanei)
+              const memoryDocs = store.getAllDocuments()
+              console.log('[SAVE][DIFF] Documenti in memoria:', memoryDocs.length)
+
+              // 3. Identifica documenti da eliminare (nel DB ma non in memoria)
+              const dbDocIds = new Set(dbDocs.map(d => d.id))
+              const memoryDocIds = new Set(memoryDocs.map(d => d.id))
+              const docsToDelete = dbDocs.filter(d => !memoryDocIds.has(d.id))
+              console.log('[SAVE][DIFF] Documenti da eliminare:', docsToDelete.length)
+
+              for (const docToDelete of docsToDelete) {
+                try {
+                  // ✅ Elimina documento dal database (il backend gestirà l'eliminazione del file S3 se non condiviso)
+                  await api.deleteDocumento(docToDelete.id)
+                  console.log('[SAVE][DIFF][DELETE] Documento eliminato:', docToDelete.filename)
+                } catch (error) {
+                  console.error('[SAVE][DIFF][DELETE][ERROR] Errore eliminazione documento:', docToDelete.id, error)
+                  // Non bloccare il salvataggio per un singolo errore
+                }
+              }
+
+              // 4. Identifica documenti nuovi o modificati (in memoria)
+              for (const memDoc of memoryDocs) {
+                // ✅ Identifica documenti temporanei (hash-based o temp:/pending:)
+                const isHashOnly = /^[0-9a-f]{64}$/i.test(memDoc.id)
+                const isTempPrefix = memDoc.id.startsWith('temp:') || memDoc.id.startsWith('pending:')
+                const isTemporary = isTempPrefix || isHashOnly
+
+                if (isTemporary) {
+                  // ✅ Documento nuovo: deve essere creato nel database
+                  // ✅ Se ha filePath, carica il file e uploada
+                  const filePath = (memDoc as any).filePath
+                  if (filePath) {
+                    try {
+                      console.log('[SAVE][DIFF][CREATE] Carico nuovo documento da filePath:', filePath)
+                      await uploadFileFromPath(filePath, id!, memDoc.compartoId, api)
+                      console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato:', memDoc.filename)
+                    } catch (error) {
+                      console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento:', memDoc.filename, error)
+                      toast({
+                        title: 'Attenzione',
+                        description: `Impossibile caricare il file: ${memDoc.filename}`,
+                        variant: 'destructive'
+                      })
+                    }
+                  } else {
+                    // ✅ Documento temporaneo senza filePath (già uploadato o locale)
+                    // ✅ Crea documento nel database con i dati in memoria
+                    try {
+                      const hash = (memDoc as any).hash || memDoc.id
+                      const s3Key = memDoc.s3Key || `${hash}${memDoc.filename.substring(memDoc.filename.lastIndexOf('.')) || '.bin'}`
+                      await api.createDocumento({
+                        praticaId: id!,
+                        compartoId: memDoc.compartoId,
+                        filename: memDoc.filename,
+                        mime: memDoc.mime || 'application/octet-stream',
+                        size: memDoc.size || 0,
+                        s3Key,
+                        hash,
+                        ocrStatus: 'pending',
+                        tags: [],
+                        thumbnailDataUrl: (memDoc as any).thumbnailDataUrl,
+                        hasNativeText: (memDoc as any).hasNativeText,
+                        filePath: filePath || undefined
+                      })
+                      console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato (senza filePath):', memDoc.filename)
+                    } catch (error) {
+                      console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento (senza filePath):', memDoc.filename, error)
+                    }
+                  }
+                } else {
+                  // ✅ Documento esistente: verifica se compartoId è cambiato
+                  const dbDoc = dbDocs.find(d => d.id === memDoc.id)
+                  if (dbDoc && dbDoc.compartoId !== memDoc.compartoId) {
+                    // ✅ Spostamento: aggiorna compartoId
+                    try {
+                      await api.updateDocumento(memDoc.id, { compartoId: memDoc.compartoId })
+                      console.log('[SAVE][DIFF][UPDATE] CompartoId aggiornato:', memDoc.filename, dbDoc.compartoId, '->', memDoc.compartoId)
+                    } catch (error) {
+                      console.error('[SAVE][DIFF][UPDATE][ERROR] Errore aggiornamento compartoId:', memDoc.id, error)
+                    }
+                  }
+                }
+              }
+
+              console.log('[SAVE][DIFF][DONE] Confronto differenziale completato')
+            } catch (error) {
+              console.error('[SAVE][DIFF][ERROR] Errore nel confronto differenziale:', error)
+              // Non bloccare il salvataggio, ma logga l'errore
+            }
 
             // ✅ Salva definitivamente la pratica (cambia status da draft a committed)
             if (updated.status === 'draft') {

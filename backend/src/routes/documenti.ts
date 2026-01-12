@@ -707,7 +707,29 @@ export async function documentiRoutes(fastify: FastifyInstance) {
       try {
         const documento = await prisma.documento.findUnique({ where: { id: request.params.id } })
         if (!documento) return reply.status(404).send({ error: 'Documento non trovato' })
-        try { await storageService.deleteObject(documento.s3Key) } catch { }
+
+        // ✅ Controlla se il file è condiviso con altre pratiche
+        // ✅ Se lo stesso s3Key è usato da altri documenti, NON eliminare il file
+        const otherDocsWithSameS3Key = await prisma.documento.findMany({
+          where: {
+            s3Key: documento.s3Key,
+            id: { not: documento.id }
+          }
+        })
+
+        // ✅ Elimina il file solo se non è condiviso
+        if (otherDocsWithSameS3Key.length === 0) {
+          try {
+            await storageService.deleteObject(documento.s3Key)
+            fastify.log.info({ msg: 'File eliminato da storage', s3Key: documento.s3Key })
+          } catch (storageError) {
+            fastify.log.warn({ msg: 'Errore eliminazione file da storage (continuo comunque)', s3Key: documento.s3Key, error: storageError })
+          }
+        } else {
+          fastify.log.info({ msg: 'File non eliminato (condiviso con altre pratiche)', s3Key: documento.s3Key, sharedWith: otherDocsWithSameS3Key.length })
+        }
+
+        // ✅ Elimina sempre il documento dal database
         await prisma.documento.delete({ where: { id: request.params.id } })
         return { ok: true }
       } catch (error) {

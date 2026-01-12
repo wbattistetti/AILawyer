@@ -237,7 +237,20 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
               // ✅ Preserva thumbnailDataUrl
               const preservedThumbnail = (found as any).thumbnailDataUrl
 
+              // ✅ CRITICO: Verifica che il documento sia ancora nel comparto sorgente
+              // ✅ NON aggiornare il documento - deve rimanere nel cassetto sorgente finché non viene confermato
+              const currentDoc = store.getDocument(found.id)
+              if (currentDoc && currentDoc.compartoId !== found.compartoId) {
+                console.warn('⚠️ [ARCH][DEDUPE] Documento già spostato, salto creazione ghost', {
+                  docId: found.id,
+                  expectedComparto: found.compartoId,
+                  actualComparto: currentDoc.compartoId
+                })
+                continue
+              }
+
               // ✅ Crea una miniatura ghost in attesa di conferma
+              // ✅ CRITICO: Il documento NON viene aggiornato qui - rimane nel cassetto sorgente
               const confirmationKey = `${found.id}-${targetComparto.id}`
               store.addPendingMoveConfirmation({
                 docId: found.id,
@@ -249,11 +262,14 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
                 preservedThumbnail
               })
 
-              console.log('🔄 [ARCH][DEDUPE] Miniatura ghost creata in attesa di conferma', {
+              console.log('🔄 [ARCH][DEDUPE] Miniatura ghost creata in attesa di conferma - DOCUMENTO NON SPOSTATO', {
                 docId: found.id,
                 confirmationKey,
+                sourceCompartoId: found.compartoId,
                 sourceCompartoNome,
-                targetCompartoNome: targetComparto.nome
+                targetCompartoId: targetComparto.id,
+                targetCompartoNome: targetComparto.nome,
+                documentStillInSource: currentDoc?.compartoId === found.compartoId
               })
             }
           } catch (e) {
@@ -443,6 +459,21 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
                 }
                 const sourceCompartoNomeFinal = sourceCompartoNome || (existingTempDoc.compartoId ? 'Cassetto sconosciuto' : 'Nessun cassetto')
                 const preservedThumbnail = (existingTempDoc as any)?.thumbnailDataUrl
+
+                // ✅ CRITICO: Verifica che il documento sia ancora nel comparto sorgente
+                // ✅ NON aggiornare il documento - deve rimanere nel cassetto sorgente finché non viene confermato
+                const currentTempDoc = store.getDocument(existingTempDoc.id)
+                if (currentTempDoc && currentTempDoc.compartoId !== existingTempDoc.compartoId) {
+                  console.warn('⚠️ [ARCH][TEMP-EXISTS] Documento temporaneo già spostato, salto creazione ghost', {
+                    docId: existingTempDoc.id,
+                    expectedComparto: existingTempDoc.compartoId,
+                    actualComparto: currentTempDoc.compartoId
+                  })
+                  continue
+                }
+
+                // ✅ Crea una miniatura ghost in attesa di conferma
+                // ✅ CRITICO: Il documento NON viene aggiornato qui - rimane nel cassetto sorgente
                 store.addPendingMoveConfirmation({
                   docId: existingTempDoc.id,
                   filename: file.name,
@@ -454,9 +485,11 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
                 })
                 console.log('🔄 [ARCH][TEMP-EXISTS] Miniatura ghost creata (documento già in altro comparto) - DOCUMENTO NON SPOSTATO', {
                   docId: existingTempDoc.id,
+                  sourceCompartoId: existingTempDoc.compartoId,
                   sourceCompartoNome: sourceCompartoNomeFinal,
+                  targetCompartoId: targetComparto.id,
                   targetCompartoNome: targetComparto.nome,
-                  existingCompartoId: existingTempDoc.compartoId
+                  documentStillInSource: currentTempDoc?.compartoId === existingTempDoc.compartoId
                 })
                 continue // ✅ NON processare il file, aspetta conferma - il documento NON deve essere spostato finché non viene confermato
               }
