@@ -12,6 +12,7 @@ import { extractClipboardManager } from '@/utils/extractClipboard'
 import { addExtractFromClipboard, reorderExtracts, convertClipboardToExtract } from '../../../services/ExtractDrawerService'
 import { ExtractBlock } from './ExtractBlock'
 import { ExtractExpandedModal } from './ExtractExpandedModal'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
@@ -25,6 +26,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
   const [isDragOver, setIsDragOver] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [expandedExtractId, setExpandedExtractId] = useState<string | null>(null)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   // ✅ Ref per accedere agli extracts correnti senza causare re-subscribe
   const extractsRef = useRef(extracts)
@@ -221,20 +223,40 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
       ref={containerRef}
       className={cn(
         'border-t border-gray-300 bg-gray-50 flex flex-col',
-        'min-h-[120px] max-h-[400px]', // ✅ Altezza minima e massima fissa
+        isCollapsed ? 'min-h-0' : 'min-h-[120px] max-h-[400px]', // ✅ Altezza minima solo quando espanso
         className
       )}
     >
-      {/* ✅ Header fisso */}
-      <div className="flex items-center justify-between p-4 pb-2 flex-shrink-0">
-        <h3 className="text-sm font-semibold text-gray-900">
-          📋 Cassetto Estratti {extracts.length > 0 && `(${extracts.length})`}
-        </h3>
+      {/* ✅ Header fisso con chevron per collassare/espandere */}
+      <div
+        className="flex items-center justify-between p-4 pb-2 flex-shrink-0 cursor-pointer hover:bg-gray-100 transition-colors"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+      >
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsCollapsed(!isCollapsed)
+            }}
+            className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+          >
+            {isCollapsed ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronUp className="h-4 w-4" />
+            )}
+          </button>
+          <h3 className="text-sm font-semibold text-gray-900">
+            📋 Cassetto Estratti {extracts.length > 0 && `(${extracts.length})`}
+          </h3>
+        </div>
         {/* ✅ Rimossa aggiunta manuale - ora è automatica */}
       </div>
 
-      {/* ✅ Contenuto scrollabile */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      {/* ✅ Contenuto scrollabile - nascosto quando collassato */}
+      {!isCollapsed && (
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
         {extracts.length === 0 ? (
           <div
             className={cn(
@@ -300,7 +322,8 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
             })}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* ✅ Modal per estratto espanso a grandezza naturale */}
       {expandedExtractId && (() => {

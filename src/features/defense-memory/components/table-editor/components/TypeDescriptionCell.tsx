@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { CellType, ValidationError } from '../../types/table.types'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -165,6 +165,42 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     const [isEventDateEditing, setIsEventDateEditing] = useState(!eventDate)
     const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
     const comboboxRowRef = useRef<HTMLDivElement>(null)
+    const typeSelectRef = useRef<HTMLButtonElement>(null)
+    const typeMeasureRef = useRef<HTMLSpanElement>(null)
+    const [typeSelectWidth, setTypeSelectWidth] = useState<number>(140)
+
+    // Calcola larghezza dinamica del SelectTrigger basata sul contenuto
+    useLayoutEffect(() => {
+        if (cellType && typeMeasureRef.current && typeSelectRef.current) {
+            const label = getCellTypeLabel(cellType)
+            typeMeasureRef.current.textContent = label
+
+            const selectStyle = window.getComputedStyle(typeSelectRef.current)
+            typeMeasureRef.current.style.font = selectStyle.font
+            typeMeasureRef.current.style.fontSize = selectStyle.fontSize
+            typeMeasureRef.current.style.fontWeight = selectStyle.fontWeight
+            typeMeasureRef.current.style.fontFamily = selectStyle.fontFamily
+            typeMeasureRef.current.style.letterSpacing = selectStyle.letterSpacing
+            typeMeasureRef.current.style.padding = selectStyle.padding
+
+            const textWidth = typeMeasureRef.current.getBoundingClientRect().width
+            // Aggiungi spazio per l'icona chevron (circa 24px) + padding (circa 16px)
+            const newWidth = Math.max(textWidth + 40, 100)
+            setTypeSelectWidth(newWidth)
+        } else if (!cellType && typeMeasureRef.current) {
+            // Calcola larghezza per placeholder
+            typeMeasureRef.current.textContent = "Seleziona tipo"
+            // Usa stili di default se il SelectTrigger non è ancora disponibile
+            const defaultFont = '12px system-ui, -apple-system, sans-serif'
+            typeMeasureRef.current.style.font = defaultFont
+            typeMeasureRef.current.style.fontSize = '12px'
+            typeMeasureRef.current.style.padding = '8px 12px'
+
+            const textWidth = typeMeasureRef.current.getBoundingClientRect().width
+            const newWidth = Math.max(textWidth + 40, 140)
+            setTypeSelectWidth(newWidth)
+        }
+    }, [cellType])
 
     // Sincronizza stati edit/view con i props
     useEffect(() => {
@@ -312,16 +348,27 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
         return description
     }
 
+
     // Se non c'è ancora un tipo, mostra solo il dropdown
     if (!cellType) {
         return (
             <div className={cn("p-2", className)}>
+                {/* Elemento nascosto per misurare la larghezza del placeholder */}
+                <span
+                    ref={typeMeasureRef}
+                    className="absolute invisible whitespace-nowrap"
+                    style={{ position: 'absolute', visibility: 'hidden', top: '-9999px' }}
+                />
                 <Select
                     value=""
                     onValueChange={(value) => handleTypeChange(value as CellType)}
                     disabled={readOnly}
                 >
-                    <SelectTrigger className="h-8 text-xs w-auto min-w-[140px]">
+                    <SelectTrigger
+                        ref={typeSelectRef}
+                        className="h-8 text-xs flex-shrink-0"
+                        style={{ width: `${typeSelectWidth}px` }}
+                    >
                         <SelectValue placeholder="Seleziona tipo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -349,6 +396,13 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 
     return (
         <div className={cn("p-2 space-y-1", className)}>
+            {/* Elemento nascosto per misurare la larghezza del testo */}
+            <span
+                ref={typeMeasureRef}
+                className="absolute invisible whitespace-nowrap"
+                style={{ position: 'absolute', visibility: 'hidden', top: '-9999px' }}
+            />
+
             {/* Tipo e Descrizione - stessa riga */}
             <div ref={comboboxRowRef} className="flex items-center gap-3 flex-nowrap">
                 {/* Tipo: Label o Select in base a isTypeEditing */}
@@ -363,7 +417,11 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             }
                         }}
                     >
-                        <SelectTrigger className="h-8 text-xs w-auto min-w-[140px] flex-shrink-0">
+                        <SelectTrigger
+                            ref={typeSelectRef}
+                            className="h-8 text-xs flex-shrink-0"
+                            style={{ width: `${typeSelectWidth}px` }}
+                        >
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -499,7 +557,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                 <>
                     {/* Data principale - label allineata a destra con gap uniforme */}
                     <div className="flex items-center gap-3">
-                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0 flex items-center justify-end h-8" style={{ width: '120px' }}>
                             {dateConfig.contestationDateLabel}:
                         </span>
                         {isContestationDateEditing ? (
@@ -520,13 +578,25 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                     >
                                         <CalendarIcon className="mr-1 h-3 w-3" />
                                         {contestationDate ? (
-                                            format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })
+                                            `${dateConfig.contestationDateLabel}: ${format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })}`
                                         ) : (
                                             <span>Seleziona data</span>
                                         )}
                                     </button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
+                                <PopoverContent
+                                    className="w-auto p-0"
+                                    align="start"
+                                    sideOffset={0}  // ✅ Riduci il gap a 0 per evitare che il mouse esca
+                                    onInteractOutside={(e) => {
+                                        // ✅ Previeni la chiusura quando si interagisce con elementi correlati
+                                        const target = e.target as HTMLElement
+                                        if (target.closest('[data-radix-popper-content-wrapper]') ||
+                                            target.closest('[role="dialog"]')) {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                >
                                     <Calendar
                                         mode="single"
                                         selected={contestationDate ? new Date(contestationDate) : undefined}
@@ -549,7 +619,10 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                     readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
                                 )}
                             >
-                                {contestationDate ? format(new Date(contestationDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
+                                {contestationDate
+                                    ? `${dateConfig.contestationDateLabel}: ${format(new Date(contestationDate), "dd/MM/yyyy", { locale: it })}`
+                                    : 'Clicca per selezionare data'
+                                }
                             </button>
                         )}
                         {getFieldError('contestationDate') && (
@@ -560,7 +633,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                     {/* Data secondaria - label allineata a destra con gap uniforme */}
                     {dateConfig.showEventDate && (
                         <div className="flex items-center gap-3">
-                            <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0" style={{ width: '120px' }}>
+                            <span className="text-xs font-medium text-gray-700 whitespace-nowrap text-right flex-shrink-0 flex items-center justify-end h-8" style={{ width: '120px' }}>
                                 {dateConfig.eventDateLabel}:
                             </span>
                             {isEventDateEditing ? (
@@ -581,13 +654,25 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                     >
                                         <CalendarIcon className="mr-1 h-3 w-3" />
                                         {eventDate ? (
-                                            format(new Date(eventDate), "dd/MM/yyyy", { locale: it })
+                                            `${dateConfig.eventDateLabel}: ${format(new Date(eventDate), "dd/MM/yyyy", { locale: it })}`
                                         ) : (
                                             <span>Seleziona data</span>
                                         )}
                                     </button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
+                                <PopoverContent
+                                    className="w-auto p-0"
+                                    align="start"
+                                    sideOffset={0}  // ✅ Riduci il gap a 0 per evitare che il mouse esca
+                                    onInteractOutside={(e) => {
+                                        // ✅ Previeni la chiusura quando si interagisce con elementi correlati
+                                        const target = e.target as HTMLElement
+                                        if (target.closest('[data-radix-popper-content-wrapper]') ||
+                                            target.closest('[role="dialog"]')) {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                >
                                     <Calendar
                                         mode="single"
                                         selected={eventDate ? new Date(eventDate) : undefined}
@@ -610,7 +695,10 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                                     readOnly && "cursor-default hover:bg-transparent hover:border-transparent"
                                 )}
                             >
-                                {eventDate ? format(new Date(eventDate), "dd/MM/yyyy", { locale: it }) : 'Clicca per selezionare data'}
+                                {eventDate
+                                    ? `${dateConfig.eventDateLabel}: ${format(new Date(eventDate), "dd/MM/yyyy", { locale: it })}`
+                                    : 'Clicca per selezionare data'
+                                }
                             </button>
                         )}
                         {getFieldError('eventDate') && (
