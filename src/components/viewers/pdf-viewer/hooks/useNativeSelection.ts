@@ -139,6 +139,32 @@ export const useNativeSelection = ({
 		const onMouseDown = (ev: MouseEvent) => {
 			if (extractOpen) return
 
+			const target = ev.target as HTMLElement
+
+			// ✅ CRITICO: Se esiste un overlay attivo, blocca l'inizio di un nuovo drag
+			const overlayExists = document.querySelector('[data-extract-overlay="true"]')
+			if (overlayExists) {
+				// ✅ Verifica se il click è dentro l'overlay
+				const isInsideOverlay = target && (
+					target.closest('[data-extract-overlay="true"]') ||
+					target.closest('.extract-block-overlay') ||
+					overlayExists.contains(target)
+				)
+
+				if (isInsideOverlay) {
+					console.log('🔥 [useNativeSelection] ⛔ BLOCCATO onMouseDown: Click dentro overlay attivo', {
+						target: target,
+						tagName: target?.tagName,
+						className: target?.className
+					})
+					return // ✅ NON iniziare un nuovo drag se l'overlay è attivo
+				}
+
+				// ✅ Se l'overlay esiste ma il click è fuori, chiudi l'overlay prima di iniziare un nuovo drag
+				console.log('🟠 [useNativeSelection] Click fuori overlay attivo, chiudo overlay e inizio nuovo drag')
+				setPersistentSelections([])
+			}
+
 			const x = ev.clientX
 			const y = ev.clientY
 			const hostR = host.getBoundingClientRect()
@@ -249,16 +275,49 @@ export const useNativeSelection = ({
 		}
 
 		const onMouseUp = async (ev: MouseEvent) => {
-			// ✅ CRITICO: Verifica se il click è sul pulsante "Estratto" prima di processare
+			// ✅ CRITICO: Verifica se il click è sul pulsante "Estratto" o dentro l'overlay ExtractBlock prima di processare
 			const target = ev.target as HTMLElement
-			if (target && (
+
+			// ✅ Verifica più robusta: controlla anche gli elementi a tutti i livelli
+			const isInsideOverlay = target && (
 				target.closest('button[data-extract-button="true"]') ||
 				target.textContent?.includes('Estratto') ||
-				target.closest('.extract-button-container')
-			)) {
-				console.log('🔥 [useNativeSelection] Click sul pulsante Estratto, ignoro onMouseUp')
-				return // ✅ NON processare il mouseUp se è sul pulsante
+				target.closest('.extract-button-container') ||
+				// ✅ Verifica se il click è dentro l'overlay ExtractBlock (per evitare che sparisce quando si clicca su "Aggiungi titolo" o "Aggiungi osservazione")
+				target.closest('[data-extract-overlay="true"]') ||
+				target.closest('.extract-block-overlay') ||
+				// ✅ Verifica anche se il target stesso ha gli attributi/classe
+				target.hasAttribute('data-extract-overlay') ||
+				target.classList.contains('extract-block-overlay') ||
+				// ✅ Verifica se il target è un elemento figlio dell'overlay (anche se il click passa attraverso)
+				document.querySelector('[data-extract-overlay="true"]')?.contains(target) ||
+				document.querySelector('.extract-block-overlay')?.contains(target)
+			)
+
+			if (isInsideOverlay) {
+				console.log('🔥 [useNativeSelection] ⛔ BLOCCATO: Click dentro ExtractBlock overlay', {
+					target: target,
+					tagName: target?.tagName,
+					className: target?.className,
+					textContent: target?.textContent?.substring(0, 50),
+					closestOverlay: target?.closest('[data-extract-overlay="true"]'),
+					closestClass: target?.closest('.extract-block-overlay'),
+					isOverlayElement: target.hasAttribute('data-extract-overlay') || target.classList.contains('extract-block-overlay'),
+					documentContains: document.querySelector('[data-extract-overlay="true"]')?.contains(target)
+				})
+				return // ✅ NON processare il mouseUp se è dentro l'overlay o sul pulsante
 			}
+
+			console.log('🟦 [useNativeSelection] ✅ Click FUORI overlay, procedo con onMouseUp', {
+				target: target,
+				tagName: target?.tagName,
+				className: target?.className,
+				// ✅ Debug: verifica se esiste un overlay nel DOM
+				overlayExists: !!document.querySelector('[data-extract-overlay="true"]'),
+				// ✅ Debug: verifica se esiste nell'intero documento (anche in shadow DOM o portali)
+				allOverlays: Array.from(document.querySelectorAll('[data-extract-overlay="true"]')),
+				targetClosest: target?.closest('[data-extract-overlay="true"]')
+			})
 
 			// ignora click su UI esterne
 			const hostR = host.getBoundingClientRect()
@@ -278,6 +337,23 @@ export const useNativeSelection = ({
 
 			// ✅ Se NON stava selezionando, verifica se il click è fuori dai rettangoli persistenti
 			if (!isSelectingRef.current) {
+				// ✅ PRIMA verifica se il click è dentro l'overlay ExtractBlock (che si estende sopra e sotto il rettangolo)
+				const isInsideOverlay2 = target && (
+					target.closest('[data-extract-overlay="true"]') ||
+					target.closest('.extract-block-overlay')
+				)
+
+				if (isInsideOverlay2) {
+					console.log('🔥 [useNativeSelection] ⛔ BLOCCATO: Click dentro ExtractBlock overlay (sezione rimozione selezione)', {
+						target: target,
+						tagName: target?.tagName,
+						className: target?.className
+					})
+					return // ✅ NON rimuovere la selezione se il click è dentro l'overlay
+				}
+
+				console.log('🟨 [useNativeSelection] Click fuori overlay, verifico se è dentro rettangolo persistente')
+
 				// Verifica se il click è dentro un rettangolo persistente
 				let clickedOnSelection = false
 
@@ -299,9 +375,15 @@ export const useNativeSelection = ({
 
 				// Se il click è fuori da tutti i rettangoli, cancella tutto
 				if (!clickedOnSelection && (persistentSelections.length > 0 || draft)) {
+					console.log('🟥 [useNativeSelection] ❌ Rimuovo selezione: click fuori da tutti i rettangoli', {
+						persistentSelectionsCount: persistentSelections.length,
+						hasDraft: !!draft
+					})
 					setPersistentSelections([])
 					setDraft(null)
 					setContextMenu({ x: 0, y: 0, visible: false })
+				} else {
+					console.log('🟩 [useNativeSelection] ✅ Mantengo selezione: click dentro rettangolo o nessuna selezione attiva')
 				}
 
 				return

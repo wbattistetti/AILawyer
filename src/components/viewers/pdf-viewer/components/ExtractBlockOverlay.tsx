@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { PersistentSelection } from '../types'
 import { extractClipboardManager } from '../../../../utils/extractClipboard'
@@ -32,6 +32,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const [extractBlock, setExtractBlock] = useState<ExtractBlockType | null>(null)
 	const [extractData, setExtractData] = useState<ExtractData | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
+	const overlayRef = useRef<HTMLDivElement | null>(null)
 
 	// ✅ Crea ExtractBlock e ExtractData dalla selezione
 	useEffect(() => {
@@ -73,7 +74,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				y1Pct: selection.y1Pct
 			},
 			createdAt: new Date(),
-			title: `${displayName} Pag. ${pageNum}`,  // ✅ Titolo di default
+			title: '',  // ✅ Titolo vuoto inizialmente (non ripetere nome documento e pagina)
 			observation: '',
 			hasObservation: false,
 			collapsed: false
@@ -129,6 +130,136 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		initializeExtract()
 	}, [selection, pageElsRef, lastSelection, docName, hasNativeText])
 
+	// ✅ Callback ref per salvare il riferimento all'overlay
+	const overlayCallbackRef = (element: HTMLDivElement | null) => {
+		console.log('🟣 [ExtractBlockOverlay] Callback ref chiamato', {
+			element,
+			hasElement: !!element,
+			className: element?.className,
+			dataAttr: element?.getAttribute('data-extract-overlay')
+		})
+		overlayRef.current = element
+	}
+
+	// ✅ Intercetta tutti i click/mousedown in fase di capture per prevenire che raggiungano gli elementi sottostanti
+	useLayoutEffect(() => {
+		const overlayElement = overlayRef.current
+		console.log('🟣 [ExtractBlockOverlay] useLayoutEffect eseguito', {
+			hasOverlayElement: !!overlayElement,
+			overlayElement
+		})
+
+		if (!overlayElement) {
+			console.log('🟣 [ExtractBlockOverlay] ⚠️ overlayElement non disponibile, salto registrazione listener')
+			return
+		}
+
+		console.log('🟣 [ExtractBlockOverlay] ✅ Registrando listener in fase di capture')
+
+		const handleCaptureClick = (e: MouseEvent) => {
+			const target = e.target as HTMLElement
+
+			// ✅ NON bloccare se il click è su un elemento interattivo (button, input, textarea, etc.)
+			// ✅ Verifica anche se il target è un figlio di un elemento interattivo
+			const isInteractiveElement = target && (
+				target.tagName === 'BUTTON' ||
+				target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.closest('button') !== null ||
+				target.closest('input') !== null ||
+				target.closest('textarea') !== null ||
+				// ✅ Verifica anche se il target è dentro un label o altro elemento interattivo
+				target.closest('label') !== null ||
+				// ✅ Verifica se il target ha un attributo onClick o è un elemento cliccabile
+				target.onclick !== null ||
+				target.getAttribute('onclick') !== null
+			)
+
+			if (isInteractiveElement) {
+				console.log('🟣 [ExtractBlockOverlay] CAPTURE: Click su elemento interattivo, NON blocco', {
+					target: target,
+					tagName: target?.tagName,
+					closestButton: target?.closest('button'),
+					closestInput: target?.closest('input'),
+					closestTextarea: target?.closest('textarea')
+				})
+				return // ✅ NON bloccare i click su elementi interattivi
+			}
+
+			console.log('🟣 [ExtractBlockOverlay] CAPTURE: Click rilevato', {
+				target: target,
+				tagName: target?.tagName,
+				className: target?.className,
+				overlayContainsTarget: overlayElement.contains(target)
+			})
+
+			// ✅ Se il click è dentro l'overlay ma NON su un elemento interattivo, bloccalo
+			if (overlayElement.contains(target)) {
+				console.log('🟣 [ExtractBlockOverlay] CAPTURE: ✅ Bloccato click dentro overlay (non interattivo)')
+				e.stopPropagation()
+				e.stopImmediatePropagation()
+			}
+		}
+
+		const handleCaptureMouseDown = (e: MouseEvent) => {
+			const target = e.target as HTMLElement
+
+			// ✅ NON bloccare se il mousedown è su un elemento interattivo (button, input, textarea, etc.)
+			// ✅ Verifica anche se il target è un figlio di un elemento interattivo
+			const isInteractiveElement = target && (
+				target.tagName === 'BUTTON' ||
+				target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.closest('button') !== null ||
+				target.closest('input') !== null ||
+				target.closest('textarea') !== null ||
+				// ✅ Verifica anche se il target è dentro un label o altro elemento interattivo
+				target.closest('label') !== null ||
+				// ✅ Verifica se il target ha un attributo onClick o è un elemento cliccabile
+				target.onclick !== null ||
+				target.getAttribute('onclick') !== null
+			)
+
+			if (isInteractiveElement) {
+				console.log('🟣 [ExtractBlockOverlay] CAPTURE: MouseDown su elemento interattivo, NON blocco', {
+					target: target,
+					tagName: target?.tagName,
+					closestButton: target?.closest('button'),
+					closestInput: target?.closest('input'),
+					closestTextarea: target?.closest('textarea')
+				})
+				return // ✅ NON bloccare i mousedown su elementi interattivi
+			}
+
+			console.log('🟣 [ExtractBlockOverlay] CAPTURE: MouseDown rilevato', {
+				target: target,
+				tagName: target?.tagName,
+				className: target?.className,
+				overlayContainsTarget: overlayElement.contains(target)
+			})
+
+			// ✅ Se il mousedown è dentro l'overlay ma NON su un elemento interattivo, bloccalo
+			if (overlayElement.contains(target)) {
+				console.log('🟣 [ExtractBlockOverlay] CAPTURE: ✅ Bloccato mousedown dentro overlay (non interattivo)')
+				e.stopPropagation()
+				e.stopImmediatePropagation()
+			}
+		}
+
+		// ✅ Aggiungi listener in fase di capture sul document (per intercettare prima di useNativeSelection)
+		// ✅ Usa addEventListener con capture: true per intercettare PRIMA di useNativeSelection
+		document.addEventListener('click', handleCaptureClick, true)
+		document.addEventListener('mousedown', handleCaptureMouseDown, true)
+
+		console.log('🟣 [ExtractBlockOverlay] ✅ Listener registrati in fase di capture')
+
+		return () => {
+			console.log('🟣 [ExtractBlockOverlay] 🔴 Rimuovendo listener in fase di capture')
+			document.removeEventListener('click', handleCaptureClick, true)
+			document.removeEventListener('mousedown', handleCaptureMouseDown, true)
+		}
+	}) // ✅ Eseguito dopo ogni render per verificare se overlayRef.current è disponibile
+
 	const handleAddExtract = () => {
 		if (!extractData || !extractBlock) return
 
@@ -174,52 +305,119 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const root = overlayRootsRef.current.get(selection.page)
 	if (!root) return null
 
-	// ✅ Posiziona ExtractBlock ESATTAMENTE sopra il rettangolo selezionato (stesse dimensioni)
+	// ✅ Calcola dimensioni in pixel per posizionamento preciso
+	const pageLayer = pageElsRef.current.get(selection.page)
+	const pageRect = pageLayer?.getBoundingClientRect()
+	if (!pageRect) return null
+
+	const selectionWidth = (selection.x1Pct - selection.x0Pct) * pageRect.width
+	const selectionHeight = (selection.y1Pct - selection.y0Pct) * pageRect.height
+
+	// ✅ Altezze stimate per header e footer
+	const headerHeight = 60 // Altezza approssimativa dell'header (titolo)
+	const footerHeight = 50 // Altezza approssimativa del footer (pulsanti)
+	const observationHeight = extractBlock.hasObservation ? 120 : 0 // Altezza campo osservazione se presente
+
+	// ✅ Posiziona overlay: inizia SOPRA il rettangolo per includere l'header
 	const left = `${selection.x0Pct * 100}%`
-	const top = `${selection.y0Pct * 100}%`
 	const width = `${(selection.x1Pct - selection.x0Pct) * 100}%`
-	const height = `${Math.max(0.01, (selection.y1Pct - selection.y0Pct)) * 100}%`
+	// ✅ Top: inizia SOPRA il rettangolo per includere l'header
+	const top = `calc(${selection.y0Pct * 100}% - ${headerHeight}px)`
+	// ✅ Height: auto si adatta al contenuto, min-height include header + rettangolo + footer + osservazione
+	const minHeight = headerHeight + selectionHeight + footerHeight + observationHeight
 
 	const overlayNode = (
 		<div
+			ref={overlayCallbackRef} // ✅ Callback ref per intercettare eventi in fase di capture
+			data-extract-overlay="true" // ✅ Attributo per identificare l'overlay in useNativeSelection
+			className="extract-block-overlay" // ✅ Classe per identificare l'overlay
 			style={{
 				position: 'absolute',
 				left,
-				top,
-				width,  // ✅ Stessa larghezza del rettangolo
-				height, // ✅ Stessa altezza del rettangolo
+				top, // ✅ Inizia SOPRA il rettangolo per includere l'header
+				width,
+				minHeight: `${minHeight}px`, // ✅ Min-height per garantire spazio per tutto
+				height: 'auto', // ✅ Si adatta al contenuto
 				zIndex: 10000,
 				pointerEvents: 'auto',
-				overflow: 'auto', // ✅ Scroll se il contenuto è più grande
+				overflow: 'visible', // ✅ Cambiato a visible per permettere all'header di essere visibile sopra
 				background: 'white', // ✅ Sfondo bianco per sostituire il rettangolo blu
 				border: '2px solid rgba(59,130,246,0.8)', // ✅ Bordo simile al rettangolo
 				borderRadius: 2,
 				boxShadow: '0 2px 8px rgba(0,0,0,0.15)' // ✅ Ombra per distinguerlo dal documento
 			}}
-			onClick={(e) => e.stopPropagation()}
-			onMouseDown={(e) => e.stopPropagation()}
+			onClick={(e) => {
+				console.log('🟢 [ExtractBlockOverlay] Click sul container principale', {
+					target: e.target,
+					currentTarget: e.currentTarget,
+					tagName: (e.target as HTMLElement)?.tagName,
+					className: (e.target as HTMLElement)?.className
+				})
+				e.stopPropagation()
+			}}
+			onMouseDown={(e) => {
+				console.log('🟢 [ExtractBlockOverlay] MouseDown sul container principale', {
+					target: e.target,
+					currentTarget: e.currentTarget,
+					tagName: (e.target as HTMLElement)?.tagName,
+					className: (e.target as HTMLElement)?.className
+				})
+				e.stopPropagation()
+			}}
 		>
-			<div className="p-2 h-full flex flex-col">
-				<div className="flex-1 overflow-auto">
-					<ExtractBlock
-						block={extractBlock}
-						onUpdate={(updatedBlock) => {
-							setExtractBlock(updatedBlock)
-						}}
-						readOnly={false}
-					/>
-				</div>
+			<div
+				className="flex flex-col relative"
+				style={{ overflow: 'auto' }}
+				onClick={(e) => {
+					console.log('🟡 [ExtractBlockOverlay] Click sul container interno', {
+						target: e.target,
+						currentTarget: e.currentTarget
+					})
+					e.stopPropagation()
+				}}
+				onMouseDown={(e) => {
+					console.log('🟡 [ExtractBlockOverlay] MouseDown sul container interno', {
+						target: e.target,
+						currentTarget: e.currentTarget
+					})
+					e.stopPropagation()
+				}}
+			>
+				{/* ✅ ExtractBlock: header normale sopra, contenuto inizia subito dopo l'header */}
+				<ExtractBlock
+					block={extractBlock}
+					onUpdate={(updatedBlock) => {
+						setExtractBlock(updatedBlock)
+					}}
+					readOnly={false}
+					isOverlay={true} // ✅ Passa isOverlay per mostrare immagine a dimensione originale
+					overlayHeaderOffset={headerHeight} // ✅ Passa l'offset (non più usato per absolute, ma per calcoli)
+				/>
+
 				{/* ✅ Footer con pulsanti: "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}
-				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0">
+				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0 p-2 border-t border-gray-200 bg-white">
 					{/* Pulsante "Aggiungi osservazione" a sinistra (solo se non c'è già) */}
 					{!extractBlock.hasObservation && (
 						<button
 							onClick={(e) => {
+								console.log('🔵 [ExtractBlockOverlay] Click su "Aggiungi osservazione"', {
+									target: e.target,
+									currentTarget: e.currentTarget,
+									bubbles: e.bubbles,
+									cancelable: e.cancelable
+								})
 								e.stopPropagation()
 								if (extractBlock) {
 									const updatedBlock = { ...extractBlock, hasObservation: true, observation: '' }
 									setExtractBlock(updatedBlock)
 								}
+							}}
+							onMouseDown={(e) => {
+								console.log('🔵 [ExtractBlockOverlay] MouseDown su "Aggiungi osservazione"', {
+									target: e.target,
+									currentTarget: e.currentTarget
+								})
+								e.stopPropagation()
 							}}
 							className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
 						>
@@ -233,13 +431,21 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					{/* Pulsanti "Annulla" e "Salva estratto" a destra */}
 					<div className="flex gap-2">
 						<button
-							onClick={handleCancel}
+							onClick={(e) => {
+								console.log('🔴 [ExtractBlockOverlay] Click su "Annulla"')
+								e.stopPropagation()
+								handleCancel()
+							}}
 							className="px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded text-xs font-medium transition-colors"
 						>
 							Annulla
 						</button>
 						<button
-							onClick={handleAddExtract}
+							onClick={(e) => {
+								console.log('🟣 [ExtractBlockOverlay] Click su "Salva estratto"')
+								e.stopPropagation()
+								handleAddExtract()
+							}}
 							className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors"
 						>
 							Salva estratto

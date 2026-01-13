@@ -113,6 +113,8 @@ export interface ExtractBlockProps {
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void  // ✅ Callback quando il drag termina
   readOnly?: boolean
+  isOverlay?: boolean  // ✅ Se true, è usato nell'overlay e mostra immagine a dimensione originale
+  overlayHeaderOffset?: number  // ✅ Offset per posizionare l'header sopra il rettangolo quando è overlay
 }
 
 /**
