@@ -100,6 +100,23 @@ export const CardBody: React.FC<CardBodyProps> = ({
             b.order = i
           })
           onBlocksChange(newBlocks)
+
+          // ✅ Se viene dall'overlay, aggiungilo anche al cassetto dispatchando l'evento app:extract-add
+          if (data.fromOverlay === true) {
+            const updatedExtract: ExtractData = {
+              ...(data.extract as ExtractData),
+              title: data.title || data.extract.title,
+              observation: data.observation || data.extract.observation,
+              hasObservation: data.hasObservation ?? data.extract.hasObservation ?? false,
+              collapsed: data.collapsed ?? data.extract.collapsed ?? false
+            }
+
+            // ✅ Dispatcha l'evento per aggiungere al cassetto (formato: detail: { extract })
+            window.dispatchEvent(new CustomEvent('app:extract-add', {
+              detail: { extract: updatedExtract }
+            }))
+          }
+
           return
         }
 

@@ -389,6 +389,30 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					onUpdate={(updatedBlock) => {
 						setExtractBlock(updatedBlock)
 					}}
+					onDragStart={(e) => {
+						// ✅ Quando si trascina dall'overlay, imposta i dati con flag fromOverlay
+						if (!extractData || !extractBlock) return
+
+						// ✅ Aggiorna ExtractData con i metadati da ExtractBlock
+						const updatedExtract: ExtractData = {
+							...extractData,
+							title: extractBlock.title,
+							observation: extractBlock.observation,
+							hasObservation: extractBlock.hasObservation,
+							collapsed: extractBlock.collapsed
+						}
+
+						e.dataTransfer.setData('application/json', JSON.stringify({
+							type: 'extract',
+							extract: updatedExtract,
+							title: updatedExtract.title,
+							observation: updatedExtract.observation,
+							hasObservation: updatedExtract.hasObservation,
+							collapsed: updatedExtract.collapsed,
+							fromOverlay: true // ✅ Flag per indicare che viene dall'overlay
+						}))
+						e.dataTransfer.effectAllowed = 'move'
+					}}
 					readOnly={false}
 					isOverlay={true} // ✅ Passa isOverlay per mostrare immagine a dimensione originale
 					overlayHeaderOffset={headerHeight} // ✅ Passa l'offset (non più usato per absolute, ma per calcoli)
