@@ -115,6 +115,7 @@ export interface ExtractBlockProps {
   readOnly?: boolean
   isOverlay?: boolean  // ✅ Se true, è usato nell'overlay e mostra immagine a dimensione originale
   overlayHeaderOffset?: number  // ✅ Offset per posizionare l'header sopra il rettangolo quando è overlay
+  onExpandInModal?: () => void  // ✅ Callback per espandere l'estratto in un modal a grandezza naturale
 }
 
 /**

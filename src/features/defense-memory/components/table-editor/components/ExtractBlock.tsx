@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { ExtractBlockProps } from '../types/blocks.types'
 import { cn } from '@/lib/utils'
-import { FileText, Image as ImageIcon, X, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
+import { FileText, Image as ImageIcon, X, ChevronDown, ChevronUp, Plus, Trash2, Eye } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 
@@ -18,7 +18,8 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   onDragEnd,
   readOnly,
   isOverlay = false,
-  overlayHeaderOffset = 60
+  overlayHeaderOffset = 60,
+  onExpandInModal
 }) => {
   const { extract, title, observation, hasObservation = false, collapsed = false } = block
   const [isCollapsed, setIsCollapsed] = useState(collapsed)
@@ -293,6 +294,22 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* ✅ Icona occhio per espandere a grandezza naturale */}
+          {!readOnly && onExpandInModal && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation() // ✅ Evita di triggerare il toggle collapse
+                if (onExpandInModal) {
+                  onExpandInModal()
+                }
+              }}
+              className="text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
+              title="Espandi a grandezza naturale"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+          )}
+          
           {!readOnly && onRemove && (
             <button
               onClick={(e) => {

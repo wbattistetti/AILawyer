@@ -11,6 +11,7 @@ import { ExtractDrawerProps, ExtractData, ExtractBlock as ExtractBlockType } fro
 import { extractClipboardManager } from '@/utils/extractClipboard'
 import { addExtractFromClipboard, reorderExtracts, convertClipboardToExtract } from '../../../services/ExtractDrawerService'
 import { ExtractBlock } from './ExtractBlock'
+import { ExtractExpandedModal } from './ExtractExpandedModal'
 import { cn } from '@/lib/utils'
 
 export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
@@ -23,6 +24,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
 }) => {
   const [isDragOver, setIsDragOver] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [expandedExtractId, setExpandedExtractId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   // ✅ Ref per accedere agli extracts correnti senza causare re-subscribe
   const extractsRef = useRef(extracts)
@@ -291,6 +293,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
                   onRemove={() => onExtractRemove(extract.id)}
                   onDragStart={(e) => handleExtractDragStart(e, index)}
                   onDragEnd={handleExtractDragEnd}
+                  onExpandInModal={() => setExpandedExtractId(extract.id)} // ✅ Nuova prop per espandere in modal
                   readOnly={false}
                 />
               )
@@ -298,6 +301,42 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
           </div>
         )}
       </div>
+
+      {/* ✅ Modal per estratto espanso a grandezza naturale */}
+      {expandedExtractId && (() => {
+        const expandedExtract = extracts.find(e => e.id === expandedExtractId)
+        if (!expandedExtract) return null
+
+        const extractBlock: ExtractBlockType = {
+          type: 'extract',
+          id: expandedExtract.id,
+          order: extracts.indexOf(expandedExtract),
+          extract: expandedExtract,
+          title: expandedExtract.title,
+          observation: expandedExtract.observation,
+          hasObservation: expandedExtract.hasObservation,
+          collapsed: false // ✅ Forza sempre espanso nel modal
+        }
+
+        return (
+          <ExtractExpandedModal
+            block={extractBlock}
+            onClose={() => setExpandedExtractId(null)}
+            onUpdate={(updatedBlock) => {
+              if (onExtractUpdate) {
+                const updatedExtract: ExtractData = {
+                  ...expandedExtract,
+                  title: updatedBlock.title,
+                  observation: updatedBlock.observation,
+                  hasObservation: updatedBlock.hasObservation,
+                  collapsed: updatedBlock.collapsed
+                }
+                onExtractUpdate(updatedExtract)
+              }
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }
