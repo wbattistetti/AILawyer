@@ -907,7 +907,6 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                 <div className="p-4 bg-white border-t border-gray-100">
                     {/* Contenuto espanso - solo Osservazioni e Motivazioni (i controlli sono già nell'header) */}
                     <div className="space-y-3">
-                        <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">Osservazioni e Motivazioni</div>
                         <ObservationsCell
                             row={row}
                             onUpdate={handleUpdate}

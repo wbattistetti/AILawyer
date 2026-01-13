@@ -17,7 +17,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
   readOnly
 }) => {
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null)
-  const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Crea nuovo blocco osservazione
   const handleAddObservation = useCallback((insertIndex?: number) => {
@@ -70,11 +70,11 @@ export const CardBody: React.FC<CardBodyProps> = ({
     e.dataTransfer.effectAllowed = 'move'
   }, [blocks])
 
-  // Drop handler
-  const handleDrop = useCallback((e: React.DragEvent, insertIndex: number) => {
+  // Drop handler - aggiunge sempre alla fine
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setHoveredSlotIndex(null)
+    setIsDragOver(false)
 
     try {
       const dragData = e.dataTransfer.getData('application/json')
@@ -87,7 +87,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
           const extractBlock: ExtractBlock = {
             type: 'extract',
             id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-            order: insertIndex,
+            order: blocks.length,
             extract: data.extract as ExtractData,
             // ✅ Trasporta anche i metadati dal cassetto (titolo, osservazione, etc.)
             title: data.title || data.extract.title,
@@ -95,8 +95,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
             hasObservation: data.hasObservation ?? data.extract.hasObservation ?? false,
             collapsed: data.collapsed ?? data.extract.collapsed ?? false
           }
-          const newBlocks = [...blocks]
-          newBlocks.splice(insertIndex, 0, extractBlock)
+          const newBlocks = [...blocks, extractBlock]
           newBlocks.forEach((b, i) => {
             b.order = i
           })
@@ -104,106 +103,63 @@ export const CardBody: React.FC<CardBodyProps> = ({
           return
         }
 
-        // Se è riorganizzazione interna
+        // Se è riorganizzazione interna, ignora (gestita dai blocchi stessi)
         if (data.type === 'block-reorder' && typeof data.blockIndex === 'number') {
-          const fromIndex = data.blockIndex
-          if (fromIndex === insertIndex || fromIndex === insertIndex - 1) return
-
-          const newBlocks = [...blocks]
-          const [moved] = newBlocks.splice(fromIndex, 1)
-          const adjustedIndex = fromIndex < insertIndex ? insertIndex - 1 : insertIndex
-          newBlocks.splice(adjustedIndex, 0, moved)
-          newBlocks.forEach((b, i) => {
-            b.order = i
-          })
-          onBlocksChange(newBlocks)
+          // La riorganizzazione interna viene gestita dai blocchi stessi tramite onDragStart
           return
         }
       }
 
       // Se non c'è dragData, prova onExtractDrop callback
       if (onExtractDrop) {
-        // onExtractDrop gestirà l'estratto dalla clipboard
-        onExtractDrop(undefined, insertIndex)
+        // onExtractDrop gestirà l'estratto dalla clipboard, aggiungendolo alla fine
+        onExtractDrop(undefined, blocks.length)
       }
     } catch (err) {
       console.error('[CardBody] Errore durante drop:', err)
     }
   }, [blocks, onBlocksChange, onExtractDrop])
 
-  const handleDragOver = useCallback((e: React.DragEvent, slotIndex: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setHoveredSlotIndex(slotIndex)
+    setIsDragOver(true)
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
-  const handleDragLeave = useCallback(() => {
-    setHoveredSlotIndex(null)
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Verifica che il mouse non sia ancora dentro il container
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDragOver(false)
+    }
   }, [])
 
   const handleDragEnd = useCallback(() => {
     setDraggedBlockIndex(null)
-    setHoveredSlotIndex(null)
+    setIsDragOver(false)
   }, [])
 
-  // Slot di inserimento
-  const InsertSlot: React.FC<{ index: number }> = ({ index }) => {
-    const isHovered = hoveredSlotIndex === index
-
-    return (
-      <div
-        className={cn(
-          'relative transition-all',
-          isHovered ? 'h-8' : 'h-2'
-        )}
-        onDrop={(e) => handleDrop(e, index)}
-        onDragOver={(e) => handleDragOver(e, index)}
-        onDragLeave={handleDragLeave}
-      >
-        <div
-          className={cn(
-            'absolute inset-0 rounded transition-colors',
-            isHovered
-              ? 'bg-blue-100 border-2 border-blue-500 border-dashed'
-              : 'bg-transparent border border-transparent'
-          )}
-        />
-        {isHovered && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-xs text-blue-600 font-medium">
-              Rilascia qui
-            </span>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">
-        Contenuto
-      </div>
-
+    <div
+      className={cn(
+        'space-y-2 min-h-[100px] transition-colors',
+        isDragOver && !readOnly ? 'bg-blue-50 border-2 border-blue-300 border-dashed rounded-lg' : ''
+      )}
+      onDrop={!readOnly ? handleDrop : undefined}
+      onDragOver={!readOnly ? handleDragOver : undefined}
+      onDragLeave={!readOnly ? handleDragLeave : undefined}
+    >
       {blocks.length === 0 ? (
-        <div
-          className={cn(
-            'p-4 border-2 border-dashed rounded-lg text-center transition-colors',
-            hoveredSlotIndex === 0
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300 bg-gray-50'
-          )}
-          onDrop={(e) => handleDrop(e, 0)}
-          onDragOver={(e) => handleDragOver(e, 0)}
-          onDragLeave={handleDragLeave}
-        >
+        <div className="p-4 border-2 border-dashed rounded-lg text-center border-gray-300 bg-gray-50">
           <p className="text-sm text-gray-500 mb-2">
             Trascina qui estratti o aggiungi osservazioni
           </p>
           {!readOnly && (
             <button
-              onClick={() => handleAddObservation(0)}
+              onClick={() => handleAddObservation()}
               className="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors inline-flex items-center gap-1"
             >
               <Plus className="h-3 w-3" />
@@ -213,7 +169,6 @@ export const CardBody: React.FC<CardBodyProps> = ({
         </div>
       ) : (
         <>
-          <InsertSlot index={0} />
           {blocks.map((block, index) => (
             <React.Fragment key={block.id}>
               {block.type === 'extract' ? (
@@ -227,6 +182,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
                   } : undefined}
                   onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
                   onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
+                  onDragEnd={handleDragEnd}
                   readOnly={readOnly}
                 />
               ) : (
@@ -238,7 +194,6 @@ export const CardBody: React.FC<CardBodyProps> = ({
                   readOnly={readOnly}
                 />
               )}
-              <InsertSlot index={index + 1} />
             </React.Fragment>
           ))}
         </>

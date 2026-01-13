@@ -3,7 +3,6 @@ import { ObservationsCellProps, Motivation } from '../../types/table.types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { FileText } from 'lucide-react'
 import { extractClipboardManager } from '@/utils/extractClipboard'
 import { MotivationItem } from './MotivationItem'
 import { MotivationObservation } from './MotivationObservation'
@@ -321,11 +320,6 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
             {/* ✅ Mostra solo se non è reato contestato OPPURE se ci sono almeno 2 motivazioni */}
             {(!isReatoContestato || motivations.length >= 2) && (
                 <div className="space-y-1">
-                    <div className="flex items-center space-x-1">
-                        <FileText className="h-3 w-3 text-gray-600" />
-                        <span className="text-xs font-medium text-gray-900">{isReatoContestato ? 'Osservazione generale' : 'Osservazioni'}:</span>
-                    </div>
-
                     <div>
                         {isReatoContestato ? (
                             <Textarea
