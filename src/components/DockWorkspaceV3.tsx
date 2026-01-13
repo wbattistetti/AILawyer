@@ -215,9 +215,57 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
   const handleDrawerStripMouseLeave = useCallback(() => {
     if (!isDrawerStripPinned) {
-      drawerStripTimeoutRef.current = setTimeout(() => {
-        setIsDrawerStripVisible(false)
-      }, 300)
+      // ✅ Usa un listener globale per controllare se il mouse è ancora nella zona estesa
+      const checkMouseInZone = (e: MouseEvent) => {
+        const drawerStripEl = document.querySelector('[data-drawer-strip]') as HTMLElement
+        if (!drawerStripEl) {
+          setIsDrawerStripVisible(false)
+          document.removeEventListener('mousemove', checkMouseInZone)
+          return
+        }
+
+        const rect = drawerStripEl.getBoundingClientRect()
+        const extendedTop = rect.top - 76 // Zona estesa di 76px sopra
+        const mouseY = e.clientY
+
+        // ✅ Se il mouse è ancora nella zona estesa, mantieni i cassetti visibili
+        if (mouseY >= extendedTop && mouseY <= rect.bottom) {
+          if (drawerStripTimeoutRef.current) {
+            clearTimeout(drawerStripTimeoutRef.current)
+            drawerStripTimeoutRef.current = null
+          }
+          // Non rimuovere il listener, continua a controllare
+          return
+        }
+
+        // ✅ Se il mouse è fuori dalla zona estesa, avvia il timeout per nascondere
+        if (!drawerStripTimeoutRef.current) {
+          drawerStripTimeoutRef.current = setTimeout(() => {
+            // ✅ Controlla una volta finale prima di nascondere
+            const finalRect = drawerStripEl.getBoundingClientRect()
+            const finalExtendedTop = finalRect.top - 76
+            const finalMouseY = e.clientY
+
+            if (finalMouseY < finalExtendedTop || finalMouseY > finalRect.bottom) {
+              setIsDrawerStripVisible(false)
+            }
+            document.removeEventListener('mousemove', checkMouseInZone)
+            drawerStripTimeoutRef.current = null
+          }, 300)
+        }
+      }
+
+      // ✅ Aggiungi listener globale per controllare la posizione del mouse
+      document.addEventListener('mousemove', checkMouseInZone)
+
+      // ✅ Rimuovi il listener dopo un periodo più lungo se non è stato rimosso prima
+      setTimeout(() => {
+        document.removeEventListener('mousemove', checkMouseInZone)
+        if (drawerStripTimeoutRef.current) {
+          clearTimeout(drawerStripTimeoutRef.current)
+          drawerStripTimeoutRef.current = null
+        }
+      }, 2000) // Rimuovi dopo 2 secondi se non è stato rimosso prima
     }
   }, [isDrawerStripPinned])
 
@@ -1567,46 +1615,55 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ${
             isDrawerStripVisible ? 'translate-y-0' : 'translate-y-full'
           }`}
+          data-drawer-strip="true"
+          style={{
+            pointerEvents: 'auto',
+            // ✅ Estendi la zona di hover con padding-top invisibile (2 cm = 76px)
+            paddingTop: '76px',
+          }}
           onMouseEnter={handleDrawerStripMouseEnter}
           onMouseLeave={handleDrawerStripMouseLeave}
         >
-          {/* ✅ Pulsante PIN in alto a destra sopra i cassetti (sempre visibile quando i cassetti sono aperti) */}
-          <div
-            className="absolute top-0 right-0 z-10"
-            style={{
-              transform: 'translateY(-100%)',
-              marginTop: '4px',
-              marginRight: '4px'
-            }}
-          >
-            <button
-              onClick={handleTogglePin}
-              className="p-2 rounded-lg bg-white/90 hover:bg-white border border-gray-300 shadow-md transition-all"
-              title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
+            {/* ✅ Pulsante PIN in alto a destra sopra i cassetti (sempre visibile quando i cassetti sono aperti) */}
+            <div
+              className="absolute top-0 right-0 z-10"
+              style={{
+                transform: 'translateY(-100%)',
+                marginTop: '4px',
+                marginRight: '4px'
+              }}
             >
-              {isDrawerStripPinned ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
-                  <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4V4h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 1.1.9 2 2 2s2-.9 2-2z"/>
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600">
-                  <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
-                </svg>
-              )}
-            </button>
-          </div>
+              <button
+                onClick={handleTogglePin}
+                className="p-2 rounded-lg bg-white/90 hover:bg-white border border-gray-300 shadow-md transition-all"
+                title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
+              >
+                {isDrawerStripPinned ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                    <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4V4h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 1.1.9 2 2 2s2-.9 2-2z"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600">
+                    <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
+                  </svg>
+                )}
+              </button>
+            </div>
 
-          <DrawerTabStrip
-            items={drawerTabs}
-            selectedId={selectedDrawerId}
-            onSelect={(id) => {
-              setSelectedDrawerId(id)
-              const comparto = comparti.find(c => c.id === id)
-              if (comparto) {
-                handleDrawerTabClick(comparto.chiave, comparto.id)
-              }
-            }}
-          />
+          {/* ✅ Wrapper interno per contenere i cassetti con margine negativo per compensare il padding */}
+          <div style={{ marginTop: '-76px' }}>
+            <DrawerTabStrip
+              items={drawerTabs}
+              selectedId={selectedDrawerId}
+              onSelect={(id) => {
+                setSelectedDrawerId(id)
+                const comparto = comparti.find(c => c.id === id)
+                if (comparto) {
+                  handleDrawerTabClick(comparto.chiave, comparto.id)
+                }
+              }}
+            />
+          </div>
         </div>
       )}
     </div>
