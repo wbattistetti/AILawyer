@@ -130,6 +130,25 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		initializeExtract()
 	}, [selection, pageElsRef, lastSelection, docName, hasNativeText])
 
+	// ✅ Listener per chiudere l'overlay quando l'estratto viene aggiunto tramite drag
+	useEffect(() => {
+		if (!extractData) return
+
+		const handleExtractAddedByDrag = (event: CustomEvent) => {
+			const { extractId } = event.detail
+			// Verifica se l'estratto aggiunto corrisponde a quello dell'overlay
+			if (extractData.id === extractId) {
+				console.log('[ExtractBlockOverlay] ✅ Estratto aggiunto tramite drag, chiudo overlay')
+				onClose()
+			}
+		}
+
+		window.addEventListener('app:extract-added-by-drag', handleExtractAddedByDrag as EventListener)
+		return () => {
+			window.removeEventListener('app:extract-added-by-drag', handleExtractAddedByDrag as EventListener)
+		}
+	}, [extractData, onClose])
+
 	// ✅ Callback ref per salvare il riferimento all'overlay
 	const overlayCallbackRef = (element: HTMLDivElement | null) => {
 		console.log('🟣 [ExtractBlockOverlay] Callback ref chiamato', {

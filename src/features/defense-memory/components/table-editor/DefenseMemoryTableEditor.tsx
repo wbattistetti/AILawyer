@@ -81,7 +81,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
 
     // ✅ Ref per tracciare l'estratto da aggiungere alla nuova riga dopo che viene creata
-    const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string> } | null>(null)
+    const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string>, fromOverlay?: boolean } | null>(null)
 
     // ✅ Listener per eventi 'app:extract-add' dal PDF viewer
     useEffect(() => {
@@ -367,7 +367,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 // Salva l'estratto nel ref per aggiungerlo dopo che la riga viene creata
                 pendingExtractRef.current = {
                     extract: data.extract as ExtractData,
-                    existingRowIds
+                    existingRowIds,
+                    fromOverlay: data.fromOverlay === true
                 }
 
                 // Crea una nuova riga di tipo 'nota-libera'
@@ -409,11 +410,20 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 title: pending.extract.title,
                 observation: pending.extract.observation,
                 hasObservation: pending.extract.hasObservation ?? false,
+                observations: [], // ✅ Inizializza array osservazioni vuoto
                 collapsed: pending.extract.collapsed ?? false
             }
 
             const newBlocks = [extractBlock]
             updateRow(newRow.id, { blocks: newBlocks })
+
+            // ✅ Se l'estratto viene dall'overlay, emetti evento per chiudere l'overlay
+            if (pending.fromOverlay && pending.extract.id) {
+                console.log('[DefenseMemoryTableEditor] ✅ Estratto aggiunto dall\'overlay, emetto evento per chiudere overlay:', pending.extract.id)
+                window.dispatchEvent(new CustomEvent('app:extract-added-by-drag', {
+                    detail: { extractId: pending.extract.id }
+                }))
+            }
 
             // Reset del ref
             pendingExtractRef.current = null

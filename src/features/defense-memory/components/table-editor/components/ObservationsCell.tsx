@@ -328,7 +328,8 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                             type: 'extract',
                             id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
                             order: insertIndex !== undefined ? insertIndex : newBlocks.length,
-                            extract
+                            extract,
+                            observations: [] // ✅ Inizializza array osservazioni vuoto
                         }
 
                         if (insertIndex !== undefined) {

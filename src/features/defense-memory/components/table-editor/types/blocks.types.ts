@@ -34,6 +34,16 @@ export interface ExtractData {
 export type BlockType = 'extract' | 'observation'
 
 /**
+ * Osservazione dentro un ExtractBlock
+ */
+export interface ExtractObservation {
+  id: string
+  content: string
+  position: 'before' | 'after'      // Prima o dopo il contenuto estratto
+  order: number                      // Per riordinare osservazioni nella stessa posizione
+}
+
+/**
  * Blocco estratto (non editabile - snip del documento)
  */
 export interface ExtractBlock {
@@ -42,8 +52,9 @@ export interface ExtractBlock {
   order: number                      // Ordine nella lista (per riorganizzazione)
   extract: ExtractData               // Dati dell'estratto
   title?: string                     // ✅ Titolo editabile (es. "Estratto", "Estratto chiave")
-  observation?: string               // ✅ Campo osservazione editabile
-  hasObservation?: boolean           // ✅ Se true, mostra il campo osservazione
+  observation?: string               // ✅ DEPRECATO: Campo osservazione singola (per retrocompatibilità)
+  hasObservation?: boolean           // ✅ DEPRECATO: Se true, mostra il campo osservazione (per retrocompatibilità)
+  observations?: ExtractObservation[] // ✅ Array di osservazioni posizionabili prima/dopo
   collapsed?: boolean                // ✅ Stato collassato/espanso
 }
 

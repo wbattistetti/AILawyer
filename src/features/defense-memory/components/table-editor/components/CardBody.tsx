@@ -3,7 +3,7 @@
  * Step 3: Gestione estratti + osservazioni in layout flessibile
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { CardBodyProps, Block, ExtractBlock, ObservationBlock, ExtractData } from '../types/blocks.types'
 import { ExtractBlock as ExtractBlockComponent } from './ExtractBlock'
 import { ObservationBlock as ObservationBlockComponent } from './ObservationBlock'
@@ -189,9 +189,64 @@ export const CardBody: React.FC<CardBodyProps> = ({
         console.log('[CardBody] ✅ data.type:', data.type)
         console.log('[CardBody] ✅ data.extract:', data.extract)
 
+        // ✅ Se è un'osservazione da ExtractBlock (ExtractObservation) da convertire in ObservationBlock
+        if (data.type === 'extract-observation-move' && data.observation) {
+          console.log('[CardBody] ✅ Tipo: extract-observation-move - convertendo ExtractObservation in ObservationBlock')
+
+          // ✅ Verifica se il drop è avvenuto dentro un ExtractBlock
+          const target = e.target as HTMLElement
+          const isInsideExtractBlock = target.closest('[data-extract-block]') !== null
+
+          if (isInsideExtractBlock) {
+            console.log('[CardBody] ⚠️ Drop ExtractObservation dentro ExtractBlock, ExtractBlock lo gestirà')
+            setTargetInsertIndex(null)
+            return
+          }
+
+          // ✅ Converti ExtractObservation in ObservationBlock
+          const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+          const newObservationBlock: ObservationBlock = {
+            type: 'observation',
+            id: `obs_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            order: insertIndex,
+            title: 'Osservazione',
+            content: data.observation.content || ''
+          }
+
+          // ✅ Inserisci il nuovo ObservationBlock
+          const newBlocks = [...blocks]
+          newBlocks.splice(insertIndex, 0, newObservationBlock)
+
+          // ✅ Ricalcola gli ordini
+          newBlocks.forEach((b, i) => {
+            b.order = i
+          })
+
+          onBlocksChange(newBlocks)
+
+          // ✅ Emetti evento per rimuovere ExtractObservation dal ExtractBlock sorgente
+          window.dispatchEvent(new CustomEvent('app:remove-extract-observation', {
+            detail: { extractBlockId: data.sourceExtractBlockId, observationId: data.observationId }
+          }))
+
+          setTargetInsertIndex(null)
+          return
+        }
+
         // ✅ Se è il pulsante "Aggiungi osservazione" dall'header
         if (data.type === 'new-observation' && data.source === 'header-button') {
-          console.log('[CardBody] ✅ Tipo: new-observation')
+          // ✅ Verifica se il drop è avvenuto dentro un ExtractBlock
+          // Se è così, ExtractBlock lo gestirà, quindi non fare nulla qui
+          const target = e.target as HTMLElement
+          const isInsideExtractBlock = target.closest('[data-extract-block]') !== null
+
+          if (isInsideExtractBlock) {
+            console.log('[CardBody] ⚠️ Drop "Aggiungi osservazione" dentro ExtractBlock, ExtractBlock lo gestirà')
+            setTargetInsertIndex(null)
+            return
+          }
+
+          console.log('[CardBody] ✅ Tipo: new-observation - aggiungendo ObservationBlock nel CardBody')
           // ✅ Usa targetInsertIndex se disponibile, altrimenti aggiungi alla fine
           const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
           handleAddObservation(insertIndex)
@@ -214,6 +269,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
             title: data.title || data.extract.title,
             observation: data.observation || data.extract.observation,
             hasObservation: data.hasObservation ?? data.extract.hasObservation ?? false,
+            observations: [], // ✅ Inizializza array osservazioni vuoto
             collapsed: data.collapsed ?? data.extract.collapsed ?? false
           }
 
@@ -240,6 +296,14 @@ export const CardBody: React.FC<CardBodyProps> = ({
 
             window.dispatchEvent(new CustomEvent('app:extract-add', {
               detail: { extract: updatedExtract }
+            }))
+          }
+
+          // ✅ Se viene dall'overlay, emetti evento per chiudere l'overlay
+          if (data.fromOverlay === true && data.extract.id) {
+            console.log('[CardBody] ✅ Estratto aggiunto dall\'overlay, emetto evento per chiudere overlay:', data.extract.id)
+            window.dispatchEvent(new CustomEvent('app:extract-added-by-drag', {
+              detail: { extractId: data.extract.id }
             }))
           }
 
@@ -305,6 +369,45 @@ export const CardBody: React.FC<CardBodyProps> = ({
     setTargetInsertIndex(null) // ✅ Reset posizione target
   }, [])
 
+  // ✅ Listener per rimuovere ObservationBlock quando viene spostato in ExtractBlock
+  useEffect(() => {
+    const handleRemoveObservationBlock = (event: Event) => {
+      const customEvent = event as CustomEvent<{ blockId: string }>
+      const { blockId } = customEvent.detail
+
+      const blockIndex = blocks.findIndex(b => b.id === blockId && b.type === 'observation')
+      if (blockIndex !== -1) {
+        console.log('[CardBody] Rimozione ObservationBlock:', blockId)
+        const newBlocks = blocks.filter(b => b.id !== blockId)
+        newBlocks.forEach((b, i) => {
+          b.order = i
+        })
+        onBlocksChange(newBlocks)
+      }
+    }
+
+    const handleRemoveObservationBlockByIndex = (event: Event) => {
+      const customEvent = event as CustomEvent<{ blockIndex: number }>
+      const { blockIndex } = customEvent.detail
+
+      if (blockIndex >= 0 && blockIndex < blocks.length && blocks[blockIndex].type === 'observation') {
+        console.log('[CardBody] Rimozione ObservationBlock per indice:', blockIndex)
+        const newBlocks = blocks.filter((_, i) => i !== blockIndex)
+        newBlocks.forEach((b, i) => {
+          b.order = i
+        })
+        onBlocksChange(newBlocks)
+      }
+    }
+
+    window.addEventListener('app:remove-observation-block', handleRemoveObservationBlock)
+    window.addEventListener('app:remove-observation-block-by-index', handleRemoveObservationBlockByIndex)
+    return () => {
+      window.removeEventListener('app:remove-observation-block', handleRemoveObservationBlock)
+      window.removeEventListener('app:remove-observation-block-by-index', handleRemoveObservationBlockByIndex)
+    }
+  }, [blocks, onBlocksChange])
+
   return (
     <div
       className={cn(
@@ -337,6 +440,15 @@ export const CardBody: React.FC<CardBodyProps> = ({
                   handleBlockDragOver(e, index)
                 } : undefined}
                 onDrop={!readOnly ? (e) => {
+                  // ✅ Verifica se il drop è avvenuto dentro un ExtractBlock
+                  const target = e.target as HTMLElement
+                  const isInsideExtractBlock = target.closest('[data-extract-block]') !== null
+
+                  if (isInsideExtractBlock) {
+                    // ✅ ExtractBlock gestirà il drop, non fare nulla qui
+                    return
+                  }
+
                   // ✅ Gestisci il drop anche sul wrapper del blocco
                   e.preventDefault()
                   e.stopPropagation()
