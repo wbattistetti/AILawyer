@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { ObservationBlockProps } from '../types/blocks.types'
 import { cn } from '@/lib/utils'
-import { MessageSquare, X, Edit2 } from 'lucide-react'
+import { X, GripVertical } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 
 export const ObservationBlock: React.FC<ObservationBlockProps> = ({
@@ -17,18 +17,9 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
   onDragEnd,
   readOnly
 }) => {
-  const [isEditingTitle, setIsEditingTitle] = useState(false)
-  const [titleValue, setTitleValue] = useState(block.title)
-  const titleInputRef = useRef<HTMLInputElement>(null)
+  const [isHovered, setIsHovered] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // Focus input quando si inizia a editare
-  useEffect(() => {
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus()
-      titleInputRef.current.select()
-    }
-  }, [isEditingTitle])
+  const gripRef = useRef<HTMLDivElement>(null)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -38,26 +29,6 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
     }
   }, [block.content])
 
-  const handleTitleBlur = () => {
-    setIsEditingTitle(false)
-    if (titleValue !== block.title) {
-      onUpdate({
-        ...block,
-        title: titleValue || 'Osservazione'
-      })
-    }
-  }
-
-  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleTitleBlur()
-    } else if (e.key === 'Escape') {
-      setTitleValue(block.title)
-      setIsEditingTitle(false)
-    }
-  }
-
   const handleContentChange = (value: string) => {
     onUpdate({
       ...block,
@@ -65,59 +36,53 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
     })
   }
 
+  // Handler per drag start dall'icona grip
+  const handleGripDragStart = (e: React.DragEvent) => {
+    if (onDragStart) {
+      onDragStart(e)
+    }
+  }
+
   return (
     <div
-      draggable={!readOnly}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      className={cn(
-        'bg-white border border-gray-300 rounded-lg p-3 shadow-sm',
-        !readOnly && 'cursor-move hover:shadow-md transition-all'
-      )}
+      className="relative"
+      onMouseEnter={() => !readOnly && setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Header con titolo editabile */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <MessageSquare className="h-4 w-4 text-green-500 flex-shrink-0" />
-          {isEditingTitle && !readOnly ? (
-            <input
-              ref={titleInputRef}
-              type="text"
-              value={titleValue}
-              onChange={(e) => setTitleValue(e.target.value)}
-              onBlur={handleTitleBlur}
-              onKeyDown={handleTitleKeyDown}
-              className="flex-1 text-sm font-medium text-gray-900 border border-blue-500 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Titolo osservazione"
-            />
-          ) : (
+      {/* ✅ Controlli su hover in alto a destra */}
+      {!readOnly && isHovered && (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/90 rounded shadow-sm p-1">
+          {/* ✅ Icona grip per trascinare */}
+          {onDragStart && (
             <div
-              className="flex items-center gap-1 flex-1 min-w-0 group"
-              onClick={!readOnly ? () => setIsEditingTitle(true) : undefined}
+              ref={gripRef}
+              draggable
+              onDragStart={handleGripDragStart}
+              onDragEnd={onDragEnd}
+              className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 transition-colors p-1"
+              title="Trascina per riordinare"
             >
-              <span className="text-sm font-medium text-gray-900 truncate">
-                {block.title || 'Osservazione'}
-              </span>
-              {!readOnly && (
-                <Edit2 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-              )}
+              <GripVertical className="h-4 w-4" />
             </div>
           )}
-        </div>
-        {!readOnly && onRemove && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemove()
-            }}
-            className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
 
-      {/* Textarea per contenuto */}
+          {/* ✅ Icona cestino per eliminare */}
+          {onRemove && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemove()
+              }}
+              className="text-gray-400 hover:text-red-500 transition-colors p-1"
+              title="Elimina osservazione"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ✅ Solo textarea, senza wrapper esterno */}
       <Textarea
         ref={textareaRef}
         value={block.content}
@@ -125,7 +90,7 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
         placeholder="Inserisci osservazione..."
         readOnly={readOnly}
         className={cn(
-          'min-h-[60px] resize-none overflow-hidden text-sm p-2 whitespace-pre-wrap break-words',
+          'min-h-[60px] resize-none overflow-hidden text-sm p-2 whitespace-pre-wrap break-words w-full',
           'focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
         )}
         onInput={(e) => {

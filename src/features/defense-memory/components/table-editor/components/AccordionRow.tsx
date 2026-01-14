@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { TableRowProps, CellType } from '../../types/table.types'
 import { ObservationsCell } from './ObservationsCell'
 import { Combobox } from './Combobox'
@@ -152,9 +152,25 @@ export const AccordionRow: React.FC<TableRowProps> = ({
     readOnly = false,
     errors = [],
     columnWidths = DEFAULT_WIDTHS,
-    onMoveMotivation
+    onMoveMotivation,
+    defaultExpanded = false,
+    onExpandChange
 }) => {
-    const [isExpanded, setIsExpanded] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+
+    // ✅ Aggiorna lo stato quando defaultExpanded cambia
+    useEffect(() => {
+        setIsExpanded(defaultExpanded)
+    }, [defaultExpanded])
+
+    // ✅ Handler per toggle espansione
+    const handleToggleExpand = useCallback(() => {
+        const newExpanded = !isExpanded
+        setIsExpanded(newExpanded)
+        if (onExpandChange) {
+            onExpandChange(row.id, newExpanded)
+        }
+    }, [isExpanded, onExpandChange, row.id])
     const [isHovered, setIsHovered] = useState(false)
     const [contestationDateOpen, setContestationDateOpen] = useState(false)
     const [eventDateOpen, setEventDateOpen] = useState(false)
@@ -453,7 +469,7 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                 {/* ✅ Icona expand/collapse - AREA CLICCABILE per expand/collapse */}
                 <div
                     className="flex-shrink-0 cursor-pointer text-gray-400 hover:text-gray-600"
-                    onClick={() => setIsExpanded(!isExpanded)}
+                    onClick={handleToggleExpand}
                 >
                     {isExpanded ? (
                         <ChevronDown className="h-4 w-4" />

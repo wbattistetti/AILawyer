@@ -103,6 +103,8 @@ export interface TableRowProps {
     onCellWidthChange?: (width: number) => void
     onMoveMotivation?: (fromRowId: string, toRowId: string, motivationId: string, toIndex: number) => void
     onResizeStart?: (column: 'typeDescription' | 'observations', e: React.MouseEvent) => void // ✅ Funzione per resize colonne
+    defaultExpanded?: boolean // ✅ Se true, la riga parte espansa
+    onExpandChange?: (rowId: string, isExpanded: boolean) => void // ✅ Callback quando la riga viene espansa/collassata
 }
 
 export interface RowEditFormProps {

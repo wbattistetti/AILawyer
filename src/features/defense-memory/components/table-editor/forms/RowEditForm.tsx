@@ -224,7 +224,7 @@ export const RowEditForm: React.FC<RowEditFormProps> = ({
                                 <Textarea
                                     value={formData.observations}
                                     onChange={(e) => handleFieldChange('observations', e.target.value)}
-                                    placeholder="Inserisci le tue osservazioni..."
+                                    placeholder=""
                                     className="min-h-[100px]"
                                     disabled={readOnly}
                                 />

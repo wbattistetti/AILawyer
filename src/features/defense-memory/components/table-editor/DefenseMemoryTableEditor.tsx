@@ -9,7 +9,7 @@ import { AccordionRow } from './components/AccordionRow'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
 import { cn } from '@/lib/utils'
 import { ExtractDrawer } from './components/ExtractDrawer'
-import { ExtractData } from './types/blocks.types'
+import { ExtractData, ObservationBlock, ExtractBlock } from './types/blocks.types'
 import { getVerbaliTypes, getMainCellTypes } from './utils/cellTypeConfig'
 
 export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> = ({
@@ -76,6 +76,12 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
 
     // ✅ Stato per estratti nel cassetto
     const [extracts, setExtracts] = useState<ExtractData[]>([])
+
+    // ✅ Stato per tracciare quale riga deve essere espansa (per drop estratti su canvas vuoto)
+    const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+    // ✅ Ref per tracciare l'estratto da aggiungere alla nuova riga dopo che viene creata
+    const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string> } | null>(null)
 
     // ✅ Listener per eventi 'app:extract-add' dal PDF viewer
     useEffect(() => {
@@ -190,6 +196,40 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         })
     }, [addRow])
 
+    // ✅ Handler per aggiungere osservazione (click sul pulsante nell'header)
+    const handleAddObservation = useCallback(() => {
+        // Aggiunge un'osservazione all'ultima riga, o alla prima se non ci sono righe
+        const sortedRows = [...rows].sort((a, b) => a.order - b.order)
+        const targetRow = sortedRows.length > 0 ? sortedRows[sortedRows.length - 1] : null
+
+        if (targetRow) {
+            const newObservationBlock: ObservationBlock = {
+                type: 'observation',
+                id: `obs_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                order: (targetRow.blocks || []).length,
+                title: 'Osservazione',
+                content: ''
+            }
+
+            const newBlocks = [...(targetRow.blocks || []), newObservationBlock]
+            updateRow(targetRow.id, { blocks: newBlocks })
+        } else {
+            // Se non ci sono righe, aggiungi una nuova riga con un'osservazione
+            addRow({
+                cellType: 'nota-libera',
+                description: '',
+                observations: '',
+                blocks: [{
+                    type: 'observation',
+                    id: `obs_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                    order: 0,
+                    title: 'Osservazione',
+                    content: ''
+                }]
+            })
+        }
+    }, [rows, updateRow, addRow])
+
     const handleDeleteRow = useCallback((rowId: string) => {
         deleteRow(rowId)
     }, [deleteRow])
@@ -299,6 +339,102 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         updateRow(toRowId, { motivations: toMotivs })
     }, [rows, updateRow])
 
+    // ✅ Handler per drop di estratti sul canvas quando non ci sono righe espanse
+    const handleCanvasDrop = useCallback((e: React.DragEvent) => {
+        if (readOnly) return
+
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Verifica se è un estratto
+        const dragData = e.dataTransfer.getData('application/json')
+        if (!dragData) return
+
+        try {
+            const data = JSON.parse(dragData)
+            if (data.type !== 'extract' || !data.extract) {
+                return // Non è un estratto, ignora
+            }
+
+            // Verifica se ci sono righe espanse controllando se c'è una riga con expandedRowId
+            const hasExpandedRow = expandedRowId && rows.find(r => r.id === expandedRowId)
+
+            // Se non ci sono righe espanse, crea una nuova riga
+            if (!hasExpandedRow) {
+                // Salva gli ID delle righe esistenti prima di aggiungere
+                const existingRowIds = new Set(rows.map(r => r.id))
+
+                // Salva l'estratto nel ref per aggiungerlo dopo che la riga viene creata
+                pendingExtractRef.current = {
+                    extract: data.extract as ExtractData,
+                    existingRowIds
+                }
+
+                // Crea una nuova riga di tipo 'nota-libera'
+                addRow({
+                    cellType: 'nota-libera',
+                    description: '',
+                    observations: '',
+                    blocks: []
+                })
+            }
+        } catch (err) {
+            console.error('[DefenseMemoryTableEditor] Errore durante drop estratto sul canvas:', err)
+        }
+    }, [readOnly, expandedRowId, rows, addRow])
+
+    // ✅ useEffect per gestire l'aggiunta dell'estratto alla nuova riga dopo che viene creata
+    useEffect(() => {
+        if (!pendingExtractRef.current) return
+
+        const pending = pendingExtractRef.current
+
+        // Trova la nuova riga (quella che non esisteva prima)
+        const newRow = rows.find(r =>
+            !pending.existingRowIds.has(r.id) &&
+            r.cellType === 'nota-libera' &&
+            (!r.blocks || r.blocks.length === 0)
+        )
+
+        if (newRow) {
+            // Imposta la riga come espansa
+            setExpandedRowId(newRow.id)
+
+            // Aggiungi l'estratto come ExtractBlock
+            const extractBlock: ExtractBlock = {
+                type: 'extract',
+                id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                order: 0,
+                extract: pending.extract,
+                title: pending.extract.title,
+                observation: pending.extract.observation,
+                hasObservation: pending.extract.hasObservation ?? false,
+                collapsed: pending.extract.collapsed ?? false
+            }
+
+            const newBlocks = [extractBlock]
+            updateRow(newRow.id, { blocks: newBlocks })
+
+            // Reset del ref
+            pendingExtractRef.current = null
+        }
+    }, [rows, updateRow])
+
+    // ✅ Handler per dragOver sul canvas
+    const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+        if (readOnly) return
+
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Verifica se è un estratto
+        const types = Array.from(e.dataTransfer.types)
+        if (types.includes('application/json')) {
+            // Imposta dropEffect per estratti
+            e.dataTransfer.dropEffect = 'move'
+        }
+    }, [readOnly])
+
     return (
         <div
             ref={containerRef}
@@ -314,6 +450,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             {/* Header */}
             <TableHeader
                 onAddRow={handleAddRow}
+                onAddObservation={!readOnly ? handleAddObservation : undefined}
                 onSave={onSave ? handleSave : undefined}
                 onExport={handleExport}
                 onUndo={undo}
@@ -330,6 +467,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 ref={scrollableRef}
                 className="flex-1 overflow-x-auto overflow-y-auto w-full"
                 onWheel={handleWheelZoom}
+                onDragOver={!readOnly ? handleCanvasDragOver : undefined}
+                onDrop={!readOnly ? handleCanvasDrop : undefined}
             >
                 {sortedRows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-gray-500">
@@ -369,6 +508,14 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                     errors={getRowErrors(row.id)}
                                     columnWidths={widths}
                                     onMoveMotivation={handleMoveMotivation}
+                                    defaultExpanded={expandedRowId === row.id}
+                                    onExpandChange={(rowId, isExpanded) => {
+                                        if (isExpanded) {
+                                            setExpandedRowId(rowId)
+                                        } else if (expandedRowId === rowId) {
+                                            setExpandedRowId(null)
+                                        }
+                                    }}
                                 />
                             ))}
                         </div>

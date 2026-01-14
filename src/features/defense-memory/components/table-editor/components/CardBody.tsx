@@ -8,7 +8,6 @@ import { CardBodyProps, Block, ExtractBlock, ObservationBlock, ExtractData } fro
 import { ExtractBlock as ExtractBlockComponent } from './ExtractBlock'
 import { ObservationBlock as ObservationBlockComponent } from './ObservationBlock'
 import { cn } from '@/lib/utils'
-import { Plus } from 'lucide-react'
 
 export const CardBody: React.FC<CardBodyProps> = ({
   blocks,
@@ -96,7 +95,16 @@ export const CardBody: React.FC<CardBodyProps> = ({
     })
 
     setTargetInsertIndex(insertIndex)
-    e.dataTransfer.dropEffect = 'move'
+
+    // ✅ Imposta dropEffect in base a effectAllowed
+    // Se effectAllowed è 'copy', usa 'copy' (pulsante osservazione)
+    // Altrimenti usa 'move' (estratti o riordino blocchi)
+    const effectAllowed = e.dataTransfer.effectAllowed
+    if (effectAllowed === 'copy' || effectAllowed === 'copyMove') {
+      e.dataTransfer.dropEffect = 'copy'
+    } else {
+      e.dataTransfer.dropEffect = 'move'
+    }
   }, [draggedBlockIndex])
 
   // Drop handler - gestisce sia nuovi estratti che riordino
@@ -173,14 +181,30 @@ export const CardBody: React.FC<CardBodyProps> = ({
     // ✅ Solo se NON stiamo riordinando, gestisci nuovi estratti o osservazioni
     try {
       const dragData = e.dataTransfer.getData('application/json')
+      console.log('[CardBody] ✅ Gestione nuovi elementi - dragData:', dragData)
 
       if (dragData) {
         const data = JSON.parse(dragData)
+        console.log('[CardBody] ✅ Parsed data:', data)
+        console.log('[CardBody] ✅ data.type:', data.type)
+        console.log('[CardBody] ✅ data.extract:', data.extract)
+
+        // ✅ Se è il pulsante "Aggiungi osservazione" dall'header
+        if (data.type === 'new-observation' && data.source === 'header-button') {
+          console.log('[CardBody] ✅ Tipo: new-observation')
+          // ✅ Usa targetInsertIndex se disponibile, altrimenti aggiungi alla fine
+          const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+          handleAddObservation(insertIndex)
+          setTargetInsertIndex(null)
+          return
+        }
 
         // Se è un estratto dal cassetto o overlay
         if (data.type === 'extract' && data.extract) {
+          console.log('[CardBody] ✅ Tipo: extract - aggiungendo estratto')
           // ✅ Usa targetInsertIndex se disponibile, altrimenti aggiungi alla fine
           const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+          console.log('[CardBody] ✅ Insert index:', insertIndex)
 
           const extractBlock: ExtractBlock = {
             type: 'extract',
@@ -193,11 +217,15 @@ export const CardBody: React.FC<CardBodyProps> = ({
             collapsed: data.collapsed ?? data.extract.collapsed ?? false
           }
 
+          console.log('[CardBody] ✅ Created extractBlock:', extractBlock)
+
           const newBlocks = [...blocks]
           newBlocks.splice(insertIndex, 0, extractBlock)
           newBlocks.forEach((b, i) => {
             b.order = i
           })
+
+          console.log('[CardBody] ✅ Calling onBlocksChange with:', newBlocks)
           onBlocksChange(newBlocks)
 
           // ✅ Se viene dall'overlay, aggiungilo anche al cassetto
@@ -217,11 +245,16 @@ export const CardBody: React.FC<CardBodyProps> = ({
 
           setTargetInsertIndex(null)
           return
+        } else {
+          console.log('[CardBody] ⚠️ data.type !== extract o data.extract mancante')
         }
+      } else {
+        console.log('[CardBody] ⚠️ Nessun dragData trovato')
       }
 
       // Se non c'è dragData, prova onExtractDrop callback (solo per nuovi estratti dalla clipboard)
       if (onExtractDrop) {
+        console.log('[CardBody] ⚠️ Tentativo onExtractDrop callback')
         const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
         onExtractDrop(undefined, insertIndex)
         setTargetInsertIndex(null)
@@ -230,7 +263,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
       console.error('[CardBody] Errore durante drop:', err)
       setTargetInsertIndex(null)
     }
-  }, [blocks, onBlocksChange, onExtractDrop, targetInsertIndex, draggedBlockIndex])
+  }, [blocks, onBlocksChange, onExtractDrop, targetInsertIndex, draggedBlockIndex, handleAddObservation])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -243,7 +276,16 @@ export const CardBody: React.FC<CardBodyProps> = ({
     }
 
     setIsDragOver(true)
-    e.dataTransfer.dropEffect = 'move'
+
+    // ✅ Imposta dropEffect in base a effectAllowed
+    // Se effectAllowed è 'copy', usa 'copy' (pulsante osservazione)
+    // Altrimenti usa 'move' (estratti o riordino blocchi)
+    const effectAllowed = e.dataTransfer.effectAllowed
+    if (effectAllowed === 'copy' || effectAllowed === 'copyMove') {
+      e.dataTransfer.dropEffect = 'copy'
+    } else {
+      e.dataTransfer.dropEffect = 'move'
+    }
   }, [draggedBlockIndex])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -266,7 +308,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
   return (
     <div
       className={cn(
-        'space-y-2 min-h-[100px]',
+        'space-y-2 min-h-[200px] p-4',
         isDragOver && !readOnly ? 'bg-blue-50' : ''
       )}
       onDrop={!readOnly ? handleDrop : undefined}
@@ -274,19 +316,10 @@ export const CardBody: React.FC<CardBodyProps> = ({
       onDragLeave={!readOnly ? handleDragLeave : undefined}
     >
       {blocks.length === 0 ? (
-        <div className="p-4 border-2 border-dashed rounded-lg text-center border-gray-300 bg-gray-50">
-          <p className="text-sm text-gray-500 mb-2">
+        <div className="flex items-center justify-center h-[150px]">
+          <p className="text-sm text-gray-400">
             Trascina qui estratti o aggiungi osservazioni
           </p>
-          {!readOnly && (
-            <button
-              onClick={() => handleAddObservation()}
-              className="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors inline-flex items-center gap-1"
-            >
-              <Plus className="h-3 w-3" />
-              Aggiungi osservazione
-            </button>
-          )}
         </div>
       ) : (
         <>
@@ -339,24 +372,13 @@ export const CardBody: React.FC<CardBodyProps> = ({
             </React.Fragment>
           ))}
 
-          {/* ✅ Indicatore visivo dopo l'ultimo blocco */}
-          {targetInsertIndex === blocks.length && draggedBlockIndex !== null && draggedBlockIndex !== blocks.length - 1 && (
+          {/* ✅ Indicatore visivo dopo l'ultimo blocco (per riordino o nuovo pulsante) */}
+          {targetInsertIndex === blocks.length && (
             <div className="h-1 bg-blue-500 rounded-full my-1 transition-all" />
           )}
         </>
       )}
 
-      {!readOnly && blocks.length > 0 && (
-        <div className="pt-2">
-          <button
-            onClick={() => handleAddObservation()}
-            className="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors inline-flex items-center gap-1"
-          >
-            <Plus className="h-3 w-3" />
-            Aggiungi osservazione
-          </button>
-        </div>
-      )}
     </div>
   )
 }

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { ObservationsCellProps, Motivation } from '../../types/table.types'
 import { Card, CardContent } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { extractClipboardManager } from '@/utils/extractClipboard'
 import { MotivationItem } from './MotivationItem'
@@ -18,7 +17,6 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
     onMoveMotivation
 }) => {
     const isReatoContestato = row.cellType === 'reato-contestato'
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [isDragOver, setIsDragOver] = useState(false)
     const [hasExtractInClipboard, setHasExtractInClipboard] = useState(false)
     const [isHoveringMotivazione, setIsHoveringMotivazione] = useState(false)
@@ -39,17 +37,6 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
         return unsubscribe
     }, [])
 
-    // Auto-expand textarea
-    useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto'
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
-        }
-    }, [row.observations])
-
-    const handleObservationsChange = (value: string) => {
-        onUpdate({ observations: value })
-    }
 
     // Helpers motivazioni (reato-contestato)
     const getMotivations = (): Motivation[] => {
@@ -316,53 +303,8 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
                 </div>
             )}
 
-            {/* Osservazioni */}
-            {/* ✅ Mostra solo se non è reato contestato OPPURE se ci sono almeno 2 motivazioni */}
-            {(!isReatoContestato || motivations.length >= 2) && (
-                <div className="space-y-1">
-                    <div>
-                        {isReatoContestato ? (
-                            <Textarea
-                                value={(motivations.map(m => m.observation?.trim()).filter(Boolean) as string[]).join('\n\n')}
-                                readOnly
-                                className={cn(
-                                    'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words bg-gray-50'
-                                )}
-                            />
-                        ) : (
-                            <Textarea
-                                ref={textareaRef}
-                                value={row.observations || ''}
-                                onChange={(e) => handleObservationsChange(e.target.value)}
-                                placeholder="Inserisci le tue osservazioni..."
-                                readOnly={readOnly}
-                                className={cn(
-                                    'min-h-[60px] resize-none overflow-hidden text-xs p-2 whitespace-pre-wrap break-words'
-                                )}
-                                onInput={(e) => {
-                                    const target = e.target as HTMLTextAreaElement
-                                    target.style.height = 'auto'
-                                    target.style.height = `${target.scrollHeight}px`
-                                }}
-                            />
-                        )}
-                        {getFieldError('observations') && (
-                            <p className="text-xs text-red-500 mt-0.5">{getFieldError('observations')}</p>
-                        )}
-                    </div>
-                    {(hasExtractInClipboard && isMouseInside) && (
-                        <div
-                            className="pointer-events-none absolute z-10 text-[11px] px-2 py-1 rounded bg-blue-600 text-white shadow"
-                            style={{ left: Math.max(0, cursorPos.x + 12), top: Math.max(0, cursorPos.y + 12) }}
-                        >
-                            Incolla estratto in una delle aree evidenziate
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* ✅ NUOVO: CardBody con blocchi riorganizzabili */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
+            {/* ✅ CardBody con blocchi riorganizzabili (sostituisce la vecchia textarea observations) */}
+            <div>
                 <CardBody
                     blocks={row.blocks || []}
                     onBlocksChange={(blocks) => {

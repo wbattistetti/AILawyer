@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 
 interface TableHeaderProps {
     onAddRow: () => void
+    onAddObservation?: () => void // ✅ Handler per click su "Aggiungi osservazione"
     onSave?: () => void
     onExport?: () => void
     onImport?: () => void
@@ -20,6 +21,7 @@ interface TableHeaderProps {
 
 export const TableHeader: React.FC<TableHeaderProps> = ({
     onAddRow,
+    onAddObservation,
     onSave,
     onExport,
     onImport,
@@ -79,14 +81,41 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                 )}
 
                 {!readOnly && (
-                    <Button
-                        onClick={onAddRow}
-                        size="sm"
-                        className="flex items-center space-x-1"
-                    >
-                        <Plus className="h-4 w-4" />
-                        <span>Aggiungi riga</span>
-                    </Button>
+                    <>
+                        <Button
+                            onClick={onAddRow}
+                            size="sm"
+                            className="flex items-center space-x-1"
+                        >
+                            <Plus className="h-4 w-4" />
+                            <span>Aggiungi riga</span>
+                        </Button>
+                        {onAddObservation && (
+                            <Button
+                                draggable
+                                onDragStart={(e) => {
+                                    // ✅ Imposta dati per drag
+                                    e.dataTransfer.setData('application/json', JSON.stringify({
+                                        type: 'new-observation',
+                                        source: 'header-button'
+                                    }))
+                                    e.dataTransfer.effectAllowed = 'copy'
+                                    // ✅ Aggiungi classe per feedback visivo
+                                    e.currentTarget.style.opacity = '0.5'
+                                }}
+                                onDragEnd={(e) => {
+                                    // ✅ Ripristina opacità
+                                    e.currentTarget.style.opacity = '1'
+                                }}
+                                onClick={onAddObservation}
+                                size="sm"
+                                className="flex items-center space-x-1 bg-green-500 hover:bg-green-600 text-white"
+                            >
+                                <Plus className="h-4 w-4" />
+                                <span>Aggiungi osservazione</span>
+                            </Button>
+                        )}
+                    </>
                 )}
 
                 {onSave && !readOnly && (
