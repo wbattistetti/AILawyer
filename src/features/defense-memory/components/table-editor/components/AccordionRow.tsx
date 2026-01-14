@@ -3,7 +3,7 @@ import { TableRowProps, CellType } from '../../types/table.types'
 import { ObservationsCell } from './ObservationsCell'
 import { Combobox } from './Combobox'
 import { REATI_PENALI } from '../utils/reatoSuggestions'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { ChevronDown, ChevronRight, Scale, FileText, AlertCircle, Calendar as CalendarIcon, MoreVertical, Plus, Trash2, Shield, Gavel, Lock, Search, MessageSquare, Users, Phone } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { getCellTypeLabel, getDateFieldsConfig } from '../utils/cellTypeConfig'
+import { getCellTypeLabel, getDateFieldsConfig, getSortedCellTypes } from '../utils/cellTypeConfig'
 
 // Lista di atti comuni nel sistema giudiziario
 const ATTI_COMUNI = [
@@ -462,35 +462,23 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                     )}
                 </div>
 
-                {/* ✅ Tipo - Label o Select (edit-on-click/hover, torna label su mouse leave) */}
+                {/* ✅ Tipo - Label o Select (edit-on-click/hover, chiusura gestita solo da onOpenChange del Select) */}
                 <div
                     ref={typeContainerRef}
                     onClick={(e) => e.stopPropagation()}
-                    onMouseLeave={(e) => {
-                        if (isTypeEditing && !readOnly && row.cellType) {
-                            const relatedTarget = e.relatedTarget as HTMLElement | null
-
-                            // Se il mouse si è spostato dentro il container stesso, non chiudere
-                            if (relatedTarget && typeContainerRef.current?.contains(relatedTarget)) {
-                                return
-                            }
-
-                            setTimeout(() => {
-                                // Verifica di nuovo se il mouse è ancora dentro
-                                if (typeContainerRef.current && !typeContainerRef.current.matches(':hover')) {
-                                    setIsTypeEditing(false)
-                                }
-                            }, 200)
-                        }
-                    }}
                     className="flex-shrink-0"
                 >
                     {isTypeEditing ? (
                         <Select
                             value={row.cellType || ''}
-                            onValueChange={(value) => handleTypeChange(value as CellType)}
+                            onValueChange={(value) => {
+                                console.log('[AccordionRow] Select onValueChange:', value)
+                                handleTypeChange(value as CellType)
+                            }}
                             disabled={readOnly}
                             onOpenChange={(open) => {
+                                console.log('[AccordionRow] Select onOpenChange:', open, 'cellType:', row.cellType)
+                                // ✅ Chiudi la modalità editing solo quando il Select si chiude
                                 if (!open && row.cellType) {
                                     setIsTypeEditing(false)
                                 }
@@ -516,18 +504,16 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                                 <SelectValue placeholder="Seleziona tipo" />
                             </SelectTrigger>
                             <SelectContent>
-                                {([
-                                    'reato-contestato',
-                                    'elementi-prova',
-                                    'verbale-arresto',
-                                    'verbale-sequestro',
-                                    'verbale-perquisizione',
-                                    'interrogatorio',
-                                    'dichiarazioni-testi',
-                                    'intercettazioni',
-                                    'atto',
-                                    'fatto'
-                                ] as CellType[]).sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))).map(type => (
+                                {/* ✅ Nota libera sempre prima */}
+                                <SelectItem value="nota-libera">
+                                    {getCellTypeLabel('nota-libera')}
+                                </SelectItem>
+
+                                {/* ✅ Separatore */}
+                                <SelectSeparator />
+
+                                {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
+                                {getSortedCellTypes().map(type => (
                                     <SelectItem key={type} value={type}>
                                         {getCellTypeLabel(type)}
                                     </SelectItem>
@@ -537,8 +523,19 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                     ) : (
                         <button
                             ref={typeButtonRef}
-                            onClick={() => !readOnly && setIsTypeEditing(true)}
-                            onMouseEnter={() => !readOnly && setIsTypeEditing(true)}
+                            onClick={() => {
+                                console.log('[AccordionRow] Button onClick, readOnly:', readOnly, 'cellType:', row.cellType)
+                                if (!readOnly) {
+                                    console.log('[AccordionRow] Imposto isTypeEditing a true')
+                                    setIsTypeEditing(true)
+                                }
+                            }}
+                            onMouseEnter={() => {
+                                console.log('[AccordionRow] Button onMouseEnter, readOnly:', readOnly)
+                                if (!readOnly) {
+                                    setIsTypeEditing(true)
+                                }
+                            }}
                             disabled={readOnly}
                             className={cn(
                                 "h-8 text-xs px-2 py-1 rounded border border-transparent text-left",
@@ -563,8 +560,9 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                                 if (isDescriptionEditing && !readOnly) {
                                     const relatedTarget = e.relatedTarget as HTMLElement | null
 
+                                    // ✅ Verifica che relatedTarget sia un Node valido prima di chiamare contains
                                     // Se il mouse si è spostato dentro il container stesso (combobox, dropdown), non chiudere
-                                    if (relatedTarget && descriptionContainerRef.current?.contains(relatedTarget)) {
+                                    if (relatedTarget && relatedTarget instanceof Node && descriptionContainerRef.current?.contains(relatedTarget)) {
                                         return
                                     }
 
@@ -667,8 +665,9 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                                 if (isContestationDateEditing && !readOnly) {
                                     const relatedTarget = e.relatedTarget as HTMLElement | null
 
+                                    // ✅ Verifica che relatedTarget sia un Node valido prima di chiamare contains
                                     // Se il mouse si è spostato dentro il container stesso (popover, calendar), non chiudere
-                                    if (relatedTarget && contestationDateContainerRef.current?.contains(relatedTarget)) {
+                                    if (relatedTarget && relatedTarget instanceof Node && contestationDateContainerRef.current?.contains(relatedTarget)) {
                                         return
                                     }
 
@@ -750,8 +749,9 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                                 if (isEventDateEditing && !readOnly) {
                                     const relatedTarget = e.relatedTarget as HTMLElement | null
 
+                                    // ✅ Verifica che relatedTarget sia un Node valido prima di chiamare contains
                                     // Se il mouse si è spostato dentro il container stesso (popover, calendar), non chiudere
-                                    if (relatedTarget && eventDateContainerRef.current?.contains(relatedTarget)) {
+                                    if (relatedTarget && relatedTarget instanceof Node && eventDateContainerRef.current?.contains(relatedTarget)) {
                                         return
                                     }
 

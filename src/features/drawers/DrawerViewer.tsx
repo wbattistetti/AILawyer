@@ -266,13 +266,7 @@ export function DrawerViewer({
   color?: string
 }) {
   // ✅ Log per debug: verifica che l'ID venga passato correttamente
-  console.log('[DRAWER-VIEWER] Renderizzato', {
-    id,
-    title,
-    compartoId: id,
-    idType: typeof id,
-    idLength: id?.length
-  })
+  // ✅ Log rimosso per ridurre spam console
 
   const [archiveData, setArchiveData] = useState<any>(null)
   // ✅ Usa un ref per tracciare l'ultimo snapshot dei dati per evitare aggiornamenti inutili

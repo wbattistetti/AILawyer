@@ -13,27 +13,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createEmptyRow } from '../utils/tableSerialization'
 
-import { getCellTypeLabel } from '../utils/cellTypeConfig'
+import { getCellTypeLabel, getSortedCellTypes } from '../utils/cellTypeConfig'
 
-const ALL_CELL_TYPES: CellType[] = [
-    'reato-contestato',
-    'elementi-prova',
-    'verbale-arresto',
-    'verbale-sequestro',
-    'verbale-perquisizione',
-    'interrogatorio',
-    'dichiarazioni-testi',
-    'intercettazioni',
-    'atto',
-    'fatto'
-]
-
-const CELL_TYPE_OPTIONS: { value: CellType; label: string }[] = ALL_CELL_TYPES
-    .sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b)))
-    .map(type => ({
+// ✅ Usa la lista centralizzata da cellTypeConfig
+const CELL_TYPE_OPTIONS: { value: CellType; label: string }[] = [
+    // Nota libera sempre prima
+    { value: 'nota-libera', label: getCellTypeLabel('nota-libera') },
+    // Poi tutte le altre in ordine alfabetico
+    ...getSortedCellTypes().map(type => ({
         value: type,
         label: getCellTypeLabel(type)
     }))
+]
 
 export const RowEditForm: React.FC<RowEditFormProps> = ({
     row,

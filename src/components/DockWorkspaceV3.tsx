@@ -468,20 +468,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     const archiveData = (window as any).__archiveData
     const documenti: Array<{ compartoId?: string }> = archiveData?.documenti || []
 
-    console.log('[DOCK-V3] DrawerTabs computing with:', {
-      documentiCount: documenti.length,
-      documentsUpdateTrigger,
-      drawerPanelsUpdateTrigger,
-      compartiCount: comparti.length,
-      documentiSample: documenti.slice(0, 5).map(d => ({ id: (d as any).id?.substring(0, 30), compartoId: (d as any).compartoId }))
-    })
-
-    // ✅ Log dettagliato per debug: mostra tutti i documenti con il loro compartoId
-    console.log('[DOCK-V3] All documenti with compartoId:', documenti.map(d => ({
-      id: (d as any).id?.substring(0, 30),
-      compartoId: (d as any).compartoId,
-      filename: (d as any).filename
-    })))
+    // ✅ Log rimosso per ridurre spam console
 
     // ✅ Calcola quali cassetti hanno un dock pane aperto
     const openDrawerIds = new Set<string>()
@@ -500,24 +487,10 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       const drawerColor = colorFor(comparto.chiave as DrawerType)
 
       // ✅ Conta i documenti per questo comparto CON deduplicazione
-      const matchingDocs = documenti.filter(doc => {
-        const matches = (doc as any).compartoId === comparto.id
-        if (matches) {
-          console.log('[DOCK-V3] ✅ Documento match per comparto', comparto.nome, ':', {
-            id: (doc as any).id?.substring(0, 30),
-            compartoId: (doc as any).compartoId,
-            filename: (doc as any).filename
-          })
-        }
-        return matches
-      })
+      const matchingDocs = documenti.filter(doc => (doc as any).compartoId === comparto.id)
       // ✅ Deduplica per evitare di contare documenti temporanei duplicati
       const deduplicatedDocs = deduplicateDocuments(matchingDocs)
       const documentCount = deduplicatedDocs.length
-
-      console.log('[DOCK-V3] Comparto:', comparto.nome, 'documentCount:', documentCount, 'matchingDocs:', matchingDocs.length, 'deduplicatedDocs:', deduplicatedDocs.length, 'documenti:',
-        matchingDocs.map(d => ({ id: (d as any).id?.substring(0, 30), compartoId: (d as any).compartoId, filename: (d as any).filename }))
-      )
 
       // ✅ Verifica se il cassetto ha un dock pane aperto
       const isOpen = openDrawerIds.has(comparto.id)
@@ -533,7 +506,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         isOpen // ✅ Se il cassetto ha un dock pane aperto
       }
     })
-    console.log('[DOCK-V3] DrawerTabs computed:', tabs.map(t => ({ label: t.label, count: t.documentCount })))
+    // ✅ Log rimosso per ridurre spam console
     return tabs
   }, [comparti, drawerPanelsUpdateTrigger, documentsUpdateTrigger]) // ✅ Aggiungi trigger per forzare re-calcolo quando i pannelli o i documenti cambiano
 
@@ -665,16 +638,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const drawerTitle = props.params?.drawerTitle || props.api.title || 'Cassetto'
         // ✅ Trova il comparto per ottenere i dati completi
         const comparto = comparti.find(c => c.id === drawerId)
-        console.log('[DOCK-V3] Rendering drawer-content', {
-          panelId: props.api.id,
-          paramsDrawerId: props.params?.drawerId,
-          extractedDrawerId: drawerId,
-          drawerTitle,
-          compartoFound: !!comparto,
-          compartoId: comparto?.id,
-          compartiTotali: comparti.length,
-          compartiIds: comparti.map(c => c.id)
-        })
+        // ✅ Log rimosso per ridurre spam console
         return (
           <PanelContentWrapper>
             <div
@@ -737,12 +701,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   // ✅ Componente tab personalizzato con icone e colori (stesso aspetto di V2)
   const defaultTabComponent = useCallback((props: IDockviewPanelHeaderProps) => {
     // Debug: verifica struttura props
-    console.log('[TAB-COMPONENT] Props:', {
-      id: props.api.id,
-      title: props.api.title,
-      group: props.api.group?.id,
-      model: props.api.group?.model
-    })
+    // ✅ Log rimosso per ridurre spam console
 
     // Prova diversi modi per accedere al panel
     let panel: any = null
@@ -768,7 +727,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       component = 'drawer-content'
     }
 
-    console.log('[TAB-COMPONENT] Component found:', component, 'Panel:', panel)
+    // ✅ Log rimosso per ridurre spam console
 
     // ✅ Verifica se il pannello è closeable (dal panel object o default true)
     const isCloseable = panel?.closeable ?? true
@@ -1093,14 +1052,14 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     // ✅ Funzione helper per sbloccare tutti i gruppi
     const unlockAllGroups = () => {
       const groups = event.api.groups
-      console.log('[DOCK-V3] 🔓 Sblocco gruppi. Totale gruppi:', groups.length)
+      // ✅ Log rimosso per ridurre spam console
       groups.forEach((group, index) => {
         const wasLocked = group.locked
         if (group.locked) {
           group.locked = false
           console.log(`[DOCK-V3] 🔓 Gruppo ${index} (${group.id}) sbloccato. Era locked:`, wasLocked)
         } else {
-          console.log(`[DOCK-V3] ✅ Gruppo ${index} (${group.id}) già sbloccato`)
+          // ✅ Log rimosso per ridurre spam console
         }
       })
     }
@@ -1137,16 +1096,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     // ✅ Verifica metodi disponibili sull'API per debug
     const apiMethods = Object.keys(event.api).filter(key => key.startsWith('on'))
-    console.log('[DOCK-V3] 🔍 API methods disponibili:', {
-      hasOnWillDragPanel: typeof event.api.onWillDragPanel === 'function',
-      hasOnWillDrop: typeof event.api.onWillDrop === 'function',
-      hasOnDidMovePanel: typeof event.api.onDidMovePanel === 'function',
-      hasOnDidActivePanelChange: typeof event.api.onDidActivePanelChange === 'function',
-      apiKeys: apiMethods
-    })
-
-    // ✅ Log completo di tutti i metodi on* disponibili
-    console.log('[DOCK-V3] 🔍 Tutti i metodi on*:', apiMethods)
+    // ✅ Log rimosso per ridurre spam console
 
     // ✅ Traccia la posizione dei pannelli prima del drag per confrontare dopo
     // ✅ Usa un oggetto ref-like per isDragging (non possiamo usare useRef dentro un callback)

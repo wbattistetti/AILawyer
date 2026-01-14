@@ -62,20 +62,15 @@ export function useArchive(
 
     const loadDocumenti = async () => {
       try {
-        console.log('[ARCH][LOAD] Caricamento documenti per praticaId:', praticaId)
+        // ✅ Log rimosso per ridurre spam console
         const backendDocs = await api.getDocumentiByPratica(praticaId)
-        console.log('[ARCH][LOAD] Backend docs ricevuti:', backendDocs.length)
 
         // ✅ Merge backend docs con documenti temporanei già presenti nello store
         const currentDocs = store.getAllDocuments()
         const tempDocs = currentDocs.filter(d => d.id.startsWith('temp:') || d.id.startsWith('pending:'))
         const mergedDocs = mergeDocumentsWithTemp(backendDocs, tempDocs)
 
-        console.log('[ARCH][LOAD] Documenti dopo merge:', {
-          backend: backendDocs.length,
-          temp: tempDocs.length,
-          merged: mergedDocs.length
-        })
+        // ✅ Log rimosso per ridurre spam console
 
         store.setDocuments(mergedDocs)
       } catch (error) {

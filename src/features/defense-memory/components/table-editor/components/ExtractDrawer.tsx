@@ -41,7 +41,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
   // ✅ Subscribe alla clipboard per aggiungere automaticamente gli estratti
   // ✅ IMPORTANTE: Nessuna dipendenza da extracts/onExtractAdd per evitare re-subscribe
   useEffect(() => {
-    console.log('[ExtractDrawer] 🔄 useEffect montato, extracts iniziali:', extracts.length)
+    // ✅ Log rimosso per ridurre spam console
 
     const unsubscribe = extractClipboardManager.subscribe((clipboardData) => {
       console.log('[ExtractDrawer] 📬 Evento clipboard ricevuto:', {
@@ -90,7 +90,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
     // ✅ Controlla se c'è già un estratto all'avvio o quando viene rimontato
     const checkAndAddPendingExtract = () => {
       const hasExtract = extractClipboardManager.hasExtract()
-      console.log('[ExtractDrawer] 🔍 Controllo estratto all\'avvio/rimount:', hasExtract)
+      // ✅ Log rimosso per ridurre spam console
       if (hasExtract) {
         const clipboardData = extractClipboardManager.paste()
         if (clipboardData) {
@@ -122,7 +122,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
     checkAndAddPendingExtract()
 
     return () => {
-      console.log('[ExtractDrawer] 🗑️ Unsubscribe dalla clipboard')
+      // ✅ Log rimosso per ridurre spam console
       unsubscribe()
     }
   }, []) // ✅ Nessuna dipendenza - subscribe solo una volta al mount

@@ -140,7 +140,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
     }
 
     try {
-      console.log('🔍 Scanning directory:', dirPath);
+      // ✅ Log rimosso per ridurre spam console
 
       // Aggiorna la directory corrente
       setProgress(prev => ({
@@ -149,7 +149,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       }));
 
       const { files: dirFiles } = await adapter.listDir(dirPath);
-      console.log('🔍 Found files in', dirPath, ':', dirFiles);
+      // ✅ Log rimosso per ridurre spam console
 
       // Prima processa tutti i file della directory corrente
       for (const file of dirFiles) {
@@ -172,11 +172,11 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
           // Check if file matches filters
           const shouldInclude = await shouldIncludeFile(file, options);
-          console.log('🔍 File', file.name, 'should include:', shouldInclude);
+          // ✅ Log rimosso per ridurre spam console
 
           if (shouldInclude) {
             const fileEntry = await createFileEntry(file, adapter, options);
-            console.log('🔍 Adding file to list:', fileEntry);
+            // ✅ Log rimosso per ridurre spam console
 
             setFiles(prev => [...prev, fileEntry]);
             setProgress(prev => ({
@@ -348,7 +348,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
   };
 
   const startScan = useCallback(async (options: ScanOptions) => {
-    console.log('🔍 Starting scan with options:', options);
+    // ✅ Log rimosso per ridurre spam console
 
     // ✅ Carica classificazioni esistenti prima di iniziare la scansione
     const archiveData = (window as any).__archiveData as { praticaId?: string } | undefined;
@@ -357,7 +357,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       try {
         const classifications = await loadExistingClassifications(praticaId);
         existingClassificationsRef.current = classifications;
-        console.log('[EXPLORER][CLASSIFICATION] Caricate classificazioni esistenti:', classifications.size);
+        // ✅ Log rimosso per ridurre spam console
       } catch (error) {
         console.warn('[EXPLORER][CLASSIFICATION] Errore nel caricamento classificazioni:', error);
       }
@@ -388,7 +388,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
 
     try {
       // FASE 1: Conta le directory
-      console.log('📊 Phase 1: Counting directories...');
+      // ✅ Log rimosso per ridurre spam console
       setProgress(prev => ({ ...prev, phase: 'counting', currentDir: 'Counting directories...' }));
 
       const totalDirs = await countDirectories(options.rootPath, newScanId);
@@ -397,7 +397,7 @@ export function useScanFiles(adapter: FileSystemAdapter) {
         return; // Scan was cancelled
       }
 
-      console.log(`📊 Found ${totalDirs} directories`);
+      // ✅ Log rimosso per ridurre spam console
 
       setProgress(prev => ({
         ...prev,
@@ -407,12 +407,12 @@ export function useScanFiles(adapter: FileSystemAdapter) {
       }));
 
       // FASE 2: Scansiona i file
-      console.log('🔍 Phase 2: Scanning files...');
+      // ✅ Log rimosso per ridurre spam console
       await scanRecursively(options.rootPath, options, newScanId);
 
       if (newScanId === scanIdRef.current) {
         setProgress(prev => ({ ...prev, done: true, currentDir: 'Scan completed!' }));
-        console.log('🔍 Scan completed successfully');
+        // ✅ Log rimosso per ridurre spam console
       }
     } catch (err) {
       if (newScanId === scanIdRef.current) {

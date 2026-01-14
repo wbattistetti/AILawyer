@@ -1,5 +1,73 @@
 import { CellType } from '../types/table.types'
 
+/**
+ * Restituisce il label leggibile per ogni tipo
+ */
+export function getCellTypeLabel(cellType: CellType): string {
+    const labels: Record<CellType, string> = {
+        'nota-libera': 'Nota libera',
+        'reato-contestato': 'Reato contestato',
+        'fatto': 'Fatto',
+        'atto': 'Atto',
+        'elementi-prova': 'Elementi di prova',
+        'verbale-arresto': 'Verbale arresto',
+        'verbale-sequestro': 'Verbale sequestro',
+        'verbale-perquisizione': 'Verbale perquisizione',
+        'interrogatorio': 'Interrogatorio',
+        'dichiarazioni-testi': 'Dichiarazioni testi',
+        'intercettazioni': 'Intercettazioni'
+    }
+    return labels[cellType] || cellType
+}
+
+/**
+ * ✅ Lista completa di tutti i tipi disponibili (esclusa nota-libera che va sempre prima)
+ * SINGLE SOURCE OF TRUTH: modifica questa lista per aggiungere/rimuovere tipi
+ */
+export const ALL_CELL_TYPES: readonly CellType[] = [
+    'reato-contestato',
+    'elementi-prova',
+    'verbale-arresto',
+    'verbale-sequestro',
+    'verbale-perquisizione',
+    'interrogatorio',
+    'dichiarazioni-testi',
+    'intercettazioni',
+    'atto',
+    'fatto'
+] as const
+
+/**
+ * ✅ Restituisce tutti i tipi ordinati alfabeticamente (esclusa nota-libera)
+ */
+export function getSortedCellTypes(): CellType[] {
+    return [...ALL_CELL_TYPES].sort((a, b) =>
+        getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))
+    )
+}
+
+/**
+ * ✅ Restituisce tutti i tipi disponibili per il dropdown, con nota-libera sempre prima
+ * Utile per ottenere la lista completa in ordine corretto
+ */
+export function getAllCellTypesForDropdown(): CellType[] {
+    return ['nota-libera', ...getSortedCellTypes()]
+}
+
+/**
+ * ✅ Helper per filtri: restituisce tutti i tipi di verbali
+ */
+export function getVerbaliTypes(): CellType[] {
+    return ['verbale-arresto', 'verbale-sequestro', 'verbale-perquisizione']
+}
+
+/**
+ * ✅ Helper per filtri: restituisce tutti i tipi principali (esclusa nota-libera)
+ */
+export function getMainCellTypes(): CellType[] {
+    return [...ALL_CELL_TYPES]
+}
+
 export interface DateFieldConfig {
     showContestationDate: boolean
     showEventDate: boolean
@@ -93,6 +161,14 @@ export function getDateFieldsConfig(cellType: CellType): DateFieldConfig {
                 eventDateLabel: ''
             }
 
+        case 'nota-libera':
+            return {
+                showContestationDate: false,
+                showEventDate: false,
+                contestationDateLabel: '',
+                eventDateLabel: ''
+            }
+
         default:
             return {
                 showContestationDate: false,
@@ -101,24 +177,5 @@ export function getDateFieldsConfig(cellType: CellType): DateFieldConfig {
                 eventDateLabel: ''
             }
     }
-}
-
-/**
- * Restituisce il label leggibile per ogni tipo
- */
-export function getCellTypeLabel(cellType: CellType): string {
-    const labels: Record<CellType, string> = {
-        'reato-contestato': 'Reato contestato',
-        'fatto': 'Fatto',
-        'atto': 'Atto',
-        'elementi-prova': 'Elementi di prova',
-        'verbale-arresto': 'Verbale arresto',
-        'verbale-sequestro': 'Verbale sequestro',
-        'verbale-perquisizione': 'Verbale perquisizione',
-        'interrogatorio': 'Interrogatorio',
-        'dichiarazioni-testi': 'Dichiarazioni testi',
-        'intercettazioni': 'Intercettazioni'
-    }
-    return labels[cellType] || cellType
 }
 

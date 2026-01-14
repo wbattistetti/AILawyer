@@ -10,6 +10,7 @@ import { exportToJSON, exportToCSV } from './utils/tableSerialization'
 import { cn } from '@/lib/utils'
 import { ExtractDrawer } from './components/ExtractDrawer'
 import { ExtractData } from './types/blocks.types'
+import { getVerbaliTypes, getMainCellTypes } from './utils/cellTypeConfig'
 
 export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> = ({
     praticaId,
@@ -183,7 +184,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const handleAddRow = useCallback(() => {
         // Aggiunge direttamente una riga vuota
         addRow({
-            cellType: 'fatto',
+            cellType: 'nota-libera',
             description: '',
             observations: ''
         })
@@ -207,7 +208,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         if (currentIndex >= 0) {
             const targetOrder = sortedRows[currentIndex].order
             addRowAt(targetOrder, {
-                cellType: 'fatto',
+                cellType: 'nota-libera',
                 description: '',
                 observations: ''
             })
@@ -220,7 +221,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         if (currentIndex >= 0) {
             const targetOrder = sortedRows[currentIndex].order + 1
             addRowAt(targetOrder, {
-                cellType: 'fatto',
+                cellType: 'nota-libera',
                 description: '',
                 observations: ''
             })
@@ -384,8 +385,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         Fatti: {rows.filter(r => r.cellType === 'fatto').length} |
                         Atti: {rows.filter(r => r.cellType === 'atto').length} |
                         Elementi di prova: {rows.filter(r => r.cellType === 'elementi-prova').length} |
-                        Verbali: {rows.filter(r => ['verbale-arresto', 'verbale-sequestro', 'verbale-perquisizione'].includes(r.cellType)).length} |
-                        Altri: {rows.filter(r => !['reato-contestato', 'fatto', 'atto', 'elementi-prova', 'verbale-arresto', 'verbale-sequestro', 'verbale-perquisizione'].includes(r.cellType)).length}
+                        Verbali: {rows.filter(r => getVerbaliTypes().includes(r.cellType)).length} |
+                        Altri: {rows.filter(r => !getMainCellTypes().includes(r.cellType)).length}
                     </span>
                     <span>
                         Ultimo aggiornamento: {new Date(tableData.lastUpdated).toLocaleString('it-IT')}

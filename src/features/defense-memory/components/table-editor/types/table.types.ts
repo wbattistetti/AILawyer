@@ -2,6 +2,7 @@
 import { Block } from './blocks.types'
 
 export type CellType =
+    | 'nota-libera'
     | 'reato-contestato'
     | 'fatto'
     | 'atto'

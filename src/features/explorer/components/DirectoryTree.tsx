@@ -102,7 +102,7 @@ export function DirectoryTree({
   useEffect(() => {
     const driveNodes: TreeNode[] = drives.map(drive => {
       // ✅ Debug: log per verificare il tipo di drive
-      console.log('[DIRECTORY-TREE] Drive:', { id: drive.id, label: drive.label, type: drive.type, serialNumber: drive.serialNumber });
+      // ✅ Log rimosso per ridurre spam console
       return {
         id: drive.id,
         // ✅ Mostra lettera del drive e nome del volume (se diverso dalla lettera)

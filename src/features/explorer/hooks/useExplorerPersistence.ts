@@ -41,10 +41,7 @@ export function useExplorerPersistence(
           explorerState: ExplorerStateService.serialize(state)
         })
 
-        console.log('[EXPLORER-PERSISTENCE] Stato salvato:', {
-          selectedPath,
-          expandedPathsCount: expandedPaths.length
-        })
+        // ✅ Log rimosso per ridurre spam console
       } catch (err) {
         console.warn('[EXPLORER-PERSISTENCE] Errore salvataggio stato:', err)
       }

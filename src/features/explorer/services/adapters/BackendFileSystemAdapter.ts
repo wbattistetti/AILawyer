@@ -109,13 +109,7 @@ export class BackendFileSystemAdapter implements FileSystemAdapter {
       }
 
       const url = `${this.baseUrl}/api/filesystem/read-chunk`;
-      console.log('[BackendFileSystemAdapter][readChunk]', {
-        baseUrl: this.baseUrl,
-        url,
-        filePath: pathStr.substring(0, 50),
-        filePathType: typeof filePath,
-        filePathValue: filePath
-      });
+      // ✅ Log rimosso per ridurre spam console
 
       const response = await fetch(url, {
         method: 'POST',

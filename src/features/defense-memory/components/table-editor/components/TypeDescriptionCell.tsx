@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select'
 import { Combobox } from './Combobox'
 import { REATI_PENALI } from '../utils/reatoSuggestions'
 import { getDrawerOptionsSorted } from '@/features/drawers/drawerRegistry'
@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { Calendar as CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { getCellTypeLabel, getDateFieldsConfig } from '../utils/cellTypeConfig'
+import { getCellTypeLabel, getDateFieldsConfig, getSortedCellTypes } from '../utils/cellTypeConfig'
 
 // Lista di atti comuni nel sistema giudiziario
 const ATTI_COMUNI = [
@@ -153,6 +153,8 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     readOnly = false,
     className = ''
 }) => {
+    console.log('[TypeDescriptionCell] Renderizzato con:', { cellType, description, isTypeEditingInitial: !cellType })
+
     const [contestationDateOpen, setContestationDateOpen] = useState(false)
     const [eventDateOpen, setEventDateOpen] = useState(false)
     // Stati per modalità edit/view
@@ -289,7 +291,9 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 
     // Handler per click sulla label tipo
     const handleTypeLabelClick = () => {
+        console.log('[TypeDescriptionCell] handleTypeLabelClick chiamato, readOnly:', readOnly, 'cellType:', cellType)
         if (!readOnly) {
+            console.log('[TypeDescriptionCell] Imposto isTypeEditing a true')
             setIsTypeEditing(true)
         }
     }
@@ -351,6 +355,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 
     // Se non c'è ancora un tipo, mostra solo il dropdown
     if (!cellType) {
+        console.log('[TypeDescriptionCell] Rendering dropdown iniziale (!cellType)')
         return (
             <div className={cn("p-2", className)}>
                 {/* Elemento nascosto per misurare la larghezza del placeholder */}
@@ -361,8 +366,15 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                 />
                 <Select
                     value=""
-                    onValueChange={(value) => handleTypeChange(value as CellType)}
+                    onValueChange={(value) => {
+                        console.log('[TypeDescriptionCell] Select onValueChange (!cellType):', value)
+                        handleTypeChange(value as CellType)
+                    }}
                     disabled={readOnly}
+                    onOpenChange={(open) => {
+                        console.log('[TypeDescriptionCell] Select onOpenChange (!cellType):', open)
+                        // ✅ Nessuna azione necessaria: il Select gestisce la sua chiusura
+                    }}
                 >
                     <SelectTrigger
                         ref={typeSelectRef}
@@ -372,18 +384,16 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                         <SelectValue placeholder="Seleziona tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                        {([
-                            'reato-contestato',
-                            'elementi-prova',
-                            'verbale-arresto',
-                            'verbale-sequestro',
-                            'verbale-perquisizione',
-                            'interrogatorio',
-                            'dichiarazioni-testi',
-                            'intercettazioni',
-                            'atto',
-                            'fatto'
-                        ] as CellType[]).sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))).map(type => (
+                        {/* ✅ Nota libera sempre prima */}
+                        <SelectItem value="nota-libera">
+                            {getCellTypeLabel('nota-libera')}
+                        </SelectItem>
+
+                        {/* ✅ Separatore */}
+                        <SelectSeparator />
+
+                        {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
+                        {getSortedCellTypes().map(type => (
                             <SelectItem key={type} value={type}>
                                 {getCellTypeLabel(type)}
                             </SelectItem>
@@ -393,6 +403,8 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
             </div>
         )
     }
+
+    console.log('[TypeDescriptionCell] Rendering main return, isTypeEditing:', isTypeEditing, 'cellType:', cellType)
 
     return (
         <div className={cn("p-2 space-y-1", className)}>
@@ -409,9 +421,14 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                 {isTypeEditing ? (
                     <Select
                         value={cellType}
-                        onValueChange={(value) => handleTypeChange(value as CellType)}
+                        onValueChange={(value) => {
+                            console.log('[TypeDescriptionCell] Select onValueChange (cellType exists):', value)
+                            handleTypeChange(value as CellType)
+                        }}
                         disabled={readOnly}
                         onOpenChange={(open) => {
+                            console.log('[TypeDescriptionCell] Select onOpenChange (cellType exists):', open)
+                            // ✅ Chiudi la modalità editing solo quando il Select si chiude
                             if (!open) {
                                 setIsTypeEditing(false)
                             }
@@ -425,18 +442,16 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            {([
-                                'reato-contestato',
-                                'elementi-prova',
-                                'verbale-arresto',
-                                'verbale-sequestro',
-                                'verbale-perquisizione',
-                                'interrogatorio',
-                                'dichiarazioni-testi',
-                                'intercettazioni',
-                                'atto',
-                                'fatto'
-                            ] as CellType[]).sort((a, b) => getCellTypeLabel(a).localeCompare(getCellTypeLabel(b))).map(type => (
+                            {/* ✅ Nota libera sempre prima */}
+                            <SelectItem value="nota-libera">
+                                {getCellTypeLabel('nota-libera')}
+                            </SelectItem>
+
+                            {/* ✅ Separatore */}
+                            <SelectSeparator />
+
+                            {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
+                            {getSortedCellTypes().map(type => (
                                 <SelectItem key={type} value={type}>
                                     {getCellTypeLabel(type)}
                                 </SelectItem>
