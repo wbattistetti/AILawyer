@@ -489,7 +489,7 @@ export function FileGrid({
         {files.length > 0 ? (
           files.map((file, index) => (
             <FileRow
-              key={file.id}
+              key={`${file.id}-${index}`}
               index={index}
               style={{}}
               data={itemData}

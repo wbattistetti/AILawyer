@@ -14,6 +14,7 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
   onUpdate,
   onRemove,
   onDragStart,
+  onDragEnd,
   readOnly
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -68,6 +69,7 @@ export const ObservationBlock: React.FC<ObservationBlockProps> = ({
     <div
       draggable={!readOnly}
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       className={cn(
         'bg-white border border-gray-300 rounded-lg p-3 shadow-sm',
         !readOnly && 'cursor-move hover:shadow-md transition-all'

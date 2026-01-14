@@ -18,6 +18,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
 }) => {
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [targetInsertIndex, setTargetInsertIndex] = useState<number | null>(null) // ✅ Posizione target per riordino
 
   // Crea nuovo blocco osservazione
   const handleAddObservation = useCallback((insertIndex?: number) => {
@@ -70,38 +71,136 @@ export const CardBody: React.FC<CardBodyProps> = ({
     e.dataTransfer.effectAllowed = 'move'
   }, [blocks])
 
-  // Drop handler - aggiunge sempre alla fine
+  // ✅ Handler per calcolare la posizione di inserimento durante il drag su un blocco
+  const handleBlockDragOver = useCallback((e: React.DragEvent, blockIndex: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // ✅ Calcola se il mouse è nella metà superiore o inferiore del blocco
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mouseY = e.clientY
+    const blockCenterY = rect.top + rect.height / 2
+
+    // Se il mouse è nella metà superiore, inserire prima del blocco
+    // Se nella metà inferiore, inserire dopo il blocco
+    const insertIndex = mouseY < blockCenterY ? blockIndex : blockIndex + 1
+
+    console.log('[CardBody] handleBlockDragOver: impostato targetInsertIndex a', insertIndex, {
+      blockIndex,
+      draggedBlockIndex,
+      mouseY,
+      blockCenterY,
+      rectTop: rect.top,
+      rectHeight: rect.height,
+      isDraggingBlock: draggedBlockIndex !== null
+    })
+
+    setTargetInsertIndex(insertIndex)
+    e.dataTransfer.dropEffect = 'move'
+  }, [draggedBlockIndex])
+
+  // Drop handler - gestisce sia nuovi estratti che riordino
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragOver(false)
 
+    console.log('[CardBody] handleDrop chiamato', {
+      draggedBlockIndex,
+      targetInsertIndex,
+      blocksLength: blocks.length
+    })
+
+    // ✅ Se stiamo riordinando un blocco esistente, NON aggiungere nuove osservazioni
+    if (draggedBlockIndex !== null) {
+      // Gestisci solo il riordino, non aggiungere nuovi elementi
+      try {
+        const dragData = e.dataTransfer.getData('application/json')
+        console.log('[CardBody] Drag data durante riordino:', dragData)
+
+        if (dragData) {
+          const data = JSON.parse(dragData)
+          console.log('[CardBody] Parsed data:', data)
+
+          if (data.type === 'block-reorder' && typeof data.blockIndex === 'number') {
+            const fromIndex = data.blockIndex
+            const toIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+
+            console.log('[CardBody] Riordino:', { fromIndex, toIndex, targetInsertIndex })
+
+            // ✅ Evita di spostare un blocco nella stessa posizione
+            if (fromIndex === toIndex || (fromIndex < toIndex && fromIndex === toIndex - 1)) {
+              console.log('[CardBody] ⚠️ Stessa posizione, ignoro')
+              setTargetInsertIndex(null)
+              setDraggedBlockIndex(null)
+              return
+            }
+
+            const newBlocks = [...blocks]
+            const [moved] = newBlocks.splice(fromIndex, 1)
+
+            // ✅ Calcola l'indice corretto dopo la rimozione
+            const adjustedIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+            console.log('[CardBody] Adjusted index:', adjustedIndex)
+
+            newBlocks.splice(adjustedIndex, 0, moved)
+
+            // ✅ Ricalcola gli ordini
+            newBlocks.forEach((b, i) => {
+              b.order = i
+            })
+
+            console.log('[CardBody] ✅ Riordino completato, nuovi blocchi:', newBlocks.map(b => ({ type: b.type, order: b.order })))
+            onBlocksChange(newBlocks)
+            setTargetInsertIndex(null)
+            setDraggedBlockIndex(null)
+            return
+          } else {
+            console.log('[CardBody] ⚠️ Tipo non valido o blockIndex mancante:', data)
+          }
+        } else {
+          console.log('[CardBody] ⚠️ Nessun dragData disponibile')
+        }
+      } catch (err) {
+        console.error('[CardBody] Errore durante riordino:', err)
+      }
+      // ✅ Se siamo qui, c'è stato un problema con il riordino, ma NON aggiungere nuove osservazioni
+      setTargetInsertIndex(null)
+      setDraggedBlockIndex(null)
+      return
+    }
+
+    // ✅ Solo se NON stiamo riordinando, gestisci nuovi estratti o osservazioni
     try {
       const dragData = e.dataTransfer.getData('application/json')
 
-      // Se è un estratto dal cassetto
       if (dragData) {
         const data = JSON.parse(dragData)
 
+        // Se è un estratto dal cassetto o overlay
         if (data.type === 'extract' && data.extract) {
+          // ✅ Usa targetInsertIndex se disponibile, altrimenti aggiungi alla fine
+          const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+
           const extractBlock: ExtractBlock = {
             type: 'extract',
             id: `extract_block_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-            order: blocks.length,
+            order: insertIndex,
             extract: data.extract as ExtractData,
-            // ✅ Trasporta anche i metadati dal cassetto (titolo, osservazione, etc.)
             title: data.title || data.extract.title,
             observation: data.observation || data.extract.observation,
             hasObservation: data.hasObservation ?? data.extract.hasObservation ?? false,
             collapsed: data.collapsed ?? data.extract.collapsed ?? false
           }
-          const newBlocks = [...blocks, extractBlock]
+
+          const newBlocks = [...blocks]
+          newBlocks.splice(insertIndex, 0, extractBlock)
           newBlocks.forEach((b, i) => {
             b.order = i
           })
           onBlocksChange(newBlocks)
 
-          // ✅ Se viene dall'overlay, aggiungilo anche al cassetto dispatchando l'evento app:extract-add
+          // ✅ Se viene dall'overlay, aggiungilo anche al cassetto
           if (data.fromOverlay === true) {
             const updatedExtract: ExtractData = {
               ...(data.extract as ExtractData),
@@ -111,38 +210,41 @@ export const CardBody: React.FC<CardBodyProps> = ({
               collapsed: data.collapsed ?? data.extract.collapsed ?? false
             }
 
-            // ✅ Dispatcha l'evento per aggiungere al cassetto (formato: detail: { extract })
             window.dispatchEvent(new CustomEvent('app:extract-add', {
               detail: { extract: updatedExtract }
             }))
           }
 
-          return
-        }
-
-        // Se è riorganizzazione interna, ignora (gestita dai blocchi stessi)
-        if (data.type === 'block-reorder' && typeof data.blockIndex === 'number') {
-          // La riorganizzazione interna viene gestita dai blocchi stessi tramite onDragStart
+          setTargetInsertIndex(null)
           return
         }
       }
 
-      // Se non c'è dragData, prova onExtractDrop callback
+      // Se non c'è dragData, prova onExtractDrop callback (solo per nuovi estratti dalla clipboard)
       if (onExtractDrop) {
-        // onExtractDrop gestirà l'estratto dalla clipboard, aggiungendolo alla fine
-        onExtractDrop(undefined, blocks.length)
+        const insertIndex = targetInsertIndex !== null ? targetInsertIndex : blocks.length
+        onExtractDrop(undefined, insertIndex)
+        setTargetInsertIndex(null)
       }
     } catch (err) {
       console.error('[CardBody] Errore durante drop:', err)
+      setTargetInsertIndex(null)
     }
-  }, [blocks, onBlocksChange, onExtractDrop])
+  }, [blocks, onBlocksChange, onExtractDrop, targetInsertIndex, draggedBlockIndex])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
+
+    // ✅ Se stiamo riordinando un blocco interno, non gestire il dragOver del container
+    // (viene gestito dai singoli blocchi tramite handleBlockDragOver)
+    if (draggedBlockIndex !== null) {
+      return
+    }
+
     setIsDragOver(true)
     e.dataTransfer.dropEffect = 'move'
-  }, [])
+  }, [draggedBlockIndex])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     // Verifica che il mouse non sia ancora dentro il container
@@ -151,19 +253,21 @@ export const CardBody: React.FC<CardBodyProps> = ({
     const y = e.clientY
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
       setIsDragOver(false)
+      setTargetInsertIndex(null) // ✅ Reset posizione target quando esci
     }
   }, [])
 
   const handleDragEnd = useCallback(() => {
     setDraggedBlockIndex(null)
     setIsDragOver(false)
+    setTargetInsertIndex(null) // ✅ Reset posizione target
   }, [])
 
   return (
     <div
       className={cn(
-        'space-y-2 min-h-[100px] transition-colors',
-        isDragOver && !readOnly ? 'bg-blue-50 border-2 border-blue-300 border-dashed rounded-lg' : ''
+        'space-y-2 min-h-[100px]',
+        isDragOver && !readOnly ? 'bg-blue-50' : ''
       )}
       onDrop={!readOnly ? handleDrop : undefined}
       onDragOver={!readOnly ? handleDragOver : undefined}
@@ -188,31 +292,57 @@ export const CardBody: React.FC<CardBodyProps> = ({
         <>
           {blocks.map((block, index) => (
             <React.Fragment key={block.id}>
-              {block.type === 'extract' ? (
-                <ExtractBlockComponent
-                  block={block}
-                  onUpdate={!readOnly ? (updatedBlock) => {
-                    const newBlocks = blocks.map(b =>
-                      b.id === block.id ? updatedBlock : b
-                    )
-                    onBlocksChange(newBlocks)
-                  } : undefined}
-                  onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
-                  onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
-                  onDragEnd={handleDragEnd}
-                  readOnly={readOnly}
-                />
-              ) : (
-                <ObservationBlockComponent
-                  block={block}
-                  onUpdate={handleUpdateBlock}
-                  onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
-                  onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
-                  readOnly={readOnly}
-                />
+              {/* ✅ Indicatore visivo per posizione di inserimento (prima del blocco) */}
+              {targetInsertIndex === index && draggedBlockIndex !== null && draggedBlockIndex !== index && (
+                <div className="h-1 bg-blue-500 rounded-full my-1 transition-all" />
               )}
+
+              <div
+                onDragOver={!readOnly ? (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handleBlockDragOver(e, index)
+                } : undefined}
+                onDrop={!readOnly ? (e) => {
+                  // ✅ Gestisci il drop anche sul wrapper del blocco
+                  e.preventDefault()
+                  e.stopPropagation()
+                  // Chiama lo stesso handler del container
+                  handleDrop(e)
+                } : undefined}
+              >
+                {block.type === 'extract' ? (
+                  <ExtractBlockComponent
+                    block={block}
+                    onUpdate={!readOnly ? (updatedBlock) => {
+                      const newBlocks = blocks.map(b =>
+                        b.id === block.id ? updatedBlock : b
+                      )
+                      onBlocksChange(newBlocks)
+                    } : undefined}
+                    onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
+                    onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
+                    onDragEnd={handleDragEnd}
+                    readOnly={readOnly}
+                  />
+                ) : (
+                  <ObservationBlockComponent
+                    block={block}
+                    onUpdate={handleUpdateBlock}
+                    onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
+                    onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
+                    onDragEnd={handleDragEnd}
+                    readOnly={readOnly}
+                  />
+                )}
+              </div>
             </React.Fragment>
           ))}
+
+          {/* ✅ Indicatore visivo dopo l'ultimo blocco */}
+          {targetInsertIndex === blocks.length && draggedBlockIndex !== null && draggedBlockIndex !== blocks.length - 1 && (
+            <div className="h-1 bg-blue-500 rounded-full my-1 transition-all" />
+          )}
         </>
       )}
 

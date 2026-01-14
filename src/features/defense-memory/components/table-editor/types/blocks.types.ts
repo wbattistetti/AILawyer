@@ -126,5 +126,6 @@ export interface ObservationBlockProps {
   onUpdate: (block: ObservationBlock) => void
   onRemove?: () => void
   onDragStart?: (e: React.DragEvent) => void
+  onDragEnd?: () => void
   readOnly?: boolean
 }
