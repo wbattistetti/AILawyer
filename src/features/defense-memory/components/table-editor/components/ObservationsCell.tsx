@@ -306,6 +306,7 @@ export const ObservationsCell: React.FC<ObservationsCellProps> = ({
             {/* ✅ CardBody con blocchi riorganizzabili (sostituisce la vecchia textarea observations) */}
             <div>
                 <CardBody
+                    rowId={row.id}
                     blocks={row.blocks || []}
                     onBlocksChange={(blocks) => {
                         onUpdate({ blocks })

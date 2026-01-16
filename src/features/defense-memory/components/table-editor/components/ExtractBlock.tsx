@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { FileText, Image as ImageIcon, X, ChevronDown, ChevronUp, Plus, Trash2, Eye, GripVertical } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import { NoteEditor } from './NoteEditor'
 
 export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   block,
@@ -39,6 +40,10 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   const shouldFocusObservationRef = useRef(false)
   const contentContainerRef = useRef<HTMLDivElement>(null) // ✅ Ref per il container del contenuto estratto (immagine/testo)
   const mainContentRef = useRef<HTMLDivElement>(null) // ✅ Ref per il container principale (tutto il contenuto)
+  const onUpdateRef = useRef(onUpdate) // ✅ Ref per onUpdate per evitare dipendenze nel useEffect
+  const blockRef = useRef(block) // ✅ Ref per block per evitare dipendenze nel useEffect
+  const isInternalUpdateRef = useRef(false) // ✅ Flag per tracciare aggiornamenti interni
+  const activeDragDataRef = useRef<{ observationId: string, observation: ExtractObservation, sourceExtractBlockId: string } | null>(null) // ✅ Ref per salvare i dati del drag attivo
 
   // ✅ Sincronizza stato locale con props quando cambiano
   useEffect(() => {
@@ -57,8 +62,13 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
     setLocalObservation(observation || '')
   }, [observation])
 
-  // ✅ Sincronizza localObservations con observations
+  // ✅ Sincronizza localObservations con observations solo se l'aggiornamento è esterno
   useEffect(() => {
+    // ✅ Se l'aggiornamento è interno, non sincronizzare (evita loop)
+    if (isInternalUpdateRef.current) {
+      isInternalUpdateRef.current = false
+      return
+    }
     setLocalObservations(observations || [])
   }, [observations])
 
@@ -102,6 +112,12 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
     }
   }, [hasObservation])
 
+  // ✅ Aggiorna i ref quando cambiano
+  useEffect(() => {
+    onUpdateRef.current = onUpdate
+    blockRef.current = block
+  }, [onUpdate, block])
+
   // ✅ Listener per rimuovere ExtractObservation quando viene spostata
   useEffect(() => {
     const handleRemoveExtractObservation = (event: Event) => {
@@ -109,13 +125,23 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
       const { extractBlockId, observationId } = customEvent.detail
 
       // ✅ Solo se è questo ExtractBlock
-      if (extractBlockId === block.id) {
+      if (extractBlockId === blockRef.current.id) {
         console.log('[ExtractBlock] Rimozione ExtractObservation:', observationId)
-        const updatedObservations = localObservations.filter(obs => obs.id !== observationId)
-        setLocalObservations(updatedObservations)
-        if (onUpdate) {
-          onUpdate({ ...block, observations: updatedObservations })
-        }
+
+        // ✅ Marca come aggiornamento interno per evitare sincronizzazione
+        isInternalUpdateRef.current = true
+
+        // ✅ Usa la funzione di aggiornamento funzionale per calcolare il nuovo valore
+        setLocalObservations(prev => {
+          const updatedObservations = prev.filter(obs => obs.id !== observationId)
+
+          // ✅ Aggiorna il blocco usando il ref con il valore aggiornato
+          if (onUpdateRef.current) {
+            onUpdateRef.current({ ...blockRef.current, observations: updatedObservations })
+          }
+
+          return updatedObservations
+        })
       }
     }
 
@@ -123,7 +149,121 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
     return () => {
       window.removeEventListener('app:remove-extract-observation', handleRemoveExtractObservation)
     }
-  }, [block.id, localObservations, onUpdate, block])
+  }, []) // ✅ Nessuna dipendenza: il listener usa ref per accedere ai valori correnti
+
+  // ✅ Ref per draggedObservationId per il listener globale
+  const draggedObservationIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    draggedObservationIdRef.current = draggedObservationId
+  }, [draggedObservationId])
+
+  // ✅ Listener globale per intercettare drop quando avviene fuori dall'ExtractBlock
+  useEffect(() => {
+    const handleGlobalDrop = (e: DragEvent) => {
+      console.log('[ExtractBlock] 🌍🌍🌍 GLOBAL DROP LISTENER chiamato:', {
+        activeDragDataRef: activeDragDataRef.current,
+        draggedObservationIdRef: draggedObservationIdRef.current,
+        blockId: blockRef.current.id,
+        targetTag: (e.target as HTMLElement)?.tagName,
+        types: e.dataTransfer ? Array.from(e.dataTransfer.types) : [],
+        effectAllowed: e.dataTransfer?.effectAllowed
+      })
+
+      // ✅ Solo se stiamo trascinando un'ExtractObservation da questo ExtractBlock
+      if (activeDragDataRef.current === null) {
+        console.log('[ExtractBlock] 🌍 GLOBAL DROP: activeDragDataRef è null, esco')
+        return
+      }
+
+      // ✅ Verifica che il drag sia da questo ExtractBlock
+      if (activeDragDataRef.current.sourceExtractBlockId !== blockRef.current.id) {
+        console.log('[ExtractBlock] 🌍 GLOBAL DROP: drag non è da questo ExtractBlock, esco')
+        return
+      }
+
+      // ✅ Verifica se il drop è avvenuto fuori dall'ExtractBlock
+      const extractBlockElement = document.querySelector(`[data-extract-block-id="${blockRef.current.id}"]`) as HTMLElement
+      if (!extractBlockElement) {
+        console.log('[ExtractBlock] 🌍 GLOBAL DROP: ExtractBlock element non trovato, esco')
+        return
+      }
+
+      const rect = extractBlockElement.getBoundingClientRect()
+      const mouseX = e.clientX
+      const mouseY = e.clientY
+
+      const isInsideThisExtractBlock = (
+        mouseX >= rect.left &&
+        mouseX <= rect.right &&
+        mouseY >= rect.top &&
+        mouseY <= rect.bottom
+      )
+
+      console.log('[ExtractBlock] 🌍 GLOBAL DROP: coordinate check:', {
+        isInsideThisExtractBlock,
+        mouseX,
+        mouseY,
+        rectLeft: rect.left,
+        rectRight: rect.right,
+        rectTop: rect.top,
+        rectBottom: rect.bottom,
+        draggedObservationId: draggedObservationIdRef.current
+      })
+
+      // ✅ Se il drop è FUORI dall'ExtractBlock, emetti il custom event
+      if (!isInsideThisExtractBlock) {
+        console.log('[ExtractBlock] 🌍🌍🌍 GLOBAL DROP: ExtractObservation drop FUORI ExtractBlock, emetto custom event', {
+          activeDragData: activeDragDataRef.current,
+          mouseX,
+          mouseY,
+          rectLeft: rect.left,
+          rectRight: rect.right,
+          rectTop: rect.top,
+          rectBottom: rect.bottom
+        })
+
+        try {
+          // ✅ Usa i dati salvati in activeDragDataRef invece di leggere da e.dataTransfer
+          // (che potrebbe essere già stato consumato o non essere disponibile)
+          if (activeDragDataRef.current) {
+            const data = {
+              type: 'extract-observation-move',
+              observationId: activeDragDataRef.current.observationId,
+              observation: activeDragDataRef.current.observation,
+              sourceExtractBlockId: activeDragDataRef.current.sourceExtractBlockId,
+              sourceAreaId: `extractBlock_${activeDragDataRef.current.sourceExtractBlockId}`,
+              dragKind: 'external-move'
+            }
+            console.log('[ExtractBlock] 🌍 GLOBAL DROP: data da activeDragDataRef:', data)
+            // ✅ Emetti un custom event che il CardBody può ascoltare
+            window.dispatchEvent(new CustomEvent('app:extract-observation-drop-outside', {
+              detail: {
+                data,
+                mouseX: e.clientX,
+                mouseY: e.clientY
+              }
+            }))
+            console.log('[ExtractBlock] 🌍🌍🌍 GLOBAL DROP: Custom event emesso!')
+            // ✅ Resetta activeDragDataRef dopo aver emesso l'evento
+            activeDragDataRef.current = null
+          } else {
+            console.log('[ExtractBlock] 🌍 GLOBAL DROP: activeDragDataRef è null')
+          }
+        } catch (err) {
+          console.error('[ExtractBlock] Errore durante emissione custom event da global drop:', err)
+        }
+      } else {
+        console.log('[ExtractBlock] 🌍 GLOBAL DROP: drop DENTRO ExtractBlock, non emetto custom event')
+      }
+    }
+
+    window.addEventListener('drop', handleGlobalDrop, true) // ✅ Usa capture phase per intercettare prima
+    console.log('[ExtractBlock] 🌍 Listener globale drop registrato per blockId:', blockRef.current.id)
+    return () => {
+      window.removeEventListener('drop', handleGlobalDrop, true)
+      console.log('[ExtractBlock] 🌍 Listener globale drop rimosso per blockId:', blockRef.current.id)
+    }
+  }, []) // ✅ Nessuna dipendenza: il listener usa ref per accedere ai valori correnti
 
   // ✅ Focus sul title input quando isEditingTitle diventa true
   useLayoutEffect(() => {
@@ -203,22 +343,61 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   const handleObservationDragStart = (e: React.DragEvent, observationId: string) => {
     if (readOnly) return
 
+    // ✅ Ferma la propagazione per evitare che il drag dell'ExtractBlock venga attivato
+    e.stopPropagation()
+
     const observation = localObservations.find(obs => obs.id === observationId)
     if (!observation) return
 
     setDraggedObservationId(observationId)
-    e.dataTransfer.setData('application/json', JSON.stringify({
-      type: 'extract-observation-move',
+    // ✅ Salva i dati del drag in un ref che non viene resettato fino a quando il drop non è completato
+    activeDragDataRef.current = {
       observationId,
       observation,
       sourceExtractBlockId: block.id
-    }))
+    }
+    const dragData = {
+      type: 'extract-observation-move',
+      observationId,
+      observation,
+      sourceExtractBlockId: block.id,
+      sourceAreaId: `extractBlock_${block.id}`, // ✅ Identifica l'area di drop sorgente
+      dragKind: 'external-move' // ✅ Imposta esplicitamente dragKind per drag esterno
+    }
+    e.dataTransfer.setData('application/json', JSON.stringify(dragData))
     e.dataTransfer.effectAllowed = 'move'
+    console.log('[ExtractBlock] 🟢 DRAG START ExtractObservation:', { observationId, sourceExtractBlockId: block.id, observation, dragKind: 'external-move', activeDragDataRef: activeDragDataRef.current })
   }
 
   // ✅ Handler per drag end di un'osservazione
   const handleObservationDragEnd = () => {
     setDraggedObservationId(null)
+    // ✅ Resetta activeDragDataRef dopo un breve delay per dare tempo al drop event di essere processato
+    setTimeout(() => {
+      activeDragDataRef.current = null
+      console.log('[ExtractBlock] 🔴 DRAG END ExtractObservation: activeDragDataRef resettato')
+    }, 100)
+  }
+
+  // ✅ Wrapper per onDragStart del ExtractBlock che previene il drag se proviene da un'ExtractObservation
+  const handleExtractBlockDragStart = (e: React.DragEvent) => {
+    // ✅ Verifica se il drag proviene da un'ExtractObservation
+    const target = e.target as HTMLElement
+    const isFromObservation = target.closest('[data-observation-id]') !== null ||
+                               target.closest('[draggable]')?.getAttribute('data-observation-id') !== null ||
+                               draggedObservationId !== null
+
+    if (isFromObservation) {
+      console.log('[ExtractBlock] ⚠️ Drag da ExtractObservation, prevengo drag ExtractBlock')
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+
+    // ✅ Altrimenti, procedi con il drag normale del ExtractBlock
+    if (onDragStart) {
+      onDragStart(e)
+    }
   }
 
   // ✅ Handler per dragOver di un'osservazione (per riordino dentro ExtractBlock)
@@ -235,8 +414,13 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
         const dragData = e.dataTransfer.getData('application/json')
         if (dragData) {
           const data = JSON.parse(dragData)
-          if (data.type === 'extract-observation-move' || data.type === 'observation-move' || (data.type === 'block-reorder' && data.block?.type === 'observation')) {
+          if (data.type === 'extract-observation-move' || data.type === 'observation-move' || (data.type === 'block-move' && data.block?.type === 'observation')) {
             e.dataTransfer.dropEffect = 'move'
+            console.log('[ExtractBlock] 🔵 handleObservationDragOver:', {
+              observationId,
+              dragType: data.type,
+              blockType: data.block?.type
+            })
           }
         }
       } catch (err) {
@@ -247,26 +431,152 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
 
   // ✅ Handler per drop del pulsante "Aggiungi osservazione" dentro l'estratto
   const handleDrop = (e: React.DragEvent) => {
-    if (readOnly) return
+    console.log('[ExtractBlock] 🔴🔴🔴 handleDrop INIZIO - evento ricevuto!', {
+      readOnly,
+      targetTag: (e.target as HTMLElement)?.tagName,
+      currentTargetTag: (e.currentTarget as HTMLElement)?.tagName,
+      types: Array.from(e.dataTransfer.types),
+      effectAllowed: e.dataTransfer.effectAllowed,
+      thisBlockId: block.id,
+      draggedObservationId
+    })
 
-    // ✅ Ferma la propagazione PRIMA di leggere i dati
+    if (readOnly) {
+      console.log('[ExtractBlock] ⚠️ readOnly=true, esco')
+      return
+    }
+
+    // ✅ CRITICO: Se stiamo trascinando un'ExtractObservation da questo ExtractBlock,
+    // verifica se il mouse è fuori. Se sì, NON gestire affatto l'evento - lascia che CardBody lo gestisca
+    if (draggedObservationId !== null) {
+      const extractBlockElement = e.currentTarget as HTMLElement
+      const rect = extractBlockElement.getBoundingClientRect()
+      const mouseX = e.clientX
+      const mouseY = e.clientY
+
+      const isInsideThisExtractBlock = (
+        mouseX >= rect.left &&
+        mouseX <= rect.right &&
+        mouseY >= rect.top &&
+        mouseY <= rect.bottom
+      )
+
+      console.log('[ExtractBlock] 🔴 handleDrop: ExtractObservation in drag, coordinate check:', {
+        isInsideThisExtractBlock,
+        mouseX,
+        mouseY,
+        rectLeft: rect.left,
+        rectRight: rect.right,
+        rectTop: rect.top,
+        rectBottom: rect.bottom,
+        thisBlockId: block.id,
+        draggedObservationId
+      })
+
+      // ✅ Se il mouse è FUORI e stiamo trascinando un'osservazione, NON gestire qui
+      // In React, anche se facciamo return senza preventDefault, l'evento potrebbe non propagarsi
+      // Quindi emettiamo un custom event che il CardBody può ascoltare
+      if (!isInsideThisExtractBlock) {
+        console.log('[ExtractBlock] ⚠️ Drop ExtractObservation FUORI ExtractBlock (coordinate), emetto custom event per CardBody')
+
+        // ✅ Leggi i dati del drag prima di emettere l'evento
+        try {
+          const dragData = e.dataTransfer.getData('application/json')
+          if (dragData) {
+            const data = JSON.parse(dragData)
+            // ✅ Emetti un custom event che il CardBody può ascoltare
+            window.dispatchEvent(new CustomEvent('app:extract-observation-drop-outside', {
+              detail: {
+                ...data,
+                mouseX: e.clientX,
+                mouseY: e.clientY
+              }
+            }))
+          }
+        } catch (err) {
+          console.error('[ExtractBlock] Errore durante emissione custom event:', err)
+        }
+
+        // ✅ NON chiamare preventDefault/stopPropagation - lascia che l'evento si propaghi anche naturalmente
+        // Il CardBody gestirà sia l'evento naturale che il custom event
+        return
+      }
+    }
+
+    // ✅ Verifica se il drop è DENTRO questo ExtractBlock usando le coordinate del mouse
+    // Questo è più affidabile di contains() perché funziona anche quando e.target è un elemento figlio profondo
+    const extractBlockElement = e.currentTarget as HTMLElement
+    const rect = extractBlockElement.getBoundingClientRect()
+    const mouseX = e.clientX
+    const mouseY = e.clientY
+
+    const isInsideThisExtractBlock = (
+      mouseX >= rect.left &&
+      mouseX <= rect.right &&
+      mouseY >= rect.top &&
+      mouseY <= rect.bottom
+    )
+
+    const target = e.target as HTMLElement
+    console.log('[ExtractBlock] 🔴 handleDrop chiamato:', {
+      targetTag: target.tagName,
+      targetClass: target.className,
+      isInsideThisExtractBlock,
+      mouseX,
+      mouseY,
+      rectLeft: rect.left,
+      rectRight: rect.right,
+      rectTop: rect.top,
+      rectBottom: rect.bottom,
+      thisBlockId: block.id
+    })
+
+    // ✅ Se il drop è FUORI, NON gestire - lascia che CardBody lo gestisca
+    // Ma DEVI chiamare preventDefault per evitare il comportamento di default del browser,
+    // poi ri-triggerare l'evento sul parent
+    if (!isInsideThisExtractBlock) {
+      console.log('[ExtractBlock] ⚠️ Drop FUORI ExtractBlock (coordinate), re-triggero sul parent CardBody')
+
+      // ✅ NON chiamare preventDefault - lascia che l'evento si propaghi naturalmente
+      // Questo permetterà al CardBody di riceverlo
+      return
+    }
+
+    // ✅ Solo se il drop è DENTRO, gestisci
     e.preventDefault()
     e.stopPropagation()
 
     try {
       const dragData = e.dataTransfer.getData('application/json')
-      if (!dragData) return
+      if (!dragData) {
+        return
+      }
 
       const data = JSON.parse(dragData)
+      console.log('[ExtractBlock] 🔴 DROP ricevuto DENTRO ExtractBlock:', { type: data.type, sourceExtractBlockId: data.sourceExtractBlockId, thisBlockId: block.id })
 
       // ✅ Se è un'osservazione da CardBody (ObservationBlock) da convertire in ExtractObservation
-      // Gestisce sia 'observation-move' che 'block-reorder' con block.type === 'observation'
-      if ((data.type === 'observation-move' || (data.type === 'block-reorder' && data.block?.type === 'observation')) && data.block) {
+      // Gestisce sia 'observation-move' che 'block-move' con block.type === 'observation'
+      if ((data.type === 'observation-move' || (data.type === 'block-move' && data.block?.type === 'observation')) && data.block) {
+        console.log('[ExtractBlock] 🔴 DROP ObservationBlock dentro ExtractBlock:', {
+          dragType: data.type,
+          blockType: data.block.type,
+          blockId: data.block.id,
+          sourceAreaId: data.sourceAreaId,
+          sourceRowId: data.sourceRowId,
+          sourceBlockId: data.sourceBlockId,
+          blockIndex: data.blockIndex,
+          thisBlockId: block.id
+        })
+
         // ✅ Determina la posizione (before/after) in base alla posizione del mouse
         const mainContainer = mainContentRef.current
         const contentContainer = contentContainerRef.current
 
-        if (!mainContainer) return
+        if (!mainContainer) {
+          console.log('[ExtractBlock] ⚠️ mainContainer non trovato, esco')
+          return
+        }
 
         const mainRect = mainContainer.getBoundingClientRect()
         const mouseY = e.clientY
@@ -296,32 +606,56 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
         const updatedObservations = [...localObservations, newObservation]
         setLocalObservations(updatedObservations)
 
-        console.log('[ExtractBlock] ✅ Drop ObservationBlock dentro estratto, convertita in ExtractObservation:', { position, order: newObservation.order })
+        console.log('[ExtractBlock] ✅ Drop ObservationBlock dentro estratto, convertita in ExtractObservation:', {
+          position,
+          order: newObservation.order,
+          newObservationId: newObservation.id,
+          contentLength: newObservation.content.length
+        })
 
         // ✅ Aggiorna il blocco
         if (onUpdate) {
           onUpdate({ ...block, observations: updatedObservations })
         }
 
-          // ✅ Emetti evento per rimuovere ObservationBlock dal CardBody
-          // Se è un block-reorder, usa blockIndex per rimuoverlo
-          if (data.type === 'block-reorder' && typeof data.blockIndex === 'number') {
-            window.dispatchEvent(new CustomEvent('app:remove-observation-block-by-index', {
-              detail: { blockIndex: data.blockIndex }
-            }))
-          } else {
-            window.dispatchEvent(new CustomEvent('app:remove-observation-block', {
-              detail: { blockId: data.block.id }
-            }))
-          }
+        // ✅ Emetti evento per rimuovere ObservationBlock dal CardBody
+        // Se è un block-move, usa sourceRowId per rimuoverlo dalla riga corretta
+        if (data.type === 'block-move' && data.sourceRowId) {
+          console.log('[ExtractBlock] 🔴 Emetto evento remove-block-from-row:', {
+            sourceRowId: data.sourceRowId,
+            blockId: data.sourceBlockId || data.block.id
+          })
+          window.dispatchEvent(new CustomEvent('app:remove-block-from-row', {
+            detail: { rowId: data.sourceRowId, blockId: data.sourceBlockId || data.block.id }
+          }))
+        } else if (data.type === 'block-move' && typeof data.blockIndex === 'number') {
+          console.log('[ExtractBlock] 🔴 Emetto evento remove-observation-block-by-index:', {
+            blockIndex: data.blockIndex
+          })
+          window.dispatchEvent(new CustomEvent('app:remove-observation-block-by-index', {
+            detail: { blockIndex: data.blockIndex }
+          }))
+        } else {
+          console.log('[ExtractBlock] 🔴 Emetto evento remove-observation-block:', {
+            blockId: data.block.id
+          })
+          window.dispatchEvent(new CustomEvent('app:remove-observation-block', {
+            detail: { blockId: data.block.id }
+          }))
+        }
 
         return
       }
 
-      // ✅ Se è un'osservazione da un altro ExtractBlock (riordino o spostamento)
+      // ✅ Se è un'osservazione da ExtractBlock (riordino o spostamento)
       if (data.type === 'extract-observation-move' && data.observation) {
-        // ✅ Se viene dallo stesso ExtractBlock, gestisci riordino
-        if (data.sourceExtractBlockId === block.id) {
+        const sourceAreaId = data.sourceAreaId || `extractBlock_${data.sourceExtractBlockId}`
+        const targetAreaId = `extractBlock_${block.id}`
+        const isSameArea = sourceAreaId === targetAreaId
+
+        // ✅ REGOLA SEMPLICE: stessa area = riordino, area diversa = spostamento
+        if (isSameArea) {
+          // ✅ RIORDINO nella stessa ExtractBlock
           // ✅ Riordino osservazione dentro stesso ExtractBlock
           const draggedObs = localObservations.find(obs => obs.id === data.observationId)
           if (!draggedObs) {
@@ -426,7 +760,7 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
           setDraggedObservationId(null)
           return
         } else {
-          // ✅ Se viene da un altro ExtractBlock, aggiungila qui
+          // ✅ SPOSTAMENTO da ExtractBlock diverso (area diversa)
           const mainContainer = mainContentRef.current
           const contentContainer = contentContainerRef.current
 
@@ -500,10 +834,11 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
           ? Math.max(...observationsInPosition.map(obs => obs.order))
           : -1
 
-        // ✅ Crea nuova osservazione
+        // ✅ Crea nuova osservazione con testo predefinito
+        const defaultText = `Come si vede nel documento <strong>${extract.source}</strong>, a pagina numero <strong>${extract.page}</strong>...`
         const newObservation: ExtractObservation = {
           id: `obs_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          content: '',
+          content: defaultText,
           position,
           order: maxOrder + 1
         }
@@ -520,11 +855,22 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
 
         // ✅ Focus sulla nuova osservazione dopo il render
         setTimeout(() => {
-          const newObservationElement = document.querySelector(`[data-observation-id="${newObservation.id}"]`) as HTMLTextAreaElement | null
+          const newObservationElement = document.querySelector(`[data-observation-id="${newObservation.id}"]`)
           if (newObservationElement) {
-            newObservationElement.focus()
+            // ✅ Cerca il div contentEditable dentro NoteEditor
+            const editorElement = newObservationElement.querySelector('[contenteditable="true"]') as HTMLElement | null
+            if (editorElement) {
+              editorElement.focus()
+              // ✅ Posiziona il cursore alla fine
+              const range = document.createRange()
+              const selection = window.getSelection()
+              range.selectNodeContents(editorElement)
+              range.collapse(false)
+              selection?.removeAllRanges()
+              selection?.addRange(range)
+            }
           }
-        }, 0)
+        }, 100)
       }
     } catch (err) {
       console.error('[ExtractBlock] Errore durante drop:', err)
@@ -535,19 +881,113 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   const handleDragOver = (e: React.DragEvent) => {
     if (readOnly) return
 
-    // ✅ Verifica i types per capire se è "new-observation" o "observation-move"
-    const effectAllowed = e.dataTransfer.effectAllowed
+    console.log('[ExtractBlock] 🔵🔵🔵 handleDragOver INIZIO', {
+      targetTag: (e.target as HTMLElement)?.tagName,
+      currentTargetTag: (e.currentTarget as HTMLElement)?.tagName,
+      types: Array.from(e.dataTransfer.types),
+      effectAllowed: e.dataTransfer.effectAllowed,
+      draggedObservationId
+    })
+
+    // ✅ CRITICO: Se stiamo trascinando un'ExtractObservation da questo ExtractBlock,
+    // e il mouse è FUORI dall'ExtractBlock, NON chiamare preventDefault/stopPropagation
+    // per permettere al CardBody di ricevere l'evento
+    if (draggedObservationId !== null) {
+      const extractBlockElement = e.currentTarget as HTMLElement
+      const rect = extractBlockElement.getBoundingClientRect()
+      const mouseX = e.clientX
+      const mouseY = e.clientY
+
+      const isInsideThisExtractBlock = (
+        mouseX >= rect.left &&
+        mouseX <= rect.right &&
+        mouseY >= rect.top &&
+        mouseY <= rect.bottom
+      )
+
+      console.log('[ExtractBlock] 🔵 handleDragOver: ExtractObservation in drag, coordinate check:', {
+        isInsideThisExtractBlock,
+        mouseX,
+        mouseY,
+        rectLeft: rect.left,
+        rectRight: rect.right,
+        rectTop: rect.top,
+        rectBottom: rect.bottom,
+        thisBlockId: block.id,
+        draggedObservationId
+      })
+
+      // ✅ Se il mouse è FUORI e stiamo trascinando un'osservazione, lascia passare l'evento
+      if (!isInsideThisExtractBlock) {
+        console.log('[ExtractBlock] ⚠️ handleDragOver: ExtractObservation in drag ma mouse FUORI ExtractBlock, lascio passare evento - NO preventDefault/stopPropagation')
+        return  // ✅ Nessun preventDefault, nessun stopPropagation - lascia passare l'evento al CardBody
+      }
+    }
+
+    // ✅ Verifica se il mouse è dentro questo ExtractBlock usando le coordinate
+    const extractBlockElement = e.currentTarget as HTMLElement
+    const rect = extractBlockElement.getBoundingClientRect()
+    const mouseX = e.clientX
+    const mouseY = e.clientY
+
+    const isInsideThisExtractBlock = (
+      mouseX >= rect.left &&
+      mouseX <= rect.right &&
+      mouseY >= rect.top &&
+      mouseY <= rect.bottom
+    )
+
+    console.log('[ExtractBlock] 🔵 handleDragOver coordinate check:', {
+      isInsideThisExtractBlock,
+      mouseX,
+      mouseY,
+      rectLeft: rect.left,
+      rectRight: rect.right,
+      rectTop: rect.top,
+      rectBottom: rect.bottom,
+      thisBlockId: block.id
+    })
+
+    // ✅ Se il mouse è FUORI dall'ExtractBlock, NON gestire affatto l'evento
+    // Lascia che si propaghi al CardBody
+    if (!isInsideThisExtractBlock) {
+      console.log('[ExtractBlock] ⚠️ handleDragOver: mouse FUORI ExtractBlock (coordinate), lascio passare evento - NO preventDefault/stopPropagation')
+      return  // ✅ Nessun preventDefault, nessun stopPropagation - lascia passare l'evento
+    }
+
+    // ✅ Solo se il mouse è DENTRO, gestisci l'evento
+    e.preventDefault()
+    e.stopPropagation()
+
     const types = Array.from(e.dataTransfer.types)
+    const effectAllowed = e.dataTransfer.effectAllowed
+
+    // ✅ Prova a leggere i dati del drag per logging
+    let dragType = 'unknown'
+    if (types.includes('application/json')) {
+      try {
+        const dragData = e.dataTransfer.getData('application/json')
+        if (dragData) {
+          const data = JSON.parse(dragData)
+          dragType = data.type || 'unknown'
+          console.log('[ExtractBlock] 🔵 handleDragOver DENTRO ExtractBlock:', {
+            dragType,
+            blockType: data.block?.type,
+            sourceAreaId: data.sourceAreaId,
+            effectAllowed,
+            isInsideThisExtractBlock: true
+          })
+        }
+      } catch (err) {
+        // Ignora errori
+      }
+    }
 
     // ✅ Se è 'copy' e ha 'application/json', potrebbe essere "new-observation"
     if (effectAllowed === 'copy' && types.includes('application/json')) {
-      e.preventDefault()
-      e.stopPropagation()
       e.dataTransfer.dropEffect = 'copy'
     } else if (types.includes('application/json')) {
       // ✅ Potrebbe essere un'osservazione da CardBody o da altro ExtractBlock
-      e.preventDefault()
-      e.stopPropagation()
       e.dataTransfer.dropEffect = 'move'
     }
   }
@@ -555,9 +995,12 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   return (
     <div
       draggable={!readOnly}
-      onDragStart={onDragStart}
+      onDragStart={!readOnly ? handleExtractBlockDragStart : undefined}
       onDragEnd={onDragEnd}
-      data-extract-block="true" // ✅ Attributo per identificare ExtractBlock in CardBody
+      onDragOver={!readOnly ? handleDragOver : undefined}
+      onDrop={!readOnly ? handleDrop : undefined} // ✅ Sempre presente - handleDrop gestisce la logica
+      data-extract-block="true"
+      data-extract-block-id={block.id} // ✅ ID per il listener globale
       className={cn(
         'bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col',
         !readOnly && 'cursor-move hover:shadow-md transition-all'
@@ -790,45 +1233,41 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                   </div>
                 )}
 
-                {readOnly ? (
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                    {observation.content || <span className="text-gray-400 italic">Nessuna osservazione</span>}
-                  </p>
-                ) : (
-                  <Textarea
-                    value={observation.content}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      const updatedObservations = localObservations.map(obs =>
-                        obs.id === observation.id
-                          ? { ...obs, content: e.target.value }
-                          : obs
-                      )
-                      setLocalObservations(updatedObservations)
-                    }}
-                    onBlur={(e) => {
-                      e.stopPropagation()
-                      const currentValue = (e.target as HTMLTextAreaElement).value
-                      const updatedObservations = localObservations.map(obs =>
-                        obs.id === observation.id
-                          ? { ...obs, content: currentValue }
-                          : obs
-                      )
-                      setLocalObservations(updatedObservations)
-                      if (onUpdate) {
-                        onUpdate({ ...block, observations: updatedObservations })
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Inserisci un'osservazione sull'estratto..."
-                    className="min-h-[80px] text-sm resize-y cursor-text"
-                  />
-                )}
+                <NoteEditor
+                  value={observation.content || ''}
+                  onChange={(html) => {
+                    const updatedObservations = localObservations.map(obs =>
+                      obs.id === observation.id
+                        ? { ...obs, content: html }
+                        : obs
+                    )
+                    setLocalObservations(updatedObservations)
+                  }}
+                  onBlur={() => {
+                    const updatedObservations = localObservations.map(obs =>
+                      obs.id === observation.id
+                        ? { ...obs, content: observation.content }
+                        : obs
+                    )
+                    setLocalObservations(updatedObservations)
+                    if (onUpdate) {
+                      onUpdate({ ...block, observations: updatedObservations })
+                    }
+                  }}
+                  placeholder="Inserisci un'osservazione sull'estratto..."
+                  readOnly={readOnly}
+                  className="mt-2"
+                />
               </div>
             ))}
 
           {/* ✅ Container del contenuto estratto (per determinare posizione drop) */}
-          <div ref={contentContainerRef} className="space-y-3">
+          <div
+            ref={contentContainerRef}
+            className="space-y-3"
+            onDragOver={!readOnly ? handleDragOver : undefined}
+            onDrop={!readOnly ? handleDrop : undefined}
+          >
             {/* Immagine estratto (senza bordo interno) */}
             {hasImage && extract.imageDataUrl && (
               <div className={isOverlay ? "w-full m-0 p-0" : "rounded overflow-hidden"}>
@@ -910,40 +1349,31 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                   </div>
                 )}
 
-                {readOnly ? (
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                    {observation.content || <span className="text-gray-400 italic">Nessuna osservazione</span>}
-                  </p>
-                ) : (
-                  <Textarea
-                    value={observation.content}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      const updatedObservations = localObservations.map(obs =>
-                        obs.id === observation.id
-                          ? { ...obs, content: e.target.value }
-                          : obs
-                      )
-                      setLocalObservations(updatedObservations)
-                    }}
-                    onBlur={(e) => {
-                      e.stopPropagation()
-                      const currentValue = (e.target as HTMLTextAreaElement).value
-                      const updatedObservations = localObservations.map(obs =>
-                        obs.id === observation.id
-                          ? { ...obs, content: currentValue }
-                          : obs
-                      )
-                      setLocalObservations(updatedObservations)
-                      if (onUpdate) {
-                        onUpdate({ ...block, observations: updatedObservations })
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Inserisci un'osservazione sull'estratto..."
-                    className="min-h-[80px] text-sm resize-y cursor-text"
-                  />
-                )}
+                <NoteEditor
+                  value={observation.content || ''}
+                  onChange={(html) => {
+                    const updatedObservations = localObservations.map(obs =>
+                      obs.id === observation.id
+                        ? { ...obs, content: html }
+                        : obs
+                    )
+                    setLocalObservations(updatedObservations)
+                  }}
+                  onBlur={() => {
+                    const updatedObservations = localObservations.map(obs =>
+                      obs.id === observation.id
+                        ? { ...obs, content: observation.content }
+                        : obs
+                    )
+                    setLocalObservations(updatedObservations)
+                    if (onUpdate) {
+                      onUpdate({ ...block, observations: updatedObservations })
+                    }
+                  }}
+                  placeholder="Inserisci un'osservazione sull'estratto..."
+                  readOnly={readOnly}
+                  className="mt-2"
+                />
               </div>
             ))}
 
@@ -968,38 +1398,22 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                   </button>
                 )}
               </div>
-              {readOnly ? (
-                <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                  {localObservation || <span className="text-gray-400 italic">Nessuna osservazione</span>}
-                </p>
-              ) : (
-                <Textarea
-                  ref={observationTextareaRef}
-                  value={localObservation}
-                  onChange={(e) => {
-                    e.stopPropagation()
-                    setLocalObservation(e.target.value)
-                  }}
-                  onBlur={(e) => {
-                    e.stopPropagation()
-                    const currentValue = (e.target as HTMLTextAreaElement).value
-                    setLocalObservation(currentValue)
-                    setHasObservationLocal(true)
-                    if (onUpdate) {
-                      onUpdate({ ...block, observation: currentValue, hasObservation: true })
-                    }
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    if (observationTextareaRef.current) {
-                      observationTextareaRef.current.focus()
-                    }
-                  }}
-                  placeholder="Inserisci un'osservazione sull'estratto..."
-                  className="min-h-[80px] text-sm resize-y cursor-text"
-                />
-              )}
+              <NoteEditor
+                value={localObservation || ''}
+                onChange={(html) => {
+                  setLocalObservation(html)
+                }}
+                onBlur={() => {
+                  setHasObservationLocal(true)
+                  if (onUpdate) {
+                    onUpdate({ ...block, observation: localObservation, hasObservation: true })
+                  }
+                }}
+                placeholder="Inserisci un'osservazione sull'estratto..."
+                readOnly={readOnly}
+                autoFocus={shouldFocusObservationRef.current}
+                className="mt-2"
+              />
             </div>
           )}
         </div>

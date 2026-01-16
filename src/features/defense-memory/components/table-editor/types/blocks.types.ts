@@ -112,6 +112,7 @@ export interface CardBodyProps {
   onExtractDrop?: (extract: ExtractData, insertIndex?: number) => void
   readOnly?: boolean
   className?: string
+  rowId?: string // ✅ ID della riga per identificare la sorgente/destinazione
 }
 
 /**
