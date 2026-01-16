@@ -44,10 +44,41 @@ export interface TableRow {
     blocks?: Block[]  // ✅ NUOVO: Blocchi riorganizzabili (estratti + osservazioni)
 }
 
+export interface PreambleData {
+    procura?: string
+    tribunale?: string
+    gip?: string
+    altro?: string
+    numeroProcedimento?: string
+    affidamentoIncarico?: string
+    richiestaQuesito?: string
+    numeroCartelle?: string
+    numeroDocumenti?: string
+    numeroFogli?: string
+    nomeIndagato?: string
+    numeroProcedimentoDettaglio?: string
+    ufficioProcede?: string
+    reatiContestati?: string
+    dataLuogo?: string
+    ufficioPM?: string
+    parteOffesa?: string
+    poliziaGiudiziaria?: string
+    difensori?: string
+    altroDettaglio?: string
+}
+
+export interface ConclusionsData {
+    conclusioni?: string
+    data?: string
+    firma?: string
+}
+
 export interface DefenseMemoryTableData {
     rows: TableRow[]
     lastUpdated: string
     version: number
+    preamble?: PreambleData
+    conclusions?: ConclusionsData
 }
 
 export interface TableRowFormData {

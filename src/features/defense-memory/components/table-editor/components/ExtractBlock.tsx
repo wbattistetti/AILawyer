@@ -42,6 +42,15 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   const mainContentRef = useRef<HTMLDivElement>(null) // ✅ Ref per il container principale (tutto il contenuto)
   const onUpdateRef = useRef(onUpdate) // ✅ Ref per onUpdate per evitare dipendenze nel useEffect
   const blockRef = useRef(block) // ✅ Ref per block per evitare dipendenze nel useEffect
+
+  // ✅ Aggiorna i refs quando cambiano
+  useEffect(() => {
+    onUpdateRef.current = onUpdate
+  }, [onUpdate])
+
+  useEffect(() => {
+    blockRef.current = block
+  }, [block])
   const isInternalUpdateRef = useRef(false) // ✅ Flag per tracciare aggiornamenti interni
   const activeDragDataRef = useRef<{ observationId: string, observation: ExtractObservation, sourceExtractBlockId: string } | null>(null) // ✅ Ref per salvare i dati del drag attivo
 
@@ -63,18 +72,35 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   }, [observation])
 
   // ✅ Sincronizza localObservations con observations solo se l'aggiornamento è esterno
+  const prevObservationsRef = useRef<ExtractObservation[]>(observations || [])
   useEffect(() => {
     // ✅ Se l'aggiornamento è interno, non sincronizzare (evita loop)
     if (isInternalUpdateRef.current) {
       isInternalUpdateRef.current = false
+      prevObservationsRef.current = observations || []
       return
     }
-    setLocalObservations(observations || [])
+
+    // ✅ Confronto profondo per evitare loop: confronta solo se l'array è realmente cambiato
+    const currentObservations = observations || []
+    const prevObservations = prevObservationsRef.current
+
+    // ✅ Confronta lunghezza e contenuti
+    if (currentObservations.length !== prevObservations.length ||
+        currentObservations.some((obs, idx) =>
+          obs.id !== prevObservations[idx]?.id ||
+          obs.content !== prevObservations[idx]?.content
+        )) {
+      setLocalObservations(currentObservations)
+      prevObservationsRef.current = currentObservations
+    }
   }, [observations])
 
   // ✅ Migrazione: se c'è observation ma non observations[], migra i dati
+  const hasMigratedRef = useRef(false)
   useEffect(() => {
-    if (observation && hasObservation && (!observations || observations.length === 0)) {
+    if (!hasMigratedRef.current && observation && hasObservation && (!observations || observations.length === 0)) {
+      hasMigratedRef.current = true
       const migratedObservation: ExtractObservation = {
         id: `obs_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         content: observation,
@@ -82,11 +108,12 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
         order: 0
       }
       setLocalObservations([migratedObservation])
-      if (onUpdate) {
-        onUpdate({ ...block, observations: [migratedObservation], observation: undefined, hasObservation: false })
+      if (onUpdateRef.current) {
+        isInternalUpdateRef.current = true
+        onUpdateRef.current({ ...blockRef.current, observations: [migratedObservation], observation: undefined, hasObservation: false })
       }
     }
-  }, []) // Solo al mount
+  }, [observation, hasObservation, observations]) // ✅ Dipendenze corrette
 
   // ✅ Sincronizza hasObservationLocal con hasObservation
   // ✅ Se hasObservation diventa true (da false), imposta il flag per il focus

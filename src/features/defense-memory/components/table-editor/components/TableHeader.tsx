@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, Save, Download, Upload, Undo2, Redo2 } from 'lucide-react'
+import { Plus, Save, Download, Upload, Undo2, Redo2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface TableHeaderProps {
@@ -8,6 +8,7 @@ interface TableHeaderProps {
     onAddObservation?: () => void // ✅ Handler per click su "Aggiungi osservazione"
     onSave?: () => void
     onExport?: () => void
+    onExportPDF?: () => void // ✅ Handler per export PDF
     onImport?: () => void
     onUndo?: () => void
     onRedo?: () => void
@@ -24,6 +25,7 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
     onAddObservation,
     onSave,
     onExport,
+    onExportPDF,
     onImport,
     onUndo,
     onRedo,
@@ -139,6 +141,18 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                     >
                         <Download className="h-4 w-4" />
                         <span>Esporta</span>
+                    </Button>
+                )}
+
+                {onExportPDF && (
+                    <Button
+                        onClick={onExportPDF}
+                        size="sm"
+                        variant="outline"
+                        className="flex items-center space-x-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                    >
+                        <FileText className="h-4 w-4" />
+                        <span>Esporta PDF</span>
                     </Button>
                 )}
 

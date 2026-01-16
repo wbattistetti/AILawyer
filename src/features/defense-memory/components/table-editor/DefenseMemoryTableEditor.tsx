@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { DefenseMemoryTableEditorProps } from './types/table.types'
+import { DefenseMemoryTableEditorProps, PreambleData, ConclusionsData } from './types/table.types'
 import { useTableData } from './hooks/useTableData'
 import { useRowValidation } from './hooks/useRowValidation'
 import { useResizableColumns } from './hooks/useResizableColumns'
 import { useUndoRedo } from './hooks/useUndoRedo'
 import { TableHeader } from './components/TableHeader'
 import { AccordionRow } from './components/AccordionRow'
+import { PreambleAccordion } from './components/PreambleAccordion'
+import { ConclusionsAccordion } from './components/ConclusionsAccordion'
 import { exportToJSON, exportToCSV } from './utils/tableSerialization'
+import { exportToPDF } from './utils/exportToPDF'
 import { cn } from '@/lib/utils'
 import { ExtractDrawer } from './components/ExtractDrawer'
 import { ExtractData, ObservationBlock, ExtractBlock } from './types/blocks.types'
@@ -79,6 +82,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
 
     // ✅ Stato per tracciare quale riga deve essere espansa (per drop estratti su canvas vuoto)
     const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+    // ✅ Stato per preambolo e conclusioni
+    const [preamble, setPreamble] = useState<PreambleData>(initialData?.preamble || {})
+    const [conclusions, setConclusions] = useState<ConclusionsData>(initialData?.conclusions || {})
 
     // ✅ Ref per tracciare l'estratto da aggiungere alla nuova riga dopo che viene creata
     const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string>, fromOverlay?: boolean } | null>(null)
@@ -271,11 +278,17 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const handleSave = useCallback(() => {
         const validation = validateAll()
         if (validation.isValid) {
-            onSave?.(tableData)
+            // ✅ Includi preambolo e conclusioni nel tableData
+            const dataToSave = {
+                ...tableData,
+                preamble,
+                conclusions
+            }
+            onSave?.(dataToSave)
         } else {
             alert('Ci sono errori di validazione. Controlla i campi evidenziati.')
         }
-    }, [validateAll, tableData, onSave])
+    }, [validateAll, tableData, preamble, conclusions, onSave])
 
     const handleExportJSON = useCallback(() => {
         const json = exportToJSON(tableData)
@@ -306,6 +319,21 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const handleExport = useCallback(() => {
         handleExportJSON()
     }, [handleExportJSON])
+
+    const handleExportPDF = useCallback(async () => {
+        try {
+            // ✅ Includi preambolo e conclusioni nel tableData per l'export
+            const dataToExport = {
+                ...tableData,
+                preamble,
+                conclusions
+            }
+            await exportToPDF(dataToExport, clienteNome)
+        } catch (error) {
+            console.error('Errore durante l\'export PDF:', error)
+            alert('Errore durante l\'export PDF: ' + (error instanceof Error ? error.message : String(error)))
+        }
+    }, [tableData, preamble, conclusions, clienteNome])
 
     const sortedRows = [...rows].sort((a, b) => a.order - b.order)
 
@@ -463,6 +491,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 onAddObservation={!readOnly ? handleAddObservation : undefined}
                 onSave={onSave ? handleSave : undefined}
                 onExport={handleExport}
+                onExportPDF={handleExportPDF}
                 onUndo={undo}
                 onRedo={redo}
                 canUndo={canUndo}
@@ -503,6 +532,15 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                     <div className="w-full h-full flex flex-col">
                         {/* ✅ Accordion rows - struttura collassabile */}
                         <div className="flex-1 w-full overflow-auto">
+                            {/* ✅ Preambolo - sempre visibile come prima "riga" */}
+                            <PreambleAccordion
+                                preamble={preamble}
+                                onUpdate={setPreamble}
+                                readOnly={readOnly}
+                                defaultExpanded={false}
+                            />
+
+                            {/* ✅ Righe esistenti */}
                             {sortedRows.map((row, index) => (
                                 <AccordionRow
                                     key={row.id}
@@ -528,6 +566,14 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                                     }}
                                 />
                             ))}
+
+                            {/* ✅ Conclusioni Finali - sempre visibile come ultima "riga" */}
+                            <ConclusionsAccordion
+                                conclusions={conclusions}
+                                onUpdate={setConclusions}
+                                readOnly={readOnly}
+                                defaultExpanded={false}
+                            />
                         </div>
                     </div>
                 )}

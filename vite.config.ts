@@ -22,9 +22,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "jspdf": path.resolve(__dirname, "./node_modules/jspdf/dist/jspdf.es.min.js"),
     },
   },
   optimizeDeps: {
     exclude: ['lucide-react'],
+    include: ['jspdf'],
   },
 });
