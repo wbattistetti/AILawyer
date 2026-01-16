@@ -7,6 +7,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuCheckboxItem,
     DropdownMenuTrigger,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu'
 import { Plus, Printer, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,31 +16,55 @@ import { cn } from '@/lib/utils'
 interface TableHeaderProps {
     onAddRow: () => void
     onAddObservation?: () => void // ✅ Handler per click su "Aggiungi osservazione"
-    onExportPDF?: () => void // ✅ Handler per export PDF
-    onExportWord?: () => void // ✅ Handler per export Word
+    onExport?: (format: 'pdf' | 'word') => void // ✅ Handler per export (chiamato quando si clicca "Stampa")
     rowCount: number
     readOnly?: boolean
     className?: string
     includeExtracts?: boolean // ✅ Flag per includere estratti nell'export
     onIncludeExtractsChange?: (include: boolean) => void // ✅ Callback per cambiare il flag
+    includeEmptyRows?: boolean // ✅ Flag per includere righe vuote nel preambolo
+    onIncludeEmptyRowsChange?: (include: boolean) => void // ✅ Callback per cambiare il flag
+    exportFormat?: 'pdf' | 'word' // ✅ Formato selezionato
+    onExportFormatChange?: (format: 'pdf' | 'word') => void // ✅ Callback per cambiare il formato
 }
 
 export const TableHeader: React.FC<TableHeaderProps> = ({
     onAddRow,
     onAddObservation,
-    onExportPDF,
-    onExportWord,
+    onExport,
     rowCount,
     readOnly = false,
     className = '',
     includeExtracts = true,
-    onIncludeExtractsChange
+    onIncludeExtractsChange,
+    includeEmptyRows = false,
+    onIncludeEmptyRowsChange,
+    exportFormat = 'pdf',
+    onExportFormatChange
 }) => {
     const [localIncludeExtracts, setLocalIncludeExtracts] = useState(includeExtracts)
+    const [localIncludeEmptyRows, setLocalIncludeEmptyRows] = useState(includeEmptyRows)
+    const [localExportFormat, setLocalExportFormat] = useState<'pdf' | 'word'>(exportFormat)
+    const [isOpen, setIsOpen] = useState(false)
 
     const handleIncludeExtractsChange = (checked: boolean) => {
         setLocalIncludeExtracts(checked)
         onIncludeExtractsChange?.(checked)
+    }
+
+    const handleIncludeEmptyRowsChange = (checked: boolean) => {
+        setLocalIncludeEmptyRows(checked)
+        onIncludeEmptyRowsChange?.(checked)
+    }
+
+    const handleFormatChange = (format: 'pdf' | 'word') => {
+        setLocalExportFormat(format)
+        onExportFormatChange?.(format)
+    }
+
+    const handlePrint = () => {
+        onExport?.(localExportFormat)
+        setIsOpen(false) // Chiudi il dropdown dopo la stampa
     }
 
     return (
@@ -90,7 +116,7 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                 )}
 
                 {/* ✅ Nuovo pulsante "Stampa" con dropdown */}
-                <DropdownMenu>
+                <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                     <DropdownMenuTrigger asChild>
                         <Button
                             size="sm"
@@ -101,28 +127,54 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                             <span>Stampa</span>
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                            onClick={() => onExportPDF?.()}
-                            className="flex items-center space-x-2"
-                        >
-                            <FileText className="h-4 w-4" />
-                            <span>PDF</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => onExportWord?.()}
-                            className="flex items-center space-x-2"
-                        >
-                            <FileText className="h-4 w-4" />
-                            <span>Word</span>
-                        </DropdownMenuItem>
+                    <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={(e) => e.preventDefault()}>
+                        {/* ✅ Formato selezionabile (radio) */}
+                        <DropdownMenuRadioGroup value={localExportFormat} onValueChange={(value) => handleFormatChange(value as 'pdf' | 'word')}>
+                            <DropdownMenuRadioItem
+                                value="pdf"
+                                className="flex items-center space-x-2"
+                                onSelect={(e) => e.preventDefault()}
+                            >
+                                <FileText className="h-4 w-4" />
+                                <span>PDF</span>
+                            </DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem
+                                value="word"
+                                className="flex items-center space-x-2"
+                                onSelect={(e) => e.preventDefault()}
+                            >
+                                <FileText className="h-4 w-4" />
+                                <span>Word</span>
+                            </DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
                         <DropdownMenuSeparator />
+                        {/* ✅ Opzioni checkbox */}
                         <DropdownMenuCheckboxItem
                             checked={localIncludeExtracts}
                             onCheckedChange={handleIncludeExtractsChange}
+                            onSelect={(e) => e.preventDefault()}
                         >
                             Stampa anche estratti
                         </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                            checked={localIncludeEmptyRows}
+                            onCheckedChange={handleIncludeEmptyRowsChange}
+                            onSelect={(e) => e.preventDefault()}
+                        >
+                            Includi righe vuote
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuSeparator />
+                        {/* ✅ Pulsante Stampa */}
+                        <div className="p-1">
+                            <Button
+                                onClick={handlePrint}
+                                size="sm"
+                                className="w-full"
+                            >
+                                <Printer className="h-4 w-4 mr-2" />
+                                Stampa
+                            </Button>
+                        </div>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>

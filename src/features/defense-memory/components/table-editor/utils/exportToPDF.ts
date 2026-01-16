@@ -105,8 +105,10 @@ const drawHeaderTable = (
     x: number,
     y: number,
     width: number,
-    preamble: PreambleData
+    preamble: PreambleData,
+    includeEmptyRows: boolean = false
 ): number => {
+    console.log('[drawHeaderTable] 📄 includeEmptyRows:', includeEmptyRows, 'preamble:', preamble)
     const col1Width = width * 0.6 // 60% per colonna sinistra
     const col2Width = width * 0.4 // 40% per colonna destra
     const rowHeight = 7
@@ -116,11 +118,24 @@ const drawHeaderTable = (
     const fillColor1: [number, number, number] = [255, 255, 255] // Bianco
     drawRect(doc, x, currentY, col1Width, rowHeight, fillColor1)
     drawRect(doc, x + col1Width, currentY, col2Width, rowHeight, fillColor1)
-    if (preamble.procura) {
-        addTextInCell(doc, `PROCURA DELLA REPUBBLICA DI ${preamble.procura.toUpperCase()}`, x, currentY, col1Width, 9, false, 'left')
+    // ✅ Riga 1: Stampa sempre se includeEmptyRows è true, altrimenti solo se c'è un valore
+    const shouldPrintProcura = includeEmptyRows || preamble.procura
+    console.log('[drawHeaderTable] 📄 Riga 1 - shouldPrintProcura:', shouldPrintProcura, 'procura:', preamble.procura)
+    if (shouldPrintProcura) {
+        const procuraText = preamble.procura
+            ? `PROCURA DELLA REPUBBLICA DI ${preamble.procura.toUpperCase()}`
+            : 'PROCURA DELLA REPUBBLICA'
+        console.log('[drawHeaderTable] 📄 Stampa procuraText:', procuraText)
+        addTextInCell(doc, procuraText, x, currentY, col1Width, 9, false, 'left')
     }
-    if (preamble.numeroProcedimento) {
-        addTextInCell(doc, `Proc. Penale n. ${preamble.numeroProcedimento}`, x + col1Width, currentY, col2Width, 12, true, 'right')
+    const shouldPrintNumProc = includeEmptyRows || preamble.numeroProcedimento
+    console.log('[drawHeaderTable] 📄 Riga 1 - shouldPrintNumProc:', shouldPrintNumProc, 'numeroProcedimento:', preamble.numeroProcedimento)
+    if (shouldPrintNumProc) {
+        const procText = preamble.numeroProcedimento
+            ? `Proc. Penale n. ${preamble.numeroProcedimento}`
+            : 'Proc. Penale n.'
+        console.log('[drawHeaderTable] 📄 Stampa procText:', procText)
+        addTextInCell(doc, procText, x + col1Width, currentY, col2Width, 12, true, 'right')
     }
     currentY += rowHeight
 
@@ -129,8 +144,11 @@ const drawHeaderTable = (
     drawRect(doc, x, currentY, col1Width, rowHeight, fillColor2)
     drawRect(doc, x + col1Width, currentY, col2Width, rowHeight, fillColor2)
     addTextInCell(doc, 'TRIBUNALE:', x, currentY, col1Width, 9, false, 'left')
-    if (preamble.tribunale) {
-        addTextInCell(doc, preamble.tribunale, x + col1Width, currentY, col2Width, 9, false, 'left')
+    // ✅ Stampa sempre il valore se includeEmptyRows è true (anche se vuoto, usa spazio per renderlo visibile)
+    if (includeEmptyRows || preamble.tribunale) {
+        const tribunaleText = preamble.tribunale || (includeEmptyRows ? ' ' : '')
+        console.log('[drawHeaderTable] 📄 Riga 2 - Stampa tribunaleText:', `"${tribunaleText}"`)
+        addTextInCell(doc, tribunaleText, x + col1Width, currentY, col2Width, 9, false, 'left')
     }
     currentY += rowHeight
 
@@ -139,8 +157,11 @@ const drawHeaderTable = (
     drawRect(doc, x, currentY, col1Width, rowHeight, fillColor3)
     drawRect(doc, x + col1Width, currentY, col2Width, rowHeight, fillColor3)
     addTextInCell(doc, 'GIP:', x, currentY, col1Width, 9, false, 'left')
-    if (preamble.gip) {
-        addTextInCell(doc, preamble.gip, x + col1Width, currentY, col2Width, 9, false, 'left')
+    // ✅ Stampa sempre il valore se includeEmptyRows è true (anche se vuoto, usa spazio per renderlo visibile)
+    if (includeEmptyRows || preamble.gip) {
+        const gipText = preamble.gip || (includeEmptyRows ? ' ' : '')
+        console.log('[drawHeaderTable] 📄 Riga 3 - Stampa gipText:', `"${gipText}"`)
+        addTextInCell(doc, gipText, x + col1Width, currentY, col2Width, 9, false, 'left')
     }
     currentY += rowHeight
 
@@ -149,8 +170,11 @@ const drawHeaderTable = (
     drawRect(doc, x, currentY, col1Width, rowHeight, fillColor4)
     drawRect(doc, x + col1Width, currentY, col2Width, rowHeight, fillColor4)
     addTextInCell(doc, 'ALTRO:', x, currentY, col1Width, 9, false, 'left')
-    if (preamble.altro) {
-        addTextInCell(doc, preamble.altro, x + col1Width, currentY, col2Width, 9, false, 'left')
+    // ✅ Stampa sempre il valore se includeEmptyRows è true (anche se vuoto, usa spazio per renderlo visibile)
+    if (includeEmptyRows || preamble.altro) {
+        const altroText = preamble.altro || (includeEmptyRows ? ' ' : '')
+        console.log('[drawHeaderTable] 📄 Riga 4 - Stampa altroText:', `"${altroText}"`)
+        addTextInCell(doc, altroText, x + col1Width, currentY, col2Width, 9, false, 'left')
     }
     currentY += rowHeight
 
@@ -225,7 +249,8 @@ const drawDetailsTable = (
 export async function exportToPDF(
     data: DefenseMemoryTableData,
     clienteNome?: string,
-    includeExtracts: boolean = true
+    includeExtracts: boolean = true,
+    includeEmptyRows: boolean = false
 ): Promise<void> {
 
     const doc = new jsPDF({
@@ -264,10 +289,16 @@ export async function exportToPDF(
     }
 
     // ✅ PRIMA PAGINA: Preambolo
+    console.log('[exportToPDF] 📄 Preambolo ricevuto:', data.preamble)
+    console.log('[exportToPDF] 📄 Preambolo keys:', data.preamble ? Object.keys(data.preamble) : 'null/undefined')
+    console.log('[exportToPDF] 📄 includeEmptyRows:', includeEmptyRows)
+
+    // ✅ Stampa sempre il titolo, anche se il preambolo è vuoto
     if (data.preamble) {
         const preamble = data.preamble
+        console.log('[exportToPDF] 📄 Preambolo presente, procedo con la stampa')
 
-        // ✅ Titolo sottolineato e centrato
+        // ✅ Titolo sottolineato e centrato (sempre stampato)
         doc.setFontSize(16)
         doc.setFont('helvetica', 'bold')
         const titleText = 'ANALISI GIURIDICA FASCICOLO PROCESSUALE'
@@ -280,14 +311,19 @@ export async function exportToPDF(
         yPos += 8
 
         // ✅ Tabella Header a due colonne
-        if (preamble.procura || preamble.tribunale || preamble.gip || preamble.altro || preamble.numeroProcedimento) {
+        // ✅ Stampa sempre se includeEmptyRows è true, altrimenti solo se ha contenuto
+        const shouldPrintHeader = includeEmptyRows || preamble.procura || preamble.tribunale || preamble.gip || preamble.altro || preamble.numeroProcedimento
+        console.log('[exportToPDF] 📄 shouldPrintHeader:', shouldPrintHeader, 'includeEmptyRows:', includeEmptyRows)
+        if (shouldPrintHeader) {
             checkPageBreak(30)
-            const headerHeight = drawHeaderTable(doc, margin, yPos, contentWidth, preamble)
+            console.log('[exportToPDF] 📄 Chiamando drawHeaderTable con includeEmptyRows:', includeEmptyRows)
+            const headerHeight = drawHeaderTable(doc, margin, yPos, contentWidth, preamble, includeEmptyRows)
             yPos += headerHeight + 10 // ✅ Aumentato spazio da 5 a 10
         }
 
         // ✅ Affidamento incarico: titolo sottolineato con testo sulla stessa riga (stesso font, non bold)
-        if (preamble.affidamentoIncarico) {
+        // ✅ Stampa sempre se includeEmptyRows è true, altrimenti solo se ha contenuto
+        if (includeEmptyRows || preamble.affidamentoIncarico) {
             doc.setFontSize(10) // ✅ Stesso font size del testo
             doc.setFont('helvetica', 'normal') // ✅ Non bold
             const labelText = 'Affidamento incarico:'
@@ -298,15 +334,19 @@ export async function exportToPDF(
             // ✅ Testo sulla stessa riga a destra (stesso font size)
             const textX = margin + labelWidth + 3
             const textWidth = contentWidth - labelWidth - 3
-            const lines = doc.splitTextToSize(preamble.affidamentoIncarico, textWidth)
+            const textToPrint = preamble.affidamentoIncarico || ''
+            const lines = textToPrint ? doc.splitTextToSize(textToPrint, textWidth) : ['']
             lines.forEach((line: string, index: number) => {
-                doc.text(line, textX, yPos + (index * 5))
+                if (line) {
+                    doc.text(line, textX, yPos + (index * 5))
+                }
             })
             yPos += Math.max(5, lines.length * 5) + 3
         }
 
         // ✅ Richiesta quesito: titolo sottolineato con testo sulla stessa riga (stesso font, non bold)
-        if (preamble.richiestaQuesito) {
+        // ✅ Stampa sempre se includeEmptyRows è true, altrimenti solo se ha contenuto
+        if (includeEmptyRows || preamble.richiestaQuesito) {
             doc.setFontSize(10) // ✅ Stesso font size del testo
             doc.setFont('helvetica', 'normal') // ✅ Non bold
             const labelText = 'Richiesta quesito:'
@@ -317,22 +357,35 @@ export async function exportToPDF(
             // ✅ Testo sulla stessa riga a destra (stesso font size)
             const textX = margin + labelWidth + 3
             const textWidth = contentWidth - labelWidth - 3
-            const lines = doc.splitTextToSize(preamble.richiestaQuesito, textWidth)
+            const textToPrint = preamble.richiestaQuesito || ''
+            const lines = textToPrint ? doc.splitTextToSize(textToPrint, textWidth) : ['']
             lines.forEach((line: string, index: number) => {
-                doc.text(line, textX, yPos + (index * 5))
+                if (line) {
+                    doc.text(line, textX, yPos + (index * 5))
+                }
             })
             yPos += Math.max(5, lines.length * 5) + 3
         }
 
-        // DATI
-        if (preamble.numeroCartelle || preamble.numeroDocumenti || preamble.numeroFogli) {
+        // ✅ DATI: usa il nuovo campo `dati` se presente, altrimenti retrocompatibilità con campi vecchi
+        // ✅ Stampa sempre se includeEmptyRows è true, altrimenti solo se ha contenuto
+        if (includeEmptyRows || preamble.dati || preamble.numeroCartelle || preamble.numeroDocumenti || preamble.numeroFogli) {
             addText('DATI', 12, true)
             yPos += 2
-            const datiText: string[] = []
-            if (preamble.numeroCartelle) datiText.push(`Numero ${preamble.numeroCartelle} cartelle di file`)
-            if (preamble.numeroDocumenti) datiText.push(`contenenti ${preamble.numeroDocumenti} documenti PDF`)
-            if (preamble.numeroFogli) datiText.push(`per un totale di ${preamble.numeroFogli} fogli.`)
-            addText(datiText.join(' '), 10)
+            if (preamble.dati) {
+                // ✅ Nuovo formato: usa campo `dati` libero
+                addText(preamble.dati, 10)
+            } else if (preamble.numeroCartelle || preamble.numeroDocumenti || preamble.numeroFogli) {
+                // ✅ Retrocompatibilità: costruisci testo dai campi vecchi
+                const datiText: string[] = []
+                if (preamble.numeroCartelle) datiText.push(`Numero ${preamble.numeroCartelle} cartelle di file`)
+                if (preamble.numeroDocumenti) datiText.push(`contenenti ${preamble.numeroDocumenti} documenti PDF`)
+                if (preamble.numeroFogli) datiText.push(`per un totale di ${preamble.numeroFogli} fogli.`)
+                addText(datiText.join(' '), 10)
+            } else if (includeEmptyRows) {
+                // ✅ Se includeEmptyRows è true ma non c'è contenuto, stampa una riga vuota
+                addText('', 10)
+            }
             yPos += 5
         }
 
@@ -342,32 +395,59 @@ export async function exportToPDF(
 
         if (preamble.caseDetails && preamble.caseDetails.length > 0) {
             // ✅ Nuovo formato: usa caseDetails
+            // ✅ Se includeEmptyRows è true, includi anche dettagli senza valore
             dettagli = preamble.caseDetails
-                .filter(d => d.value && d.value.trim()) // Solo dettagli con valore
+                .filter(d => includeEmptyRows || (d.value && d.value.trim())) // Includi tutti se includeEmptyRows, altrimenti solo con valore
                 .sort((a, b) => a.order - b.order)
                 .map(d => ({
                     label: `${d.order + 1} ${d.label}`, // Aggiungi numero progressivo
-                    value: d.value
+                    value: d.value || (includeEmptyRows ? ' ' : '') // Usa spazio se vuoto e includeEmptyRows è true
                 }))
         } else {
             // ✅ Retrocompatibilità: migra dai campi vecchi
-            if (preamble.nomeIndagato) dettagli.push({ label: '1 Nome indagato/imputato', value: preamble.nomeIndagato })
-            if (preamble.numeroProcedimentoDettaglio) dettagli.push({ label: '2 Nr. procedimento', value: preamble.numeroProcedimentoDettaglio })
-            if (preamble.ufficioProcede) dettagli.push({ label: '3 Ufficio che procede', value: preamble.ufficioProcede })
-            if (preamble.reatiContestati) dettagli.push({ label: '4 Reato/i contestati', value: preamble.reatiContestati })
-            if (preamble.dataLuogo) dettagli.push({ label: '5 Data e luogo', value: preamble.dataLuogo })
-            if (preamble.ufficioPM) dettagli.push({ label: '6 Ufficio del P.M.', value: preamble.ufficioPM })
-            if (preamble.parteOffesa) dettagli.push({ label: '7 Parte offesa', value: preamble.parteOffesa })
-            if (preamble.poliziaGiudiziaria) dettagli.push({ label: '8 Polizia Giudiziaria', value: preamble.poliziaGiudiziaria })
-            if (preamble.difensori) dettagli.push({ label: '9 Difensore/i', value: preamble.difensori })
+            const defaultLabels = [
+                'Nome indagato/imputato',
+                'Nr. procedimento',
+                'Ufficio che procede',
+                'Reato/i contestati',
+                'Data e luogo',
+                'Ufficio del P.M.',
+                'Parte offesa',
+                'Polizia Giudiziaria',
+                'Difensore/i'
+            ]
+
+            // ✅ Se includeEmptyRows è true, crea tutte le righe anche se vuote
+            if (includeEmptyRows) {
+                defaultLabels.forEach((label, index) => {
+                    dettagli.push({
+                        label: `${index + 1} ${label}`,
+                        value: ' ' // Spazio per renderlo visibile
+                    })
+                })
+            } else {
+                // ✅ Altrimenti, aggiungi solo quelle con valore
+                if (preamble.nomeIndagato) dettagli.push({ label: '1 Nome indagato/imputato', value: preamble.nomeIndagato })
+                if (preamble.numeroProcedimentoDettaglio) dettagli.push({ label: '2 Nr. procedimento', value: preamble.numeroProcedimentoDettaglio })
+                if (preamble.ufficioProcede) dettagli.push({ label: '3 Ufficio che procede', value: preamble.ufficioProcede })
+                if (preamble.reatiContestati) dettagli.push({ label: '4 Reato/i contestati', value: preamble.reatiContestati })
+                if (preamble.dataLuogo) dettagli.push({ label: '5 Data e luogo', value: preamble.dataLuogo })
+                if (preamble.ufficioPM) dettagli.push({ label: '6 Ufficio del P.M.', value: preamble.ufficioPM })
+                if (preamble.parteOffesa) dettagli.push({ label: '7 Parte offesa', value: preamble.parteOffesa })
+                if (preamble.poliziaGiudiziaria) dettagli.push({ label: '8 Polizia Giudiziaria', value: preamble.poliziaGiudiziaria })
+                if (preamble.difensori) dettagli.push({ label: '9 Difensore/i', value: preamble.difensori })
+            }
             if (preamble.altroDettaglio) dettagli.push({ label: '10', value: preamble.altroDettaglio })
         }
 
-        if (dettagli.length > 0) {
+        console.log('[exportToPDF] 📄 Dettagli preparati:', dettagli.length, 'includeEmptyRows:', includeEmptyRows)
+
+        // ✅ Stampa tabella dettagli sempre se includeEmptyRows è true, altrimenti solo se ha contenuto
+        if (includeEmptyRows || dettagli.length > 0) {
             // ✅ Rimuovo il titolo "Dettagli Caso:" - la tabella inizia subito
             yPos += 3
-            checkPageBreak(10 + (dettagli.length * 7))
-            const detailsHeight = drawDetailsTable(doc, margin, yPos, contentWidth, dettagli)
+            checkPageBreak(10 + (dettagli.length > 0 ? dettagli.length * 7 : 7))
+            const detailsHeight = drawDetailsTable(doc, margin, yPos, contentWidth, dettagli.length > 0 ? dettagli : [])
             yPos += detailsHeight + 5
         }
 

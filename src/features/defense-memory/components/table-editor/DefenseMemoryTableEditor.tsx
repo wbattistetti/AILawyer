@@ -89,6 +89,10 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
 
     // ✅ Stato per includere estratti nell'export
     const [includeExtracts, setIncludeExtracts] = useState(true)
+    // ✅ Stato per includere righe vuote nel preambolo
+    const [includeEmptyRows, setIncludeEmptyRows] = useState(false)
+    // ✅ Stato per il formato di export selezionato
+    const [exportFormat, setExportFormat] = useState<'pdf' | 'word'>('pdf')
 
     // ✅ Ref per tracciare l'estratto da aggiungere alla nuova riga dopo che viene creata
     const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string>, fromOverlay?: boolean } | null>(null)
@@ -319,11 +323,8 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
         URL.revokeObjectURL(url)
     }, [tableData, praticaId])
 
-    const handleExport = useCallback(() => {
-        handleExportJSON()
-    }, [handleExportJSON])
-
-    const handleExportPDF = useCallback(async () => {
+    // ✅ Handler unificato per export (chiamato quando si clicca "Stampa")
+    const handleExport = useCallback(async (format: 'pdf' | 'word') => {
         try {
             // ✅ Includi preambolo e conclusioni nel tableData per l'export
             const dataToExport = {
@@ -331,20 +332,22 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 preamble,
                 conclusions
             }
-            // ✅ Passa includeExtracts alla funzione exportToPDF (se supportato)
-            await exportToPDF(dataToExport, clienteNome, includeExtracts)
-        } catch (error) {
-            console.error('Errore durante l\'export PDF:', error)
-            alert('Errore durante l\'export PDF: ' + (error instanceof Error ? error.message : String(error)))
-        }
-    }, [tableData, preamble, conclusions, clienteNome, includeExtracts])
 
-    // ✅ Handler per export Word (da implementare)
-    const handleExportWord = useCallback(() => {
-        // TODO: Implementare export Word
-        console.log('Export Word - da implementare', { includeExtracts })
-        alert('Export Word - Funzionalità in sviluppo')
-    }, [includeExtracts])
+            if (format === 'pdf') {
+                console.log('[DefenseMemoryTableEditor] 📄 Export PDF - Preambolo:', preamble)
+                console.log('[DefenseMemoryTableEditor] 📄 Export PDF - DataToExport:', dataToExport)
+                // ✅ Passa includeExtracts e includeEmptyRows alla funzione exportToPDF
+                await exportToPDF(dataToExport, clienteNome, includeExtracts, includeEmptyRows)
+            } else if (format === 'word') {
+                // TODO: Implementare export Word
+                console.log('Export Word - da implementare', { includeExtracts })
+                alert('Export Word - Funzionalità in sviluppo')
+            }
+        } catch (error) {
+            console.error(`Errore durante l'export ${format.toUpperCase()}:`, error)
+            alert(`Errore durante l'export ${format.toUpperCase()}: ` + (error instanceof Error ? error.message : String(error)))
+        }
+    }, [tableData, preamble, conclusions, clienteNome, includeExtracts, includeEmptyRows])
 
     const sortedRows = [...rows].sort((a, b) => a.order - b.order)
 
@@ -500,12 +503,15 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             <TableHeader
                 onAddRow={handleAddRow}
                 onAddObservation={!readOnly ? handleAddObservation : undefined}
-                onExportPDF={handleExportPDF}
-                onExportWord={handleExportWord}
+                onExport={handleExport}
                 rowCount={getRowCount()}
                 readOnly={readOnly}
                 includeExtracts={includeExtracts}
                 onIncludeExtractsChange={setIncludeExtracts}
+                includeEmptyRows={includeEmptyRows}
+                onIncludeEmptyRowsChange={setIncludeEmptyRows}
+                exportFormat={exportFormat}
+                onExportFormatChange={setExportFormat}
             />
 
             {/* Tabella - riempie tutto il pannello */}
