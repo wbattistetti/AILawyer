@@ -1,87 +1,56 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, Save, Download, Upload, Undo2, Redo2, FileText } from 'lucide-react'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuCheckboxItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Plus, Printer, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface TableHeaderProps {
     onAddRow: () => void
     onAddObservation?: () => void // ✅ Handler per click su "Aggiungi osservazione"
-    onSave?: () => void
-    onExport?: () => void
     onExportPDF?: () => void // ✅ Handler per export PDF
-    onImport?: () => void
-    onUndo?: () => void
-    onRedo?: () => void
-    canUndo?: boolean
-    canRedo?: boolean
+    onExportWord?: () => void // ✅ Handler per export Word
     rowCount: number
     readOnly?: boolean
     className?: string
-    clienteNome?: string
+    includeExtracts?: boolean // ✅ Flag per includere estratti nell'export
+    onIncludeExtractsChange?: (include: boolean) => void // ✅ Callback per cambiare il flag
 }
 
 export const TableHeader: React.FC<TableHeaderProps> = ({
     onAddRow,
     onAddObservation,
-    onSave,
-    onExport,
     onExportPDF,
-    onImport,
-    onUndo,
-    onRedo,
-    canUndo = false,
-    canRedo = false,
+    onExportWord,
     rowCount,
     readOnly = false,
     className = '',
-    clienteNome
+    includeExtracts = true,
+    onIncludeExtractsChange
 }) => {
+    const [localIncludeExtracts, setLocalIncludeExtracts] = useState(includeExtracts)
+
+    const handleIncludeExtractsChange = (checked: boolean) => {
+        setLocalIncludeExtracts(checked)
+        onIncludeExtractsChange?.(checked)
+    }
+
     return (
         <div className={`flex items-center justify-between p-4 border-b bg-gray-50 ${className}`}>
+            {/* ✅ Rimosso il titolo a sinistra, mantenuto solo il conteggio righe */}
             <div className="flex items-center space-x-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                    {clienteNome ? `Analisi atti - ${clienteNome}` : 'Tabella Analisi atti'}
-                </h3>
                 <span className="text-sm text-gray-500">
                     {rowCount} {rowCount === 1 ? 'riga' : 'righe'}
                 </span>
             </div>
 
             <div className="flex items-center space-x-2">
-                {/* ✅ Undo/Redo buttons */}
-                {!readOnly && onUndo && onRedo && (
-                    <>
-                        <Button
-                            onClick={onUndo}
-                            size="sm"
-                            variant="outline"
-                            disabled={!canUndo}
-                            className={cn(
-                                "flex items-center space-x-1",
-                                !canUndo && "opacity-50 cursor-not-allowed"
-                            )}
-                            title="Annulla (Ctrl+Z)"
-                        >
-                            <Undo2 className="h-4 w-4" />
-                            <span>Annulla</span>
-                        </Button>
-                        <Button
-                            onClick={onRedo}
-                            size="sm"
-                            variant="outline"
-                            disabled={!canRedo}
-                            className={cn(
-                                "flex items-center space-x-1",
-                                !canRedo && "opacity-50 cursor-not-allowed"
-                            )}
-                            title="Ripeti (Ctrl+Y)"
-                        >
-                            <Redo2 className="h-4 w-4" />
-                            <span>Ripeti</span>
-                        </Button>
-                    </>
-                )}
-
                 {!readOnly && (
                     <>
                         <Button
@@ -120,53 +89,42 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                     </>
                 )}
 
-                {onSave && !readOnly && (
-                    <Button
-                        onClick={onSave}
-                        size="sm"
-                        variant="outline"
-                        className="flex items-center space-x-1"
-                    >
-                        <Save className="h-4 w-4" />
-                        <span>Salva</span>
-                    </Button>
-                )}
-
-                {onExport && (
-                    <Button
-                        onClick={onExport}
-                        size="sm"
-                        variant="outline"
-                        className="flex items-center space-x-1"
-                    >
-                        <Download className="h-4 w-4" />
-                        <span>Esporta</span>
-                    </Button>
-                )}
-
-                {onExportPDF && (
-                    <Button
-                        onClick={onExportPDF}
-                        size="sm"
-                        variant="outline"
-                        className="flex items-center space-x-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
-                    >
-                        <FileText className="h-4 w-4" />
-                        <span>Esporta PDF</span>
-                    </Button>
-                )}
-
-                {onImport && !readOnly && (
-                    <Button
-                        onClick={onImport}
-                        size="sm"
-                        variant="outline"
-                        className="flex items-center space-x-1"
-                    >
-                        <Upload className="h-4 w-4" />
-                        <span>Importa</span>
-                    </Button>
-                )}
+                {/* ✅ Nuovo pulsante "Stampa" con dropdown */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex items-center space-x-1"
+                        >
+                            <Printer className="h-4 w-4" />
+                            <span>Stampa</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                            onClick={() => onExportPDF?.()}
+                            className="flex items-center space-x-2"
+                        >
+                            <FileText className="h-4 w-4" />
+                            <span>PDF</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={() => onExportWord?.()}
+                            className="flex items-center space-x-2"
+                        >
+                            <FileText className="h-4 w-4" />
+                            <span>Word</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuCheckboxItem
+                            checked={localIncludeExtracts}
+                            onCheckedChange={handleIncludeExtractsChange}
+                        >
+                            Stampa anche estratti
+                        </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
         </div>
     )

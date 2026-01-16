@@ -87,6 +87,9 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
     const [preamble, setPreamble] = useState<PreambleData>(initialData?.preamble || {})
     const [conclusions, setConclusions] = useState<ConclusionsData>(initialData?.conclusions || {})
 
+    // ✅ Stato per includere estratti nell'export
+    const [includeExtracts, setIncludeExtracts] = useState(true)
+
     // ✅ Ref per tracciare l'estratto da aggiungere alla nuova riga dopo che viene creata
     const pendingExtractRef = useRef<{ extract: ExtractData, existingRowIds: Set<string>, fromOverlay?: boolean } | null>(null)
 
@@ -328,12 +331,20 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                 preamble,
                 conclusions
             }
-            await exportToPDF(dataToExport, clienteNome)
+            // ✅ Passa includeExtracts alla funzione exportToPDF (se supportato)
+            await exportToPDF(dataToExport, clienteNome, includeExtracts)
         } catch (error) {
             console.error('Errore durante l\'export PDF:', error)
             alert('Errore durante l\'export PDF: ' + (error instanceof Error ? error.message : String(error)))
         }
-    }, [tableData, preamble, conclusions, clienteNome])
+    }, [tableData, preamble, conclusions, clienteNome, includeExtracts])
+
+    // ✅ Handler per export Word (da implementare)
+    const handleExportWord = useCallback(() => {
+        // TODO: Implementare export Word
+        console.log('Export Word - da implementare', { includeExtracts })
+        alert('Export Word - Funzionalità in sviluppo')
+    }, [includeExtracts])
 
     const sortedRows = [...rows].sort((a, b) => a.order - b.order)
 
@@ -489,16 +500,12 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             <TableHeader
                 onAddRow={handleAddRow}
                 onAddObservation={!readOnly ? handleAddObservation : undefined}
-                onSave={onSave ? handleSave : undefined}
-                onExport={handleExport}
                 onExportPDF={handleExportPDF}
-                onUndo={undo}
-                onRedo={redo}
-                canUndo={canUndo}
-                canRedo={canRedo}
+                onExportWord={handleExportWord}
                 rowCount={getRowCount()}
                 readOnly={readOnly}
-                clienteNome={clienteNome}
+                includeExtracts={includeExtracts}
+                onIncludeExtractsChange={setIncludeExtracts}
             />
 
             {/* Tabella - riempie tutto il pannello */}

@@ -44,6 +44,14 @@ export interface TableRow {
     blocks?: Block[]  // ✅ NUOVO: Blocchi riorganizzabili (estratti + osservazioni)
 }
 
+// ✅ Interfaccia per un dettaglio caso (riga nella tabella)
+export interface CaseDetail {
+    id: string
+    label: string // Etichetta (predefinita o personalizzata)
+    value: string // Valore
+    order: number // Ordine nella tabella
+}
+
 export interface PreambleData {
     procura?: string
     tribunale?: string
@@ -52,9 +60,13 @@ export interface PreambleData {
     numeroProcedimento?: string
     affidamentoIncarico?: string
     richiestaQuesito?: string
+    dati?: string // ✅ Box DATI: testo libero
     numeroCartelle?: string
     numeroDocumenti?: string
     numeroFogli?: string
+    // ✅ NUOVO: Array di dettagli caso (sostituisce i campi fissi)
+    caseDetails?: CaseDetail[]
+    // ✅ DEPRECATO: Campi fissi mantenuti per retrocompatibilità
     nomeIndagato?: string
     numeroProcedimentoDettaglio?: string
     ufficioProcede?: string
