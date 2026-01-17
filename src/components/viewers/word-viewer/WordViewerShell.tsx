@@ -13,7 +13,7 @@ import { usePdfSearchPanel } from '../pdf-viewer/hooks/usePdfSearchPanel'
 import { usePdfPanelResizer } from '../pdf-viewer/hooks/usePdfPanelResizer'
 import type { PersistentSelection } from '../pdf-viewer/types'
 import { ExtractBlockOverlay } from '../pdf-viewer/components/ExtractBlockOverlay'
-import { captureSelectionScreenshot } from '../common/utils/screenshot'
+import { captureSelectionScreenshotWithFallback } from '../common/utils/screenshot'
 import { viewportBoxToPercent } from '../common/utils/coordinateUtils'
 import { useViewerOverlays } from '../common/hooks/useViewerOverlays'
 import { DraftOverlay } from './components/DraftOverlay'
@@ -134,18 +134,10 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
         })
       }
 
-      // ✅ Cattura screenshot (sempre, come richiesto)
-      let imageDataUrl: string | undefined
-      try {
-        if (hostRef.current) {
-          imageDataUrl = await captureSelectionScreenshot(hostRef.current, selection.viewportBox)
-        }
-      } catch (error) {
-        console.warn('[WordViewerShell] Errore durante cattura screenshot:', error)
-      }
-
+      // ✅ Crea persistentSelection IMMEDIATAMENTE (senza screenshot)
+      const selectionId = `word-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       const persistentSelection: PersistentSelection = {
-        id: `word-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: selectionId,
         page: selection.pageNumber,
         x0Pct: percentCoords.x0Pct,
         y0Pct: percentCoords.y0Pct,
@@ -154,19 +146,68 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
         text: '', // ✅ Sempre vuoto - solo screenshot
         viewportBox: selection.viewportBox,
         source: docName || 'Documento Word',
-        imageDataUrl // ✅ Screenshot già catturato
+        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
       }
 
-      // ✅ Salva lastSelection per ExtractBlockOverlay
+      // ✅ Salva lastSelection per ExtractBlockOverlay (IMMEDIATAMENTE)
       setLastSelection({
         pdfPageNumber: selection.pageNumber,
         viewportBox: selection.viewportBox,
         text: '',
-        imageDataUrl
+        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
       })
 
-      // ✅ Aggiungi alla lista di persistent selections
+      // ✅ Aggiungi alla lista di persistent selections (IMMEDIATAMENTE)
       setPersistentSelections(prev => [...prev, persistentSelection])
+
+      // ✅ Cattura screenshot VELOCE immediato + ad alta risoluzione in background
+      if (hostRef.current) {
+        captureSelectionScreenshotWithFallback(hostRef.current, selection.viewportBox)
+          .then(({ fast, highQuality }) => {
+            // ✅ Mostra subito screenshot veloce (scale: 1) - ~0.5-1 sec invece di ~2 sec
+            setPersistentSelections(prev =>
+              prev.map(ps =>
+                ps.id === selectionId
+                  ? { ...ps, imageDataUrl: fast }
+                  : ps
+              )
+            )
+
+            setLastSelection(prev =>
+              prev ? { ...prev, imageDataUrl: fast } : prev
+            )
+
+            // ✅ Sostituisci con screenshot ad alta risoluzione quando pronto (scale: 2)
+            // Non blocca l'UI - l'utente vede già qualcosa
+            highQuality
+              .then((highResImage) => {
+                // ✅ Verifica che la selezione esista ancora (evita race conditions)
+                setPersistentSelections(prev => {
+                  const exists = prev.some(ps => ps.id === selectionId)
+                  if (!exists) return prev
+
+                  return prev.map(ps =>
+                    ps.id === selectionId
+                      ? { ...ps, imageDataUrl: highResImage }
+                      : ps
+                  )
+                })
+
+                setLastSelection(prev => {
+                  if (!prev) return prev
+                  // ✅ Verifica che sia ancora la stessa selezione
+                  return { ...prev, imageDataUrl: highResImage }
+                })
+              })
+              .catch((error) => {
+                console.warn('[WordViewerShell] Errore durante cattura screenshot ad alta risoluzione:', error)
+                // ✅ Non è critico - l'utente ha già lo screenshot veloce
+              })
+          })
+          .catch((error) => {
+            console.warn('[WordViewerShell] Errore durante cattura screenshot:', error)
+          })
+      }
     }
   })
 

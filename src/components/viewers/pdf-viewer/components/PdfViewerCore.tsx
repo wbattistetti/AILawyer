@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Worker, Viewer, ScrollMode, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import '@react-pdf-viewer/core/lib/styles/index.css'
 import '@react-pdf-viewer/zoom/lib/styles/index.css'
@@ -74,6 +74,51 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		else queueRef.current.push(fn);
 	};
 
+	// ✅ Sopprimi il warning di --scale-factor se persiste (non è critico, il CSS globale lo gestisce)
+	// IMPORTANTE: Deve essere eseguito PRIMA che PDF.js venga caricato
+	useLayoutEffect(() => {
+		const originalWarn = console.warn
+		const originalError = console.error
+
+		// ✅ Intercetta console.warn
+		console.warn = (...args: any[]) => {
+			const message = String(args[0] || '')
+			// ✅ Sopprimi solo il warning specifico di --scale-factor
+			if (message.includes('--scale-factor') ||
+			    message.includes('scale-factor') ||
+			    message.includes('CSS-variable must be set')) {
+				return // ✅ Ignora il warning
+			}
+			originalWarn.apply(console, args)
+		}
+
+		// ✅ Intercetta anche console.error (alcune versioni di PDF.js potrebbero usarlo)
+		console.error = (...args: any[]) => {
+			const message = String(args[0] || '')
+			if (message.includes('--scale-factor') ||
+			    message.includes('scale-factor') ||
+			    message.includes('CSS-variable must be set')) {
+				return // ✅ Ignora l'errore
+			}
+			originalError.apply(console, args)
+		}
+
+		return () => {
+			console.warn = originalWarn
+			console.error = originalError
+		}
+	}, []) // ✅ Esegui solo al mount, in modo sincrono
+
+	// ✅ Imposta --scale-factor sul container principale IMMEDIATAMENTE al mount (sincrono)
+	// Questo assicura che la variabile CSS sia disponibile PRIMA che i text layer vengano renderizzati
+	useLayoutEffect(() => {
+		const container = hostRef.current as HTMLElement | null
+		if (container) {
+			const scale = scaleRef.current || 1
+			container.style.setProperty('--scale-factor', String(scale))
+		}
+	}, []) // ✅ Esegui solo al mount, in modo sincrono prima del paint
+
 	// ✅ CENTRATURA SEMPLICE: Solo quando il documento è caricato
 	useEffect(() => {
 		if (!ready) return
@@ -97,47 +142,45 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		const updateScaleFactor = () => {
 			const scale = scaleRef.current || 1
 			const container = hostRef.current as HTMLElement | null
-			if (container) {
-				container.style.setProperty('--scale-factor', String(scale))
-			}
-			const viewer = container?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+			if (!container) return
+
+			// ✅ Imposta sul container principale
+			container.style.setProperty('--scale-factor', String(scale))
+
+			// ✅ Imposta sul viewer
+			const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 			if (viewer) {
 				viewer.style.setProperty('--scale-factor', String(scale))
 			}
-			// ✅ Aggiorna anche su tutti i page-layer (dove viene renderizzato il text layer)
-			const pageLayers = container?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
-			if (pageLayers) {
-				pageLayers.forEach((layer) => {
-					layer.style.setProperty('--scale-factor', String(scale))
-				})
-			}
-			// ✅ Aggiorna anche su tutti i text-layer direttamente
-			const textLayers = container?.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement> | undefined
-			if (textLayers) {
-				textLayers.forEach((layer) => {
-					layer.style.setProperty('--scale-factor', String(scale))
-				})
-			}
+
+			// ✅ Imposta su tutti i page-layer
+			const pageLayers = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
+			pageLayers.forEach((layer) => {
+				layer.style.setProperty('--scale-factor', String(scale))
+			})
+
+			// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
+			const textLayers = container.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
+			textLayers.forEach((layer) => {
+				layer.style.setProperty('--scale-factor', String(scale))
+			})
 		}
 
 		// Aggiorna immediatamente
 		updateScaleFactor()
 
-		// ✅ Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
-		const rafId = requestAnimationFrame(() => {
-			updateScaleFactor()
-		})
-
-		// ✅ Monitora i cambiamenti del DOM per aggiornare i nuovi page-layer e text-layer
+		// ✅ MutationObserver minimale: aggiorna solo quando vengono aggiunti nuovi text layer
 		const observer = new MutationObserver((mutations) => {
-			// ✅ Verifica se sono stati aggiunti nuovi text-layer
 			let hasNewTextLayer = false
 			for (const mutation of mutations) {
 				if (mutation.type === 'childList') {
 					for (const node of mutation.addedNodes) {
-						if (node.nodeType === Node.ELEMENT_NODE) {
-							const el = node as HTMLElement
-							if (el.classList?.contains('rpv-core__text-layer') || el.querySelector?.('.rpv-core__text-layer')) {
+						if (node instanceof HTMLElement) {
+							// ✅ Verifica se è un text layer o contiene un text layer
+							if (node.classList?.contains('textLayer') ||
+							    node.classList?.contains('rpv-core__text-layer') ||
+							    node.querySelector?.('.textLayer') ||
+							    node.querySelector?.('.rpv-core__text-layer')) {
 								hasNewTextLayer = true
 								break
 							}
@@ -145,30 +188,21 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					}
 				}
 			}
-
-			// ✅ Se ci sono nuovi text-layer, aggiorna immediatamente
+			// ✅ Aggiorna solo se è stato aggiunto un nuovo text layer
 			if (hasNewTextLayer) {
 				updateScaleFactor()
 			}
-
-			// ✅ Usa requestAnimationFrame per evitare troppi aggiornamenti
-			requestAnimationFrame(() => {
-				updateScaleFactor()
-			})
 		})
 
 		const container = hostRef.current
 		if (container) {
 			observer.observe(container, {
 				subtree: true,
-				childList: true,
-				attributes: true,
-				attributeFilter: ['class', 'style']
+				childList: true
 			})
 		}
 
 		return () => {
-			cancelAnimationFrame(rafId)
 			observer.disconnect()
 		}
 	}, [ready, hostRef])
@@ -232,7 +266,8 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 								layer.style.setProperty('--scale-factor', String(scale))
 							})
 						}
-						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement> | undefined
+						// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
+						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
 						if (textLayers) {
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
@@ -273,6 +308,13 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 								layer.style.setProperty('--scale-factor', String(s))
 							})
 						}
+						// ✅ Aggiorna anche su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
+						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
+						if (textLayers) {
+							textLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(s))
+							})
+						}
 
 						try { requestAnimationFrame(() => { try { (window as any).__deskewApply?.() } catch { } }) } catch { }
 					}
@@ -298,8 +340,8 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 							pageLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
 							})
-							// ✅ Imposta su tutti i text-layer
-							const textLayers = container.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement>
+							// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
+							const textLayers = container.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
 							})

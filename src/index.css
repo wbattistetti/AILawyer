@@ -103,8 +103,19 @@
   --scale-factor: 1 !important; /* ✅ Valore di default per evitare errori PDF.js */
 }
 
+/* ✅ AGGIUNTO: Imposta --scale-factor anche su .textLayer (senza prefisso rpv-core__) */
+/* PDF.js verifica la variabile CSS su questo nodo, non solo su .rpv-core__text-layer */
+.textLayer {
+  --scale-factor: 1 !important; /* ✅ Valore di default per evitare errori PDF.js */
+}
+
 /* ✅ Imposta --scale-factor anche su tutti i container che potrebbero contenere il text layer */
 .rpv-core__viewer * {
+  --scale-factor: inherit; /* ✅ Eredita la variabile dal parent */
+}
+
+/* ✅ AGGIUNTO: Imposta --scale-factor anche su tutti i nodi dentro .textLayer */
+.textLayer * {
   --scale-factor: inherit; /* ✅ Eredita la variabile dal parent */
 }
 

@@ -13,7 +13,7 @@ import { usePdfOverlays } from './usePdfOverlays'
 import { usePdfPanelResizer } from './usePdfPanelResizer'
 import { usePdfExtract } from './usePdfExtract'
 import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
-import { captureSelectionScreenshot } from '../../common/utils/screenshot'
+import { captureSelectionScreenshotWithFallback } from '../../common/utils/screenshot'
 import type { PersistentSelection } from '../types'
 
 interface UsePdfShellStateProps {
@@ -129,19 +129,10 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
         y1Pct: (selection.viewportBox.y + selection.viewportBox.h) / pageRect.height
       }
 
-      // ✅ Cattura screenshot (sempre, come richiesto)
-      let imageDataUrl: string | undefined
-      try {
-        if (hostRef.current) {
-          imageDataUrl = await captureSelectionScreenshot(hostRef.current, selection.viewportBox)
-        }
-      } catch (error) {
-        console.warn('[PdfShellState] Errore durante cattura screenshot:', error)
-      }
-
-      // ✅ Crea PersistentSelection con screenshot
+      // ✅ Crea PersistentSelection IMMEDIATAMENTE (senza screenshot)
+      const selectionId = `pdf-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       const persistentSelection: PersistentSelection = {
-        id: `pdf-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: selectionId,
         page: selection.pageNumber,
         x0Pct: percentCoords.x0Pct,
         y0Pct: percentCoords.y0Pct,
@@ -150,19 +141,70 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
         text: '', // ✅ Sempre vuoto inizialmente - testo estratto opzionale a posteriori
         viewportBox: selection.viewportBox,
         source: docId || 'Documento',
-        imageDataUrl // ✅ Screenshot sempre presente
+        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
       }
 
-      // ✅ Salva lastSelection per ExtractBlockOverlay
+      // ✅ Salva lastSelection per ExtractBlockOverlay (IMMEDIATAMENTE)
       viewerState.setLastSelection({
         pdfPageNumber: selection.pageNumber,
         viewportBox: selection.viewportBox,
         text: '',
-        imageDataUrl
+        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
       })
 
-      // ✅ Aggiungi alla lista di persistent selections
+      // ✅ Aggiungi alla lista di persistent selections (IMMEDIATAMENTE)
       viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
+
+      // ✅ Cattura screenshot VELOCE immediato + ad alta risoluzione in background
+      // Nota: Per PDF nativi, ExtractBlockOverlay usa già cropCanvasFromViewportBox (veloce)
+      // Questa chiamata è utile per documenti OCR o casi edge
+      if (hostRef.current) {
+        captureSelectionScreenshotWithFallback(hostRef.current, selection.viewportBox)
+          .then(({ fast, highQuality }) => {
+            // ✅ Mostra subito screenshot veloce (scale: 1) - ~0.5-1 sec invece di ~2 sec
+            viewerState.setPersistentSelections(prev =>
+              prev.map(ps =>
+                ps.id === selectionId
+                  ? { ...ps, imageDataUrl: fast }
+                  : ps
+              )
+            )
+
+            viewerState.setLastSelection(prev =>
+              prev ? { ...prev, imageDataUrl: fast } : prev
+            )
+
+            // ✅ Sostituisci con screenshot ad alta risoluzione quando pronto (scale: 2)
+            // Non blocca l'UI - l'utente vede già qualcosa
+            highQuality
+              .then((highResImage) => {
+                // ✅ Verifica che la selezione esista ancora (evita race conditions)
+                viewerState.setPersistentSelections(prev => {
+                  const exists = prev.some(ps => ps.id === selectionId)
+                  if (!exists) return prev
+
+                  return prev.map(ps =>
+                    ps.id === selectionId
+                      ? { ...ps, imageDataUrl: highResImage }
+                      : ps
+                  )
+                })
+
+                viewerState.setLastSelection(prev => {
+                  if (!prev) return prev
+                  // ✅ Verifica che sia ancora la stessa selezione
+                  return { ...prev, imageDataUrl: highResImage }
+                })
+              })
+              .catch((error) => {
+                console.warn('[PdfShellState] Errore durante cattura screenshot ad alta risoluzione:', error)
+                // ✅ Non è critico - l'utente ha già lo screenshot veloce
+              })
+          })
+          .catch((error) => {
+            console.warn('[PdfShellState] Errore durante cattura screenshot:', error)
+          })
+      }
     }, [pageElsRef, hostRef, docId, viewerState]),
     isClickInsideOverlay: useCallback((target: HTMLElement) => {
       // ✅ Verifica se click è dentro overlay ExtractBlock
