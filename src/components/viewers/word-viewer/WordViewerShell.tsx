@@ -90,34 +90,48 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
       let percentCoords: { x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }
 
       const pageEl = pageElsRef.current.get(selection.pageNumber)
-      if (pageEl) {
+      const host = hostRef.current
+      const hostRect = host?.getBoundingClientRect()
+
+      if (pageEl && hostRect && host) {
         // ✅ Calcola rispetto alla pagina (come PDF viewer)
         const pageRect = pageEl.getBoundingClientRect()
-        const hostRect = hostRef.current?.getBoundingClientRect()
 
-        if (hostRect) {
-          // ✅ Converti viewportBox (host) in coordinate pagina
-          const offsetX = pageRect.left - hostRect.left
-          const offsetY = pageRect.top - hostRect.top
+        // ✅ IMPORTANTE: selection.viewportBox è relativo al host (considerando scroll)
+        // Per convertirlo in coordinate relative alla pagina:
+        // 1. Converti da host (con scroll) a coordinate assolute (viewport)
+        // 2. Converti da coordinate assolute a coordinate relative alla pagina
 
-          const x0Page = selection.viewportBox.x - offsetX
-          const y0Page = selection.viewportBox.y - offsetY
-          const x1Page = x0Page + selection.viewportBox.w
-          const y1Page = y0Page + selection.viewportBox.h
+        // ✅ IMPORTANTE: viewportBox è relativo al viewport del host
+        // Per ottenere coordinate assolute (viewport), devo aggiungere hostRect.left/top
+        // getBoundingClientRect() già considera lo scroll automaticamente
+        const x0Absolute = selection.viewportBox.x + hostRect.left
+        const y0Absolute = selection.viewportBox.y + hostRect.top
+        const x1Absolute = x0Absolute + selection.viewportBox.w
+        const y1Absolute = y0Absolute + selection.viewportBox.h
 
-          percentCoords = {
-            x0Pct: x0Page / pageRect.width,
-            y0Pct: y0Page / pageRect.height,
-            x1Pct: x1Page / pageRect.width,
-            y1Pct: y1Page / pageRect.height
-          }
-        } else {
-          // ✅ Fallback: usa convertToPercent
-          percentCoords = convertToPercent(selection.viewportBox)
+        // Coordinate relative alla pagina (in pixel)
+        const x0Page = x0Absolute - pageRect.left
+        const y0Page = y0Absolute - pageRect.top
+        const x1Page = x1Absolute - pageRect.left
+        const y1Page = y1Absolute - pageRect.top
+
+        // ✅ Converti in percentuali (clamp tra 0 e 1)
+        // IMPORTANTE: usa pageRect.width/height per le percentuali
+        percentCoords = {
+          x0Pct: Math.max(0, Math.min(1, x0Page / pageRect.width)),
+          y0Pct: Math.max(0, Math.min(1, y0Page / pageRect.height)),
+          x1Pct: Math.max(0, Math.min(1, x1Page / pageRect.width)),
+          y1Pct: Math.max(0, Math.min(1, y1Page / pageRect.height))
         }
       } else {
-        // ✅ Fallback: usa convertToPercent
+        // ✅ Fallback: usa convertToPercent (coordinate relative al host)
         percentCoords = convertToPercent(selection.viewportBox)
+        console.warn('[WordViewerShell][onSelection] Fallback a convertToPercent:', {
+          hasPageEl: !!pageEl,
+          hasHostRect: !!hostRect,
+          pageNumber: selection.pageNumber
+        })
       }
 
       // ✅ Cattura screenshot (sempre, come richiesto)

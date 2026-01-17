@@ -180,6 +180,8 @@ function splitHtmlIntoPages(html: string): string[] {
   // In futuro si può implementare una logica più sofisticata
   // usando un div temporaneo e calcolando l'altezza effettiva
 
-  // ✅ Wrappa l'HTML in un div con data-page
-  return [`<div data-page="1" class="word-page">${html}</div>`]
+  // ✅ Wrappa l'HTML in un div con data-page e bordo che si adatta al tema
+  // Bordo nero su tema chiaro, bianco su tema scuro
+  // Sfondo bianco sempre per il contenuto del documento
+  return [`<div data-page="1" class="word-page border border-gray-900 dark:border-white bg-white shadow-sm">${html}</div>`]
 }

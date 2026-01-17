@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { usePdfViewerState } from './usePdfViewerState'
 import { usePdfSearch } from './usePdfSearch'
 import { useNativeSelection } from './useNativeSelection'
@@ -12,6 +12,9 @@ import { usePdfNativeStyles } from './usePdfNativeStyles'
 import { usePdfOverlays } from './usePdfOverlays'
 import { usePdfPanelResizer } from './usePdfPanelResizer'
 import { usePdfExtract } from './usePdfExtract'
+import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
+import { captureSelectionScreenshot } from '../../common/utils/screenshot'
+import type { PersistentSelection } from '../types'
 
 interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
@@ -87,11 +90,95 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
   const selectionHandledRef = useRef(false)
 
-  // Native selection (simplified interface)
+  // ✅ SEMPLIFICAZIONE: Selezione rettangolo sempre attiva (indipendente da selectKind)
+  // Funziona per PDF, Word, immagini - sempre screenshot, testo opzionale
+  const rectSelection = useRectSelection({
+    viewerId: docId || 'pdf-viewer',
+    enabled: viewerState.selectMode, // ✅ Sempre attiva quando selectMode=true
+    isActive,
+    hostRef: hostRef as React.RefObject<HTMLElement>,
+    pageElsRef,
+    onDraftChange: useCallback((draftBox: DraftBox | null) => {
+      // ✅ Converti DraftBox in Annotation per AnnotationOverlays
+      if (draftBox) {
+        const annotation: any = {
+          id: 'draft',
+          page: draftBox.page,
+          type: 'highlight' as const,
+          color: 'rgba(59,130,246,0.3)',
+          x0Pct: draftBox.x0Pct,
+          y0Pct: draftBox.y0Pct,
+          x1Pct: draftBox.x1Pct,
+          y1Pct: draftBox.y1Pct
+        }
+        setDraft(annotation)
+      } else {
+        setDraft(null)
+      }
+    }, [setDraft]),
+    onSelection: useCallback(async (selection) => {
+      // ✅ Calcola coordinate percentuali rispetto alla pagina
+      const pageEl = pageElsRef.current.get(selection.pageNumber)
+      if (!pageEl) return
+
+      const pageRect = pageEl.getBoundingClientRect()
+      const percentCoords = {
+        x0Pct: selection.viewportBox.x / pageRect.width,
+        y0Pct: selection.viewportBox.y / pageRect.height,
+        x1Pct: (selection.viewportBox.x + selection.viewportBox.w) / pageRect.width,
+        y1Pct: (selection.viewportBox.y + selection.viewportBox.h) / pageRect.height
+      }
+
+      // ✅ Cattura screenshot (sempre, come richiesto)
+      let imageDataUrl: string | undefined
+      try {
+        if (hostRef.current) {
+          imageDataUrl = await captureSelectionScreenshot(hostRef.current, selection.viewportBox)
+        }
+      } catch (error) {
+        console.warn('[PdfShellState] Errore durante cattura screenshot:', error)
+      }
+
+      // ✅ Crea PersistentSelection con screenshot
+      const persistentSelection: PersistentSelection = {
+        id: `pdf-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        page: selection.pageNumber,
+        x0Pct: percentCoords.x0Pct,
+        y0Pct: percentCoords.y0Pct,
+        x1Pct: percentCoords.x1Pct,
+        y1Pct: percentCoords.y1Pct,
+        text: '', // ✅ Sempre vuoto inizialmente - testo estratto opzionale a posteriori
+        viewportBox: selection.viewportBox,
+        source: docId || 'Documento',
+        imageDataUrl // ✅ Screenshot sempre presente
+      }
+
+      // ✅ Salva lastSelection per ExtractBlockOverlay
+      viewerState.setLastSelection({
+        pdfPageNumber: selection.pageNumber,
+        viewportBox: selection.viewportBox,
+        text: '',
+        imageDataUrl
+      })
+
+      // ✅ Aggiungi alla lista di persistent selections
+      viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
+    }, [pageElsRef, hostRef, docId, viewerState]),
+    isClickInsideOverlay: useCallback((target: HTMLElement) => {
+      // ✅ Verifica se click è dentro overlay ExtractBlock
+      return !!(
+        target.closest('[data-extract-overlay="true"]') ||
+        target.closest('.extract-block-overlay')
+      )
+    }, [])
+  })
+
+  // ✅ Native selection - solo per selezione testo nativo (non rettangolo)
+  // Gestisce quando l'utente seleziona testo con il mouse (non drag rettangolo)
   const nativeSelection = useNativeSelection({
     viewerId: docId || 'pdf-viewer', // ✅ ID univoco per isolamento
-    selectMode: true,
-    selectKind: 'NATIVE',
+    selectMode: viewerState.selectMode,
+    selectKind: 'NATIVE', // ✅ Solo selezione testo nativo
     extractOpen: viewerState.extractOpen,
     hostRef,
     pageElsRef,

@@ -88,16 +88,24 @@ export function useRectSelection({
       if (pageEl) {
         const pageRect = pageEl.getBoundingClientRect()
 
-        // ✅ Converti coordinate assolute in relative alla pagina
+        // ✅ IMPORTANTE: clientX/clientY sono coordinate assolute rispetto al viewport
+        // Converti in coordinate relative alla pagina
         const startXPage = startX - pageRect.left
         const startYPage = startY - pageRect.top
         const endXPage = endX - pageRect.left
         const endYPage = endY - pageRect.top
 
-        const x0Pct = Math.max(0, Math.min(1, Math.min(startXPage, endXPage) / pageRect.width))
-        const y0Pct = Math.max(0, Math.min(1, Math.min(startYPage, endYPage) / pageRect.height))
-        const x1Pct = Math.max(0, Math.min(1, Math.max(startXPage, endXPage) / pageRect.width))
-        const y1Pct = Math.max(0, Math.min(1, Math.max(startYPage, endYPage) / pageRect.height))
+        // ✅ Calcola min/max per ottenere angolo in alto-sx e basso-dx
+        const x0 = Math.min(startXPage, endXPage)
+        const y0 = Math.min(startYPage, endYPage)
+        const x1 = Math.max(startXPage, endXPage)
+        const y1 = Math.max(startYPage, endYPage)
+
+        // ✅ Converti in percentuali (clamp tra 0 e 1)
+        const x0Pct = Math.max(0, Math.min(1, x0 / pageRect.width))
+        const y0Pct = Math.max(0, Math.min(1, y0 / pageRect.height))
+        const x1Pct = Math.max(0, Math.min(1, x1 / pageRect.width))
+        const y1Pct = Math.max(0, Math.min(1, y1 / pageRect.height))
 
         return {
           page,
@@ -120,10 +128,16 @@ export function useRectSelection({
     const endXHost = endX - hostRect.left
     const endYHost = endY - hostRect.top
 
-    const x0Pct = Math.max(0, Math.min(1, Math.min(startXHost, endXHost) / hostRect.width))
-    const y0Pct = Math.max(0, Math.min(1, Math.min(startYHost, endYHost) / hostRect.height))
-    const x1Pct = Math.max(0, Math.min(1, Math.max(startXHost, endXHost) / hostRect.width))
-    const y1Pct = Math.max(0, Math.min(1, Math.max(startYHost, endYHost) / hostRect.height))
+    // ✅ Calcola min/max per ottenere angolo in alto-sx e basso-dx
+    const x0 = Math.min(startXHost, endXHost)
+    const y0 = Math.min(startYHost, endYHost)
+    const x1 = Math.max(startXHost, endXHost)
+    const y1 = Math.max(startYHost, endYHost)
+
+    const x0Pct = Math.max(0, Math.min(1, x0 / hostRect.width))
+    const y0Pct = Math.max(0, Math.min(1, y0 / hostRect.height))
+    const x1Pct = Math.max(0, Math.min(1, x1 / hostRect.width))
+    const y1Pct = Math.max(0, Math.min(1, y1 / hostRect.height))
 
     return {
       page,
@@ -324,17 +338,14 @@ export function useRectSelection({
 
       // ✅ Ricalcola hostRect per mouseup (per gestire scroll/resize)
       const hostRect = host.getBoundingClientRect()
-      const startX = startPosRef.current.x - hostRect.left
-      const startY = startPosRef.current.y - hostRect.top
-      const endX = e.clientX - hostRect.left
-      const endY = e.clientY - hostRect.top
 
-      // ✅ Calcola viewportBox finale
+      // ✅ IMPORTANTE: calculateViewportBox si aspetta coordinate assolute (viewport)
+      // Non sottrarre hostRect.left/top qui, lo fa calculateViewportBox
       const viewportBox = calculateViewportBox(
-        startX,
-        startY,
-        endX,
-        endY,
+        startPosRef.current.x, // ✅ Coordinata assoluta (viewport)
+        startPosRef.current.y, // ✅ Coordinata assoluta (viewport)
+        e.clientX, // ✅ Coordinata assoluta (viewport)
+        e.clientY, // ✅ Coordinata assoluta (viewport)
         host
       )
 
@@ -366,11 +377,18 @@ export function useRectSelection({
         text: '' // ✅ Sempre vuoto - solo screenshot
       }
 
-      onSelection(viewerSelection)
-
-      // ✅ Pulisci draft
-      resetState()
-  }, [hostRef, onSelection, isClickInsideOverlay, minSize, resetState])
+      // ✅ IMPORTANTE: onSelection è asincrono (fa screenshot)
+      // NON pulire il draft subito - lascia che onSelection gestisca la pulizia
+      // Il draft rimane visibile fino a quando la PersistentSelection viene creata
+      Promise.resolve(onSelection(viewerSelection)).then(() => {
+        // ✅ Pulisci draft solo DOPO che onSelection ha finito
+        resetState()
+      }).catch((error) => {
+        console.error('[useRectSelection] Errore in onSelection:', error)
+        // ✅ In caso di errore, pulisci comunque
+        resetState()
+      })
+  }, [hostRef, onSelection, isClickInsideOverlay, minSize, resetState, calculateViewportBox, getPageNumberFromElement])
 
   // ✅ Usa useIsolatedGlobalListeners per gestire listener globali isolati
   useIsolatedGlobalListeners({

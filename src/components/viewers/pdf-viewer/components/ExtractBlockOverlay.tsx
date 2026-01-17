@@ -5,6 +5,7 @@ import { extractClipboardManager } from '../../../../utils/extractClipboard'
 import { cropCanvasFromViewportBox } from '../utils/canvasCrop'
 import { ExtractBlock } from '../../../../features/defense-memory/components/table-editor/components/ExtractBlock'
 import { ExtractBlock as ExtractBlockType, ExtractData } from '../../../../features/defense-memory/components/table-editor/types/blocks.types'
+import { getSelectedTextInRect } from '../utils/textExtraction'
 
 interface ExtractBlockOverlayProps {
 	selection: PersistentSelection
@@ -32,7 +33,10 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const [extractBlock, setExtractBlock] = useState<ExtractBlockType | null>(null)
 	const [extractData, setExtractData] = useState<ExtractData | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
+	const [isExtractingText, setIsExtractingText] = useState(false)
 	const overlayRef = useRef<HTMLDivElement | null>(null)
+	const contentWrapperRef = useRef<HTMLDivElement | null>(null) // ✅ Ref per il wrapper del contenuto
+	const [actualHeaderHeight, setActualHeaderHeight] = useState<number>(60) // ✅ Altezza reale misurata
 
 	// ✅ Crea ExtractBlock e ExtractData dalla selezione
 	useEffect(() => {
@@ -149,6 +153,32 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			window.removeEventListener('app:extract-added-by-drag', handleExtractAddedByDrag as EventListener)
 		}
 	}, [extractData, onClose])
+
+	// ✅ Misura altezza reale dell'header dopo il render
+	useLayoutEffect(() => {
+		if (contentWrapperRef.current && extractBlock) {
+			// ✅ ExtractBlock renderizza un div principale, e il primo elemento figlio è l'header (div con border-b)
+			const extractBlockElement = contentWrapperRef.current.firstElementChild as HTMLElement
+			if (extractBlockElement) {
+				// ✅ L'header è il primo elemento figlio del ExtractBlock (div con className che include 'border-b')
+				const headerElement = Array.from(extractBlockElement.children).find(
+					(child) => child.classList.contains('border-b') ||
+					(child as HTMLElement).querySelector('.border-b')
+				) as HTMLElement
+
+				// ✅ Se non trovato con la classe, prova a prendere il primo figlio
+				const targetElement = headerElement || extractBlockElement.firstElementChild as HTMLElement
+
+				if (targetElement) {
+					const headerRect = targetElement.getBoundingClientRect()
+					const measuredHeight = headerRect.height
+					if (measuredHeight > 0 && Math.abs(measuredHeight - actualHeaderHeight) > 1) {
+						setActualHeaderHeight(measuredHeight)
+					}
+				}
+			}
+		}
+	}, [extractBlock, actualHeaderHeight])
 
 	// ✅ Callback ref per salvare il riferimento all'overlay
 	const overlayCallbackRef = (element: HTMLDivElement | null) => {
@@ -272,6 +302,59 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		onClose()
 	}
 
+	// ✅ Handler per estrarre testo dal rettangolo (opzionale, a posteriori)
+	const handleExtractText = async () => {
+		if (!extractData || !hasNativeText) return
+
+		const pageNum = selection.page
+		const pageLayer = pageElsRef.current.get(pageNum)
+		if (!pageLayer) return
+
+		const textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLDivElement | null
+		if (!textLayer) {
+			console.warn('[ExtractBlockOverlay] Text layer non trovato')
+			return
+		}
+
+		setIsExtractingText(true)
+
+		try {
+			const pr = pageLayer.getBoundingClientRect()
+			const viewportBox = {
+				x: selection.x0Pct * pr.width,
+				y: selection.y0Pct * pr.height,
+				w: (selection.x1Pct - selection.x0Pct) * pr.width,
+				h: (selection.y1Pct - selection.y0Pct) * pr.height
+			}
+
+			const { text } = await getSelectedTextInRect(textLayer, viewportBox)
+
+			if (text && text.trim().length > 0) {
+				// ✅ Aggiorna extractData con il testo estratto
+				const updatedData: ExtractData = {
+					...extractData,
+					content: text.trim()
+				}
+
+				// ✅ Aggiorna extractBlock con il testo
+				const updatedBlock: ExtractBlockType = {
+					...extractBlock!,
+					extract: updatedData
+				}
+
+				setExtractData(updatedData)
+				setExtractBlock(updatedBlock)
+			}
+		} catch (error) {
+			console.error('[ExtractBlockOverlay] Errore durante estrazione testo:', error)
+		} finally {
+			setIsExtractingText(false)
+		}
+	}
+
+	// ✅ Verifica se il testo può essere estratto (haNativeText e testo non ancora estratto)
+	const canExtractText = hasNativeText === true && (!extractData?.content || extractData.content.trim().length === 0)
+
 	if (isLoading || !extractBlock || !extractData) {
 		return null
 	}
@@ -287,8 +370,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const selectionWidth = (selection.x1Pct - selection.x0Pct) * pageRect.width
 	const selectionHeight = (selection.y1Pct - selection.y0Pct) * pageRect.height
 
-	// ✅ Altezze stimate per header e footer
-	const headerHeight = 60 // Altezza approssimativa dell'header (titolo)
+	// ✅ Usa altezza reale misurata invece di valore stimato
+	const headerHeight = actualHeaderHeight
 	const footerHeight = 50 // Altezza approssimativa del footer (pulsanti)
 	const observationHeight = extractBlock.hasObservation ? 120 : 0 // Altezza campo osservazione se presente
 
@@ -297,7 +380,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const width = `${(selection.x1Pct - selection.x0Pct) * 100}%`
 	// ✅ Top: inizia SOPRA il rettangolo per includere l'header
 	const top = `calc(${selection.y0Pct * 100}% - ${headerHeight}px)`
-	// ✅ Height: auto si adatta al contenuto, min-height include header + rettangolo + footer + osservazione
+	// ✅ Height: auto si adatta al contenuto, min-height include header + rettangolo ESATTO + footer + osservazione
+	// ✅ IMPORTANTE: selectionHeight deve corrispondere esattamente alle dimensioni del contenuto nella card
 	const minHeight = headerHeight + selectionHeight + footerHeight + observationHeight
 
 	const overlayNode = (
@@ -328,8 +412,9 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			}}
 		>
 			<div
+				ref={contentWrapperRef} // ✅ Ref per misurare altezza header
 				className="flex flex-col relative"
-				style={{ overflow: 'auto' }}
+				style={{ overflow: 'visible' }} // ✅ Cambiato a visible per non tagliare il contenuto
 				onClick={(e) => {
 					e.stopPropagation()
 				}}
@@ -370,28 +455,50 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					readOnly={false}
 					isOverlay={true} // ✅ Passa isOverlay per mostrare immagine a dimensione originale
 					overlayHeaderOffset={headerHeight} // ✅ Passa l'offset (non più usato per absolute, ma per calcoli)
+					overlayContentHeight={selectionHeight} // ✅ Passa altezza esatta del contenuto per mostrare tutto il rettangolo
 				/>
 
-				{/* ✅ Footer con pulsanti: "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}
-				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0 p-2 border-t border-gray-200 bg-white">
-					{/* Pulsante "Aggiungi osservazione" a sinistra (solo se non c'è già) */}
-					{!extractBlock.hasObservation && (
-						<button
-							onClick={(e) => {
-								e.stopPropagation()
-								if (extractBlock) {
-									const updatedBlock = { ...extractBlock, hasObservation: true, observation: '' }
-									setExtractBlock(updatedBlock)
-								}
-							}}
-							onMouseDown={(e) => {
-								e.stopPropagation()
-							}}
-							className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-						>
-							Aggiungi osservazione
-						</button>
-					)}
+				{/* ✅ Footer con pulsanti: "Estrai testo" / "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}
+				{/* ✅ Mantieni mt-2 per spazio al contenuto (rettangolo selezionato), ma rimuovi border-t per evitare la "fascetta grigia" */}
+				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0 p-2 bg-white">
+					{/* Pulsanti a sinistra */}
+					<div className="flex gap-2">
+						{/* Pulsante "Estrai testo" (opzionale, solo se haNativeText e testo non estratto) */}
+						{canExtractText && (
+							<button
+								onClick={(e) => {
+									e.stopPropagation()
+									handleExtractText()
+								}}
+								onMouseDown={(e) => {
+									e.stopPropagation()
+								}}
+								disabled={isExtractingText}
+								className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{isExtractingText ? 'Estrazione...' : 'Estrai testo'}
+							</button>
+						)}
+
+						{/* Pulsante "Aggiungi osservazione" (solo se non c'è già) */}
+						{!extractBlock.hasObservation && (
+							<button
+								onClick={(e) => {
+									e.stopPropagation()
+									if (extractBlock) {
+										const updatedBlock = { ...extractBlock, hasObservation: true, observation: '' }
+										setExtractBlock(updatedBlock)
+									}
+								}}
+								onMouseDown={(e) => {
+									e.stopPropagation()
+								}}
+								className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+							>
+								Aggiungi osservazione
+							</button>
+						)}
+					</div>
 
 					{/* Spacer per spingere i pulsanti a destra */}
 					<div className="flex-1" />

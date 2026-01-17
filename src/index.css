@@ -185,3 +185,14 @@
     transform-origin: center;
   }
 }
+
+/* ✅ Word Viewer - Bordo pagina che si adatta al tema */
+.word-page {
+  border-width: 1px;
+  min-height: 100vh;
+}
+
+/* ✅ Assicura che il contenuto della pagina Word rimanga leggibile */
+.word-page * {
+  color: inherit;
+}

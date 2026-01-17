@@ -99,20 +99,20 @@ export const DraftOverlay: React.FC<DraftOverlayProps> = ({
       left = `${x0Pct * 100}%`
       top = `${y0Pct * 100}%`
       width = `${(x1Pct - x0Pct) * 100}%`
-      height = `${Math.max(0.01, (y1Pct - y0Pct)) * 100}%`
+      height = `${(y1Pct - y0Pct) * 100}%`
     } else {
       // ✅ Fallback: usa coordinate host direttamente (non ideale ma meglio di niente)
       left = `${draft.x0Pct * 100}%`
       top = `${draft.y0Pct * 100}%`
       width = `${(draft.x1Pct - draft.x0Pct) * 100}%`
-      height = `${Math.max(0.01, (draft.y1Pct - draft.y0Pct)) * 100}%`
+      height = `${(draft.y1Pct - draft.y0Pct) * 100}%`
     }
   } else {
     // ✅ coordSpace === 'page' o non specificato: usa direttamente (come PDF viewer)
     left = `${draft.x0Pct * 100}%`
     top = `${draft.y0Pct * 100}%`
     width = `${(draft.x1Pct - draft.x0Pct) * 100}%`
-    height = `${Math.max(0.01, (draft.y1Pct - draft.y0Pct)) * 100}%`
+    height = `${(draft.y1Pct - draft.y0Pct) * 100}%`
   }
 
   const node = (

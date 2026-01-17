@@ -20,6 +20,7 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   readOnly,
   isOverlay = false,
   overlayHeaderOffset = 60,
+  overlayContentHeight,
   onExpandInModal
 }) => {
   const { extract, title, observation, hasObservation = false, collapsed = false, observations = [] } = block
@@ -1206,7 +1207,10 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
             // ✅ Quando è overlay, il contenuto inizia subito dopo l'header (nessun padding-top, nessun space-y)
             paddingTop: 0,
             marginTop: 0,
-            padding: 0 // ✅ Rimuovi anche padding laterale per allineare perfettamente lo screenshot
+            padding: 0, // ✅ Rimuovi anche padding laterale per allineare perfettamente lo screenshot
+            // ✅ Imposta altezza esatta del contenuto per mostrare tutto il rettangolo selezionato
+            minHeight: overlayContentHeight ? `${overlayContentHeight}px` : 'auto',
+            height: overlayContentHeight ? `${overlayContentHeight}px` : 'auto'
           } : undefined}
           onDragOver={!readOnly ? handleDragOver : undefined}
           onDrop={!readOnly ? handleDrop : undefined}
@@ -1291,7 +1295,7 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
           {/* ✅ Container del contenuto estratto (per determinare posizione drop) */}
           <div
             ref={contentContainerRef}
-            className="space-y-3"
+            className={isOverlay ? "" : "space-y-3"} // ✅ Rimuovi spacing quando è overlay per dimensioni esatte
             onDragOver={!readOnly ? handleDragOver : undefined}
             onDrop={!readOnly ? handleDrop : undefined}
           >
@@ -1302,17 +1306,20 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                   src={extract.imageDataUrl}
                   alt="Estratto"
                   className={isOverlay
-                    ? "w-full h-auto object-contain" // ✅ Dimensione originale quando è overlay
+                    ? "w-full object-contain" // ✅ Dimensione originale quando è overlay
                     : "w-full h-auto max-h-48 object-contain" // ✅ Limita altezza quando è in drawer/table
                   }
                   style={isOverlay ? {
                     // ✅ Quando è overlay, l'immagine deve essere mostrata esattamente alla dimensione del rettangolo
                     display: 'block',
                     margin: 0,
-                    padding: 0
-                    // ✅ RIMOSSO marginTop negativo - lo screenshot inizia subito dopo l'header
-                    // L'overlay inizia sopra il rettangolo (top = selection.y0Pct - headerHeight)
-                    // L'header occupa headerHeight, quindi lo screenshot inizia esattamente dove inizia il rettangolo
+                    padding: 0,
+                    width: '100%',
+                    height: 'auto',
+                    maxHeight: 'none' // ✅ Rimuovi qualsiasi limitazione di altezza
+                    // ✅ L'immagine mantiene le proporzioni e occupa esattamente lo spazio del rettangolo selezionato
+                    // Il container ha width = selectionWidth, quindi l'immagine avrà quella larghezza
+                    // L'altezza sarà calcolata automaticamente mantenendo le proporzioni del rettangolo selezionato
                   } : undefined}
                 />
               </div>

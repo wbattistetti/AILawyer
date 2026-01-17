@@ -208,8 +208,22 @@ export const useNativeSelection = ({
 			return
 		}
 
+		// ✅ SEMPLIFICAZIONE: useNativeSelection gestisce solo selezione testo nativo
+		// Il drag rettangolo è gestito da useRectSelection (sempre attivo quando selectMode=true)
+		// Quindi useNativeSelection deve gestire solo quando l'utente seleziona testo con il mouse
+		// NON deve gestire il drag rettangolo (quello è gestito da useRectSelection)
+
+		// ✅ Se non è NATIVE, non fare nulla (il drag rettangolo è gestito da useRectSelection)
+		if (selectKind !== 'NATIVE') {
+			return
+		}
+
 		console.log('[NATIVE-SEL][DOWN] Event received', { extractOpen: extractOpenRef.current, selectMode, selectKind })
 		if (extractOpenRef.current) return
+
+		// ✅ IMPORTANTE: useNativeSelection gestisce solo la selezione testo nativo
+		// NON gestisce il drag rettangolo (quello è gestito da useRectSelection)
+		// Quindi qui gestiamo solo quando l'utente seleziona testo con il mouse (non drag)
 
 		const target = ev.target as HTMLElement
 		const host = hostRef.current
@@ -261,41 +275,31 @@ export const useNativeSelection = ({
 			return
 		}
 
-		console.log('[NATIVE-SEL][DOWN] Click inside viewer bounds, checking persistent selections', {
-			persistentSelectionsLength: persistentSelectionsRef.current.length,
-			hasDraft: !!draftRef.current
-		})
+		// ✅ SEMPLIFICAZIONE: useNativeSelection NON gestisce più le persistent selections create da useRectSelection
+		// Le persistent selections create da useRectSelection (drag rettangolo) sono gestite da useRectSelection stesso
+		// useNativeSelection gestisce solo la selezione testo nativo (quando l'utente seleziona testo con il mouse)
+		// Quindi qui NON cancelliamo le persistent selections - quelle sono gestite da useRectSelection
 
-		// Verifica se il click è dentro un rettangolo persistente
-		if (persistentSelectionsRef.current.length > 0 || draftRef.current) {
-			console.log('[NATIVE-SEL][DOWN] Found persistent selections or draft, checking click position')
-			const clickedOnSelection = isClickOnPersistentSelection(x, y)
-			console.log('[NATIVE-SEL][DOWN] Clicked on selection?', clickedOnSelection)
+		console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non gestiamo persistent selections da useRectSelection)')
+		// ✅ NON cancellare persistent selections - quelle sono gestite da useRectSelection
+		// ✅ NON gestire mousedown per drag rettangolo - quello è gestito da useRectSelection
+		// ✅ La selezione testo nativo viene gestita da onSelChange, non da onMouseDown
+		return // ✅ Esci subito - non gestire drag rettangolo o persistent selections qui
 
-			if (clickedOnSelection) {
-				console.log('[NATIVE-SEL][DOWN] Click inside existing selection, exiting')
-				// Il rettangolo gestirà il click tramite onClick, quindi non facciamo nulla qui
-				return
-			}
+		// ✅ SEMPLIFICAZIONE: useNativeSelection NON gestisce più il drag rettangolo
+		// Il drag rettangolo è gestito da useRectSelection (sempre attivo quando selectMode=true)
+		// useNativeSelection gestisce solo la selezione testo nativo (quando l'utente seleziona testo con il mouse)
+		// Quindi qui NON creiamo draft box - lasciamo che il browser gestisca la selezione testo nativa
+		// e intercettiamo solo quando l'utente completa la selezione (onSelChange)
 
-			console.log('[NATIVE-SEL][DOWN] Click outside existing selections, clearing and exiting')
-			// Se il click è fuori da tutti i rettangoli, cancella tutto e NON iniziare selezione
-			setPersistentSelections([])
-			setDraft(null)
-			setContextMenu({ x: 0, y: 0, visible: false })
-			return
-		}
+		console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non drag rettangolo)')
+		// ✅ NON bloccare la selezione nativa - lasciamo che il browser la gestisca
+		// ✅ NON creare draft box - quello è gestito da useRectSelection
+		// ✅ NON impostare isSelectingRef - quello è gestito da useRectSelection
+		// ✅ La selezione testo nativo viene gestita da onSelChange, non da onMouseDown
+		return // ✅ Esci subito - non gestire drag rettangolo qui
 
-		console.log('[NATIVE-SEL][DOWN] No persistent selections, starting new selection')
-		// Activate native selection suppression
-		host.classList.add('rpv--suppress-native-select')
-		document.addEventListener('selectionchange', selectionBlocker, true)
-		window.getSelection?.()?.removeAllRanges()
-
-		isSelectingRef.current = true
-		host.classList.add('is-dragging')
-		console.log('[NATIVE-SEL][DOWN] Selection started, isSelectingRef.current =', isSelectingRef.current)
-
+		// ❌ CODICE LEGACY RIMOSSO: La logica di drag rettangolo è stata spostata in useRectSelection
 		// Trova la pagina del mouse down
 		let pn = 0
 		console.log('[NATIVE-SEL][DOWN] Finding page number...')
@@ -486,8 +490,14 @@ export const useNativeSelection = ({
 			return
 		}
 
-		// Se stava selezionando, gestisci fine drag
-		if (isSelectingRef.current) {
+		// ✅ SEMPLIFICAZIONE: useNativeSelection NON gestisce più il drag rettangolo
+		// Il drag rettangolo è gestito da useRectSelection (sempre attivo quando selectMode=true)
+		// useNativeSelection gestisce solo la selezione testo nativo (quando l'utente seleziona testo con il mouse)
+		// Quindi qui NON gestiamo il drag rettangolo - quello è gestito da useRectSelection
+
+		// ✅ Se stava selezionando (drag rettangolo), NON gestirlo qui - è gestito da useRectSelection
+		// ✅ Questo codice è legacy e dovrebbe essere rimosso, ma per ora lo disabilitiamo
+		if (false && isSelectingRef.current) {
 			if (lastDraftBoxRef.current && lastDraftBoxRef.current.length > 0) {
 				// Per MVP: usa solo il primo box (pagina originale)
 				const firstBox = lastDraftBoxRef.current[0]
