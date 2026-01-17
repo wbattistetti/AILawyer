@@ -90,6 +90,89 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		}
 	}, [ready])
 
+	// ✅ Aggiorna --scale-factor su tutti i container quando cambia lo zoom
+	useEffect(() => {
+		if (!ready) return
+
+		const updateScaleFactor = () => {
+			const scale = scaleRef.current || 1
+			const container = hostRef.current as HTMLElement | null
+			if (container) {
+				container.style.setProperty('--scale-factor', String(scale))
+			}
+			const viewer = container?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+			if (viewer) {
+				viewer.style.setProperty('--scale-factor', String(scale))
+			}
+			// ✅ Aggiorna anche su tutti i page-layer (dove viene renderizzato il text layer)
+			const pageLayers = container?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
+			if (pageLayers) {
+				pageLayers.forEach((layer) => {
+					layer.style.setProperty('--scale-factor', String(scale))
+				})
+			}
+			// ✅ Aggiorna anche su tutti i text-layer direttamente
+			const textLayers = container?.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement> | undefined
+			if (textLayers) {
+				textLayers.forEach((layer) => {
+					layer.style.setProperty('--scale-factor', String(scale))
+				})
+			}
+		}
+
+		// Aggiorna immediatamente
+		updateScaleFactor()
+
+		// ✅ Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
+		const rafId = requestAnimationFrame(() => {
+			updateScaleFactor()
+		})
+
+		// ✅ Monitora i cambiamenti del DOM per aggiornare i nuovi page-layer e text-layer
+		const observer = new MutationObserver((mutations) => {
+			// ✅ Verifica se sono stati aggiunti nuovi text-layer
+			let hasNewTextLayer = false
+			for (const mutation of mutations) {
+				if (mutation.type === 'childList') {
+					for (const node of mutation.addedNodes) {
+						if (node.nodeType === Node.ELEMENT_NODE) {
+							const el = node as HTMLElement
+							if (el.classList?.contains('rpv-core__text-layer') || el.querySelector?.('.rpv-core__text-layer')) {
+								hasNewTextLayer = true
+								break
+							}
+						}
+					}
+				}
+			}
+
+			// ✅ Se ci sono nuovi text-layer, aggiorna immediatamente
+			if (hasNewTextLayer) {
+				updateScaleFactor()
+			}
+
+			// ✅ Usa requestAnimationFrame per evitare troppi aggiornamenti
+			requestAnimationFrame(() => {
+				updateScaleFactor()
+			})
+		})
+
+		const container = hostRef.current
+		if (container) {
+			observer.observe(container, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+				attributeFilter: ['class', 'style']
+			})
+		}
+
+		return () => {
+			cancelAnimationFrame(rafId)
+			observer.disconnect()
+		}
+	}, [ready, hostRef])
+
 	useImperativeHandle(ref, () => ({
 		jumpToPage: (page1Based: number) => {
 			const zero = Math.max(0, page1Based - 1);
@@ -130,11 +213,39 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					const total = doc?.numPages || 0
 					if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
 					if (total) { setTotalPages(total); setPageInput('1') }
-					const container = hostRef.current as HTMLElement | null
-					if (container) container.style.setProperty('--scale-factor', String(scaleRef.current || 1))
-					const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-					if (viewer) viewer.style.setProperty('--scale-factor', String(scaleRef.current || 1))
 
+					// ✅ Imposta --scale-factor su tutti i container necessari
+					const scale = scaleRef.current || 1
+					const updateScale = () => {
+						const container = hostRef.current as HTMLElement | null
+						if (container) {
+							container.style.setProperty('--scale-factor', String(scale))
+						}
+						const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+						if (viewer) {
+							viewer.style.setProperty('--scale-factor', String(scale))
+						}
+						// ✅ Imposta anche su tutti i page-layer e text-layer
+						const pageLayers = hostRef.current?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
+						if (pageLayers) {
+							pageLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(scale))
+							})
+						}
+						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement> | undefined
+						if (textLayers) {
+							textLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(scale))
+							})
+						}
+					}
+
+					// Aggiorna immediatamente
+					updateScale()
+
+					// ✅ Aggiorna anche dopo un breve delay per catturare i text-layer renderizzati in modo asincrono
+					setTimeout(() => updateScale(), 100)
+					setTimeout(() => updateScale(), 500)
 
 					try { window.dispatchEvent(new CustomEvent('app:viewer-ready', { detail: { docId: docId || 'current' } })) } catch { }
 					setReady(true);
@@ -145,15 +256,55 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 						scaleRef.current = s
 						setZoomPct(Math.round(s * 100))
 						; (window as any).__rpvLastZoomScale = s
+
+						// ✅ Aggiorna --scale-factor su tutti i container necessari
+						const container = hostRef.current as HTMLElement | null
+						if (container) {
+							container.style.setProperty('--scale-factor', String(s))
+						}
 						const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 						if (viewer) {
 							viewer.style.setProperty('--scale-factor', String(s))
 						}
+						// ✅ Aggiorna anche su tutti i page-layer (dove viene renderizzato il text layer)
+						const pageLayers = hostRef.current?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
+						if (pageLayers) {
+							pageLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(s))
+							})
+						}
+
 						try { requestAnimationFrame(() => { try { (window as any).__deskewApply?.() } catch { } }) } catch { }
 					}
 				}}
 				renderPage={(p: any) => {
 					const pageNumber = p.pageIndex + 1; // Convert 0-based to 1-based
+
+					// ✅ Imposta --scale-factor sul container della pagina PRIMA che il text layer venga renderizzato
+					const scale = scaleRef.current || 1
+					// ✅ Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
+					requestAnimationFrame(() => {
+						const container = hostRef.current as HTMLElement | null
+						if (container) {
+							// ✅ Imposta sul container principale
+							container.style.setProperty('--scale-factor', String(scale))
+							// ✅ Imposta sul viewer
+							const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+							if (viewer) {
+								viewer.style.setProperty('--scale-factor', String(scale))
+							}
+							// ✅ Imposta su tutti i page-layer
+							const pageLayers = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
+							pageLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(scale))
+							})
+							// ✅ Imposta su tutti i text-layer
+							const textLayers = container.querySelectorAll('.rpv-core__text-layer') as NodeListOf<HTMLElement>
+							textLayers.forEach((layer) => {
+								layer.style.setProperty('--scale-factor', String(scale))
+							})
+						}
+					})
 
 					const handleDoubleClick = async (e: React.MouseEvent) => {
 						// Evita di copiare se si sta selezionando testo

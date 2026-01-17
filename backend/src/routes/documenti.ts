@@ -769,13 +769,46 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         where: { id: docId }
       })
 
-      if (oldDoc) {
-        console.log('[UPDATE][DOCUMENTO][BEFORE]', {
-          docId,
-          oldCompartoId: oldDoc.compartoId,
-          filename: oldDoc.filename,
-          praticaId: oldDoc.praticaId
-        })
+      if (!oldDoc) {
+        return reply.status(404).send({ error: 'Documento non trovato' })
+      }
+
+      console.log('[UPDATE][DOCUMENTO][BEFORE]', {
+        docId,
+        oldCompartoId: oldDoc.compartoId,
+        filename: oldDoc.filename,
+        praticaId: oldDoc.praticaId
+      })
+
+      // ✅ VALIDAZIONE compartoId: verifica che esista e appartenga alla pratica del documento
+      if (data.compartoId) {
+        try {
+          const comp = await prisma.comparto.findUnique({ where: { id: data.compartoId } })
+          if (!comp) {
+            return reply.status(400).send({ error: 'Comparto non trovato', compartoId: data.compartoId })
+          }
+          if (comp.praticaId !== oldDoc.praticaId) {
+            return reply.status(400).send({
+              error: 'Il comparto non appartiene alla pratica del documento',
+              compartoId: data.compartoId,
+              documentoPraticaId: oldDoc.praticaId,
+              compartoPraticaId: comp.praticaId
+            })
+          }
+          console.log('[UPDATE][DOCUMENTO][COMPARTO-VALID]', {
+            docId,
+            compartoId: data.compartoId,
+            praticaId: oldDoc.praticaId,
+            compartoNome: comp.nome
+          })
+        } catch (compError) {
+          console.error('[UPDATE][DOCUMENTO][COMPARTO-ERROR]', {
+            docId,
+            compartoId: data.compartoId,
+            error: (compError as Error).message
+          })
+          return reply.status(400).send({ error: 'Errore nella validazione del comparto', details: (compError as Error).message })
+        }
       }
 
       const documento = await prisma.documento.update({
@@ -792,15 +825,47 @@ export async function documentiRoutes(fastify: FastifyInstance) {
         compartoChanged: oldDoc && oldDoc.compartoId !== documento.compartoId
       })
 
-      return documento
-    } catch (error) {
+      const normalized: any = {
+        ...documento,
+        tags: typeof (documento as any).tags === 'string' ? (() => { try { return JSON.parse((documento as any).tags) } catch { return [] } })() : (documento as any).tags,
+        ocrLayout: typeof (documento as any).ocrLayout === 'string' ? (() => { try { return JSON.parse((documento as any).ocrLayout) } catch { return undefined } })() : (documento as any).ocrLayout,
+      }
+
+      return normalized
+    } catch (error: any) {
       console.error('[UPDATE][DOCUMENTO][ERROR]', {
         docId,
-        error: (error as Error).message,
-        stack: (error as Error).stack
+        error: error?.message,
+        stack: error?.stack,
+        code: error?.code,
+        meta: error?.meta
       })
       fastify.log.error(error)
-      return reply.status(500).send({ error: 'Errore nell\'aggiornamento del documento' })
+
+      // ✅ Gestisci errori specifici di Prisma
+      if (error?.code === 'P2025') {
+        return reply.status(404).send({ error: 'Documento non trovato' })
+      }
+      if (error?.code === 'P2003') {
+        return reply.status(400).send({
+          error: 'Errore di foreign key constraint',
+          details: error?.meta?.field_name || 'Campo non valido',
+          message: error?.message
+        })
+      }
+      if (error?.code === 'P2002') {
+        return reply.status(400).send({
+          error: 'Violazione di constraint univoco',
+          details: error?.meta?.target || 'Campo duplicato',
+          message: error?.message
+        })
+      }
+
+      return reply.status(500).send({
+        error: 'Errore nell\'aggiornamento del documento',
+        details: error?.message || 'Errore sconosciuto',
+        code: error?.code
+      })
     }
   })
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen, HardDrive } from 'lucide-react';
 import { DriveInfo, TreeNode } from '../types';
 import { FileSystemAdapter } from '../services/FileSystemAdapter';
@@ -28,6 +28,8 @@ export function DirectoryTree({
 }: DirectoryTreeProps) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
+  const restoredExpansionRef = useRef<string>(''); // ✅ Traccia l'ultimo restore fatto
+  const isRestoringRef = useRef<boolean>(false); // ✅ Flag per evitare loop durante restore
 
   // ✅ Helper per ottenere tutti i path espansi dall'albero
   const getExpandedPaths = useCallback((nodes: TreeNode[]): string[] => {
@@ -120,18 +122,42 @@ export function DirectoryTree({
 
   // ✅ Ripristina lo stato di espansione iniziale quando cambiano initialExpandedPaths o drives
   useEffect(() => {
+    // ✅ Evita loop: non ripristinare se siamo già in fase di restore
+    if (isRestoringRef.current) {
+      return;
+    }
+
     if (initialExpandedPaths.length > 0 && tree.length > 0) {
+      // ✅ Crea un hash univoco per questa combinazione di paths e drives
+      const expansionKey = `${initialExpandedPaths.join('|')}-${drives.length}`;
+
+      // ✅ Evita loop infinito: ripristina solo se non l'abbiamo già fatto per questa combinazione
+      if (restoredExpansionRef.current === expansionKey) {
+        return; // ✅ Già ripristinato, evita loop
+      }
+
       // Espandi tutti i path salvati ricorsivamente
       const restoreExpansion = async () => {
-        let updatedTree = [...tree];
-        for (const path of initialExpandedPaths) {
-          updatedTree = await expandPathRecursive(updatedTree, path);
+        isRestoringRef.current = true; // ✅ Marca come in restore
+        try {
+          let updatedTree = [...tree];
+          for (const path of initialExpandedPaths) {
+            updatedTree = await expandPathRecursive(updatedTree, path);
+          }
+
+          // ✅ Marca come ripristinato PRIMA di chiamare setTree
+          restoredExpansionRef.current = expansionKey;
+          setTree(updatedTree);
+        } finally {
+          // ✅ Reset flag dopo un breve delay per permettere al setState di completare
+          setTimeout(() => {
+            isRestoringRef.current = false;
+          }, 100);
         }
-        setTree(updatedTree);
       };
       restoreExpansion();
     }
-  }, [initialExpandedPaths, drives.length]); // ✅ Dipende da drives.length per assicurarsi che l'albero sia inizializzato
+  }, [initialExpandedPaths, drives.length, expandPathRecursive]); // ✅ Rimosso tree.length per evitare loop
 
   // Handle highlight effect
   useEffect(() => {

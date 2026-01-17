@@ -90,11 +90,22 @@
 /* ✅ CENTRATURA SEMPLICE: Solo quello che serve per centrare il PDF */
 .rpv-core__viewer {
   text-align: center !important;
+  --scale-factor: 1 !important; /* ✅ Valore di default per evitare errori PDF.js */
 }
 
 .rpv-core__page-layer {
   margin: 0 auto !important;
   display: inline-block !important;
+  --scale-factor: 1 !important; /* ✅ Valore di default per evitare errori PDF.js */
+}
+
+.rpv-core__text-layer {
+  --scale-factor: 1 !important; /* ✅ Valore di default per evitare errori PDF.js */
+}
+
+/* ✅ Imposta --scale-factor anche su tutti i container che potrebbero contenere il text layer */
+.rpv-core__viewer * {
+  --scale-factor: inherit; /* ✅ Eredita la variabile dal parent */
 }
 
 /* Debug labels removed - PDF centering working! */

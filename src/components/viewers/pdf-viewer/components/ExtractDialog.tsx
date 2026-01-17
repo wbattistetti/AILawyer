@@ -20,6 +20,7 @@ interface ExtractDialogProps {
 	fileUrl: string
 	hostRef: React.RefObject<HTMLDivElement>
 	suppressClearRef: React.MutableRefObject<boolean>
+	extractImageDataUrl?: string // ✅ Screenshot per Word/OCR
 	onExtractTitleChange: (title: string) => void
 	onExtractDateChange: (date: string) => void
 	onExtractNotesChange: (notes: string) => void
@@ -46,6 +47,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 	fileUrl,
 	hostRef,
 	suppressClearRef,
+	extractImageDataUrl, // ✅ Screenshot per Word/OCR
 	onExtractTitleChange,
 	onExtractDateChange,
 	onExtractNotesChange,
@@ -245,6 +247,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 			const newEstratto = {
 				id: `tmp:${Date.now()}`,
 				...estrattoData,
+				imageDataUrl: extractImageDataUrl, // ✅ Include screenshot se disponibile (Word/OCR)
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString()
 			}

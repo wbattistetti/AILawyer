@@ -25,6 +25,8 @@ import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
 import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
+import { isWordDocument } from '../viewers/common/utils/viewerUtils'
+import { WordViewerShell } from '../viewers/word-viewer/WordViewerShell'
 import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
 import { useWorkspaceManager } from './pratica-canvas/hooks/useWorkspaceManager';
 import { useEventListeners } from './pratica-canvas/hooks/useEventListeners';
@@ -126,8 +128,24 @@ async function uploadFileFromPath(
   // 4. Carica file in uploads
   const ext = fileName.substring(fileName.lastIndexOf('.')) || '.bin'
   const s3Key = `${fileHash}${ext}`
-  const { uploadUrl } = await api.getUploadUrl(fileName, fileObj.type)
-  await api.uploadFile(uploadUrl, fileObj)
+  console.log('[UPLOAD-FROM-PATH][UPLOAD][START] Caricamento file nel backend:', { fileName, s3Key, size: fileObj.size })
+
+  // ✅ IMPORTANTE: Usa l'endpoint /upload/local/:key per specificare il s3Key corretto
+  // ✅ Invece di usare getUploadUrl che genera un s3Key diverso (timestamp + UUID)
+  const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(s3Key)}`
+  const uploadResponse = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: fileObj,
+    headers: {
+      'Content-Type': fileObj.type,
+    },
+  })
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Upload failed: ${uploadResponse.statusText}`)
+  }
+
+  console.log('[UPLOAD-FROM-PATH][UPLOAD][SUCCESS] File caricato nel backend:', { fileName, s3Key })
 
   // 5. Crea documento nel database
   const documento = await api.createDocumento({
@@ -405,21 +423,44 @@ export function PraticaCanvasPage() {
   // legacy tabs bar: replaced by DockWorkspace
 
   // Reusable viewer for a documento with Verify mode toggle
-  const renderDocViewer = (doc: Documento) => (
-    <PdfViewerShell
-      fileUrl={(doc as any).localUrl || api.getLocalFileUrl(doc.s3Key)}
-      page={syncPage || 1}
-      lines={null}
-      docId={doc.id}
-      praticaId={id || ''}
-      onPageChange={(page) => {
-        // Log rimosso (troppo rumoroso)
-        setSyncPage(page);
-      }}
-      docName={doc.filename}
-      hasNativeText={doc.hasNativeText}
-    />
-  )
+  const renderDocViewer = (doc: Documento, isActive: boolean = false) => {
+    const fileUrl = (doc as any).localUrl || api.getLocalFileUrl(doc.s3Key)
+
+    // ✅ Usa WordViewerShell per documenti Word
+    if (isWordDocument(doc)) {
+      return (
+        <WordViewerShell
+          fileUrl={fileUrl}
+          page={syncPage || 1}
+          onPageChange={(page) => {
+            setSyncPage(page)
+          }}
+          docId={doc.id}
+          praticaId={id || ''}
+          docName={doc.filename}
+          hasNativeText={true} // Word ha sempre testo nativo
+          isActive={isActive} // ✅ Passa isActive per isolamento
+        />
+      )
+    }
+
+    // ✅ Usa PdfViewerShell per PDF (default)
+    return (
+      <PdfViewerShell
+        fileUrl={fileUrl}
+        page={syncPage || 1}
+        lines={null}
+        docId={doc.id}
+        praticaId={id || ''}
+        onPageChange={(page) => {
+          setSyncPage(page)
+        }}
+        docName={doc.filename}
+        hasNativeText={doc.hasNativeText}
+        isActive={isActive} // ✅ Passa isActive per isolamento
+      />
+    )
+  }
 
   // legacy alias removed
   // ✅ AnalysisPanel è ora un componente separato importato
@@ -501,6 +542,22 @@ export function PraticaCanvasPage() {
             const updated = await api.updatePratica(id, dataToSave)
 
             // ✅ NOVO: Salva classificazioni pendenti nel database
+            // ✅ IMPORTANTE: Carica prima i documenti dal database per verificare se esistono
+            let dbDocsForClassifications: Documento[] = []
+            try {
+              dbDocsForClassifications = await api.getDocumentiByPratica(id!)
+            } catch (error) {
+              console.error('[SAVE][CLASSIFICATIONS][LOAD-DB][ERROR] Errore caricamento documenti dal DB:', error)
+            }
+
+            // ✅ Crea mappa per lookup veloce: filePath -> documento DB
+            const dbDocsByFilePath = new Map<string, Documento>()
+            for (const doc of dbDocsForClassifications) {
+              if ((doc as any).filePath) {
+                dbDocsByFilePath.set((doc as any).filePath, doc)
+              }
+            }
+
             const classificationsToSave = Array.from(pendingFileClassificationsRef.current.entries())
             console.log('[SAVE][CLASSIFICATIONS][START]', { count: classificationsToSave.length })
 
@@ -512,13 +569,31 @@ export function PraticaCanvasPage() {
                   continue
                 }
 
-                // Cerca se il file esiste già nel database (per filePath)
-                const existingDoc = documenti.find(d => d.filePath === filePath)
+                // ✅ Cerca se il file esiste già nel database (per filePath)
+                // ✅ IMPORTANTE: Cerca solo nei documenti del database, non in quelli temporanei
+                const existingDbDoc = dbDocsByFilePath.get(filePath)
 
-                if (existingDoc) {
+                // ✅ Verifica anche se è un documento temporaneo che deve essere creato
+                const existingMemDoc = documenti.find(d => (d as any).filePath === filePath)
+                const isTemporaryDoc = existingMemDoc && (
+                  /^[0-9a-f]{64}$/i.test(existingMemDoc.id) ||
+                  existingMemDoc.id.startsWith('temp:') ||
+                  existingMemDoc.id.startsWith('pending:')
+                )
+
+                if (existingDbDoc) {
                   // ✅ File già nel database: aggiorna compartoId
-                  console.log('[SAVE][CLASSIFICATIONS][UPDATE] Aggiorno documento esistente', { docId: existingDoc.id, compartoId: comparto.id })
-                  await api.updateDocumento(existingDoc.id, { compartoId: comparto.id })
+                  console.log('[SAVE][CLASSIFICATIONS][UPDATE] Aggiorno documento esistente nel DB', { docId: existingDbDoc.id, compartoId: comparto.id })
+                  try {
+                    await api.updateDocumento(existingDbDoc.id, { compartoId: comparto.id })
+                  } catch (error) {
+                    console.error('[SAVE][CLASSIFICATIONS][UPDATE][ERROR] Errore aggiornamento documento:', { docId: existingDbDoc.id, error })
+                    // Non bloccare il salvataggio per un singolo errore
+                  }
+                } else if (isTemporaryDoc) {
+                  // ✅ Documento temporaneo: sarà gestito dal salvataggio differenziale
+                  // ✅ Non fare nulla qui - il salvataggio differenziale lo creerà/aggiornerà
+                  console.log('[SAVE][CLASSIFICATIONS][SKIP] Documento temporaneo, gestito dal salvataggio differenziale:', { filePath, docId: existingMemDoc.id })
                 } else {
                   // ✅ File non ancora nel database: carica automaticamente
                   console.log('[SAVE][CLASSIFICATIONS][UPLOAD] Carico file automaticamente', { filePath, compartoId: comparto.id })
@@ -552,6 +627,14 @@ export function PraticaCanvasPage() {
               const dbDocs = await api.getDocumentiByPratica(id!)
               console.log('[SAVE][DIFF] Documenti nel DB:', dbDocs.length)
 
+              // ✅ Crea mappa per lookup veloce: filePath -> documento DB
+              const dbDocsByFilePath = new Map<string, Documento>()
+              for (const doc of dbDocs) {
+                if ((doc as any).filePath) {
+                  dbDocsByFilePath.set((doc as any).filePath, doc)
+                }
+              }
+
               // 2. Ottieni tutti i documenti in memoria (inclusi temporanei)
               const memoryDocs = store.getAllDocuments()
               console.log('[SAVE][DIFF] Documenti in memoria:', memoryDocs.length)
@@ -580,7 +663,14 @@ export function PraticaCanvasPage() {
                 const isTempPrefix = memDoc.id.startsWith('temp:') || memDoc.id.startsWith('pending:')
                 const isTemporary = isTempPrefix || isHashOnly
 
-                if (isTemporary) {
+                // ✅ Verifica se il documento esiste già nel database (per hash o s3Key)
+                const existingDbDoc = dbDocs.find(d =>
+                  d.id === memDoc.id ||
+                  (memDoc.s3Key && d.s3Key === memDoc.s3Key) ||
+                  ((memDoc as any).hash && d.hash === (memDoc as any).hash)
+                )
+
+                if (isTemporary && !existingDbDoc) {
                   // ✅ Documento nuovo: deve essere creato nel database
                   // ✅ Se ha filePath, carica il file e uploada
                   const filePath = (memDoc as any).filePath
@@ -598,32 +688,308 @@ export function PraticaCanvasPage() {
                       })
                     }
                   } else {
-                    // ✅ Documento temporaneo senza filePath (già uploadato o locale)
-                    // ✅ Crea documento nel database con i dati in memoria
+                    // ✅ SALVATAGGIO DIFFERENZIALE: Carica il file solo se non esiste già nel backend
+                    // ✅ Usa hash + dimensione per verificare se il file è identico
+                    const localUrl = (memDoc as any).localUrl
+                    let finalS3Key = memDoc.s3Key
+                    let finalHash = (memDoc as any).hash || memDoc.id
+                    let finalSize = memDoc.size || 0
+
+                    console.log('[SAVE][DIFF][CREATE] Documento temporaneo da salvare:', {
+                      filename: memDoc.filename,
+                      hasLocalUrl: !!localUrl,
+                      hasS3Key: !!memDoc.s3Key,
+                      hasHash: !!finalHash,
+                      hash: finalHash?.substring(0, 16) + '...',
+                      size: finalSize
+                    })
+
+                    // ✅ STEP 1: Se ha localUrl, calcola hash e dimensione dal file
+                    if (localUrl && localUrl.startsWith('blob:')) {
+                      try {
+                        const response = await fetch(localUrl)
+                        if (!response.ok) {
+                          throw new Error(`Failed to fetch blob: ${response.status}`)
+                        }
+                        const blob = await response.blob()
+                        const fileObj = new File([blob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+
+                        // Calcola hash se non presente o non valido
+                        if (!finalHash || finalHash.length !== 64) {
+                          finalHash = await calculateFileHash(fileObj)
+                          console.log('[SAVE][DIFF][CREATE][HASH] Hash calcolato:', finalHash.substring(0, 16) + '...')
+                        }
+
+                        // Aggiorna dimensione reale
+                        finalSize = fileObj.size
+
+                        // Genera s3Key definitivo (hash + estensione)
+                        const ext = memDoc.filename.substring(memDoc.filename.lastIndexOf('.')) || '.bin'
+                        finalS3Key = `${finalHash}${ext}`
+
+                        // ✅ STEP 2: Verifica se esiste già un documento con lo stesso hash nel backend
+                        // ✅ Questo evita di ricaricare file già presenti
+                        const existingDoc = dbDocs.find(d =>
+                          d.hash === finalHash ||
+                          (d.s3Key === finalS3Key)
+                        )
+
+                        if (existingDoc) {
+                          // ✅ File già presente nel backend - non serve ricaricarlo!
+                          console.log('[SAVE][DIFF][CREATE][SKIP-UPLOAD] File già presente nel backend:', {
+                            filename: memDoc.filename,
+                            existingDocId: existingDoc.id,
+                            existingS3Key: existingDoc.s3Key,
+                            hash: finalHash.substring(0, 16) + '...'
+                          })
+
+                          // ✅ Usa il documento esistente, ma aggiorna se necessario (compartoId, thumbnail, ecc.)
+                          const updateData: any = {}
+                          if (existingDoc.compartoId !== memDoc.compartoId) {
+                            updateData.compartoId = memDoc.compartoId
+                          }
+                          if ((memDoc as any).thumbnailDataUrl && !(existingDoc as any).thumbnailDataUrl) {
+                            updateData.thumbnailDataUrl = (memDoc as any).thumbnailDataUrl
+                          }
+                          if ((memDoc as any).hasNativeText !== undefined && (existingDoc as any).hasNativeText !== (memDoc as any).hasNativeText) {
+                            updateData.hasNativeText = (memDoc as any).hasNativeText
+                          }
+
+                          if (Object.keys(updateData).length > 0) {
+                            await api.updateDocumento(existingDoc.id, updateData)
+                            console.log('[SAVE][DIFF][CREATE][UPDATE] Documento esistente aggiornato:', memDoc.filename)
+                          } else {
+                            console.log('[SAVE][DIFF][CREATE][SKIP] Documento già presente, nessun aggiornamento necessario')
+                          }
+
+                          // ✅ Salta il caricamento del file - è già presente!
+                          continue
+                        }
+
+                        // ✅ STEP 3: File non presente - caricalo nel backend
+                        console.log('[SAVE][DIFF][CREATE][UPLOAD] File non presente nel backend, caricamento:', memDoc.filename)
+
+                        // ✅ IMPORTANTE: Usa l'endpoint /upload/local/:key con il s3Key basato sull'hash
+                        // ✅ Invece di usare getUploadUrl che genera un s3Key diverso (timestamp + UUID)
+                        const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(finalS3Key)}`
+                        const uploadResponse = await fetch(uploadUrl, {
+                          method: 'PUT',
+                          body: fileObj,
+                          headers: {
+                            'Content-Type': fileObj.type,
+                          },
+                        })
+
+                        if (!uploadResponse.ok) {
+                          throw new Error(`Upload failed: ${uploadResponse.statusText}`)
+                        }
+
+                        console.log('[SAVE][DIFF][CREATE][UPLOAD][SUCCESS] File caricato nel backend:', {
+                          filename: memDoc.filename,
+                          s3Key: finalS3Key,
+                          size: finalSize,
+                          hash: finalHash.substring(0, 16) + '...'
+                        })
+                      } catch (uploadError) {
+                        console.error('[SAVE][DIFF][CREATE][UPLOAD][ERROR] Errore caricamento file:', memDoc.filename, uploadError)
+                        toast({
+                          title: 'Errore',
+                          description: `Impossibile caricare il file: ${memDoc.filename}`,
+                          variant: 'destructive'
+                        })
+                        continue
+                      }
+                    } else {
+                      // ⚠️ Nessun blob URL disponibile
+                      console.warn('[SAVE][DIFF][CREATE][WARN] Documento temporaneo senza blob URL:', memDoc.filename)
+
+                      // Se ha già un s3Key, verifica che il file esista
+                      if (memDoc.s3Key) {
+                        try {
+                          const testUrl = api.getLocalFileUrl(memDoc.s3Key)
+                          const testResponse = await fetch(testUrl, { method: 'HEAD' })
+                          if (!testResponse.ok) {
+                            throw new Error(`File non trovato nel backend: ${memDoc.s3Key}`)
+                          }
+                          finalS3Key = memDoc.s3Key
+                          console.log('[SAVE][DIFF][CREATE][VERIFY][OK] File esiste già nel backend:', memDoc.s3Key)
+                        } catch (verifyError) {
+                          console.error('[SAVE][DIFF][CREATE][VERIFY][ERROR] File non trovato e nessun blob URL disponibile:', memDoc.filename)
+                          toast({
+                            title: 'Errore',
+                            description: `Impossibile trovare il file: ${memDoc.filename}. Il file potrebbe non essere più disponibile.`,
+                            variant: 'destructive'
+                          })
+                          continue
+                        }
+                      } else {
+                        // Nessun blob URL e nessun s3Key - impossibile salvare
+                        console.error('[SAVE][DIFF][CREATE][ERROR] Documento senza blob URL e senza s3Key:', memDoc.filename)
+                        toast({
+                          title: 'Errore',
+                          description: `Impossibile salvare il documento: ${memDoc.filename}. File non disponibile.`,
+                          variant: 'destructive'
+                        })
+                        continue
+                      }
+                    }
+
+                    // ✅ STEP 4: Crea documento nel database
+                    // ✅ Dopo il caricamento (o verifica) del file, il documento è completamente autonomo
                     try {
-                      const hash = (memDoc as any).hash || memDoc.id
-                      const s3Key = memDoc.s3Key || `${hash}${memDoc.filename.substring(memDoc.filename.lastIndexOf('.')) || '.bin'}`
+                      const s3Key = finalS3Key || `${finalHash}${memDoc.filename.substring(memDoc.filename.lastIndexOf('.')) || '.bin'}`
+                      console.log('[SAVE][DIFF][CREATE][DB] Creazione documento nel database:', {
+                        filename: memDoc.filename,
+                        s3Key: s3Key.substring(0, 30),
+                        hash: finalHash?.substring(0, 30),
+                        size: finalSize,
+                        hasThumbnail: !!(memDoc as any).thumbnailDataUrl
+                      })
                       await api.createDocumento({
                         praticaId: id!,
                         compartoId: memDoc.compartoId,
                         filename: memDoc.filename,
                         mime: memDoc.mime || 'application/octet-stream',
-                        size: memDoc.size || 0,
+                        size: finalSize,
                         s3Key,
-                        hash,
+                        hash: finalHash,
                         ocrStatus: 'pending',
                         tags: [],
                         thumbnailDataUrl: (memDoc as any).thumbnailDataUrl,
                         hasNativeText: (memDoc as any).hasNativeText,
-                        filePath: filePath || undefined
+                        // ❌ NON salvare filePath - il documento deve essere autonomo
+                        filePath: undefined
                       })
-                      console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato (senza filePath):', memDoc.filename)
+                      console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato e file caricato:', memDoc.filename)
                     } catch (error) {
-                      console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento (senza filePath):', memDoc.filename, error)
+                      console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento:', memDoc.filename, error)
+                      toast({
+                        title: 'Errore',
+                        description: `Impossibile salvare il documento: ${memDoc.filename}`,
+                        variant: 'destructive'
+                      })
                     }
                   }
+                } else if (existingDbDoc) {
+                  // ✅ Documento esiste già nel database: aggiorna invece di creare
+                  console.log('[SAVE][DIFF][UPDATE] Documento esiste già nel database, aggiorno:', {
+                    docId: existingDbDoc.id,
+                    filename: memDoc.filename,
+                    hasThumbnail: !!(memDoc as any).thumbnailDataUrl,
+                    oldCompartoId: existingDbDoc.compartoId,
+                    newCompartoId: memDoc.compartoId
+                  })
+
+                  // ✅ Verifica se il file esiste nel backend (per sicurezza)
+                  if (existingDbDoc.s3Key) {
+                    try {
+                      const testUrl = api.getLocalFileUrl(existingDbDoc.s3Key)
+                      const testResponse = await fetch(testUrl, { method: 'HEAD' })
+                      if (!testResponse.ok) {
+                        // File non esiste, prova a caricarlo se abbiamo localUrl
+                        const localUrl = (memDoc as any).localUrl
+                        if (localUrl && localUrl.startsWith('blob:')) {
+                          console.log('[SAVE][DIFF][UPDATE][UPLOAD] File non trovato nel backend, caricamento da blob URL:', memDoc.filename)
+                          try {
+                            const response = await fetch(localUrl)
+                            if (response.ok) {
+                              const blob = await response.blob()
+                              const fileObj = new File([blob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+
+                              // ✅ IMPORTANTE: Usa lo stesso s3Key del documento esistente
+                              // ✅ Usa l'endpoint /upload/local/:key per specificare il s3Key
+                              const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(existingDbDoc.s3Key)}`
+                              await fetch(uploadUrl, {
+                                method: 'PUT',
+                                body: fileObj,
+                                headers: {
+                                  'Content-Type': fileObj.type,
+                                },
+                              })
+
+                              console.log('[SAVE][DIFF][UPDATE][UPLOAD][SUCCESS] File caricato con s3Key esistente:', {
+                                filename: memDoc.filename,
+                                s3Key: existingDbDoc.s3Key
+                              })
+                            }
+                          } catch (uploadError) {
+                            console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore caricamento file:', memDoc.filename, uploadError)
+                          }
+                        } else {
+                          // File non esiste e non abbiamo localUrl - questo è un problema
+                          console.warn('[SAVE][DIFF][UPDATE][WARN] File non trovato nel backend e nessun localUrl disponibile:', {
+                            filename: memDoc.filename,
+                            s3Key: existingDbDoc.s3Key
+                          })
+                        }
+                      } else {
+                        // File esiste - tutto ok
+                        console.log('[SAVE][DIFF][UPDATE][VERIFY][OK] File esiste nel backend:', existingDbDoc.s3Key)
+                      }
+                    } catch (verifyError: any) {
+                      // ✅ Gestisci 404 come caso normale (file non esiste ancora)
+                      if (verifyError?.message?.includes('404') || verifyError?.status === 404) {
+                        // File non esiste - prova a caricarlo se abbiamo localUrl
+                        const localUrl = (memDoc as any).localUrl
+                        if (localUrl && localUrl.startsWith('blob:')) {
+                          console.log('[SAVE][DIFF][UPDATE][UPLOAD] File non trovato (404), caricamento da blob URL:', memDoc.filename)
+                          try {
+                            const response = await fetch(localUrl)
+                            if (response.ok) {
+                              const blob = await response.blob()
+                              const fileObj = new File([blob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+
+                              // ✅ IMPORTANTE: Usa lo stesso s3Key del documento esistente
+                              // ✅ Usa l'endpoint /upload/local/:key per specificare il s3Key
+                              const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(existingDbDoc.s3Key)}`
+                              const uploadResponse = await fetch(uploadUrl, {
+                                method: 'PUT',
+                                body: fileObj,
+                                headers: {
+                                  'Content-Type': fileObj.type,
+                                },
+                              })
+
+                              if (!uploadResponse.ok) {
+                                throw new Error(`Upload failed: ${uploadResponse.statusText}`)
+                              }
+
+                              console.log('[SAVE][DIFF][UPDATE][UPLOAD][SUCCESS] File caricato con s3Key esistente:', {
+                                filename: memDoc.filename,
+                                s3Key: existingDbDoc.s3Key
+                              })
+                            }
+                          } catch (uploadError) {
+                            console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore caricamento file:', memDoc.filename, uploadError)
+                          }
+                        }
+                      } else {
+                        // Altro tipo di errore - logga come warning
+                        console.warn('[SAVE][DIFF][UPDATE][VERIFY] Errore verifica file:', memDoc.filename, verifyError)
+                      }
+                    }
+                  }
+
+                  // ✅ Aggiorna documento nel database
+                  const updateData: any = {}
+                  if (existingDbDoc.compartoId !== memDoc.compartoId) {
+                    updateData.compartoId = memDoc.compartoId
+                  }
+                  if ((memDoc as any).thumbnailDataUrl && !(existingDbDoc as any).thumbnailDataUrl) {
+                    updateData.thumbnailDataUrl = (memDoc as any).thumbnailDataUrl
+                  }
+                  if ((memDoc as any).hasNativeText !== undefined && (existingDbDoc as any).hasNativeText !== (memDoc as any).hasNativeText) {
+                    updateData.hasNativeText = (memDoc as any).hasNativeText
+                  }
+
+                  if (Object.keys(updateData).length > 0) {
+                    await api.updateDocumento(existingDbDoc.id, updateData)
+                    console.log('[SAVE][DIFF][UPDATE][SUCCESS] Documento aggiornato:', memDoc.filename)
+                  } else {
+                    console.log('[SAVE][DIFF][UPDATE][SKIP] Documento già presente, nessun aggiornamento necessario')
+                  }
                 } else {
-                  // ✅ Documento esistente: verifica se compartoId è cambiato
+                  // ✅ Documento esistente (non temporaneo): verifica se compartoId è cambiato
                   const dbDoc = dbDocs.find(d => d.id === memDoc.id)
                   if (dbDoc && dbDoc.compartoId !== memDoc.compartoId) {
                     // ✅ Spostamento: aggiorna compartoId
@@ -719,10 +1085,10 @@ export function PraticaCanvasPage() {
               toast={toast}
             />
           )}
-          renderDoc={(docId: string) => {
+          renderDoc={(docId: string, isActive?: boolean) => {
             const doc = documenti.find(d => d.id === docId)
             if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
-            return renderDocViewer(doc)
+            return renderDocViewer(doc, isActive ?? false)
           }}
           renderEvents={() => <EventsTab />}
           renderContacts={() => <ThingCardsPanel kind="contact" />}

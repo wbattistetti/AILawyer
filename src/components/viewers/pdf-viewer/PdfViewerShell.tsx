@@ -22,6 +22,11 @@ interface PdfViewerShellProps {
   praticaId?: string
   docName?: string
   hasNativeText?: boolean
+  /**
+   * ✅ Se il viewer è attualmente attivo (visibile/focus)
+   * Deve essere passato dal componente padre (es. da DockWorkspace)
+   */
+  isActive?: boolean
 }
 
 export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
@@ -33,7 +38,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   docId,
   praticaId,
   docName,
-  hasNativeText
+  hasNativeText,
+  isActive = false // ✅ Default false per sicurezza
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
@@ -47,7 +53,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     fileUrl,
     docId,
     onPageChange,
-    viewerRef
+    viewerRef,
+    isActive // ✅ Passa isActive per isolamento
   })
 
   // Zoom hook integration
@@ -310,7 +317,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       <OcrLayoutDebug
         docId={docId}
         overlayRootsRef={shell.overlayRootsRef}
-        enabled={true}
+        enabled={false} // ✅ Disabilitato di default - abilita solo per debug OCR
       />
 
       <ExtractDialog

@@ -102,4 +102,5 @@ export interface PersistentSelection {
 	text: string
 	viewportBox: { x: number; y: number; w: number; h: number }
 	source?: string // nome documento
+	imageDataUrl?: string // ✅ Screenshot già catturato (per Word/OCR)
 }

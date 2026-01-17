@@ -70,7 +70,7 @@ export type Props = {
   renderPersons?: () => React.ReactNode
   renderContacts?: () => React.ReactNode
   renderIds?: () => React.ReactNode
-  renderDoc?: (docId: string) => React.ReactNode
+  renderDoc?: (docId: string, isActive?: boolean) => React.ReactNode
   storageKey?: string
   renderEvents?: () => React.ReactNode
   renderExplorer?: () => React.ReactNode
@@ -670,10 +670,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       },
       'doc': (props: IDockviewPanelProps<{ docId?: string }>) => {
         const docId = props.params?.docId || props.api.id.replace('doc-', '')
+        // ✅ Calcola isActive per questo pannello
+        const isActive = props.api.group?.model?.activePanel?.id === props.api.id
         return (
           <PanelContentWrapper>
             <div className="w-full h-full overflow-auto bg-white">
-              {renderDoc ? renderDoc(docId) : <div>Documento non disponibile</div>}
+              {renderDoc ? renderDoc(docId, isActive) : <div>Documento non disponibile</div>}
             </div>
           </PanelContentWrapper>
         )

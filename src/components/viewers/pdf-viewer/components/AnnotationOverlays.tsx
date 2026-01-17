@@ -55,6 +55,11 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	// ✅ Convert draft to array (single or multi-page)
 	const draftArray = Array.isArray(draft) ? draft : (draft ? [draft] : [])
 
+	// ✅ DEBUG: Log draft per verificare se viene passato
+	if (draft) {
+		console.log('[ANNOT-OVERLAYS] Draft received:', draft, 'draftArray:', draftArray)
+	}
+
 	// ✅ Combine all annotations including multi-page drafts
 	const allAnnotations = [
 		...(selectedAnnot ? [selectedAnnot] : []),
@@ -89,11 +94,12 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 			{allAnnotations.map((a, idx) => {
 				const root = overlayRootsRef.current.get(a.page)
 				if (a.id === 'draft') {
+					console.log('[ANNOT-OVERLAYS] Rendering draft:', a, 'root found:', !!root, 'page:', a.page)
 				}
 
 				if (!root) {
-					if (a.id === 'sel') {
-						console.warn('[ANNOT WARNING] Root overlay non trovato per pagina:', a.page, {
+					if (a.id === 'draft' || a.id === 'sel') {
+						console.warn('[ANNOT-OVERLAYS] ⚠️ Root overlay non trovato per pagina:', a.page, {
 							allRoots: Array.from(overlayRootsRef.current.keys()),
 							annotId: a.id,
 							annotPage: a.page

@@ -43,7 +43,10 @@ export const OcrLayoutDebug: React.FC<OcrLayoutDebugProps> = ({
 					fetch(`${apiUrl}/api/documenti/${docId}/layout-diagnostic?page=${page}`)
 						.then(async (res) => {
 							if (!res.ok) {
-								console.warn(`[OCR_DEBUG][PAGE ${page}] HTTP ${res.status}`, res.statusText)
+								// ✅ Non loggare 404 (normale se la pagina non ha dati OCR)
+								if (res.status !== 404) {
+									console.warn(`[OCR_DEBUG][PAGE ${page}] HTTP ${res.status}`, res.statusText)
+								}
 								return
 							}
 							const data = await res.json()
@@ -82,6 +85,12 @@ export const OcrLayoutDebug: React.FC<OcrLayoutDebugProps> = ({
 							}
 						})
 						.catch((err) => {
+							// ✅ Non loggare errori di connessione (backend potrebbe non essere avviato)
+							if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+								// Backend non disponibile - silenzioso
+								return
+							}
+							// ✅ Logga solo errori inaspettati
 							console.warn('[OCR_DEBUG] Failed to load first word for page', page, err)
 						})
 				)

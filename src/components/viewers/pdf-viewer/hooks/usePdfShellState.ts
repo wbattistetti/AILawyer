@@ -19,9 +19,13 @@ interface UsePdfShellStateProps {
   docId?: string
   onPageChange?: (page: number) => void
   viewerRef: React.RefObject<any> // PdfViewerHandle
+  /**
+   * ✅ Se il viewer è attualmente attivo (visibile/focus)
+   */
+  isActive?: boolean
 }
 
-export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef }: UsePdfShellStateProps) {
+export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
@@ -85,6 +89,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
   // Native selection (simplified interface)
   const nativeSelection = useNativeSelection({
+    viewerId: docId || 'pdf-viewer', // ✅ ID univoco per isolamento
     selectMode: true,
     selectKind: 'NATIVE',
     extractOpen: viewerState.extractOpen,
@@ -102,7 +107,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     setPersistentSelections: viewerState.setPersistentSelections,
     persistentSelections: viewerState.persistentSelections,
     draft,
-    docId
+    docId,
+    isActive // ✅ Passa isActive per isolamento
   })
 
   // Public interface

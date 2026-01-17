@@ -86,9 +86,11 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		const shouldCropImage = isOcrDocument || !hasText
 
 		const initializeExtract = async () => {
-			let imageDataUrl: string | undefined = undefined
+			// ✅ Usa imageDataUrl già presente nella selezione (per Word/OCR) o in lastSelection
+			let imageDataUrl: string | undefined = selection.imageDataUrl || lastSelection?.imageDataUrl
 
-			if (shouldCropImage && viewportBox) {
+			// ✅ Se non c'è già uno screenshot, prova a ritagliare dal canvas (solo per PDF)
+			if (!imageDataUrl && shouldCropImage && viewportBox) {
 				try {
 					const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
 					const canvas = (canvasLayer?.querySelector('canvas') || pageLayer.querySelector('canvas')) as HTMLCanvasElement | null
@@ -138,7 +140,6 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			const { extractId } = event.detail
 			// Verifica se l'estratto aggiunto corrisponde a quello dell'overlay
 			if (extractData.id === extractId) {
-				console.log('[ExtractBlockOverlay] ✅ Estratto aggiunto tramite drag, chiudo overlay')
 				onClose()
 			}
 		}
@@ -151,29 +152,16 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 
 	// ✅ Callback ref per salvare il riferimento all'overlay
 	const overlayCallbackRef = (element: HTMLDivElement | null) => {
-		console.log('🟣 [ExtractBlockOverlay] Callback ref chiamato', {
-			element,
-			hasElement: !!element,
-			className: element?.className,
-			dataAttr: element?.getAttribute('data-extract-overlay')
-		})
 		overlayRef.current = element
 	}
 
 	// ✅ Intercetta tutti i click/mousedown in fase di capture per prevenire che raggiungano gli elementi sottostanti
 	useLayoutEffect(() => {
 		const overlayElement = overlayRef.current
-		console.log('🟣 [ExtractBlockOverlay] useLayoutEffect eseguito', {
-			hasOverlayElement: !!overlayElement,
-			overlayElement
-		})
 
 		if (!overlayElement) {
-			console.log('🟣 [ExtractBlockOverlay] ⚠️ overlayElement non disponibile, salto registrazione listener')
 			return
 		}
-
-		console.log('🟣 [ExtractBlockOverlay] ✅ Registrando listener in fase di capture')
 
 		const handleCaptureClick = (e: MouseEvent) => {
 			const target = e.target as HTMLElement
@@ -195,26 +183,11 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			)
 
 			if (isInteractiveElement) {
-				console.log('🟣 [ExtractBlockOverlay] CAPTURE: Click su elemento interattivo, NON blocco', {
-					target: target,
-					tagName: target?.tagName,
-					closestButton: target?.closest('button'),
-					closestInput: target?.closest('input'),
-					closestTextarea: target?.closest('textarea')
-				})
 				return // ✅ NON bloccare i click su elementi interattivi
 			}
 
-			console.log('🟣 [ExtractBlockOverlay] CAPTURE: Click rilevato', {
-				target: target,
-				tagName: target?.tagName,
-				className: target?.className,
-				overlayContainsTarget: overlayElement.contains(target)
-			})
-
 			// ✅ Se il click è dentro l'overlay ma NON su un elemento interattivo, bloccalo
 			if (overlayElement.contains(target)) {
-				console.log('🟣 [ExtractBlockOverlay] CAPTURE: ✅ Bloccato click dentro overlay (non interattivo)')
 				e.stopPropagation()
 				e.stopImmediatePropagation()
 			}
@@ -240,26 +213,11 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			)
 
 			if (isInteractiveElement) {
-				console.log('🟣 [ExtractBlockOverlay] CAPTURE: MouseDown su elemento interattivo, NON blocco', {
-					target: target,
-					tagName: target?.tagName,
-					closestButton: target?.closest('button'),
-					closestInput: target?.closest('input'),
-					closestTextarea: target?.closest('textarea')
-				})
 				return // ✅ NON bloccare i mousedown su elementi interattivi
 			}
 
-			console.log('🟣 [ExtractBlockOverlay] CAPTURE: MouseDown rilevato', {
-				target: target,
-				tagName: target?.tagName,
-				className: target?.className,
-				overlayContainsTarget: overlayElement.contains(target)
-			})
-
 			// ✅ Se il mousedown è dentro l'overlay ma NON su un elemento interattivo, bloccalo
 			if (overlayElement.contains(target)) {
-				console.log('🟣 [ExtractBlockOverlay] CAPTURE: ✅ Bloccato mousedown dentro overlay (non interattivo)')
 				e.stopPropagation()
 				e.stopImmediatePropagation()
 			}
@@ -270,10 +228,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		document.addEventListener('click', handleCaptureClick, true)
 		document.addEventListener('mousedown', handleCaptureMouseDown, true)
 
-		console.log('🟣 [ExtractBlockOverlay] ✅ Listener registrati in fase di capture')
-
 		return () => {
-			console.log('🟣 [ExtractBlockOverlay] 🔴 Rimuovendo listener in fase di capture')
 			document.removeEventListener('click', handleCaptureClick, true)
 			document.removeEventListener('mousedown', handleCaptureMouseDown, true)
 		}
@@ -366,21 +321,9 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				boxShadow: '0 2px 8px rgba(0,0,0,0.15)' // ✅ Ombra per distinguerlo dal documento
 			}}
 			onClick={(e) => {
-				console.log('🟢 [ExtractBlockOverlay] Click sul container principale', {
-					target: e.target,
-					currentTarget: e.currentTarget,
-					tagName: (e.target as HTMLElement)?.tagName,
-					className: (e.target as HTMLElement)?.className
-				})
 				e.stopPropagation()
 			}}
 			onMouseDown={(e) => {
-				console.log('🟢 [ExtractBlockOverlay] MouseDown sul container principale', {
-					target: e.target,
-					currentTarget: e.currentTarget,
-					tagName: (e.target as HTMLElement)?.tagName,
-					className: (e.target as HTMLElement)?.className
-				})
 				e.stopPropagation()
 			}}
 		>
@@ -388,17 +331,9 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				className="flex flex-col relative"
 				style={{ overflow: 'auto' }}
 				onClick={(e) => {
-					console.log('🟡 [ExtractBlockOverlay] Click sul container interno', {
-						target: e.target,
-						currentTarget: e.currentTarget
-					})
 					e.stopPropagation()
 				}}
 				onMouseDown={(e) => {
-					console.log('🟡 [ExtractBlockOverlay] MouseDown sul container interno', {
-						target: e.target,
-						currentTarget: e.currentTarget
-					})
 					e.stopPropagation()
 				}}
 			>
@@ -443,12 +378,6 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					{!extractBlock.hasObservation && (
 						<button
 							onClick={(e) => {
-								console.log('🔵 [ExtractBlockOverlay] Click su "Aggiungi osservazione"', {
-									target: e.target,
-									currentTarget: e.currentTarget,
-									bubbles: e.bubbles,
-									cancelable: e.cancelable
-								})
 								e.stopPropagation()
 								if (extractBlock) {
 									const updatedBlock = { ...extractBlock, hasObservation: true, observation: '' }
@@ -456,10 +385,6 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 								}
 							}}
 							onMouseDown={(e) => {
-								console.log('🔵 [ExtractBlockOverlay] MouseDown su "Aggiungi osservazione"', {
-									target: e.target,
-									currentTarget: e.currentTarget
-								})
 								e.stopPropagation()
 							}}
 							className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
@@ -475,7 +400,6 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					<div className="flex gap-2">
 						<button
 							onClick={(e) => {
-								console.log('🔴 [ExtractBlockOverlay] Click su "Annulla"')
 								e.stopPropagation()
 								handleCancel()
 							}}
@@ -485,7 +409,6 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 						</button>
 						<button
 							onClick={(e) => {
-								console.log('🟣 [ExtractBlockOverlay] Click su "Salva estratto"')
 								e.stopPropagation()
 								handleAddExtract()
 							}}

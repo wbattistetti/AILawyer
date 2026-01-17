@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Archive, Trash2, Download } from 'lucide-react';
 import { FileEntry } from '../types';
 import { PdfViewerAdapter } from './viewers/PdfViewerAdapter';
-import { ImageViewer } from './viewers/ImageViewer';
-import { MediaViewer } from './viewers/MediaViewer';
-import { WordViewer } from './viewers/WordViewer';
+import { PhotoViewerAdapter } from './viewers/PhotoViewerAdapter';
+import { VideoViewerAdapter } from './viewers/VideoViewerAdapter';
+import { AudioViewerAdapter } from './viewers/AudioViewerAdapter';
+import { WordViewerAdapter } from './viewers/WordViewerAdapter';
 import { UnknownViewer } from './viewers/UnknownViewer';
 import { DragAndDropService } from '../../../services/DragAndDropService';
 
@@ -144,12 +145,13 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
       case 'pdf':
         return <PdfViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'image':
-        return <ImageViewer file={file} />;
+        return <PhotoViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'video':
+        return <VideoViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'audio':
-        return <MediaViewer file={file} />;
+        return <AudioViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'word':
-        return <WordViewer file={file} onOpenInSystem={onOpenInSystem} />;
+        return <WordViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       default:
         return <UnknownViewer file={file} onOpenInSystem={onOpenInSystem} />;
     }

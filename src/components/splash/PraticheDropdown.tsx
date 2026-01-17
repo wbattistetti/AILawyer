@@ -63,9 +63,12 @@ export function PraticheDropdown({
     deleteWithUndo.startDelete(pratica)
   }
 
-  const handleUndo = () => {
-    // ✅ NON aggiungere la pratica: è già nella lista!
+  const handleCancelDelete = () => {
     deleteWithUndo.cancelDelete()
+  }
+
+  const handleConfirmDelete = async () => {
+    await deleteWithUndo.confirmDelete()
   }
 
   const handleDeleteAllDrafts = async () => {
@@ -167,14 +170,14 @@ export function PraticheDropdown({
                         pratica={p}
                         isDraft={true}
                         isDeleting={deleteWithUndo.deletedPraticaId === p.id}
-                        secondsLeft={deleteWithUndo.secondsLeft}
                         hovered={hoveredId === p.id}
                         onOpen={() => {
                           setIsOpen(false)
                           navigate(`/pratica/${p.id}`)
                         }}
                         onDelete={() => handleDeletePratica(p)}
-                        onUndo={handleUndo}
+                        onCancel={handleCancelDelete}
+                        onConfirm={handleConfirmDelete}
                         onMouseEnter={() => setHoveredId(p.id)}
                         onMouseLeave={() => setHoveredId(null)}
                       />
@@ -203,14 +206,14 @@ export function PraticheDropdown({
                         pratica={p}
                         isDraft={false}
                         isDeleting={deleteWithUndo.deletedPraticaId === p.id}
-                        secondsLeft={deleteWithUndo.secondsLeft}
                         hovered={hoveredId === p.id}
                         onOpen={() => {
                           setIsOpen(false)
                           navigate(`/pratica/${p.id}`)
                         }}
                         onDelete={() => handleDeletePratica(p)}
-                        onUndo={handleUndo}
+                        onCancel={handleCancelDelete}
+                        onConfirm={handleConfirmDelete}
                         onMouseEnter={() => setHoveredId(p.id)}
                         onMouseLeave={() => setHoveredId(null)}
                       />

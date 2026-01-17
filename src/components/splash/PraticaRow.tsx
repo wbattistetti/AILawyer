@@ -6,11 +6,11 @@ interface PraticaRowProps {
   pratica: Pratica
   isDraft: boolean
   isDeleting: boolean
-  secondsLeft: number
   hovered: boolean
   onOpen: () => void
   onDelete: () => void
-  onUndo: () => void
+  onCancel: () => void
+  onConfirm: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
 }
@@ -19,11 +19,11 @@ export function PraticaRow({
   pratica,
   isDraft,
   isDeleting,
-  secondsLeft,
   hovered,
   onOpen,
   onDelete,
-  onUndo,
+  onCancel,
+  onConfirm,
   onMouseEnter,
   onMouseLeave
 }: PraticaRowProps) {
@@ -54,21 +54,28 @@ export function PraticaRow({
         </div>
       </button>
 
-      {/* Toast Undo o Delete Button */}
+      {/* Badge Annulla/Conferma o Delete Button */}
       {isDeleting ? (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10 bg-white border border-slate-200 rounded-md shadow-sm px-2 py-1">
           <button
             onClick={(e) => {
               e.stopPropagation()
-              onUndo()
+              onCancel()
             }}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-xs font-medium text-white whitespace-nowrap"
+            className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded"
           >
-            Annulla eliminazione
+            Annulla
           </button>
-          <span className="text-xs text-slate-500 min-w-[30px] text-right">
-            {secondsLeft}s
-          </span>
+          <span className="w-px h-4 bg-slate-200"></span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onConfirm()
+            }}
+            className="px-2 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
+          >
+            Conferma
+          </button>
         </div>
       ) : (
         hovered && (

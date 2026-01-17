@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useToast } from '../../../../hooks/use-toast'
 import { api } from '../../../../lib/api'
 import { Documento, UploadProgress, PendingMoveConfirmation } from '../../../../types'
@@ -31,8 +31,18 @@ export function useArchive(
     store
   })
 
-  // ✅ LOG DETTAGLIATO: Documenti recuperati dallo store
+  // ✅ LOG DETTAGLIATO: Documenti recuperati dallo store (solo una volta, non in loop)
+  const documentiRef = useRef(documenti)
+  const lastLogRef = useRef<string>('')
+
   useEffect(() => {
+    // ✅ Evita log ripetuti: confronta solo se documenti sono realmente cambiati
+    const currentHash = documenti.map(d => d.id).join(',')
+    if (currentHash === lastLogRef.current) return
+
+    lastLogRef.current = currentHash
+    documentiRef.current = documenti
+
     const hashIdDocs = documenti.filter(d => /^[0-9a-f]{64}$/i.test(d.id))
     if (hashIdDocs.length > 0) {
       console.log('📚 [USE-ARCHIVE][GET-ALL-DOCUMENTS] Documenti recuperati dallo store', {
