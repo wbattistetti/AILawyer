@@ -33,6 +33,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const [extractBlock, setExtractBlock] = useState<ExtractBlockType | null>(null)
 	const [extractData, setExtractData] = useState<ExtractData | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
+	const [isImageLoading, setIsImageLoading] = useState(true) // ✅ Stato per tracciare se l'immagine è in caricamento
 	const [isExtractingText, setIsExtractingText] = useState(false)
 	const overlayRef = useRef<HTMLDivElement | null>(null)
 	const contentWrapperRef = useRef<HTMLDivElement | null>(null) // ✅ Ref per il wrapper del contenuto
@@ -90,6 +91,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		const shouldCropImage = isOcrDocument || !hasText
 
 		const initializeExtract = async () => {
+			setIsImageLoading(true) // ✅ Imposta loading quando inizia
+
 			// ✅ Usa imageDataUrl già presente nella selezione (per Word/OCR) o in lastSelection
 			let imageDataUrl: string | undefined = selection.imageDataUrl || lastSelection?.imageDataUrl
 
@@ -131,10 +134,33 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			setExtractData(data)
 			setExtractBlock(block)
 			setIsLoading(false)
+			setIsImageLoading(false) // ✅ Imposta loading a false quando finisce
 		}
 
 		initializeExtract()
 	}, [selection, pageElsRef, lastSelection, docName, hasNativeText])
+
+	// ✅ Aggiorna isImageLoading e extractData quando l'immagine viene aggiornata nella selezione
+	useEffect(() => {
+		const currentImageDataUrl = selection.imageDataUrl || lastSelection?.imageDataUrl
+		if (currentImageDataUrl && extractData && !extractData.imageDataUrl) {
+			// ✅ L'immagine è disponibile, aggiorna extractData e lo stato
+			setExtractData(prev => prev ? { ...prev, imageDataUrl: currentImageDataUrl } : prev)
+			if (extractBlock) {
+				setExtractBlock(prev => prev ? {
+					...prev,
+					extract: { ...prev.extract, imageDataUrl: currentImageDataUrl }
+				} : prev)
+			}
+			setIsImageLoading(false)
+		} else if (!currentImageDataUrl && extractData && !extractData.imageDataUrl) {
+			// ✅ L'immagine non è ancora disponibile, mantieni loading
+			setIsImageLoading(true)
+		} else if (currentImageDataUrl && isImageLoading) {
+			// ✅ L'immagine è disponibile e siamo in loading, aggiorna lo stato
+			setIsImageLoading(false)
+		}
+	}, [selection.imageDataUrl, lastSelection?.imageDataUrl, isImageLoading, extractData, extractBlock])
 
 	// ✅ Listener per chiudere l'overlay quando l'estratto viene aggiunto tramite drag
 	useEffect(() => {
@@ -456,6 +482,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					isOverlay={true} // ✅ Passa isOverlay per mostrare immagine a dimensione originale
 					overlayHeaderOffset={headerHeight} // ✅ Passa l'offset (non più usato per absolute, ma per calcoli)
 					overlayContentHeight={selectionHeight} // ✅ Passa altezza esatta del contenuto per mostrare tutto il rettangolo
+					isImageLoading={isImageLoading} // ✅ Passa lo stato di loading dell'immagine
 				/>
 
 				{/* ✅ Footer con pulsanti: "Estrai testo" / "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}

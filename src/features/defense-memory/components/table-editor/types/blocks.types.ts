@@ -129,6 +129,7 @@ export interface ExtractBlockProps {
   overlayHeaderOffset?: number  // ✅ Offset per posizionare l'header sopra il rettangolo quando è overlay
   overlayContentHeight?: number  // ✅ Altezza esatta del contenuto quando è overlay (per mostrare tutto il rettangolo)
   onExpandInModal?: () => void  // ✅ Callback per espandere l'estratto in un modal a grandezza naturale
+  isImageLoading?: boolean  // ✅ Se true, mostra spinner mentre l'immagine viene generata
 }
 
 /**

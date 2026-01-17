@@ -21,7 +21,8 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   isOverlay = false,
   overlayHeaderOffset = 60,
   overlayContentHeight,
-  onExpandInModal
+  onExpandInModal,
+  isImageLoading = false
 }) => {
   const { extract, title, observation, hasObservation = false, collapsed = false, observations = [] } = block
   const [isCollapsed, setIsCollapsed] = useState(collapsed)
@@ -1300,14 +1301,14 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
             onDrop={!readOnly ? handleDrop : undefined}
           >
             {/* Immagine estratto (senza bordo interno) */}
-            {hasImage && extract.imageDataUrl && (
+            {hasImage && extract.imageDataUrl ? (
               <div className={isOverlay ? "w-full m-0 p-0" : "rounded overflow-hidden"}>
                 <img
                   src={extract.imageDataUrl}
                   alt="Estratto"
                   className={isOverlay
                     ? "w-full object-contain" // ✅ Dimensione originale quando è overlay
-                    : "w-full h-auto max-h-48 object-contain" // ✅ Limita altezza quando è in drawer/table
+                    : "w-full h-auto object-contain" // ✅ Dimensione naturale quando è in drawer/table (rimossa limitazione max-h-48)
                   }
                   style={isOverlay ? {
                     // ✅ Quando è overlay, l'immagine deve essere mostrata esattamente alla dimensione del rettangolo
@@ -1320,10 +1321,31 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                     // ✅ L'immagine mantiene le proporzioni e occupa esattamente lo spazio del rettangolo selezionato
                     // Il container ha width = selectionWidth, quindi l'immagine avrà quella larghezza
                     // L'altezza sarà calcolata automaticamente mantenendo le proporzioni del rettangolo selezionato
-                  } : undefined}
+                  } : {
+                    // ✅ Anche quando non è overlay, mantieni dimensioni naturali
+                    display: 'block',
+                    width: '100%',
+                    height: 'auto',
+                    maxHeight: 'none' // ✅ Nessuna limitazione di altezza
+                  }}
                 />
               </div>
-            )}
+            ) : (isOverlay && !hasText) || isImageLoading ? (
+              // ✅ Placeholder di caricamento più visibile quando è overlay senza testo OPPURE se l'immagine è in caricamento
+              <div
+                className="w-full flex flex-col items-center justify-center bg-gray-50 border-2 border-dashed border-gray-300 rounded"
+                style={{
+                  minHeight: overlayContentHeight || '200px',
+                  padding: '2rem'
+                }}
+              >
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+                  <p className="text-sm font-medium text-gray-700">Generazione screenshot...</p>
+                  <p className="text-xs text-gray-500 mt-1">Attendere prego</p>
+                </div>
+              </div>
+            ) : null}
 
             {/* Testo estratto */}
             {hasText && (

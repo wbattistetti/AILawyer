@@ -625,7 +625,14 @@ export function PraticaCanvasPage() {
             try {
               // 1. Carica documenti dal database
               const dbDocs = await api.getDocumentiByPratica(id!)
-              console.log('[SAVE][DIFF] Documenti nel DB:', dbDocs.length)
+              console.log('[SAVE][DIFF] Documenti nel DB:', dbDocs.length, {
+                dbDocs: dbDocs.map(d => ({
+                  id: d.id,
+                  filename: d.filename,
+                  hash: d.hash?.substring(0, 16) + '...' || 'N/A',
+                  s3Key: d.s3Key?.substring(0, 30) + '...' || 'N/A'
+                }))
+              })
 
               // ✅ Crea mappa per lookup veloce: filePath -> documento DB
               const dbDocsByFilePath = new Map<string, Documento>()
@@ -637,13 +644,67 @@ export function PraticaCanvasPage() {
 
               // 2. Ottieni tutti i documenti in memoria (inclusi temporanei)
               const memoryDocs = store.getAllDocuments()
-              console.log('[SAVE][DIFF] Documenti in memoria:', memoryDocs.length)
+              console.log('[SAVE][DIFF] Documenti in memoria:', memoryDocs.length, {
+                memoryDocs: memoryDocs.map(d => ({
+                  id: d.id,
+                  filename: d.filename,
+                  hash: (d as any).hash?.substring(0, 16) + '...' || 'N/A',
+                  s3Key: d.s3Key?.substring(0, 30) + '...' || 'N/A'
+                }))
+              })
 
               // 3. Identifica documenti da eliminare (nel DB ma non in memoria)
-              const dbDocIds = new Set(dbDocs.map(d => d.id))
-              const memoryDocIds = new Set(memoryDocs.map(d => d.id))
-              const docsToDelete = dbDocs.filter(d => !memoryDocIds.has(d.id))
-              console.log('[SAVE][DIFF] Documenti da eliminare:', docsToDelete.length)
+              // ✅ CORREZIONE: Crea mappe per lookup veloce usando hash/s3Key/id
+              // ✅ Questo risolve il problema del mismatch tra ID DB e ID store (hash)
+              const memoryDocsByHash = new Map<string, Documento>()
+              const memoryDocsByS3Key = new Map<string, Documento>()
+              const memoryDocsById = new Map<string, Documento>()
+
+              for (const memDoc of memoryDocs) {
+                // Crea mappe per lookup veloce
+                if ((memDoc as any).hash && (memDoc as any).hash.length === 64) {
+                  memoryDocsByHash.set((memDoc as any).hash, memDoc)
+                }
+                if (memDoc.s3Key) {
+                  memoryDocsByS3Key.set(memDoc.s3Key, memDoc)
+                }
+                memoryDocsById.set(memDoc.id, memDoc)
+              }
+
+              // ✅ Documenti da eliminare: quelli nel DB che NON hanno corrispondenza in memoria
+              // ✅ Confronta usando hash, s3Key E id (per coprire tutti i casi)
+              const docsToDelete = dbDocs.filter(dbDoc => {
+                // Verifica se esiste in memoria per hash
+                if (dbDoc.hash && dbDoc.hash.length === 64) {
+                  if (memoryDocsByHash.has(dbDoc.hash)) {
+                    return false // Esiste in memoria
+                  }
+                }
+
+                // Verifica se esiste in memoria per s3Key
+                if (dbDoc.s3Key) {
+                  if (memoryDocsByS3Key.has(dbDoc.s3Key)) {
+                    return false // Esiste in memoria
+                  }
+                }
+
+                // Verifica se esiste in memoria per ID (per retrocompatibilità)
+                if (memoryDocsById.has(dbDoc.id)) {
+                  return false // Esiste in memoria
+                }
+
+                // Non trovato in memoria → da eliminare
+                return true
+              })
+
+              console.log('[SAVE][DIFF] Documenti da eliminare:', docsToDelete.length, {
+                toDelete: docsToDelete.map(d => ({
+                  id: d.id,
+                  filename: d.filename,
+                  hash: d.hash?.substring(0, 16) + '...' || 'N/A',
+                  s3Key: d.s3Key?.substring(0, 30) + '...' || 'N/A'
+                }))
+              })
 
               for (const docToDelete of docsToDelete) {
                 try {
@@ -658,6 +719,17 @@ export function PraticaCanvasPage() {
 
               // 4. Identifica documenti nuovi o modificati (in memoria)
               for (const memDoc of memoryDocs) {
+                // ✅ Log dettagliato per debug
+                console.log('[SAVE][DIFF][DOC] Analisi documento:', {
+                  filename: memDoc.filename,
+                  docId: memDoc.id,
+                  compartoId: memDoc.compartoId,
+                  hasFilePath: !!(memDoc as any).filePath,
+                  hasLocalUrl: !!(memDoc as any).localUrl,
+                  hasS3Key: !!memDoc.s3Key,
+                  hasHash: !!(memDoc as any).hash
+                })
+
                 // ✅ Identifica documenti temporanei (hash-based o temp:/pending:)
                 const isHashOnly = /^[0-9a-f]{64}$/i.test(memDoc.id)
                 const isTempPrefix = memDoc.id.startsWith('temp:') || memDoc.id.startsWith('pending:')
@@ -676,8 +748,28 @@ export function PraticaCanvasPage() {
                   const filePath = (memDoc as any).filePath
                   if (filePath) {
                     try {
-                      console.log('[SAVE][DIFF][CREATE] Carico nuovo documento da filePath:', filePath)
-                      await uploadFileFromPath(filePath, id!, memDoc.compartoId, api)
+                      // ✅ Verifica che compartoId sia definito
+                      if (!memDoc.compartoId) {
+                        console.warn('[SAVE][DIFF][CREATE][WARN] CompartoId non definito per documento:', {
+                          filename: memDoc.filename,
+                          docId: memDoc.id,
+                          filePath
+                        })
+                        // ✅ Usa il primo comparto disponibile come fallback
+                        const defaultComparto = comparti.length > 0 ? comparti[0].id : undefined
+                        if (!defaultComparto) {
+                          throw new Error(`Nessun comparto disponibile per il documento: ${memDoc.filename}`)
+                        }
+                        console.log('[SAVE][DIFF][CREATE] Usando comparto di default:', defaultComparto)
+                        await uploadFileFromPath(filePath, id!, defaultComparto, api)
+                      } else {
+                        console.log('[SAVE][DIFF][CREATE] Carico nuovo documento da filePath:', {
+                          filePath,
+                          filename: memDoc.filename,
+                          compartoId: memDoc.compartoId
+                        })
+                        await uploadFileFromPath(filePath, id!, memDoc.compartoId, api)
+                      }
                       console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato:', memDoc.filename)
                     } catch (error) {
                       console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento:', memDoc.filename, error)
@@ -916,11 +1008,67 @@ export function PraticaCanvasPage() {
                             console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore caricamento file:', memDoc.filename, uploadError)
                           }
                         } else {
-                          // File non esiste e non abbiamo localUrl - questo è un problema
-                          console.warn('[SAVE][DIFF][UPDATE][WARN] File non trovato nel backend e nessun localUrl disponibile:', {
-                            filename: memDoc.filename,
-                            s3Key: existingDbDoc.s3Key
-                          })
+                          // File non esiste e non abbiamo localUrl - prova a recuperarlo da filePath se disponibile
+                          const filePath = (existingDbDoc as any).filePath
+                          if (filePath) {
+                            console.log('[SAVE][DIFF][UPDATE][UPLOAD] File non trovato nel backend, recupero da filePath:', {
+                              filename: memDoc.filename,
+                              filePath,
+                              s3Key: existingDbDoc.s3Key
+                            })
+                            try {
+                              // ✅ Leggi file dal filesystem
+                              const readResponse = await fetch('http://localhost:3001/api/filesystem/read-file', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ filePath }),
+                              })
+
+                              if (readResponse.ok) {
+                                const fileBlob = await readResponse.blob()
+                                const fileObj = new File([fileBlob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+
+                                // ✅ Carica file nel backend usando lo stesso s3Key
+                                const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(existingDbDoc.s3Key)}`
+                                const uploadResponse = await fetch(uploadUrl, {
+                                  method: 'PUT',
+                                  body: fileObj,
+                                  headers: {
+                                    'Content-Type': fileObj.type,
+                                  },
+                                })
+
+                                if (uploadResponse.ok) {
+                                  console.log('[SAVE][DIFF][UPDATE][UPLOAD][SUCCESS] File recuperato da filePath e caricato:', {
+                                    filename: memDoc.filename,
+                                    s3Key: existingDbDoc.s3Key
+                                  })
+                                } else {
+                                  throw new Error(`Upload failed: ${uploadResponse.statusText}`)
+                                }
+                              } else {
+                                throw new Error(`Failed to read file from filesystem: ${readResponse.status}`)
+                              }
+                            } catch (recoveryError) {
+                              console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore recupero file da filePath:', memDoc.filename, recoveryError)
+                              toast({
+                                title: 'Attenzione',
+                                description: `Impossibile recuperare il file ${memDoc.filename} dal filesystem originale. Il file potrebbe essere stato spostato o eliminato.`,
+                                variant: 'destructive'
+                              })
+                            }
+                          } else {
+                            // File non esiste, non abbiamo localUrl e non abbiamo filePath - questo è un problema
+                            console.warn('[SAVE][DIFF][UPDATE][WARN] File non trovato nel backend e nessun localUrl/filePath disponibile:', {
+                              filename: memDoc.filename,
+                              s3Key: existingDbDoc.s3Key
+                            })
+                            toast({
+                              title: 'Attenzione',
+                              description: `Il file ${memDoc.filename} non è disponibile nel backend e non può essere recuperato.`,
+                              variant: 'destructive'
+                            })
+                          }
                         }
                       } else {
                         // File esiste - tutto ok
@@ -961,6 +1109,68 @@ export function PraticaCanvasPage() {
                             }
                           } catch (uploadError) {
                             console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore caricamento file:', memDoc.filename, uploadError)
+                          }
+                        } else {
+                          // ✅ Se non abbiamo localUrl, prova a recuperarlo da filePath se disponibile
+                          const filePath = (existingDbDoc as any).filePath
+                          if (filePath) {
+                            console.log('[SAVE][DIFF][UPDATE][UPLOAD] File non trovato (404), recupero da filePath:', {
+                              filename: memDoc.filename,
+                              filePath,
+                              s3Key: existingDbDoc.s3Key
+                            })
+                            try {
+                              // ✅ Leggi file dal filesystem
+                              const readResponse = await fetch('http://localhost:3001/api/filesystem/read-file', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ filePath }),
+                              })
+
+                              if (readResponse.ok) {
+                                const fileBlob = await readResponse.blob()
+                                const fileObj = new File([fileBlob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+
+                                // ✅ Carica file nel backend usando lo stesso s3Key
+                                const uploadUrl = `http://localhost:3001/api/upload/local/${encodeURIComponent(existingDbDoc.s3Key)}`
+                                const uploadResponse = await fetch(uploadUrl, {
+                                  method: 'PUT',
+                                  body: fileObj,
+                                  headers: {
+                                    'Content-Type': fileObj.type,
+                                  },
+                                })
+
+                                if (uploadResponse.ok) {
+                                  console.log('[SAVE][DIFF][UPDATE][UPLOAD][SUCCESS] File recuperato da filePath e caricato:', {
+                                    filename: memDoc.filename,
+                                    s3Key: existingDbDoc.s3Key
+                                  })
+                                } else {
+                                  throw new Error(`Upload failed: ${uploadResponse.statusText}`)
+                                }
+                              } else {
+                                throw new Error(`Failed to read file from filesystem: ${readResponse.status}`)
+                              }
+                            } catch (recoveryError) {
+                              console.error('[SAVE][DIFF][UPDATE][UPLOAD][ERROR] Errore recupero file da filePath:', memDoc.filename, recoveryError)
+                              toast({
+                                title: 'Attenzione',
+                                description: `Impossibile recuperare il file ${memDoc.filename} dal filesystem originale. Il file potrebbe essere stato spostato o eliminato.`,
+                                variant: 'destructive'
+                              })
+                            }
+                          } else {
+                            // File non esiste, non abbiamo localUrl e non abbiamo filePath - questo è un problema
+                            console.warn('[SAVE][DIFF][UPDATE][WARN] File non trovato (404) e nessun localUrl/filePath disponibile:', {
+                              filename: memDoc.filename,
+                              s3Key: existingDbDoc.s3Key
+                            })
+                            toast({
+                              title: 'Attenzione',
+                              description: `Il file ${memDoc.filename} non è disponibile nel backend e non può essere recuperato.`,
+                              variant: 'destructive'
+                            })
                           }
                         }
                       } else {
