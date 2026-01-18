@@ -194,6 +194,13 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
   }, [setSelectedNode, startScan, state.filters.search]);
 
   const handleFilePreview = useCallback((file: FileEntry) => {
+    console.log('[EXPLORER] handleFilePreview chiamato con file:', {
+      name: file.name,
+      kind: file.kind,
+      path: file.path,
+      ext: file.ext,
+      sizeBytes: file.sizeBytes
+    });
     setPreviewFile(file);
   }, []);
 
@@ -560,6 +567,9 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
                   onWidthChange={setCenterWidth}
                   objectExtractionStatus={objectExtractionStatus}
                   isExtractionEnabled={isExtractionManuallyEnabled} // ✅ Si attiva solo quando clicchi "Analizza documenti"
+                  sortBy={state.filters.sortBy}
+                  sortOrder={state.filters.sortOrder}
+                  onSortChange={(field, order) => setFilters({ sortBy: field, sortOrder: order })}
                 />
               )}
             </div>

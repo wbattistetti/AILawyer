@@ -424,7 +424,22 @@ export function PraticaCanvasPage() {
 
   // Reusable viewer for a documento with Verify mode toggle
   const renderDocViewer = (doc: Documento, isActive: boolean = false) => {
-    const fileUrl = (doc as any).localUrl || api.getLocalFileUrl(doc.s3Key)
+    // ✅ PRIORITÀ 1: localUrl (blob URL per file piccoli durante editing)
+    // ✅ PRIORITÀ 2: filePath (per file grandi durante editing - streaming diretto)
+    // ✅ PRIORITÀ 3: s3Key (per documenti salvati - repository)
+    const fileUrl = (doc as any).localUrl ||
+                    ((doc as any).filePath ?
+                      `http://localhost:3001/api/filesystem/file/${encodeURIComponent((doc as any).filePath)}` :
+                      null) ||
+                    (doc.s3Key ? api.getLocalFileUrl(doc.s3Key) : null)
+
+    if (!fileUrl) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <p className="text-gray-500">File non disponibile</p>
+        </div>
+      )
+    }
 
     // ✅ Usa WordViewerShell per documenti Word
     if (isWordDocument(doc)) {
@@ -783,33 +798,187 @@ export function PraticaCanvasPage() {
                     // ✅ SALVATAGGIO DIFFERENZIALE: Carica il file solo se non esiste già nel backend
                     // ✅ Usa hash + dimensione per verificare se il file è identico
                     const localUrl = (memDoc as any).localUrl
+                    const filePath = (memDoc as any).filePath
+                    const isVideo = memDoc.mime?.startsWith('video/') ||
+                                    /\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i.test(memDoc.filename)
                     let finalS3Key = memDoc.s3Key
-                    let finalHash = (memDoc as any).hash || memDoc.id
+                    let finalHash = (memDoc as any).hash || (memDoc.id.startsWith('video:') ? '' : memDoc.id)
                     let finalSize = memDoc.size || 0
 
                     console.log('[SAVE][DIFF][CREATE] Documento temporaneo da salvare:', {
                       filename: memDoc.filename,
+                      isVideo,
                       hasLocalUrl: !!localUrl,
+                      hasFilePath: !!filePath,
                       hasS3Key: !!memDoc.s3Key,
                       hasHash: !!finalHash,
-                      hash: finalHash?.substring(0, 16) + '...',
+                      hash: finalHash?.substring(0, 16) + '...' || 'NO-HASH',
                       size: finalSize
                     })
 
-                    // ✅ STEP 1: Se ha localUrl, calcola hash e dimensione dal file
-                    if (localUrl && localUrl.startsWith('blob:')) {
+                    // ✅ STEP 1: Recupera file e calcola hash lazy (soprattutto per video)
+                    let fileObj: File | null = null
+
+                    // ✅ PER VIDEO: recupera File reference dal fileReferenceStore
+                    if (isVideo && memDoc.id.startsWith('video:')) {
+                      const { getFileReference } = await import('../../stores/documentStore/fileReferenceStore')
+                      const fileRef = getFileReference(memDoc.id)
+                      if (fileRef) {
+                        fileObj = fileRef
+                        console.log('[SAVE][DIFF][CREATE][VIDEO] File reference recuperato:', {
+                          filename: memDoc.filename,
+                          size: fileObj.size
+                        })
+                      } else if (filePath) {
+                        // ✅ Fallback: se non c'è File reference, usa filePath
+                        console.log('[SAVE][DIFF][CREATE][VIDEO] File reference non trovato, uso filePath:', filePath)
+                        // fileObj sarà creato da uploadFileFromPath
+                      } else {
+                        console.error('[SAVE][DIFF][CREATE][VIDEO][ERROR] Nessun File reference o filePath disponibile per video:', memDoc.filename)
+                        toast({
+                          title: 'Errore',
+                          description: `Impossibile salvare il video: ${memDoc.filename}. File non disponibile.`,
+                          variant: 'destructive'
+                        })
+                        continue
+                      }
+                    }
+
+                    // ✅ PER ALTRI FILE: usa localUrl (blob URL) o filePath
+                    if (!fileObj && localUrl && localUrl.startsWith('blob:')) {
                       try {
                         const response = await fetch(localUrl)
                         if (!response.ok) {
                           throw new Error(`Failed to fetch blob: ${response.status}`)
                         }
                         const blob = await response.blob()
-                        const fileObj = new File([blob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+                        fileObj = new File([blob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+                      } catch (error) {
+                        console.error('[SAVE][DIFF][CREATE][ERROR] Errore recupero file da blob URL:', memDoc.filename, error)
+                        toast({
+                          title: 'Errore',
+                          description: `Impossibile recuperare il file: ${memDoc.filename}`,
+                          variant: 'destructive'
+                        })
+                        continue
+                      }
+                    }
 
-                        // Calcola hash se non presente o non valido
+                    // ✅ PER VIDEO CON FILEPATH: usa streaming copy-from-path (zero memoria)
+                    if (isVideo && filePath && !fileObj) {
+                      try {
+                        // ✅ STEP 1: Calcola hash lazy (leggendo file in streaming)
                         if (!finalHash || finalHash.length !== 64) {
+                          console.log('[SAVE][DIFF][CREATE][VIDEO][HASH][LAZY] Calcolo hash lazy da filePath:', filePath)
+                          // ✅ Leggi file in streaming per calcolare hash (non tutto in memoria)
+                          const hashResponse = await fetch('http://localhost:3001/api/filesystem/read-file', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filePath }),
+                          })
+                          if (!hashResponse.ok) {
+                            throw new Error(`Failed to read file for hash: ${hashResponse.status}`)
+                          }
+                          const hashBlob = await hashResponse.blob()
+                          const hashFileObj = new File([hashBlob], memDoc.filename, { type: memDoc.mime || 'application/octet-stream' })
+                          finalHash = await calculateFileHash(hashFileObj)
+                          finalSize = hashFileObj.size
+                          console.log('[SAVE][DIFF][CREATE][VIDEO][HASH][LAZY][SUCCESS] Hash calcolato:', finalHash.substring(0, 16) + '...')
+                        }
+
+                        // ✅ STEP 2: Genera s3Key
+                        const ext = memDoc.filename.substring(memDoc.filename.lastIndexOf('.')) || '.bin'
+                        finalS3Key = `${finalHash}${ext}`
+
+                        // ✅ STEP 3: Verifica se esiste già nel backend
+                        const existingDoc = dbDocs.find(d =>
+                          d.hash === finalHash ||
+                          (d.s3Key === finalS3Key)
+                        )
+
+                        if (existingDoc) {
+                          // ✅ File già presente - aggiorna solo metadati
+                          console.log('[SAVE][DIFF][CREATE][VIDEO][SKIP-UPLOAD] File già presente nel backend:', memDoc.filename)
+                          const updateData: any = {}
+                          if (existingDoc.compartoId !== memDoc.compartoId) {
+                            updateData.compartoId = memDoc.compartoId
+                          }
+                          if ((memDoc as any).thumbnailDataUrl && !(existingDoc as any).thumbnailDataUrl) {
+                            updateData.thumbnailDataUrl = (memDoc as any).thumbnailDataUrl
+                          }
+                          if (Object.keys(updateData).length > 0) {
+                            await api.updateDocumento(existingDoc.id, updateData)
+                          }
+                          continue
+                        }
+
+                        // ✅ STEP 4: Copia file con streaming (zero memoria)
+                        console.log('[SAVE][DIFF][CREATE][VIDEO][COPY] Copia streaming filePath → repository:', filePath)
+                        const copyResponse = await fetch('http://localhost:3001/api/upload/copy-from-path', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ filePath, s3Key: finalS3Key }),
+                        })
+
+                        if (!copyResponse.ok) {
+                          throw new Error(`Copy failed: ${copyResponse.statusText}`)
+                        }
+
+                        console.log('[SAVE][DIFF][CREATE][VIDEO][COPY][SUCCESS] File copiato nel repository:', memDoc.filename)
+
+                        // ✅ STEP 5: Crea documento nel database
+                        await api.createDocumento({
+                          praticaId: id!,
+                          compartoId: memDoc.compartoId,
+                          filename: memDoc.filename,
+                          mime: memDoc.mime || 'application/octet-stream',
+                          size: finalSize,
+                          s3Key: finalS3Key,
+                          hash: finalHash,
+                          ocrStatus: 'pending',
+                          tags: [],
+                          thumbnailDataUrl: (memDoc as any).thumbnailDataUrl,
+                          hasNativeText: false,
+                          filePath: undefined
+                        })
+
+                        // ✅ Aggiorna ID del documento nello store da temporaneo a hash
+                        const { removeFileReference } = await import('../../stores/documentStore/fileReferenceStore')
+                        const store = useDocumentStore.getState()
+                        removeFileReference(memDoc.id)
+                        const existingDocInStore = store.getDocument(memDoc.id)
+                        if (existingDocInStore) {
+                          store.removeDocument(memDoc.id)
+                          store.addDocument({
+                            ...existingDocInStore,
+                            id: finalHash,
+                            hash: finalHash,
+                            s3Key: finalS3Key,
+                            size: finalSize
+                          })
+                        }
+
+                        console.log('[SAVE][DIFF][CREATE][VIDEO][SUCCESS] Video salvato:', memDoc.filename)
+                        continue
+                      } catch (error) {
+                        console.error('[SAVE][DIFF][CREATE][VIDEO][ERROR] Errore salvataggio video:', memDoc.filename, error)
+                        toast({
+                          title: 'Errore',
+                          description: `Impossibile salvare il video: ${memDoc.filename}`,
+                          variant: 'destructive'
+                        })
+                        continue
+                      }
+                    }
+
+                    // ✅ Se abbiamo fileObj, calcola hash lazy e procedi con upload
+                    if (fileObj) {
+                      try {
+                        // ✅ Calcola hash lazy (soprattutto per video)
+                        if (!finalHash || finalHash.length !== 64) {
+                          console.log('[SAVE][DIFF][CREATE][HASH][LAZY] Calcolo hash lazy:', memDoc.filename)
                           finalHash = await calculateFileHash(fileObj)
-                          console.log('[SAVE][DIFF][CREATE][HASH] Hash calcolato:', finalHash.substring(0, 16) + '...')
+                          console.log('[SAVE][DIFF][CREATE][HASH][LAZY][SUCCESS] Hash calcolato:', finalHash.substring(0, 16) + '...')
                         }
 
                         // Aggiorna dimensione reale
@@ -937,7 +1106,7 @@ export function PraticaCanvasPage() {
                         size: finalSize,
                         hasThumbnail: !!(memDoc as any).thumbnailDataUrl
                       })
-                      await api.createDocumento({
+                      const createdDoc = await api.createDocumento({
                         praticaId: id!,
                         compartoId: memDoc.compartoId,
                         filename: memDoc.filename,
@@ -953,6 +1122,32 @@ export function PraticaCanvasPage() {
                         filePath: undefined
                       })
                       console.log('[SAVE][DIFF][CREATE][SUCCESS] Documento creato e file caricato:', memDoc.filename)
+
+                      // ✅ PER VIDEO: aggiorna ID del documento nello store da temporaneo a hash
+                      if (isVideo && memDoc.id.startsWith('video:')) {
+                        const { removeFileReference } = await import('../../stores/documentStore/fileReferenceStore')
+                        const store = useDocumentStore.getState()
+
+                        // ✅ Rimuovi File reference (non più necessario)
+                        removeFileReference(memDoc.id)
+
+                        // ✅ Aggiorna documento nello store con nuovo ID (hash)
+                        const existingDoc = store.getDocument(memDoc.id)
+                        if (existingDoc) {
+                          store.removeDocument(memDoc.id)
+                          store.addDocument({
+                            ...existingDoc,
+                            id: finalHash, // ✅ Nuovo ID basato su hash
+                            hash: finalHash,
+                            s3Key,
+                            size: finalSize
+                          })
+                          console.log('[SAVE][DIFF][CREATE][VIDEO][ID-UPDATE] ID aggiornato da temporaneo a hash:', {
+                            oldId: memDoc.id.substring(0, 30) + '...',
+                            newId: finalHash.substring(0, 30) + '...'
+                          })
+                        }
+                      }
                     } catch (error) {
                       console.error('[SAVE][DIFF][CREATE][ERROR] Errore creazione documento:', memDoc.filename, error)
                       toast({

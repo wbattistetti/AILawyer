@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { FileGrid } from './FileGrid';
 import { useContentWidth } from '../hooks/useContentWidth';
-import { FileEntry } from '../types';
+import { FileEntry, SortField, SortOrder } from '../types';
 import { ObjectExtractionStatus } from '../hooks/usePdfObjectExtraction';
 
 interface FileGridWithAutoWidthProps {
@@ -15,6 +15,9 @@ interface FileGridWithAutoWidthProps {
   onWidthChange?: (width: number) => void;
   objectExtractionStatus?: ObjectExtractionStatus;
   isExtractionEnabled?: boolean; // ✅ Se false, non mostrare "Sto analizzando l'oggetto..."
+  sortBy?: SortField;
+  sortOrder?: SortOrder;
+  onSortChange?: (field: SortField, order: SortOrder) => void;
 }
 
 export function FileGridWithAutoWidth({
@@ -27,7 +30,10 @@ export function FileGridWithAutoWidth({
   className = '',
   onWidthChange,
   objectExtractionStatus,
-  isExtractionEnabled = false // ✅ Default: disabilitato
+  isExtractionEnabled = false, // ✅ Default: disabilitato
+  sortBy = 'name',
+  sortOrder = 'asc',
+  onSortChange
 }: FileGridWithAutoWidthProps) {
   // Estrai i nomi dei file per calcolare la larghezza ottimale
   const fileNames = useMemo(() => {
@@ -60,6 +66,9 @@ export function FileGridWithAutoWidth({
         onFileClassificationChange={onFileClassificationChange}
         objectExtractionStatus={objectExtractionStatus}
         isExtractionEnabled={isExtractionEnabled}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onSortChange={onSortChange}
       />
     </div>
   );

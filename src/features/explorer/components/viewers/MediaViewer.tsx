@@ -1,10 +1,38 @@
-import React, { useState } from 'react';
-import { Play, Pause, Volume2, VolumeX, Download } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, AlertCircle, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { FileEntry } from '../../types';
 
 interface MediaViewerProps {
   file: FileEntry;
   className?: string;
+}
+
+// ✅ Rileva se un formato video è supportato dal browser
+function isFormatSupported(fileName: string, mimeType?: string): { supported: boolean; reason?: string } {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+
+  // Formati universalmente supportati
+  if (['mp4', 'webm', 'ogg'].includes(ext)) {
+    return { supported: true };
+  }
+
+  // Formati spesso non supportati nativamente
+  if (['avi', 'mkv', 'mov', 'wmv', 'flv', 'm4v'].includes(ext)) {
+    // Verifica supporto codec se possibile
+    if (mimeType) {
+      const video = document.createElement('video');
+      const canPlay = video.canPlayType(mimeType);
+      if (canPlay === 'probably' || canPlay === 'maybe') {
+        return { supported: true };
+      }
+    }
+    return {
+      supported: false,
+      reason: `Il formato ${ext.toUpperCase()} potrebbe non essere supportato dal browser. Il file originale è intatto e verificabile tramite hash SHA-256.`
+    };
+  }
+
+  return { supported: true };
 }
 
 export function MediaViewer({ file, className = '' }: MediaViewerProps) {
@@ -15,9 +43,22 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formatNotSupported, setFormatNotSupported] = useState(false);
+  const [formatReason, setFormatReason] = useState<string | undefined>(undefined);
 
   const mediaRef = React.useRef<HTMLVideoElement | HTMLAudioElement>(null);
   const isVideo = file.kind === 'video';
+
+  // ✅ Rileva supporto formato all'inizio
+  useEffect(() => {
+    if (isVideo) {
+      const formatCheck = isFormatSupported(file.name, file.type);
+      if (!formatCheck.supported) {
+        setFormatNotSupported(true);
+        setFormatReason(formatCheck.reason);
+      }
+    }
+  }, [file.name, file.type, isVideo]);
 
   const handlePlayPause = () => {
     if (mediaRef.current) {
@@ -58,9 +99,23 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
     }
   };
 
-  const handleError = () => {
+  const handleError = (e: any) => {
+    console.error('[MEDIA-VIEWER] Errore caricamento:', {
+      error: e,
+      src: file.path,
+      errorCode: (mediaRef.current as HTMLVideoElement)?.error?.code,
+      errorMessage: (mediaRef.current as HTMLVideoElement)?.error?.message
+    });
     setIsLoading(false);
-    setError('Failed to load media file');
+
+    // ✅ Se errore di codec/formato, mostra messaggio download
+    const videoError = (mediaRef.current as HTMLVideoElement)?.error;
+    if (videoError?.code === 4 || videoError?.message?.includes('codec') || videoError?.message?.includes('format')) {
+      setFormatNotSupported(true);
+      setFormatReason('Formato video non supportato dal browser. Il file originale è intatto e verificabile tramite hash SHA-256.');
+    } else {
+      setError('Failed to load media file');
+    }
   };
 
   const handleDownload = () => {
@@ -110,58 +165,80 @@ export function MediaViewer({ file, className = '' }: MediaViewerProps) {
 
       {/* Media Container */}
       <div className="flex-1 flex items-center justify-center bg-black">
-        {isLoading && (
+        {/* ✅ Messaggio formato non supportato */}
+        {formatNotSupported && (
+          <div className="text-center text-white p-8 max-w-md">
+            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
+            <p className="text-sm mb-2 font-medium">Formato video non supportato</p>
+            <p className="text-xs mb-4 text-gray-400">{formatReason}</p>
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            >
+              <Download className="w-4 h-4 inline mr-2" />
+              Scarica file originale
+            </button>
+          </div>
+        )}
+
+        {/* ✅ Errore generico */}
+        {error && !formatNotSupported && (
+          <div className="text-center text-white p-8">
+            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
+            <p className="text-sm mb-4">{error}</p>
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            >
+              <Download className="w-4 h-4 inline mr-2" />
+              Scarica file
+            </button>
+          </div>
+        )}
+
+        {/* ✅ Loading */}
+        {isLoading && !error && !formatNotSupported && (
           <div className="text-center text-white">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
             <p className="text-sm">Sto caricando il documento...</p>
           </div>
         )}
 
-        {error && (
-          <div className="text-center text-white">
-            <p className="text-sm mb-2">{error}</p>
-            <button
-              onClick={() => {
-                setIsLoading(true);
-                setError(null);
-              }}
-              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Retry
-            </button>
+        {/* ✅ HTML5 Video nativo (solo se formato supportato) */}
+        {!error && !formatNotSupported && isVideo && (
+          <div className="w-full h-full flex items-center justify-center">
+            <video
+              ref={mediaRef as React.RefObject<HTMLVideoElement>}
+              src={file.path}
+              className="max-w-full max-h-full"
+              controls
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onError={handleError}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+            />
           </div>
         )}
 
-        {!error && (
-          <div className="w-full h-full flex items-center justify-center">
-            {isVideo ? (
-              <video
-                ref={mediaRef as React.RefObject<HTMLVideoElement>}
-                src={file.path}
-                className="max-w-full max-h-full"
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onError={handleError}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-              />
-            ) : (
-              <audio
-                ref={mediaRef as React.RefObject<HTMLAudioElement>}
-                src={file.path}
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onError={handleError}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-              />
-            )}
-          </div>
+        {/* ✅ Audio player (HTML5 nativo) */}
+        {!error && !isVideo && (
+          <audio
+            ref={mediaRef as React.RefObject<HTMLAudioElement>}
+            src={file.path}
+            controls
+            className="w-full"
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+            onError={handleError}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+          />
         )}
       </div>
 
-      {/* Controls */}
-      {!error && !isLoading && (
+      {/* Controls (solo per video, se non c'è errore) */}
+      {!error && !formatNotSupported && isVideo && !isLoading && (
         <div className="p-4 bg-gray-900 text-white">
           {/* Progress Bar */}
           <div className="mb-3">

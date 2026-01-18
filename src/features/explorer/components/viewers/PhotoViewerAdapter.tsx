@@ -67,7 +67,9 @@ export function PhotoViewerAdapter({ file, className = '', onTempFileCreated }: 
     };
 
     loadFile();
-  }, [file.path, isProcessing, processedPath, onTempFileCreated]);
+    // ✅ RIMOSSO onTempFileCreated dalle dipendenze per evitare loop infiniti
+    // ✅ onTempFileCreated viene chiamato solo quando necessario, non serve nelle dipendenze
+  }, [file.path, isProcessing, processedPath]);
 
   // ✅ Cleanup blob URL quando il componente viene smontato o il file cambia
   useEffect(() => {

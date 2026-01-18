@@ -44,9 +44,14 @@ export interface ScanProgress {
   phase?: 'counting' | 'scanning'; // Fase: prima conta le dir, poi scansiona
 }
 
+export type SortField = 'name' | 'date' | 'size';
+export type SortOrder = 'asc' | 'desc';
+
 export interface GridFilters {
   kinds: Set<FileKind>;
   search: string;
+  sortBy?: SortField;
+  sortOrder?: SortOrder;
 }
 
 export interface ExplorerState {

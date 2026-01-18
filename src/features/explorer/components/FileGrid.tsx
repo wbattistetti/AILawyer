@@ -11,8 +11,11 @@ import {
   Square,
   FileType,
   FileImage,
-  Loader2
+  Loader2,
+  ArrowUpDown,
+  Calendar
 } from 'lucide-react';
+import { SortField, SortOrder } from '../types';
 import { FileEntry, FileKind } from '../types';
 import { MimeService } from '../services/MimeService';
 import { CompartiService, CompartoOption } from '../services/CompartiService';
@@ -72,6 +75,9 @@ interface FileGridProps {
   className?: string;
   objectExtractionStatus?: ObjectExtractionStatus;
   isExtractionEnabled?: boolean; // ✅ Se false, non mostrare "Sto analizzando l'oggetto..."
+  sortBy?: SortField;
+  sortOrder?: SortOrder;
+  onSortChange?: (field: SortField, order: SortOrder) => void;
 }
 
 interface FileRowProps {
@@ -267,16 +273,11 @@ function FileRow({ index, style, data }: FileRowProps) {
       </div>
 
       {/* File Name */}
-      <div className="flex-1 min-w-[200px] max-w-[400px] min-w-0">
-        <div className="text-sm font-medium text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
+      <div className="flex-1 min-w-[200px] min-w-0">
+        <div className="text-sm font-medium text-gray-900 whitespace-nowrap">
           {file.name}
         </div>
-        {/* ✅ Mostra parentDirName solo se è diverso dal nome del file (senza estensione) */}
-        {file.parentDirName && file.parentDirName !== file.name.replace(/\.[^/.]+$/, '') && (
-          <div className="text-xs text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
-            {file.parentDirName}
-          </div>
-        )}
+        {/* ❌ RIMOSSO: parentDirName non più mostrato */}
       </div>
 
       {/* Oggetto - con wrap text e ridimensionabile */}
@@ -393,7 +394,10 @@ export function FileGrid({
   onFileClassificationChange,
   className = '',
   objectExtractionStatus,
-  isExtractionEnabled = false // ✅ Default: disabilitato
+  isExtractionEnabled = false, // ✅ Default: disabilitato
+  sortBy = 'name',
+  sortOrder = 'asc',
+  onSortChange
 }: FileGridProps) {
   // Hook per colonna "Oggetto" ridimensionabile
   const { width: oggettoColumnWidth, handleResizeStart: handleOggettoResizeStart } = useOggettoColumnWidth();
@@ -446,7 +450,37 @@ export function FileGrid({
       <div className="flex items-center px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600">
         <div className="w-6 mr-3 flex-shrink-0"></div>
         <div className="w-8 mr-3 flex-shrink-0"></div>
-        <div className="flex-1 min-w-[200px] max-w-[400px] min-w-0">Name</div>
+        <div className="flex-1 min-w-[200px] min-w-0 flex items-center gap-2">
+          <span>Name</span>
+          {onSortChange && (
+            <>
+              <button
+                onClick={() => {
+                  const newOrder = sortBy === 'name' && sortOrder === 'asc' ? 'desc' : 'asc';
+                  onSortChange('name', newOrder);
+                }}
+                className={`p-1 rounded hover:bg-gray-200 transition-colors ${
+                  sortBy === 'name' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'
+                }`}
+                title="Ordina per nome"
+              >
+                <ArrowUpDown className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => {
+                  const newOrder = sortBy === 'date' && sortOrder === 'desc' ? 'asc' : 'desc';
+                  onSortChange('date', newOrder);
+                }}
+                className={`p-1 rounded hover:bg-gray-200 transition-colors ${
+                  sortBy === 'date' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'
+                }`}
+                title="Ordina per data"
+              >
+                <Calendar className="w-3 h-3" />
+              </button>
+            </>
+          )}
+        </div>
         <div
           className="flex-shrink-0 mr-4 min-w-0 relative"
           style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
@@ -489,7 +523,7 @@ export function FileGrid({
         {files.length > 0 ? (
           files.map((file, index) => (
             <FileRow
-              key={`${file.id}-${index}`}
+              key={file.id}
               index={index}
               style={{}}
               data={itemData}

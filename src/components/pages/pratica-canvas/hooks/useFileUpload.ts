@@ -16,6 +16,7 @@ import {
   calculateFileHash,
   isFileDuplicate
 } from './useArchiveHelpers'
+import { setFileReference } from '../../../../stores/documentStore/fileReferenceStore'
 
 interface UseFileUploadProps {
   praticaId: string | undefined
@@ -348,56 +349,111 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
         }
 
         // ✅ PASSO 1: GENERA THUMBNAIL E CALCOLA HASH SUBITO - così l'ID è stabile fin dall'inizio
+        // ✅ ECCEZIONE: Per i video, NON calcolare hash subito (lazy) e NON creare blob URL
         const isPdf = file.type?.startsWith('application/pdf') || file.name.toLowerCase().endsWith('.pdf')
+        const isWord = file.type?.includes('wordprocessingml') ||
+                       file.type?.includes('msword') ||
+                       file.name.toLowerCase().endsWith('.docx') ||
+                       file.name.toLowerCase().endsWith('.doc')
+        const isImage = file.type?.startsWith('image/') ||
+                        /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(file.name)
+        const isVideo = file.type?.startsWith('video/') ||
+                        /\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i.test(file.name)
+
         let thumbnailDataUrl: string | undefined = undefined
         let hasNativeTextValue: boolean | undefined = undefined
+        let fileHash: string = ''
+        let s3KeyLocal: string = ''
+        let localUrlImmediato: string | undefined = undefined
 
-        // ✅ CALCOLA HASH SUBITO (prima di creare il documento) - così l'ID è stabile
-        console.log('🔍 [ARCH][HASH][CALC][START] Calcolo hash prima di creare documento', { filename: file.name, size: file.size })
-        const fileHash = await ThumbnailGenerator.calculateHash(file)
-        console.log('✅ [ARCH][HASH][CALC][SUCCESS] Hash calcolato', { filename: file.name, hash: fileHash.substring(0, 16) + '...' })
+        // ✅ PER VIDEO: ID temporaneo, NO hash, NO blob URL, solo miniatura
+        if (isVideo) {
+          // ✅ Genera ID temporaneo basato su metadati (NON hash)
+          fileHash = '' // Hash vuoto - sarà calcolato lazy al salvataggio
+          const tempId = `video:${file.name}:${file.size}:${Date.now()}`
 
-        if (isPdf) {
+          // ✅ Salva File reference nel fileReferenceStore (fuori dallo store Zustand)
+          setFileReference(tempId, file)
+
+          // ✅ Genera solo miniatura (usa metadati video, NON carica il file completo)
           try {
-            // ✅ Genera SUBITO, prima di creare tempDoc (sia per localOnly che non-localOnly)
-            // ✅ Usa ThumbnailGenerator per generare tutto insieme
-            console.log('🖼️ [THUMBNAIL][GENERATE][START]', {
+            console.log('🖼️ [THUMBNAIL][VIDEO][GENERATE][START]', {
               filename: file.name,
               size: file.size,
               type: file.type,
-              hashPreview: fileHash.substring(0, 16) + '...'
+              tempId: tempId.substring(0, 30) + '...'
             })
-            const result = await ThumbnailGenerator.generate(file)
-            thumbnailDataUrl = result.thumbnail
-            hasNativeTextValue = result.hasNativeText
+            thumbnailDataUrl = await ThumbnailGenerator.generateVideoThumbnailOnly(file)
+            hasNativeTextValue = false // Video non ha testo nativo
 
-            console.log('🖼️ [THUMBNAIL][GENERATE][SUCCESS]', {
+            console.log('🖼️ [THUMBNAIL][VIDEO][GENERATE][SUCCESS]', {
               filename: file.name,
-              hashPreview: fileHash.substring(0, 16) + '...',
               hasThumbnail: !!thumbnailDataUrl,
-              thumbnailIsString: typeof thumbnailDataUrl === 'string',
-              thumbnailStartsWith: thumbnailDataUrl?.substring(0, 30) || 'NULL',
-              thumbnailLength: thumbnailDataUrl?.length || 0,
-              hasNativeText: hasNativeTextValue
+              thumbnailLength: thumbnailDataUrl?.length || 0
             })
           } catch (error) {
-            console.error('❌ [THUMBNAIL][GENERATE][ERROR]', {
+            console.error('❌ [THUMBNAIL][VIDEO][GENERATE][ERROR]', {
               name: file.name,
-              error: error instanceof Error ? error.message : String(error),
-              stack: error instanceof Error ? error.stack : undefined
+              error: error instanceof Error ? error.message : String(error)
             })
             // Continua comunque, senza thumbnail
           }
-        } else {
-          console.log('⏭️ [THUMBNAIL][SKIP] File non è PDF', { filename: file.name, mime: file.type })
-        }
 
-        // ✅ PASSO 1.5: Calcola s3Key (local) e localUrl SUBITO - così sono disponibili quando creiamo il documento
-        // ✅ In modalità local, s3Key può essere calcolato subito (hash + ext)
-        // ✅ localUrl può essere creato subito (blob URL)
-        const ext = file.name.substring(file.name.lastIndexOf('.')) || '.bin'
-        const s3KeyLocal = localOnly ? `${fileHash}${ext}` : '' // Se non-local, sarà popolato dopo getUploadUrl
-        const localUrlImmediato = URL.createObjectURL(file) // ✅ Crea blob URL SUBITO
+          // ✅ NO blob URL per video (evita caricamento in memoria)
+          localUrlImmediato = undefined
+          s3KeyLocal = '' // Sarà calcolato al salvataggio quando avremo l'hash
+        } else {
+          // ✅ PER ALTRI FILE: calcola hash subito (comportamento normale)
+          console.log('🔍 [ARCH][HASH][CALC][START] Calcolo hash prima di creare documento', { filename: file.name, size: file.size })
+          fileHash = await ThumbnailGenerator.calculateHash(file)
+          console.log('✅ [ARCH][HASH][CALC][SUCCESS] Hash calcolato', { filename: file.name, hash: fileHash.substring(0, 16) + '...' })
+
+          if (isPdf || isWord || isImage) {
+            try {
+              // ✅ Genera SUBITO, prima di creare tempDoc (sia per localOnly che non-localOnly)
+              // ✅ Usa ThumbnailGenerator per generare tutto insieme
+              const fileType = isPdf ? 'PDF' : isWord ? 'Word' : 'Image'
+              console.log('🖼️ [THUMBNAIL][GENERATE][START]', {
+                filename: file.name,
+                size: file.size,
+                type: file.type,
+                hashPreview: fileHash.substring(0, 16) + '...',
+                fileType
+              })
+              const result = await ThumbnailGenerator.generate(file)
+              thumbnailDataUrl = result.thumbnail
+              hasNativeTextValue = result.hasNativeText
+
+              console.log('🖼️ [THUMBNAIL][GENERATE][SUCCESS]', {
+                filename: file.name,
+                hashPreview: fileHash.substring(0, 16) + '...',
+                hasThumbnail: !!thumbnailDataUrl,
+                thumbnailIsString: typeof thumbnailDataUrl === 'string',
+                thumbnailStartsWith: thumbnailDataUrl?.substring(0, 30) || 'NULL',
+                thumbnailLength: thumbnailDataUrl?.length || 0,
+                hasNativeText: hasNativeTextValue,
+                fileType
+              })
+            } catch (error) {
+              console.error('❌ [THUMBNAIL][GENERATE][ERROR]', {
+                name: file.name,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                fileType: isPdf ? 'PDF' : isWord ? 'Word' : 'Image'
+              })
+              // Continua comunque, senza thumbnail
+            }
+          } else {
+            console.log('⏭️ [THUMBNAIL][SKIP] File non supportato per thumbnail', { filename: file.name, mime: file.type })
+          }
+
+          // ✅ PASSO 1.5: Calcola s3Key (local) e localUrl SUBITO - così sono disponibili quando creiamo il documento
+          // ✅ In modalità local, s3Key può essere calcolato subito (hash + ext)
+          // ✅ localUrl può essere creato subito (blob URL)
+          const ext = file.name.substring(file.name.lastIndexOf('.')) || '.bin'
+          s3KeyLocal = localOnly ? `${fileHash}${ext}` : '' // Se non-local, sarà popolato dopo getUploadUrl
+          localUrlImmediato = URL.createObjectURL(file) // ✅ Crea blob URL SUBITO
+        }
 
         // ✅ PASSO 2: Verifica se esiste già un documento temporaneo per questo filePath
         // ✅ CRITICO: Questo evita la creazione di duplicati quando handleFileDrop viene chiamato due volte
@@ -537,14 +593,21 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
 
         // ✅ PASSO 3: Se non esiste, crea nuovo documento temporaneo CON MINIATURA E HASH SUBITO
         // ✅ CRITICO: Usa hash COMPLETO come ID (non solo primi 16 caratteri) - ID costante per tutto il ciclo di vita
+        // ✅ ECCEZIONE: Per i video, usa ID temporaneo (hash sarà calcolato lazy al salvataggio)
         if (!tempDocImmediato) {
-          tempIdImmediato = fileHash // ✅ ID = hash completo (64 caratteri) - SEMPRE COSTANTE
+          // ✅ PER VIDEO: usa ID temporaneo (hash sarà calcolato lazy)
+          if (isVideo) {
+            tempIdImmediato = `video:${file.name}:${file.size}:${Date.now()}`
+          } else {
+            tempIdImmediato = fileHash // ✅ ID = hash completo (64 caratteri) - SEMPRE COSTANTE
+          }
 
           console.log('📄 [DOC-CREATE][BEFORE] Creando documento temporaneo', {
             filename: file.name,
-            hashPreview: fileHash.substring(0, 16) + '...',
+            isVideo,
+            hashPreview: fileHash ? fileHash.substring(0, 16) + '...' : 'NO-HASH',
             hashLength: fileHash.length,
-            id: tempIdImmediato.substring(0, 16) + '...',
+            id: tempIdImmediato.substring(0, 30) + '...',
             idLength: tempIdImmediato.length,
             hasThumbnailBefore: !!thumbnailDataUrl,
             thumbnailLengthBefore: thumbnailDataUrl?.length || 0
@@ -557,14 +620,14 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
             filename: file.name,
             mime: file.type,
             size: file.size,
-            s3Key: s3KeyLocal, // ✅ Già calcolato (o vuoto se non-local, sarà popolato dopo)
-            hash: fileHash, // ✅ Hash già calcolato nel PASSO 1 (stesso valore dell'ID)
+            s3Key: s3KeyLocal, // ✅ Già calcolato (o vuoto se non-local/video, sarà popolato dopo)
+            hash: fileHash || undefined, // ✅ Hash già calcolato nel PASSO 1 (o undefined per video)
             ocrStatus: 'pending',
             tags: [],
             createdAt: new Date().toISOString(),
             thumbnailDataUrl: thumbnailDataUrl, // ✅ INCLUDE MINIATURA SUBITO
             hasNativeText: hasNativeTextValue, // ✅ INCLUDE hasNativeText SUBITO
-            localUrl: localUrlImmediato, // ✅ INCLUDE localUrl SUBITO
+            localUrl: localUrlImmediato, // ✅ INCLUDE localUrl SUBITO (o undefined per video)
           } as any
 
           // ✅ Salva filePath se disponibile (per riferimento futuro)
@@ -618,12 +681,14 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
         // ✅ Usa sourceFilePath già dichiarato nel PASSO 2
         const currentDocs = store.getAllDocuments()
         const existingInStore = currentDocs.find(d => {
-          // Cerca per hash (più affidabile)
+          // Cerca per hash (più affidabile) - solo se hash disponibile
           if (fileHash && (d as any).hash === fileHash) return true
           // Cerca per filePath (per documenti dall'Explorer)
           if (sourceFilePath && (d as any).filePath === sourceFilePath) return true
-          // Cerca per filename + size (fallback)
-          if (d.filename === file.name && d.size === file.size) return true
+          // ✅ PER VIDEO: cerca per filename + size (senza hash)
+          if (isVideo && d.filename === file.name && d.size === file.size) return true
+          // Cerca per filename + size (fallback per altri file)
+          if (!isVideo && d.filename === file.name && d.size === file.size) return true
           return false
         })
 

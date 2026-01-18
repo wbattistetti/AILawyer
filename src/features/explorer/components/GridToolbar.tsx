@@ -126,6 +126,11 @@ export function GridToolbar({
     onFiltersChange({ kinds: new Set(['pdf', 'word', 'image', 'video', 'audio']) });
   };
 
+  const deselectAllTypes = () => {
+    // Deseleziona tutti i tipi di file
+    onFiltersChange({ kinds: new Set() });
+  };
+
   const clearSearch = () => {
     onFiltersChange({ search: '' });
   };
@@ -216,6 +221,16 @@ export function GridToolbar({
             title="Seleziona tutti i tipi di file"
           >
             Tutti
+          </button>
+        )}
+        {/* Nessuno Button - visibile quando almeno un tipo è selezionato */}
+        {filters.kinds.size > 0 && (
+          <button
+            onClick={deselectAllTypes}
+            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            title="Deseleziona tutti i tipi di file"
+          >
+            Nessuno
           </button>
         )}
       </div>

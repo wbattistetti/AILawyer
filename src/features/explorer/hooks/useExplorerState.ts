@@ -56,6 +56,28 @@ export function useExplorerState() {
       );
     }
 
+    // ✅ Applica ordinamento
+    const sortBy = state.filters.sortBy || 'name';
+    const sortOrder = state.filters.sortOrder || 'asc';
+
+    filtered = [...filtered].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true });
+          break;
+        case 'date':
+          comparison = (a.mtime || 0) - (b.mtime || 0);
+          break;
+        case 'size':
+          comparison = (a.sizeBytes || 0) - (b.sizeBytes || 0);
+          break;
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
     return filtered;
   }, [state.files, state.filters]);
 
@@ -65,10 +87,17 @@ export function useExplorerState() {
   }, []);
 
   const setFiles = useCallback((files: FileEntry[]) => {
+    // ✅ Deduplica file basandosi sull'ID (path) - mantiene l'ultima versione se ci sono duplicati
+    const uniqueFiles = new Map<string, FileEntry>();
+    for (const file of files) {
+      uniqueFiles.set(file.id, file);
+    }
+    const deduplicatedFiles = Array.from(uniqueFiles.values());
+
     setState(prev => ({
       ...prev,
-      files,
-      visibleIds: files.map(f => f.id)
+      files: deduplicatedFiles,
+      visibleIds: deduplicatedFiles.map(f => f.id)
     }));
   }, []);
 

@@ -178,7 +178,14 @@ export function useScanFiles(adapter: FileSystemAdapter) {
             const fileEntry = await createFileEntry(file, adapter, options);
             // ✅ Log rimosso per ridurre spam console
 
-            setFiles(prev => [...prev, fileEntry]);
+            // ✅ Deduplica: verifica se il file esiste già prima di aggiungerlo
+            setFiles(prev => {
+              // ✅ Se il file esiste già (stesso ID/path), non aggiungerlo
+              if (prev.some(f => f.id === fileEntry.id)) {
+                return prev;
+              }
+              return [...prev, fileEntry];
+            });
             setProgress(prev => ({
               ...prev,
               matched: prev.matched + 1

@@ -90,7 +90,15 @@ export function validateFiles(files: File[]): { title: string; description: stri
     }
   }
 
-  const oversizedFiles = files.filter(file => file.size > MAX_UPLOAD_SIZE)
+  // ✅ ESCLUDI video dal controllo di dimensione (la miniatura viene generata senza caricare il file completo)
+  const oversizedFiles = files.filter(file => {
+    const isVideo = file.type?.startsWith('video/') ||
+                    /\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i.test(file.name)
+    // ✅ Se è un video, NON controllare la dimensione (la miniatura viene generata senza caricare il file)
+    if (isVideo) return false
+    return file.size > MAX_UPLOAD_SIZE
+  })
+
   if (oversizedFiles.length > 0) {
     return {
       title: 'File troppo grandi',

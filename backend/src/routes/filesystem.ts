@@ -324,9 +324,18 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
       let contentType = 'application/octet-stream';
 
       switch (ext) {
+        // ✅ PDF
         case '.pdf':
           contentType = 'application/pdf';
           break;
+        // ✅ Word
+        case '.docx':
+          contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          break;
+        case '.doc':
+          contentType = 'application/msword';
+          break;
+        // ✅ Immagini
         case '.jpg':
         case '.jpeg':
           contentType = 'image/jpeg';
@@ -340,25 +349,66 @@ export async function filesystemRoutes(fastify: FastifyInstance) {
         case '.webp':
           contentType = 'image/webp';
           break;
+        case '.bmp':
+          contentType = 'image/bmp';
+          break;
+        case '.svg':
+          contentType = 'image/svg+xml';
+          break;
+        // ✅ Video
         case '.mp4':
           contentType = 'video/mp4';
           break;
+        case '.avi':
+          contentType = 'video/x-msvideo';
+          break;
+        case '.mov':
+          contentType = 'video/quicktime';
+          break;
+        case '.wmv':
+          contentType = 'video/x-ms-wmv';
+          break;
+        case '.flv':
+          contentType = 'video/x-flv';
+          break;
+        case '.webm':
+          contentType = 'video/webm';
+          break;
+        case '.mkv':
+          contentType = 'video/x-matroska';
+          break;
+        case '.m4v':
+          contentType = 'video/x-m4v';
+          break;
+        // ✅ Audio
         case '.mp3':
           contentType = 'audio/mpeg';
           break;
         case '.wav':
           contentType = 'audio/wav';
           break;
+        case '.ogg':
+          contentType = 'audio/ogg';
+          break;
+        case '.m4a':
+          contentType = 'audio/mp4';
+          break;
+        case '.flac':
+          contentType = 'audio/flac';
+          break;
+        case '.aac':
+          contentType = 'audio/aac';
+          break;
       }
 
       // Set headers
       reply.header('Content-Type', contentType);
       reply.header('Content-Length', String(stats.size));
+      reply.header('Accept-Ranges', 'bytes'); // ✅ Supporta range requests per video/audio
       reply.header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
 
-      // Read the file as buffer
-      const fileBuffer = await fs.readFile(filePath);
-      return reply.send(fileBuffer);
+      // ✅ Streaming diretto (non carica tutto in memoria)
+      return reply.send(fs.createReadStream(filePath));
     } catch (error) {
       fastify.log.error('Failed to serve file:', error);
       return reply.code(500).send({ error: 'Failed to serve file' });

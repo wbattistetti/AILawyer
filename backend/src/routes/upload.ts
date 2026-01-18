@@ -96,19 +96,126 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     }
   })
 
+  // ✅ Copia file da filesystem a repository (streaming - zero memoria)
+  fastify.post<{ Body: { filePath: string; s3Key: string } }>('/upload/copy-from-path', async (request, reply) => {
+    try {
+      const { filePath, s3Key } = request.body
+
+      if (!filePath || !s3Key) {
+        return reply.status(400).send({ error: 'filePath e s3Key sono richiesti' })
+      }
+
+      // Verifica che il file sorgente esista
+      if (!fs.existsSync(filePath)) {
+        return reply.status(404).send({ error: 'File sorgente non trovato' })
+      }
+
+      const uploadDir = path.resolve(process.cwd(), '..', 'uploads')
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+
+      const sanitizedKey = sanitizeFileName(s3Key)
+      const targetPath = path.join(uploadDir, sanitizedKey)
+
+      // ✅ Streaming: leggi dal disco → scrivi nel repository (zero memoria)
+      const sourceStream = fs.createReadStream(filePath)
+      const targetStream = fs.createWriteStream(targetPath)
+
+      await new Promise<void>((resolve, reject) => {
+        sourceStream.pipe(targetStream)
+        targetStream.on('finish', resolve)
+        targetStream.on('error', reject)
+        sourceStream.on('error', reject)
+      })
+
+      fastify.log.info({ msg: 'Copy from path: success', filePath, s3Key, targetPath })
+      return reply.status(200).send({ success: true, s3Key })
+    } catch (error: any) {
+      fastify.log.error({ msg: 'Copy from path: error', error: error?.message, filePath: request.body?.filePath })
+      return reply.status(500).send({
+        error: 'Errore durante la copia del file',
+        details: error?.message || String(error)
+      })
+    }
+  })
+
   // Serve uploaded files for local OCR and preview
   fastify.get<{ Params: { key: string } }>('/files/:key', async (request, reply) => {
     try {
       const s3Key = decodeURIComponent(request.params.key)
       const sanitizedKey = sanitizeFileName(s3Key)
       const filePath = path.resolve(process.cwd(), '..', 'uploads', sanitizedKey)
-      console.log('🔍 Server cerca file in:', filePath)
-      console.log('🔍 process.cwd():', process.cwd())
-      console.log('🔍 File esiste?', fs.existsSync(filePath))
+
       if (!fs.existsSync(filePath)) {
         return reply.status(404).send({ error: 'File non trovato' })
       }
-      return reply.send(fs.createReadStream(filePath))
+
+      const stats = await fs.promises.stat(filePath)
+      const ext = path.extname(s3Key).toLowerCase()
+      let contentType = 'application/octet-stream'
+
+      // ✅ PDF
+      if (ext === '.pdf') {
+        contentType = 'application/pdf'
+      }
+      // ✅ Word
+      else if (ext === '.docx') {
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      } else if (ext === '.doc') {
+        contentType = 'application/msword'
+      }
+      // ✅ Immagini
+      else if (ext === '.jpg' || ext === '.jpeg') {
+        contentType = 'image/jpeg'
+      } else if (ext === '.png') {
+        contentType = 'image/png'
+      } else if (ext === '.gif') {
+        contentType = 'image/gif'
+      } else if (ext === '.webp') {
+        contentType = 'image/webp'
+      } else if (ext === '.bmp') {
+        contentType = 'image/bmp'
+      } else if (ext === '.svg') {
+        contentType = 'image/svg+xml'
+      }
+      // ✅ Video
+      else if (ext === '.mp4') {
+        contentType = 'video/mp4'
+      } else if (ext === '.avi') {
+        contentType = 'video/x-msvideo'
+      } else if (ext === '.mov') {
+        contentType = 'video/quicktime'
+      } else if (ext === '.wmv') {
+        contentType = 'video/x-ms-wmv'
+      } else if (ext === '.flv') {
+        contentType = 'video/x-flv'
+      } else if (ext === '.webm') {
+        contentType = 'video/webm'
+      } else if (ext === '.mkv') {
+        contentType = 'video/x-matroska'
+      } else if (ext === '.m4v') {
+        contentType = 'video/x-m4v'
+      }
+      // ✅ Audio
+      else if (ext === '.mp3') {
+        contentType = 'audio/mpeg'
+      } else if (ext === '.wav') {
+        contentType = 'audio/wav'
+      } else if (ext === '.ogg') {
+        contentType = 'audio/ogg'
+      } else if (ext === '.m4a') {
+        contentType = 'audio/mp4'
+      } else if (ext === '.flac') {
+        contentType = 'audio/flac'
+      } else if (ext === '.aac') {
+        contentType = 'audio/aac'
+      }
+
+      reply.header('Content-Type', contentType)
+      reply.header('Content-Length', String(stats.size))
+      reply.header('Accept-Ranges', 'bytes') // ✅ Supporta range requests per video/audio
+      reply.header('Cache-Control', 'public, max-age=3600')
+
+      return reply.send(fs.createReadStream(filePath)) // ✅ Streaming
     } catch (error) {
       fastify.log.error(error)
       return reply.status(500).send({ error: 'Errore nel download del file' })

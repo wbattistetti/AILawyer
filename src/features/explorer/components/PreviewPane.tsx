@@ -141,18 +141,33 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
   };
 
   const renderViewer = () => {
+    // ✅ DEBUG: Verifica che file.kind sia presente
+    console.log('[PREVIEW-PANE] Rendering viewer per file:', {
+      name: file.name,
+      kind: file.kind,
+      path: file.path,
+      ext: file.ext,
+      sizeBytes: file.sizeBytes
+    });
+
     switch (file.kind) {
       case 'pdf':
+        console.log('[PREVIEW-PANE] ✅ Rendering PdfViewerAdapter');
         return <PdfViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'image':
+        console.log('[PREVIEW-PANE] ✅ Rendering PhotoViewerAdapter');
         return <PhotoViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'video':
+        console.log('[PREVIEW-PANE] ✅ Rendering VideoViewerAdapter');
         return <VideoViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'audio':
+        console.log('[PREVIEW-PANE] ✅ Rendering AudioViewerAdapter');
         return <AudioViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       case 'word':
+        console.log('[PREVIEW-PANE] ✅ Rendering WordViewerAdapter');
         return <WordViewerAdapter file={file} onTempFileCreated={handleTempFileCreated} />;
       default:
+        console.warn('[PREVIEW-PANE] ⚠️ Kind sconosciuto:', file.kind, 'per file:', file.name);
         return <UnknownViewer file={file} onOpenInSystem={onOpenInSystem} />;
     }
   };
