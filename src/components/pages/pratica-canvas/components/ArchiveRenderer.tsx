@@ -18,7 +18,7 @@ function hexToRgba(hex: string, alpha = 0.1) {
 }
 
 interface ArchiveRendererProps {
-    documenti: Documento[];
+    // ✅ documenti rimosso - ora letto direttamente dallo store
     clientThumbByS3: Record<string, string>;
     dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
     handleFileDrop: (files: File[], compartoId?: string | null, target?: any) => Promise<void>;
@@ -40,7 +40,6 @@ interface ArchiveRendererProps {
 }
 
 export function ArchiveRenderer({
-    documenti,
     clientThumbByS3,
     dockV2Ref,
     handleFileDrop,
@@ -61,6 +60,30 @@ export function ArchiveRenderer({
     onCancelMove
 }: ArchiveRendererProps) {
     const store = useDocumentStore()
+
+    // ✅ CRITICO: Leggi documenti DIRETTAMENTE dallo store invece di usare la prop
+    // ✅ Questo garantisce che ArchiveRenderer veda sempre gli aggiornamenti in tempo reale
+    const documentiFromStore = useDocumentStore(state => {
+        const docs = Array.from(state.documents.values())
+        // ✅ LOG: Verifica documenti letti dallo store
+        const docsWithThumbnails = docs.filter(d => !!(d as any).thumbnailDataUrl)
+        if (docsWithThumbnails.length > 0) {
+            console.log('🎨 [ARCHIVE-RENDERER][STORE][DOCUMENTI] Documenti letti DIRETTAMENTE dallo store', {
+                totalDocs: docs.length,
+                docsWithThumbnails: docsWithThumbnails.map(d => ({
+                    id: d.id.substring(0, 16) + '...',
+                    filename: d.filename,
+                    hasThumbnail: !!(d as any).thumbnailDataUrl,
+                    thumbnailLength: (d as any).thumbnailDataUrl?.length || 0,
+                    thumbnailPreview: (d as any).thumbnailDataUrl?.substring(0, 50) || 'NULL'
+                }))
+            })
+        }
+        return docs
+    })
+
+    // ✅ Usa documentiFromStore invece di documenti prop
+    const documenti = documentiFromStore
     const showOverlay = false;
     const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
     const [hoverHeader, setHoverHeader] = useState<string | null>(null)

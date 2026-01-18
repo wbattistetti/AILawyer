@@ -122,10 +122,10 @@ export function ThumbCard({
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
       <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
-        {/* Header bar */}
-        <div className={`absolute left-2 right-2 top-2 h-7 rounded text-white flex items-center gap-2 px-2 ${headerColorClass || 'bg-amber-500'}`}>
-          {headerIcon ?? <FileText className="w-4 h-4" />}
-          <div className="text-xs font-semibold truncate" title={title}>{title}</div>
+        {/* Header bar - altezza dinamica in base al contenuto (padding e line-height ottimizzati per evitare taglio) */}
+        <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-start gap-2 px-2 pt-1 pb-2 ${headerColorClass || 'bg-amber-500'}`}>
+          {headerIcon ?? <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+          <div className="text-xs font-semibold break-words leading-[1.6] flex-1" style={{ paddingBottom: '2px' }} title={title}>{title}</div>
           <div className="flex-1" />
         </div>
         {/* Label stato OCR sotto l'header, allineata a destra */}
@@ -138,7 +138,7 @@ export function ThumbCard({
           // OCR in corso (0-99%)
           if (typeof ocrProgressPct === 'number' && ocrProgressPct < 100 && !ocrCancelling) {
             return (
-              <div className="absolute right-2 top-9 z-10">
+              <div className="absolute right-2 top-12 z-10">
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-600 text-white">
                   Trascrizione {ocrProgressPct}%
                 </span>
@@ -155,7 +155,7 @@ export function ThumbCard({
 
           if (isCompleted) {
             return (
-              <div className="absolute right-2 top-9 z-20">
+              <div className="absolute right-2 top-12 z-20">
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-600 text-white shadow-sm font-medium">
                   Trascritto!
                 </span>
@@ -166,7 +166,7 @@ export function ThumbCard({
           // OCR parziale/interrotto (1-99%)
           if (typeof transcribedPct === 'number' && transcribedPct > 0 && transcribedPct < 100) {
             return (
-              <div className="absolute right-2 top-9 z-10">
+              <div className="absolute right-2 top-12 z-10">
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-600 text-white">
                   Trascritto {transcribedPct}%
                 </span>
@@ -190,7 +190,7 @@ export function ThumbCard({
 
           if (shouldShowDaTrascrivere) {
             return (
-              <div className="absolute right-2 top-9 z-20">
+              <div className="absolute right-2 top-12 z-20">
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500 text-white shadow-sm">
                   Da trascrivere
                 </span>
@@ -200,8 +200,8 @@ export function ThumbCard({
 
           return null
         })()}
-        {/* Body: image or excerpt */}
-        <div className="absolute inset-0 pt-10 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden z-0">
+        {/* Body: image or excerpt - padding top dinamico per accomodare header (calcolato dal contenuto) */}
+        <div className="absolute inset-0 pt-12 pb-8 px-2 flex flex-col items-stretch justify-start overflow-hidden z-0">
           {metaDocLabel && (
             <div className="text-[10px] leading-snug mb-1 flex items-center gap-2">
               <div className="flex-1 flex justify-center">

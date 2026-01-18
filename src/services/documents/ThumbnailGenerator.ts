@@ -14,6 +14,40 @@ export interface ThumbnailResult {
 
 export class ThumbnailGenerator {
   /**
+   * Crea una miniatura placeholder con testo personalizzato
+   * Utile per mostrare immediatamente una miniatura mentre quella reale viene generata
+   */
+  static createPlaceholderThumbnail(text: string = "Sto creando la miniatura..."): string {
+    const canvas = document.createElement('canvas')
+    canvas.width = 300
+    canvas.height = 400
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) return ''
+
+    // Sfondo grigio chiaro
+    ctx.fillStyle = '#f3f4f6'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // Testo centrato
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '16px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // Testo su più righe se necessario
+    const lines = text.split('\n')
+    const lineHeight = 24
+    const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2
+
+    lines.forEach((line, index) => {
+      ctx.fillText(line, canvas.width / 2, startY + index * lineHeight)
+    })
+
+    return canvas.toDataURL('image/png')
+  }
+
+  /**
    * Calcola hash SHA-256 del file
    */
   static async calculateHash(file: File): Promise<string> {
@@ -72,9 +106,15 @@ export class ThumbnailGenerator {
     let tempContainer: HTMLDivElement | null = null
 
     try {
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-1] Lettura file in arrayBuffer', { filename: file.name })
       const arrayBuffer = await file.arrayBuffer()
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-2] ArrayBuffer letto', {
+        filename: file.name,
+        arrayBufferSize: arrayBuffer.byteLength
+      })
 
       // ✅ Converti Word in HTML usando mammoth
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-3] Conversione Word in HTML con mammoth', { filename: file.name })
       const result = await mammoth.convertToHtml(
         { arrayBuffer },
         {
@@ -85,9 +125,14 @@ export class ThumbnailGenerator {
           ]
         }
       )
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-4] Conversione mammoth completata', {
+        filename: file.name,
+        htmlLength: result.value.length
+      })
 
       const html = result.value
 
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-5] Creazione elemento DOM temporaneo', { filename: file.name })
       // ✅ Crea elemento DOM temporaneo per renderizzare HTML
       tempContainer = document.createElement('div')
       tempContainer.style.position = 'absolute'
@@ -99,6 +144,7 @@ export class ThumbnailGenerator {
       tempContainer.style.border = '1px solid #e5e7eb' // ✅ Bordo per distinguere la pagina
       tempContainer.className = 'word-page'
 
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-6] Creazione wrapper e inserimento HTML', { filename: file.name })
       // ✅ Crea wrapper con stile simile a WordViewerCore
       const wrapper = document.createElement('div')
       wrapper.className = 'word-viewer-content'
@@ -112,44 +158,155 @@ export class ThumbnailGenerator {
 
       tempContainer.appendChild(wrapper)
       document.body.appendChild(tempContainer)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-7] Elemento DOM aggiunto al body', {
+        filename: file.name,
+        scrollHeight: tempContainer.scrollHeight
+      })
 
-      // ✅ Attendi che il rendering sia completo (immagini, font, ecc.)
-      await new Promise(resolve => setTimeout(resolve, 200))
+      // ✅ Attendi che il rendering sia completo usando requestAnimationFrame (più efficiente del timeout)
+      // Aspetta 2 frame per assicurarsi che layout e font siano pronti
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-8] Attesa rendering DOM', { filename: file.name })
+      await new Promise(resolve => requestAnimationFrame(() => {
+        requestAnimationFrame(resolve)
+      }))
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-9] Rendering DOM completato', {
+        filename: file.name,
+        scrollHeight: tempContainer.scrollHeight
+      })
 
       // ✅ Cattura screenshot usando html2canvas
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-10] Import html2canvas', { filename: file.name })
       const html2canvas = (await import('html2canvas')).default
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-11] html2canvas importato, inizio cattura', { filename: file.name })
 
-      // ✅ Calcola altezza della prima "pagina" (circa 1000px per una pagina A4)
-      const firstPageHeight = Math.min(1000, tempContainer.scrollHeight)
+      // ✅ Cattura i primi 1000px (ripristinato come richiesto)
+      const captureHeight = Math.min(1000, tempContainer.scrollHeight)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-12] Calcolo altezza cattura', {
+        filename: file.name,
+        captureHeight,
+        scrollHeight: tempContainer.scrollHeight
+      })
 
-      const canvas = await html2canvas(tempContainer, {
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13] Chiamata html2canvas', {
+        filename: file.name,
+        containerWidth: tempContainer.offsetWidth,
+        containerHeight: tempContainer.offsetHeight,
+        scrollHeight: tempContainer.scrollHeight,
+        captureHeight
+      })
+
+      // ✅ Aggiungi timeout per html2canvas (30 secondi)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.1] Creazione promise html2canvas', { filename: file.name })
+      const html2canvasPromise = html2canvas(tempContainer, {
         x: 0,
         y: 0,
         width: 800,
-        height: firstPageHeight,
+        height: captureHeight,
+        windowWidth: 800,
+        windowHeight: captureHeight, // ✅ Limita la finestra di rendering
         useCORS: true,
         backgroundColor: '#ffffff',
-        scale: 1.5, // ✅ Per Word, scale 1 può risultare nero, usa 1.5
+        scale: 1.0, // ✅ Ridotto da 1.5 a 1.0 (sufficiente per thumbnail, molto più veloce)
         logging: false,
-        allowTaint: false
+        allowTaint: false,
+        // ✅ Opzioni per evitare blocchi
+        imageTimeout: 5000, // Timeout per caricamento immagini (5 secondi)
+        removeContainer: false, // Non rimuovere il container (lo facciamo noi)
+        onclone: (clonedDoc) => {
+          console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.2] html2canvas onclone chiamato', { filename: file.name })
+          // ✅ Rimuovi immagini esterne che potrebbero bloccare
+          const images = clonedDoc.querySelectorAll('img')
+          console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.3] Immagini trovate nel clone', {
+            filename: file.name,
+            imageCount: images.length
+          })
+          images.forEach(img => {
+            if (img.src && !img.src.startsWith('data:')) {
+              console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.4] Rimozione immagine esterna', {
+                filename: file.name,
+                imgSrc: img.src.substring(0, 50)
+              })
+              img.remove()
+            }
+          })
+        }
+      })
+
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.5] Creazione timeout promise', { filename: file.name })
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          console.error('🔧 [THUMBNAIL-GEN][WORD][STEP-13.6] TIMEOUT html2canvas (30s)', { filename: file.name })
+          reject(new Error('html2canvas timeout (30s)'))
+        }, 30000)
+      )
+
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-13.7] Attesa Promise.race html2canvas', { filename: file.name })
+      const canvas = await Promise.race([html2canvasPromise, timeoutPromise])
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-14] html2canvas completato', {
+        filename: file.name,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        canvasType: canvas.constructor.name
       })
 
       // ✅ Ridimensiona canvas per thumbnail (targetW larghezza)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-15] Ridimensionamento canvas', {
+        filename: file.name,
+        targetW,
+        sourceWidth: canvas.width,
+        sourceHeight: canvas.height
+      })
       const thumbnailCanvas = document.createElement('canvas')
       const scale = targetW / canvas.width
       thumbnailCanvas.width = targetW
       thumbnailCanvas.height = Math.ceil(canvas.height * scale)
-      const ctx = thumbnailCanvas.getContext('2d')!
-      ctx.drawImage(canvas, 0, 0, thumbnailCanvas.width, thumbnailCanvas.height)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-15.1] Canvas thumbnail creato', {
+        filename: file.name,
+        thumbnailWidth: thumbnailCanvas.width,
+        thumbnailHeight: thumbnailCanvas.height,
+        scale
+      })
 
-      return thumbnailCanvas.toDataURL('image/png', 0.9)
+      const ctx = thumbnailCanvas.getContext('2d')
+      if (!ctx) {
+        console.error('🔧 [THUMBNAIL-GEN][WORD][STEP-15.2] ERRORE: Impossibile ottenere context 2d', { filename: file.name })
+        throw new Error('Impossibile ottenere context 2d')
+      }
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-15.3] Disegno immagine sul canvas thumbnail', { filename: file.name })
+      ctx.drawImage(canvas, 0, 0, thumbnailCanvas.width, thumbnailCanvas.height)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-16] Canvas ridimensionato', {
+        filename: file.name,
+        thumbnailWidth: thumbnailCanvas.width,
+        thumbnailHeight: thumbnailCanvas.height
+      })
+
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-17] Conversione canvas in DataURL', { filename: file.name })
+      const dataUrl = thumbnailCanvas.toDataURL('image/png', 0.9)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-18] DataURL generato', {
+        filename: file.name,
+        dataUrlLength: dataUrl.length,
+        dataUrlPreview: dataUrl.substring(0, 50) + '...'
+      })
+      console.log('🔧 [THUMBNAIL-GEN][WORD][STEP-19] ✅ Miniatura Word generata con successo', { filename: file.name })
+      return dataUrl
     } catch (error) {
-      console.error('[ThumbnailGenerator] Errore generazione thumbnail Word:', error)
+      console.error('🔧 [THUMBNAIL-GEN][WORD][ERROR] Errore generazione thumbnail Word', {
+        filename: file.name,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : typeof error
+      })
       return ''
     } finally {
       // ✅ Pulisci elemento temporaneo (sempre, anche in caso di errore)
+      console.log('🔧 [THUMBNAIL-GEN][WORD][FINALLY] Pulizia elemento temporaneo', {
+        filename: file.name,
+        hasContainer: !!tempContainer,
+        hasParent: !!(tempContainer && tempContainer.parentNode)
+      })
       if (tempContainer && tempContainer.parentNode) {
         document.body.removeChild(tempContainer)
+        console.log('🔧 [THUMBNAIL-GEN][WORD][FINALLY] Elemento rimosso dal DOM', { filename: file.name })
       }
     }
   }
@@ -271,8 +428,20 @@ export class ThumbnailGenerator {
    * Genera thumbnail, hash e rileva testo nativo per un file
    */
   static async generate(file: File): Promise<ThumbnailResult> {
-    // Calcola hash
-    const hash = await this.calculateHash(file)
+    console.log('🔧 [THUMBNAIL-GEN][GENERATE][START] Inizio generazione miniatura', {
+      filename: file.name,
+      size: file.size,
+      type: file.type
+    })
+
+    try {
+      // Calcola hash
+      console.log('🔧 [THUMBNAIL-GEN][GENERATE][HASH-START] Calcolo hash', { filename: file.name })
+      const hash = await this.calculateHash(file)
+      console.log('🔧 [THUMBNAIL-GEN][GENERATE][HASH-SUCCESS] Hash calcolato', {
+        filename: file.name,
+        hashPreview: hash.substring(0, 16) + '...'
+      })
 
     // ✅ Verifica tipo file
     const isPdf = file.type?.startsWith('application/pdf') ||
@@ -289,32 +458,66 @@ export class ThumbnailGenerator {
     const isVideo = file.type?.startsWith('video/') ||
                     /\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i.test(file.name)
 
-    if (isPdf) {
-      const [thumbnail, hasNativeText] = await Promise.all([
-        this.generatePdfThumbnail(file),
-        this.detectNativeText(file)
-      ])
-      return { thumbnail: thumbnail || undefined, hash, hasNativeText }
-    }
+      if (isPdf) {
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][PDF] Tipo PDF rilevato', { filename: file.name })
+        const [thumbnail, hasNativeText] = await Promise.all([
+          this.generatePdfThumbnail(file),
+          this.detectNativeText(file)
+        ])
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][PDF][SUCCESS] Miniatura PDF generata', {
+          filename: file.name,
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail?.length || 0,
+          hasNativeText
+        })
+        return { thumbnail: thumbnail || undefined, hash, hasNativeText }
+      }
 
-    // ✅ Genera thumbnail per Word
-    if (isWord) {
-      const thumbnail = await this.generateWordThumbnail(file)
-      return { thumbnail: thumbnail || undefined, hash, hasNativeText: true } // Word ha sempre testo nativo
-    }
+      // ✅ Genera thumbnail per Word
+      if (isWord) {
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][WORD] Tipo Word rilevato', { filename: file.name })
+        const thumbnail = await this.generateWordThumbnail(file)
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][WORD][SUCCESS] Miniatura Word generata', {
+          filename: file.name,
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail?.length || 0
+        })
+        return { thumbnail: thumbnail || undefined, hash, hasNativeText: true } // Word ha sempre testo nativo
+      }
 
-    // ✅ Genera thumbnail per immagini
-    if (isImage) {
-      const thumbnail = await this.generateImageThumbnail(file)
-      return { thumbnail: thumbnail || undefined, hash, hasNativeText: false }
-    }
+      // ✅ Genera thumbnail per immagini
+      if (isImage) {
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][IMAGE] Tipo immagine rilevato', { filename: file.name })
+        const thumbnail = await this.generateImageThumbnail(file)
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][IMAGE][SUCCESS] Miniatura immagine generata', {
+          filename: file.name,
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail?.length || 0
+        })
+        return { thumbnail: thumbnail || undefined, hash, hasNativeText: false }
+      }
 
-    // ✅ Genera thumbnail per video (primo fotogramma)
-    if (isVideo) {
-      const thumbnail = await this.generateVideoThumbnail(file)
-      return { thumbnail: thumbnail || undefined, hash, hasNativeText: false }
-    }
+      // ✅ Genera thumbnail per video (primo fotogramma)
+      if (isVideo) {
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][VIDEO] Tipo video rilevato', { filename: file.name })
+        const thumbnail = await this.generateVideoThumbnail(file)
+        console.log('🔧 [THUMBNAIL-GEN][GENERATE][VIDEO][SUCCESS] Miniatura video generata', {
+          filename: file.name,
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail?.length || 0
+        })
+        return { thumbnail: thumbnail || undefined, hash, hasNativeText: false }
+      }
 
-    return { hash }
+      console.log('🔧 [THUMBNAIL-GEN][GENERATE][SKIP] Tipo file non supportato', { filename: file.name })
+      return { hash }
+    } catch (error) {
+      console.error('🔧 [THUMBNAIL-GEN][GENERATE][ERROR] Errore durante generazione miniatura', {
+        filename: file.name,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      })
+      throw error // Rilancia l'errore per essere gestito dal chiamante
+    }
   }
 }

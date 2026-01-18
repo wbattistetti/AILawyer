@@ -408,43 +408,13 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
           fileHash = await ThumbnailGenerator.calculateHash(file)
           console.log('✅ [ARCH][HASH][CALC][SUCCESS] Hash calcolato', { filename: file.name, hash: fileHash.substring(0, 16) + '...' })
 
+          // ✅ Crea placeholder SUBITO per mostrare la miniatura immediatamente
           if (isPdf || isWord || isImage) {
-            try {
-              // ✅ Genera SUBITO, prima di creare tempDoc (sia per localOnly che non-localOnly)
-              // ✅ Usa ThumbnailGenerator per generare tutto insieme
-              const fileType = isPdf ? 'PDF' : isWord ? 'Word' : 'Image'
-              console.log('🖼️ [THUMBNAIL][GENERATE][START]', {
-                filename: file.name,
-                size: file.size,
-                type: file.type,
-                hashPreview: fileHash.substring(0, 16) + '...',
-                fileType
-              })
-              const result = await ThumbnailGenerator.generate(file)
-              thumbnailDataUrl = result.thumbnail
-              hasNativeTextValue = result.hasNativeText
-
-              console.log('🖼️ [THUMBNAIL][GENERATE][SUCCESS]', {
-                filename: file.name,
-                hashPreview: fileHash.substring(0, 16) + '...',
-                hasThumbnail: !!thumbnailDataUrl,
-                thumbnailIsString: typeof thumbnailDataUrl === 'string',
-                thumbnailStartsWith: thumbnailDataUrl?.substring(0, 30) || 'NULL',
-                thumbnailLength: thumbnailDataUrl?.length || 0,
-                hasNativeText: hasNativeTextValue,
-                fileType
-              })
-            } catch (error) {
-              console.error('❌ [THUMBNAIL][GENERATE][ERROR]', {
-                name: file.name,
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-                fileType: isPdf ? 'PDF' : isWord ? 'Word' : 'Image'
-              })
-              // Continua comunque, senza thumbnail
-            }
-          } else {
-            console.log('⏭️ [THUMBNAIL][SKIP] File non supportato per thumbnail', { filename: file.name, mime: file.type })
+            thumbnailDataUrl = ThumbnailGenerator.createPlaceholderThumbnail("Sto creando la miniatura...")
+            console.log('🖼️ [THUMBNAIL][PLACEHOLDER][CREATED] Placeholder creata subito', {
+              filename: file.name,
+              hasPlaceholder: !!thumbnailDataUrl
+            })
           }
 
           // ✅ PASSO 1.5: Calcola s3Key (local) e localUrl SUBITO - così sono disponibili quando creiamo il documento
@@ -646,7 +616,7 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
             hashInDocLength: (tempDocImmediato as any).hash?.length || 0
           })
 
-          // ✅ Aggiungi SUBITO con miniatura già inclusa
+          // ✅ Aggiungi SUBITO con placeholder già inclusa
           const savedDocId = store.addDocument(tempDocImmediato!)
 
           console.log('💾 [STORE][ADD-DOCUMENT][CALLED] Documento aggiunto allo store', {
@@ -656,6 +626,111 @@ export function useFileUpload({ praticaId, comparti, documenti, store }: UseFile
             expectedId: tempIdImmediato.substring(0, 16) + '...',
             idsMatch: savedDocId === tempIdImmediato
           })
+
+          // ✅ Genera miniatura reale in background (NON bloccare l'UI)
+          // ✅ CRITICO: Salva le variabili nella closure per evitare problemi di scope
+          if (isPdf || isWord || isImage) {
+            const fileForThumbnail = file // ✅ Copia locale per la closure
+            const docIdForThumbnail = tempIdImmediato // ✅ Copia locale per la closure
+            const fileHashForThumbnail = fileHash // ✅ Copia locale per la closure
+            const fileTypeForThumbnail = isPdf ? 'PDF' : isWord ? 'Word' : 'Image'
+
+            // ✅ Log immediato per verificare che la funzione asincrona venga creata
+            console.log('🚀 [THUMBNAIL][BACKGROUND][INIT] Funzione asincrona creata, verrà eseguita in background', {
+              filename: fileForThumbnail.name,
+              docId: docIdForThumbnail?.substring(0, 16) + '...',
+              fileType: fileTypeForThumbnail
+            })
+
+            // ✅ Esegui immediatamente (non aspettare)
+            ;(async () => {
+              console.log('▶️ [THUMBNAIL][BACKGROUND][EXEC] Funzione asincrona eseguita', {
+                filename: fileForThumbnail.name,
+                docId: docIdForThumbnail?.substring(0, 16) + '...'
+              })
+
+              try {
+                console.log('🖼️ [THUMBNAIL][GENERATE][START][BACKGROUND]', {
+                  filename: fileForThumbnail.name,
+                  size: fileForThumbnail.size,
+                  type: fileForThumbnail.type,
+                  hashPreview: fileHashForThumbnail.substring(0, 16) + '...',
+                  fileType: fileTypeForThumbnail,
+                  docId: docIdForThumbnail?.substring(0, 16) + '...'
+                })
+
+                // ✅ Aggiungi timeout per evitare che la generazione blocchi indefinitamente
+                const generatePromise = ThumbnailGenerator.generate(fileForThumbnail)
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('Timeout generazione miniatura (30s)')), 30000)
+                )
+
+                const result = await Promise.race([generatePromise, timeoutPromise]) as Awaited<ReturnType<typeof ThumbnailGenerator.generate>>
+                const realThumbnail = result.thumbnail
+                const realHasNativeText = result.hasNativeText
+
+                console.log('🖼️ [THUMBNAIL][GENERATE][SUCCESS][BACKGROUND]', {
+                  filename: fileForThumbnail.name,
+                  hashPreview: fileHashForThumbnail.substring(0, 16) + '...',
+                  hasThumbnail: !!realThumbnail,
+                  thumbnailLength: realThumbnail?.length || 0,
+                  thumbnailPreview: realThumbnail?.substring(0, 50) || 'NULL',
+                  hasNativeText: realHasNativeText,
+                  fileType: fileTypeForThumbnail,
+                  docId: docIdForThumbnail?.substring(0, 16) + '...'
+                })
+
+                // ✅ Aggiorna il documento nello store con la miniatura reale
+                if (realThumbnail && realThumbnail.length > 0 && docIdForThumbnail) {
+                  // ✅ Verifica che il documento esista ancora nello store
+                  const currentDocs = store.getAllDocuments()
+                  const docExists = currentDocs.some(d => d.id === docIdForThumbnail)
+
+                  console.log('🔍 [THUMBNAIL][UPDATE][CHECK] Verifica documento nello store', {
+                    filename: fileForThumbnail.name,
+                    docId: docIdForThumbnail.substring(0, 16) + '...',
+                    docExists,
+                    totalDocs: currentDocs.length
+                  })
+
+                  if (docExists) {
+                    store.updateDocument(docIdForThumbnail, {
+                      thumbnailDataUrl: realThumbnail,
+                      hasNativeText: realHasNativeText
+                    } as any)
+
+                    console.log('✅ [THUMBNAIL][UPDATE] Miniatura reale aggiornata nello store', {
+                      filename: fileForThumbnail.name,
+                      docId: docIdForThumbnail.substring(0, 16) + '...',
+                      thumbnailLength: realThumbnail.length
+                    })
+                  } else {
+                    console.warn('⚠️ [THUMBNAIL][UPDATE][SKIP] Documento non trovato nello store', {
+                      filename: fileForThumbnail.name,
+                      docId: docIdForThumbnail.substring(0, 16) + '...',
+                      allDocIds: currentDocs.map(d => d.id.substring(0, 16) + '...')
+                    })
+                  }
+                } else {
+                  console.warn('⚠️ [THUMBNAIL][UPDATE][SKIP] Miniatura o docId mancanti', {
+                    filename: fileForThumbnail.name,
+                    hasThumbnail: !!realThumbnail,
+                    thumbnailLength: realThumbnail?.length || 0,
+                    hasDocId: !!docIdForThumbnail
+                  })
+                }
+              } catch (error) {
+                console.error('❌ [THUMBNAIL][GENERATE][ERROR][BACKGROUND]', {
+                  name: fileForThumbnail.name,
+                  error: error instanceof Error ? error.message : String(error),
+                  stack: error instanceof Error ? error.stack : undefined,
+                  fileType: fileTypeForThumbnail,
+                  docId: docIdForThumbnail?.substring(0, 16) + '...'
+                })
+                // Non bloccare, la placeholder rimane
+              }
+            })()
+          }
 
           // ✅ SEMPLIFICATO: Non serve più rimuovere documenti pending: perché non li creiamo più
           // ✅ Il documento viene creato SUBITO nello store con hash, quindi non c'è bisogno di cleanup

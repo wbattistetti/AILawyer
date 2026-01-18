@@ -142,9 +142,42 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }
 
     const newDocuments = new Map(state.documents)
-    newDocuments.set(docId, { ...existing, ...updates, id: docId })
+    const updatedDoc = { ...existing, ...updates, id: docId }
+    newDocuments.set(docId, updatedDoc)
+
+    console.log('🔄 [STORE][UPDATE-DOCUMENT] Aggiornamento documento nello store', {
+      docId: docId.substring(0, 16) + '...',
+      filename: updatedDoc.filename,
+      hasThumbnailBefore: !!(existing as any).thumbnailDataUrl,
+      thumbnailLengthBefore: (existing as any).thumbnailDataUrl?.length || 0,
+      hasThumbnailAfter: !!(updatedDoc as any).thumbnailDataUrl,
+      thumbnailLengthAfter: (updatedDoc as any).thumbnailDataUrl?.length || 0,
+      updatesKeys: Object.keys(updates),
+      newDocumentsSize: newDocuments.size,
+      updatedDocInMap: newDocuments.has(docId),
+      updatedDocThumbnailLength: (newDocuments.get(docId) as any)?.thumbnailDataUrl?.length || 0
+    })
 
     set({ documents: newDocuments })
+
+    // ✅ LOG: Verifica immediata dopo set
+    const verifyAfterSet = get()
+    const verifyDocAfterSet = verifyAfterSet.documents.get(docId)
+    console.log('🔄 [STORE][UPDATE-DOCUMENT][AFTER-SET] Verifica immediata dopo set', {
+      docId: docId.substring(0, 16) + '...',
+      verifyHasThumbnail: !!(verifyDocAfterSet as any)?.thumbnailDataUrl,
+      verifyThumbnailLength: (verifyDocAfterSet as any)?.thumbnailDataUrl?.length || 0,
+      totalDocs: verifyAfterSet.documents.size
+    })
+
+    // ✅ Verifica che l'aggiornamento sia stato applicato
+    const verifyState = get()
+    const verifyDoc = verifyState.documents.get(docId)
+    console.log('✅ [STORE][UPDATE-DOCUMENT][VERIFY] Verifica aggiornamento', {
+      docId: docId.substring(0, 16) + '...',
+      verifyHasThumbnail: !!(verifyDoc as any)?.thumbnailDataUrl,
+      verifyThumbnailLength: (verifyDoc as any)?.thumbnailDataUrl?.length || 0
+    })
   },
 
   /**

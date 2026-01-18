@@ -95,7 +95,6 @@ export function ArchivePanel({
       {!showAnalysis && (
         <div className="flex-1 min-h-0">
           <ArchiveRenderer
-            documenti={documenti}
             clientThumbByS3={clientThumbByS3}
             // dockV2Ref non è disponibile qui; il renderer gestirà l'apertura con evento globale o API locale
             dockV2Ref={{ current: null }} as any
