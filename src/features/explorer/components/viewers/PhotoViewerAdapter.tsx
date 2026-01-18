@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { FileEntry } from '../../types';
-import { api } from '../../../../lib/api';
 import { ImageViewer } from './ImageViewer';
 
 interface PhotoViewerAdapterProps {
@@ -34,7 +33,8 @@ export function PhotoViewerAdapter({ file, className = '', onTempFileCreated }: 
           return;
         }
 
-        // Carica il file dal filesystem
+        // ✅ CORREZIONE: Per file dal filesystem, crea blob URL locale invece di fare upload
+        // ✅ L'upload avverrà solo quando l'utente salva la pratica
         const response = await fetch('http://localhost:3001/api/filesystem/read-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -44,18 +44,15 @@ export function PhotoViewerAdapter({ file, className = '', onTempFileCreated }: 
         if (!response.ok) throw new Error(`Failed to read file: ${response.status}`);
 
         const fileBlob = await response.blob();
-        const mimeType = fileBlob.type || 'image/jpeg';
-        const fileObj = new File([fileBlob], file.name, { type: mimeType });
 
-        // Carica su S3
-        const { uploadUrl, s3Key } = await api.getUploadUrl(fileObj.name, fileObj.type);
-        await api.uploadFile(uploadUrl, fileObj);
+        // ✅ Crea blob URL locale per il preview (non fa upload al backend)
+        const blobUrl = URL.createObjectURL(fileBlob);
+        setFileUrl(blobUrl);
 
-        const localFileUrl = api.getLocalFileUrl(s3Key);
-        setFileUrl(localFileUrl);
-
+        // ✅ Notifica il componente padre con il filePath (non s3Key)
+        // ✅ Questo permetterà al salvataggio differenziale di gestire correttamente il file
         if (onTempFileCreated) {
-          onTempFileCreated(s3Key);
+          onTempFileCreated(file.path); // Passa filePath invece di s3Key
         }
 
         setLoading(false);
@@ -71,6 +68,15 @@ export function PhotoViewerAdapter({ file, className = '', onTempFileCreated }: 
 
     loadFile();
   }, [file.path, isProcessing, processedPath, onTempFileCreated]);
+
+  // ✅ Cleanup blob URL quando il componente viene smontato o il file cambia
+  useEffect(() => {
+    return () => {
+      if (fileUrl && fileUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(fileUrl);
+      }
+    };
+  }, [fileUrl]);
 
   useEffect(() => {
     setProcessedPath(null);
