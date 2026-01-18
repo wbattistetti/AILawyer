@@ -15,8 +15,7 @@ import {
   ArrowUpDown,
   Calendar
 } from 'lucide-react';
-import { SortField, SortOrder } from '../types';
-import { FileEntry, FileKind } from '../types';
+import { FileEntry, FileKind, SortField, SortOrder } from '../types';
 import { MimeService } from '../services/MimeService';
 import { CompartiService, CompartoOption } from '../services/CompartiService';
 import { ObjectExtractionStatus } from '../hooks/usePdfObjectExtraction';
@@ -541,3 +540,6 @@ export function FileGrid({
     </div>
   );
 }
+
+// ✅ Export default come fallback per compatibilità
+export default FileGrid;

@@ -100,9 +100,18 @@ export const api = {
 
   // Documenti
   async createDocumento(data: Omit<Documento, 'id' | 'createdAt'>): Promise<Documento> {
+    // ✅ Rimuovi i campi undefined prima di stringify (JSON.stringify li rimuove comunque, ma è meglio essere espliciti)
+    // ✅ Se thumbnailDataUrl è undefined, non includerlo (o passa null esplicitamente)
+    const payload: any = { ...data }
+    if (payload.thumbnailDataUrl === undefined) {
+      delete payload.thumbnailDataUrl
+    }
+    if (payload.filePath === undefined) {
+      delete payload.filePath
+    }
     return fetchApi('/documenti', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     })
   },
 
@@ -122,9 +131,14 @@ export const api = {
       compartoId: data.compartoId
     })
     try {
+      // ✅ Rimuovi i campi undefined prima di stringify (JSON.stringify li rimuove comunque, ma è meglio essere espliciti)
+      const payload: any = { ...data }
+      if (payload.thumbnailDataUrl === undefined) {
+        delete payload.thumbnailDataUrl
+      }
       const updated = await fetchApi(`/documenti/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       console.log('[UPDATE][DOCUMENTO][FRONTEND][SUCCESS]', {
         docId: id,

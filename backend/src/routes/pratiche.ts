@@ -437,7 +437,9 @@ export async function praticheRoutes(fastify: FastifyInstance) {
 
       const documentiRaw = await prisma.documento.findMany({
         where: { praticaId: praticaId },
-        orderBy: { createdAt: 'desc' },
+        // ✅ Cambiato da 'desc' a 'asc' per preservare l'ordine cronologico di aggiunta
+        // I documenti più vecchi vengono prima, mantenendo l'ordine originale
+        orderBy: { createdAt: 'asc' },
         select: {
           // ✅ INCLUDE thumbnailDataUrl - necessaria per mantenere thumbnail client-side generata
           id: true,

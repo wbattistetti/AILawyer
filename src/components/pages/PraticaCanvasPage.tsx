@@ -107,22 +107,17 @@ async function uploadFileFromPath(
   // 2. Calcola hash
   const fileHash = await calculateFileHash(fileObj)
 
-  // 3. Genera thumbnail e rileva testo nativo se PDF
-  const isPdf = fileObj.type?.startsWith('application/pdf') || fileName.toLowerCase().endsWith('.pdf')
+  // 3. Genera thumbnail e rileva testo nativo usando ThumbnailGenerator (supporta PDF, Word, immagini, video)
   let thumbnailDataUrl: string | undefined = undefined
   let hasNativeText: boolean | undefined = undefined
 
-  if (isPdf) {
-    try {
-      const [thumb, nativeText] = await Promise.all([
-        generateClientPdfThumb(fileObj, 220),
-        detectNativeTextClient(fileObj)
-      ])
-      thumbnailDataUrl = thumb || undefined
-      hasNativeText = nativeText
-    } catch (error) {
-      console.warn('[UPLOAD-FROM-PATH] PDF processing failed', { fileName, error })
-    }
+  try {
+    const { ThumbnailGenerator } = await import('../../services/documents/ThumbnailGenerator')
+    const result = await ThumbnailGenerator.generate(fileObj)
+    thumbnailDataUrl = result.thumbnail
+    hasNativeText = result.hasNativeText
+  } catch (error) {
+    console.warn('[UPLOAD-FROM-PATH] Thumbnail generation failed', { fileName, error })
   }
 
   // 4. Carica file in uploads
@@ -425,13 +420,14 @@ export function PraticaCanvasPage() {
   // Reusable viewer for a documento with Verify mode toggle
   const renderDocViewer = (doc: Documento, isActive: boolean = false) => {
     // ✅ PRIORITÀ 1: localUrl (blob URL per file piccoli durante editing)
-    // ✅ PRIORITÀ 2: filePath (per file grandi durante editing - streaming diretto)
-    // ✅ PRIORITÀ 3: s3Key (per documenti salvati - repository)
+    // ✅ PRIORITÀ 2: s3Key (per documenti salvati - repository) - SEMPRE preferire s3Key se disponibile
+    // ✅ PRIORITÀ 3: filePath (per file grandi durante editing - streaming diretto) - SOLO se s3Key non disponibile
+    // ✅ CORREZIONE: filePath può essere obsoleto o non accessibile dopo il salvataggio, quindi s3Key ha priorità
     const fileUrl = (doc as any).localUrl ||
+                    (doc.s3Key ? api.getLocalFileUrl(doc.s3Key) : null) ||
                     ((doc as any).filePath ?
                       `http://localhost:3001/api/filesystem/file/${encodeURIComponent((doc as any).filePath)}` :
-                      null) ||
-                    (doc.s3Key ? api.getLocalFileUrl(doc.s3Key) : null)
+                      null)
 
     if (!fileUrl) {
       return (
@@ -903,7 +899,9 @@ export function PraticaCanvasPage() {
                           if (existingDoc.compartoId !== memDoc.compartoId) {
                             updateData.compartoId = memDoc.compartoId
                           }
-                          if ((memDoc as any).thumbnailDataUrl && !(existingDoc as any).thumbnailDataUrl) {
+                          // ✅ Aggiorna sempre la thumbnail se memDoc ce l'ha (indipendentemente da existingDoc)
+                          // Questo risolve il problema quando la thumbnail è stata persa durante il ricaricamento
+                          if ((memDoc as any).thumbnailDataUrl) {
                             updateData.thumbnailDataUrl = (memDoc as any).thumbnailDataUrl
                           }
                           if (Object.keys(updateData).length > 0) {
@@ -1009,7 +1007,9 @@ export function PraticaCanvasPage() {
                           if (existingDoc.compartoId !== memDoc.compartoId) {
                             updateData.compartoId = memDoc.compartoId
                           }
-                          if ((memDoc as any).thumbnailDataUrl && !(existingDoc as any).thumbnailDataUrl) {
+                          // ✅ Aggiorna sempre la thumbnail se memDoc ce l'ha (indipendentemente da existingDoc)
+                          // Questo risolve il problema quando la thumbnail è stata persa durante il ricaricamento
+                          if ((memDoc as any).thumbnailDataUrl) {
                             updateData.thumbnailDataUrl = (memDoc as any).thumbnailDataUrl
                           }
                           if ((memDoc as any).hasNativeText !== undefined && (existingDoc as any).hasNativeText !== (memDoc as any).hasNativeText) {
@@ -1116,7 +1116,8 @@ export function PraticaCanvasPage() {
                         hash: finalHash,
                         ocrStatus: 'pending',
                         tags: [],
-                        thumbnailDataUrl: (memDoc as any).thumbnailDataUrl,
+                        // ✅ Passa null invece di undefined per evitare che JSON.stringify rimuova il campo
+                        thumbnailDataUrl: (memDoc as any).thumbnailDataUrl || null,
                         hasNativeText: (memDoc as any).hasNativeText,
                         // ❌ NON salvare filePath - il documento deve essere autonomo
                         filePath: undefined

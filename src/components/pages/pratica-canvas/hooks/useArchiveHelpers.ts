@@ -205,12 +205,30 @@ export function mergeDocumentsWithTemp(
     if (matchingTempDoc) {
       const tempThumbnail = (matchingTempDoc as any)?.thumbnailDataUrl
       const realThumbnail = (realDoc as any)?.thumbnailDataUrl
-      // Priorità: thumbnail client-side generata (tempDoc) > backend
-      if (tempThumbnail && tempThumbnail !== realThumbnail) {
+      // ✅ Priorità: thumbnail client-side generata (tempDoc) > backend
+      // ✅ Se realDoc non ha thumbnail (null o undefined) e tempDoc ce l'ha, preservala sempre
+      if (tempThumbnail && (!realThumbnail || tempThumbnail !== realThumbnail)) {
         return {
           ...realDoc,
           thumbnailDataUrl: tempThumbnail,
           localUrl: (matchingTempDoc as any)?.localUrl // Preserva anche localUrl
+        } as Documento
+      }
+    }
+    // ✅ Se realDoc ha thumbnail ma è null, preserva comunque quella di tempDoc se esiste
+    // (questo evita di perdere la thumbnail quando il DB restituisce null)
+    const realThumbnail = (realDoc as any)?.thumbnailDataUrl
+    if (!realThumbnail) {
+      // Cerca anche in altri tempDoc per s3Key o filename+compartoId
+      const fallbackTempDoc = tempDocs.find(t =>
+        (t.s3Key && t.s3Key === realDoc.s3Key) ||
+        (t.filename === realDoc.filename && t.compartoId === realDoc.compartoId)
+      )
+      if (fallbackTempDoc && (fallbackTempDoc as any)?.thumbnailDataUrl) {
+        return {
+          ...realDoc,
+          thumbnailDataUrl: (fallbackTempDoc as any).thumbnailDataUrl,
+          localUrl: (fallbackTempDoc as any)?.localUrl
         } as Documento
       }
     }

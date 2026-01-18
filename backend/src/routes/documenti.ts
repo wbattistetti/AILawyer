@@ -500,8 +500,11 @@ export async function documentiRoutes(fastify: FastifyInstance) {
             hash,
             ocrStatus: data.ocrStatus || 'pending',
             hasNativeText: finalHasNativeText,
-            thumbnailDataUrl: data.thumbnailDataUrl || null, // Salva thumbnail se presente
-            filePath: data.filePath || null, // Salva filePath se presente
+            // ✅ Usa nullish coalescing (??) invece di || per distinguere null da undefined
+            // Se thumbnailDataUrl è undefined (non passato), non viene incluso nello spread
+            // Se è null (passato esplicitamente), viene salvato come null
+            thumbnailDataUrl: data.thumbnailDataUrl ?? null,
+            filePath: data.filePath ?? null, // Salva filePath se presente
             tags: JSON.stringify(data.tags || []),
           } as any, // TODO: rimuovere quando Prisma Client sarà rigenerato
         })
