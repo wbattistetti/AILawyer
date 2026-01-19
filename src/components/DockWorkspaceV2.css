@@ -3,7 +3,7 @@
   /* ensure native tab strip is visible */
   position: relative !important;
   z-index: 1003 !important; /* ✅ AUMENTATO da 100 a 1003 per stare sopra DrawerTabStrip (1002) */
-  background: white !important; /* ✅ Assicura sfondo solido per evitare trasparenze */
+  background: hsl(var(--background)) !important; /* ✅ Usa variabile tema */
 }
 
 /* ✅ FASE 1: Forza visibilità e z-index per tutte le tab strip (non solo drawerTabset) */
@@ -58,7 +58,7 @@
 
 /* ✅ Fix RADICALE: Forza FlexLayout a rispettare i confini del container flex */
 .dockv2-root .flexlayout__layout {
-  background: #fff;
+  background: hsl(var(--background));
   height: 100% !important;
   width: 100% !important;
   position: relative !important; /* ✅ Usa relative invece di absolute per rispettare flex */

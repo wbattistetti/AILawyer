@@ -139,7 +139,10 @@ export class ThumbnailGenerator {
       tempContainer.style.left = '-9999px'
       tempContainer.style.top = '0'
       tempContainer.style.width = '800px' // Larghezza standard per documento Word
-      tempContainer.style.backgroundColor = '#ffffff'
+      // ✅ Usa CSS variable del tema invece di #ffffff hardcoded
+      const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+      const bgColor = bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
+      tempContainer.style.backgroundColor = bgColor
       tempContainer.style.padding = '2rem'
       tempContainer.style.border = '1px solid #e5e7eb' // ✅ Bordo per distinguere la pagina
       tempContainer.className = 'word-page'
@@ -149,10 +152,13 @@ export class ThumbnailGenerator {
       const wrapper = document.createElement('div')
       wrapper.className = 'word-viewer-content'
       wrapper.style.width = '100%'
-      wrapper.style.backgroundColor = '#ffffff'
+      wrapper.style.backgroundColor = bgColor // ✅ Usa stesso colore del container
       wrapper.style.padding = '2rem'
       wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif' // ✅ Font standard
-      wrapper.style.color = '#000000' // ✅ Colore testo nero
+      // ✅ Usa CSS variable del tema per il colore testo
+      const fgValue = getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim()
+      const fgColor = fgValue ? `hsl(${fgValue})` : '#000000' // Fallback a nero se non disponibile
+      wrapper.style.color = fgColor
       wrapper.style.lineHeight = '1.5'
       wrapper.innerHTML = html
 
@@ -205,7 +211,7 @@ export class ThumbnailGenerator {
         windowWidth: 800,
         windowHeight: captureHeight, // ✅ Limita la finestra di rendering
         useCORS: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: bgColor, // ✅ Usa colore del tema invece di #ffffff hardcoded
         scale: 1.0, // ✅ Ridotto da 1.5 a 1.0 (sufficiente per thumbnail, molto più veloce)
         logging: false,
         allowTaint: false,

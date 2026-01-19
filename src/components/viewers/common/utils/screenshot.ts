@@ -28,7 +28,11 @@ export async function captureElementScreenshotFast(
     width: options?.width,
     height: options?.height,
     useCORS: options?.useCORS ?? true,
-    backgroundColor: options?.backgroundColor ?? '#ffffff',
+    backgroundColor: options?.backgroundColor ?? (() => {
+      // ✅ Usa CSS variable del tema invece di #ffffff hardcoded
+      const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+      return bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
+    })(),
     scale: 1, // ✅ VELOCE: scale 1 invece di 2 (4x meno pixel da processare)
     logging: false,
     // ✅ RIMOSSO removeContainer: true - può causare problemi con Word e altri viewer
@@ -65,7 +69,11 @@ export async function captureElementScreenshot(
     width: options?.width,
     height: options?.height,
     useCORS: options?.useCORS ?? true,
-    backgroundColor: options?.backgroundColor ?? '#ffffff',
+    backgroundColor: options?.backgroundColor ?? (() => {
+      // ✅ Usa CSS variable del tema invece di #ffffff hardcoded
+      const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+      return bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
+    })(),
     scale: 2, // ✅ Alta risoluzione per screenshot
     logging: false,
     ignoreElements: (el) => {
@@ -110,9 +118,11 @@ async function captureWordScreenshot(
     ? window.getComputedStyle(wordPage).backgroundColor
     : window.getComputedStyle(container).backgroundColor
 
-  // ✅ Se il background è trasparente o rgba(0,0,0,0), usa bianco
+  // ✅ Se il background è trasparente o rgba(0,0,0,0), usa CSS variable del tema
+  const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+  const themeBg = bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
   const backgroundColor = computedBg === 'rgba(0, 0, 0, 0)' || !computedBg
-    ? '#ffffff'
+    ? themeBg
     : computedBg
 
   const canvas = await html2canvas(container, {
@@ -217,6 +227,10 @@ export async function captureElementScreenshotById(
     width: rect.width,
     height: rect.height,
     useCORS: options?.useCORS ?? true,
-    backgroundColor: options?.backgroundColor ?? '#ffffff'
+    backgroundColor: options?.backgroundColor ?? (() => {
+      // ✅ Usa CSS variable del tema invece di #ffffff hardcoded
+      const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+      return bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
+    })()
   })
 }

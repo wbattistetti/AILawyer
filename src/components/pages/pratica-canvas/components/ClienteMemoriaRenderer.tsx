@@ -43,7 +43,7 @@ export const ClienteMemoriaRenderer: React.FC<ClienteMemoriaRendererProps> = ({
     }
 
     return (
-        <div className="h-full w-full bg-white">
+        <div className="h-full w-full bg-background">
             <DefenseMemoryTableEditor
                 praticaId={praticaId}
                 clienteId={cliente.id}

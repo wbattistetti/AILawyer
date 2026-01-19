@@ -425,7 +425,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				zIndex: 10000,
 				pointerEvents: 'auto',
 				overflow: 'visible', // ✅ Cambiato a visible per permettere all'header di essere visibile sopra
-				background: 'white', // ✅ Sfondo bianco per sostituire il rettangolo blu
+				background: 'hsl(var(--background))', // ✅ Usa CSS variable del tema invece di white hardcoded
 				border: '2px solid rgba(59,130,246,0.8)', // ✅ Bordo simile al rettangolo
 				borderRadius: 2,
 				boxShadow: '0 2px 8px rgba(0,0,0,0.15)' // ✅ Ombra per distinguerlo dal documento
@@ -487,7 +487,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 
 				{/* ✅ Footer con pulsanti: "Estrai testo" / "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}
 				{/* ✅ Mantieni mt-2 per spazio al contenuto (rettangolo selezionato), ma rimuovi border-t per evitare la "fascetta grigia" */}
-				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0 p-2 bg-white">
+				<div className="mt-2 flex items-center justify-between gap-2 flex-shrink-0 p-2 bg-background">
 					{/* Pulsanti a sinistra */}
 					<div className="flex gap-2">
 						{/* Pulsante "Estrai testo" (opzionale, solo se haNativeText e testo non estratto) */}
@@ -520,7 +520,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 								onMouseDown={(e) => {
 									e.stopPropagation()
 								}}
-								className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+								className="px-2 py-1 text-xs bg-muted hover:bg-accent text-foreground rounded transition-colors"
 							>
 								Aggiungi osservazione
 							</button>

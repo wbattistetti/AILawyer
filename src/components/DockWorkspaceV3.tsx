@@ -422,7 +422,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             forceTabUpdate={forceTabUpdate}
           >
             <PanelContentWrapper>
-              <div className="w-full h-full overflow-hidden bg-white">
+              <div className="w-full h-full overflow-hidden bg-background">
                 {renderExplorer ? renderExplorer() : <div>Explorer non disponibile</div>}
               </div>
             </PanelContentWrapper>
@@ -441,7 +441,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             forceTabUpdate={forceTabUpdate}
           >
             <PanelContentWrapper>
-              <div className="w-full h-full overflow-hidden bg-white">
+              <div className="w-full h-full overflow-hidden bg-background">
                 <CaseOverviewDiagram praticaId={praticaId || ''} />
               </div>
             </PanelContentWrapper>
@@ -451,7 +451,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       'persons': (props: IDockviewPanelProps) => {
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderPersons ? renderPersons() : null}
             </div>
           </PanelContentWrapper>
@@ -460,7 +460,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       'contacts': (props: IDockviewPanelProps) => {
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderContacts ? renderContacts() : null}
             </div>
           </PanelContentWrapper>
@@ -469,7 +469,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       'ids': (props: IDockviewPanelProps) => {
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderIds ? renderIds() : null}
             </div>
           </PanelContentWrapper>
@@ -478,7 +478,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       'events': (props: IDockviewPanelProps) => {
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderEvents ? renderEvents() : null}
             </div>
           </PanelContentWrapper>
@@ -488,7 +488,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const clienteId = props.params?.clienteId || props.api.id.replace('cliente-', '').replace('-tab', '').split('-')[0]
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderClienteMemoria && clienteId ? renderClienteMemoria(clienteId) : <div>Cliente non trovato</div>}
             </div>
           </PanelContentWrapper>
@@ -503,7 +503,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         return (
           <PanelContentWrapper>
             <div
-              className="w-full h-full overflow-auto bg-white"
+              className="w-full h-full overflow-auto bg-background"
               onDragOver={(e) => {
                 // ✅ Se è un file Explorer, permettere il drop anche qui (fallback)
                 if (e.dataTransfer.types.includes('application/x-explorer-file')) {
@@ -535,7 +535,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const isActive = props.api.group?.model?.activePanel?.id === props.api.id
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white">
+            <div className="w-full h-full overflow-auto bg-background">
               {renderDoc ? renderDoc(docId, isActive) : <div>Documento non disponibile</div>}
             </div>
           </PanelContentWrapper>
@@ -545,7 +545,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const meta = props.params?.meta || {}
         return (
           <PanelContentWrapper>
-            <div className="w-full h-full overflow-auto bg-white p-4">
+            <div className="w-full h-full overflow-auto bg-background p-4">
               <div className="text-sm mb-3">
                 <span className="inline-flex items-center gap-1 bg-slate-100 border rounded px-2 py-0.5">
                   <FileText size={14} className="text-slate-700" /> {meta.title || 'Documento temporaneo'}
@@ -624,7 +624,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             marginRight: '4px',
             fontWeight: 600,
             color: drawerColor,
-            fontSize: '13px'
+                fontSize: 'var(--font-size-sm)' // usa variabile scalabile
           }}>
             {drawerNumber}
           </span>
@@ -688,18 +688,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '1rem', // usa rem scalabile
                 lineHeight: 1,
-                color: '#666',
+                color: 'var(--ui-text-muted)',
                 borderRadius: '3px'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#e5e7eb'
-                e.currentTarget.style.color = '#000'
+                e.currentTarget.style.background = 'var(--ui-bg-hover)'
+                e.currentTarget.style.color = 'var(--drawer-text)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = '#666'
+                e.currentTarget.style.color = 'var(--ui-text-muted)'
               }}
               title="Chiudi"
             >
@@ -728,18 +728,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '1rem', // usa rem scalabile
                 lineHeight: 1,
-                color: '#666',
+                color: 'var(--ui-text-muted)',
                 borderRadius: '3px'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#e5e7eb'
-                e.currentTarget.style.color = '#000'
+                e.currentTarget.style.background = 'var(--ui-bg-hover)'
+                e.currentTarget.style.color = 'var(--drawer-text)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = '#666'
+                e.currentTarget.style.color = 'var(--ui-text-muted)'
               }}
               title="Chiudi"
             >
@@ -768,18 +768,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '1rem', // usa rem scalabile
                 lineHeight: 1,
-                color: '#666',
+                color: 'var(--ui-text-muted)',
                 borderRadius: '3px'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#e5e7eb'
-                e.currentTarget.style.color = '#000'
+                e.currentTarget.style.background = 'var(--ui-bg-hover)'
+                e.currentTarget.style.color = 'var(--drawer-text)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = '#666'
+                e.currentTarget.style.color = 'var(--ui-text-muted)'
               }}
               title="Chiudi"
             >
@@ -837,18 +837,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '1rem', // usa rem scalabile
                 lineHeight: 1,
-                color: '#666',
+                color: 'var(--ui-text-muted)',
                 borderRadius: '3px'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#e5e7eb'
-                e.currentTarget.style.color = '#000'
+                e.currentTarget.style.background = 'var(--ui-bg-hover)'
+                e.currentTarget.style.color = 'var(--drawer-text)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = '#666'
+                e.currentTarget.style.color = 'var(--ui-text-muted)'
               }}
               title="Chiudi"
             >
@@ -881,12 +881,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
               borderRadius: '3px'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#e5e7eb'
-              e.currentTarget.style.color = '#000'
+              e.currentTarget.style.background = 'var(--ui-bg-hover)'
+              e.currentTarget.style.color = 'var(--drawer-text)'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = '#666'
+              e.currentTarget.style.color = 'var(--ui-text-muted)'
             }}
             title="Chiudi"
           >
@@ -1369,7 +1369,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           components={components}
           defaultTabComponent={defaultTabComponent}
           onReady={onReady}
-          className="dockview-theme-light"
+          className="dockview-theme-light" // ✅ Il CSS si adatta automaticamente al tema via variabili CSS
         />
       </div>
 
@@ -1411,8 +1411,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                 : 'rounded-l-lg'
             }`}
             style={{
-              background: 'rgba(241, 245, 249, 0.95)',
-              border: '1px solid #cbd5e1',
+              background: 'hsl(var(--card) / 0.95)',
+              border: '1px solid var(--ui-border-subtle)',
               ...(DRAWER_STRIP_POSITION === 'top'
                 ? { borderTop: 'none', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' }
                 : DRAWER_STRIP_POSITION === 'bottom'
@@ -1423,13 +1423,13 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
               ),
             }}
           >
-            <span className="text-sm font-medium text-gray-700">Cassetti</span>
+            <span className="text-sm font-medium text-foreground">Cassetti</span>
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 handleTogglePin()
               }}
-              className="p-1 rounded hover:bg-gray-200 transition-colors"
+              className="p-1 rounded hover:bg-muted transition-colors"
               title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
             >
               {isDrawerStripPinned ? (
@@ -1525,7 +1525,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             >
               <button
                 onClick={handleTogglePin}
-                className="p-2 rounded-lg bg-white/90 hover:bg-white border border-gray-300 shadow-md transition-all"
+                className="p-2 rounded-lg bg-background/90 hover:bg-background border border-border shadow-md transition-all"
                 title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
               >
                 {isDrawerStripPinned ? (

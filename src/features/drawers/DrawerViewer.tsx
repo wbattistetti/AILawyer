@@ -11,12 +11,12 @@ function iconFor(title?: string) {
   if (s.includes('incontri') || s.includes('eventi')) return <Zap size={24} className="text-pink-600" />
   if (s.includes('intercett')) return <Hash size={24} className="text-pink-600" />
   if (s.includes('procura')) return <Landmark size={24} className="text-violet-600" />
-  if (s.includes('ufficio pg')) return <Shield size={24} className="text-slate-700" />
+  if (s.includes('ufficio pg')) return <Shield size={24} className="text-foreground" />
   if (s.includes('contatti') || s.includes('telefon')) return <Phone size={24} className="text-blue-600" />
-  if (s.includes('timeline') || s.includes('termini')) return <Clock size={24} className="text-slate-600" />
+  if (s.includes('timeline') || s.includes('termini')) return <Clock size={24} className="text-muted-foreground" />
   if (s.includes('anagrafe') || s.includes('avvocati') || s.includes('elenco nomi')) return <Users size={24} className="text-blue-700" />
-  if (s.includes('reati')) return <Boxes size={24} className="text-slate-700" />
-  return <Boxes size={24} className="text-slate-600" />
+  if (s.includes('reati')) return <Boxes size={24} className="text-foreground" />
+  return <Boxes size={24} className="text-muted-foreground" />
 }
 
 function DocumentCollectionView({ id, title }: { id: string; title?: string }) {

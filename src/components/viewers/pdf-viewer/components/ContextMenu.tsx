@@ -223,10 +223,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 					e.stopPropagation()
 				}}
 			>
-				<div className="bg-white border border-gray-200 rounded-lg shadow-2xl p-3 min-w-[200px]">
+				<div className="bg-background border border-border rounded-lg shadow-2xl p-3 min-w-[200px]">
 				<button
 					type="button"
-					className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
+					className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded transition-colors"
 					onClick={(e) => {
 						e.preventDefault()
 						e.stopPropagation()
@@ -237,7 +237,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 				</button>
 				<button
 					type="button"
-					className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded transition-colors"
+					className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded transition-colors"
 					onMouseDown={(e) => {
 						console.log('🔥 [ContextMenu] Copia estratto - onMouseDown')
 						e.stopPropagation()

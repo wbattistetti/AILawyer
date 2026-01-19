@@ -372,18 +372,18 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
             onMouseEnter={() => setHoverDoc(docId)}
             onMouseLeave={() => setHoverDoc(prev => (prev === docId ? null : prev))}
         >
-            <div className="relative w-full h-8 rounded overflow-hidden flex items-center" style={{ backgroundColor: '#d8ecff' }}>
+            <div className="relative w-full h-8 rounded overflow-hidden flex items-center bg-muted/50">
                 <FileText className="w-4 h-4 text-neutral-600 ml-2 mr-2 shrink-0" />
                 {/* Idle: solo testo; Running: progress bar */}
                 {aggPct > 0 ? (
-                    <div className="relative group flex-1 h-5 bg-white rounded border border-black overflow-hidden">
+                    <div className="relative group flex-1 h-5 bg-background rounded border border-border overflow-hidden">
                         <div className="absolute inset-y-0 left-0 bg-blue-700" style={{ width: `${aggPct}%` }} />
-                        <div className="absolute inset-0 flex items-center justify-between pl-2 pr-2 text-xs text-black">
+                        <div className="absolute inset-0 flex items-center justify-between pl-2 pr-2 text-xs text-foreground">
                             <span className="truncate pr-2">{docTitle}</span>
                             <span className="flex items-center">
                                 {/* inline toolbar just left of % with 3px gap */}
                                 <span
-                                    className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                                    className="ana-hover-toolbar flex items-center gap-1 bg-background border border-border rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
                                     style={{ marginRight: '3px' }}
                                     onMouseDown={(e) => { e.stopPropagation(); }}
                                     onClick={(e) => { e.stopPropagation(); }}
@@ -428,11 +428,11 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
                         </div>
                     </div>
                 ) : (
-                    <div className="relative group flex-1 flex items-center justify-between px-2 text-xs text-black">
+                    <div className="relative group flex-1 flex items-center justify-between px-2 text-xs text-foreground">
                         <span className="truncate pr-2">{docTitle}</span>
                         <span className="flex items-center">
                             <span
-                                className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                                className="ana-hover-toolbar flex items-center gap-1 bg-background border border-border rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
                                 style={{ marginRight: '3px' }}
                                 onMouseDown={(e) => { e.stopPropagation(); }}
                                 onClick={(e) => { e.stopPropagation(); }}
@@ -488,13 +488,13 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
             onMouseLeave={() => setHoverTask(prev => (prev === taskKey ? null : prev))}
         >
             {pct > 0 ? (
-                <div className="relative group w-full h-7 bg-white rounded border border-black overflow-hidden">
+                <div className="relative group w-full h-7 bg-background rounded border border-border overflow-hidden">
                     <div className="absolute inset-y-0 left-0 bg-blue-700" style={{ width: `${pct}%` }} />
-                    <div className="absolute inset-0 flex items-center justify-between px-2 text-[12px] text-black">
+                    <div className="absolute inset-0 flex items-center justify-between px-2 text-[12px] text-foreground">
                         <span className="truncate pr-2">{label}</span>
                         <span className="flex items-center">
                             <span
-                                className="ana-hover-toolbar flex items-center gap-1 bg-white border border-neutral-300 rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                                className="ana-hover-toolbar flex items-center gap-1 bg-background border border-border rounded px-1 py-0.5 shadow-sm pointer-events-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
                                 style={{ marginRight: '3px' }}
                                 onMouseDown={(e) => { e.stopPropagation(); }}
                                 onClick={(e) => { e.stopPropagation(); }}
@@ -539,7 +539,7 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
                     </div>
                 </div>
             ) : (
-                <div className="relative group w-full h-7 flex items-center justify-between px-2 text-[12px] text-black bg-white rounded">
+                <div className="relative group w-full h-7 flex items-center justify-between px-2 text-[12px] text-foreground bg-background rounded">
                     <span className="truncate pr-2">{label}</span>
                     <span className="flex items-center">
                         <span
@@ -591,7 +591,7 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
     );
 
     const SmallToolbar = ({ onPlay, onPause, onStop }: { onPlay?: () => void; onPause?: () => void; onStop?: () => void }) => (
-        <span className="inline-flex items-center gap-1 bg-white/90 border border-neutral-300 rounded px-1 py-0.5">
+        <span className="inline-flex items-center gap-1 bg-background/90 border border-border rounded px-1 py-0.5">
             <button className="p-0.5 text-neutral-700 hover:text-neutral-900" onClick={onPlay}>
                 <Play className="w-3.5 h-3.5" />
             </button>
@@ -621,10 +621,10 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
 
     return (
         <div className="flex flex-col h-full">
-            <div className="px-2 py-2 border-b bg-white sticky top-0 z-10">
-                <div className="relative w-full h-6 bg-white rounded border border-black overflow-hidden">
+            <div className="px-2 py-2 border-b bg-background sticky top-0 z-10">
+                <div className="relative w-full h-6 bg-background rounded border border-border overflow-hidden">
                     <div className="absolute inset-y-0 left-0 bg-blue-700" style={{ width: `${globalAggPct}%` }} />
-                    <div className="absolute inset-0 flex items-center justify-between px-2 text-xs text-black">
+                    <div className="absolute inset-0 flex items-center justify-between px-2 text-xs text-foreground">
                         <span className="truncate pr-2">Analisi documenti</span>
                         <span className="flex items-center">
                             <SmallToolbar onPlay={startAllDocs} />
@@ -647,8 +647,8 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
                     const agg = tasks.reduce((s, t) => s + (t.w * (weight[t.id] || 0)), 0) * 100;
                     const isOpen = open[doc.id] ?? true;
                     return (
-                        <div key={doc.id} className="rounded overflow-visible" style={{ backgroundColor: '#eef6ff' }}>
-                            <div className="px-3 py-2 rounded-t" style={{ backgroundColor: '#d8ecff' }}>
+                        <div key={doc.id} className="rounded overflow-visible bg-muted/30">
+                            <div className="px-3 py-2 rounded-t bg-muted/50">
                                 {headerBar(doc.id, doc.filename, agg, isOpen, () => setOpen(prev => ({ ...prev, [doc.id]: !isOpen })))}
                             </div>
                             {isOpen && (

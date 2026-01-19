@@ -32,7 +32,7 @@ export function PraticaRow({
       className={`group relative border-b last:border-b-0 transition ${
         isDraft
           ? 'border-amber-100 hover:bg-amber-50 bg-amber-50/30'
-          : 'hover:bg-slate-50'
+          : 'hover:bg-muted'
       }`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -56,13 +56,13 @@ export function PraticaRow({
 
       {/* Badge Annulla/Conferma o Delete Button */}
       {isDeleting ? (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10 bg-white border border-slate-200 rounded-md shadow-sm px-2 py-1">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10 bg-background border border-border rounded-md shadow-sm px-2 py-1">
           <button
             onClick={(e) => {
               e.stopPropagation()
               onCancel()
             }}
-            className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded"
+            className="px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded"
           >
             Annulla
           </button>

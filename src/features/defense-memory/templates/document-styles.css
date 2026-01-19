@@ -6,7 +6,7 @@
     max-width: 800px;
     margin: 0 auto;
     padding: 2cm;
-    background: white;
+    background: hsl(var(--background));
     color: #333;
 }
 
@@ -165,7 +165,7 @@
 }
 
 .notes-content {
-    background: white;
+    background: hsl(var(--background));
     border: 1px solid #d1d5db;
     border-radius: 4px;
     padding: 0.75rem;

@@ -229,9 +229,9 @@ export function DirectoryTree({
       <div key={node.id}>
         <div
           className={`
-            flex items-center py-2 px-3 cursor-pointer hover:bg-gray-100 rounded-md
-            ${isSelected ? 'bg-blue-100 text-blue-900 border-l-2 border-blue-500' : ''}
-            ${isHighlighted ? 'bg-yellow-100 border-l-2 border-yellow-400' : ''}
+            flex items-center py-2 px-3 cursor-pointer hover:bg-accent rounded-md
+            ${isSelected ? 'bg-primary/20 text-primary border-l-2 border-primary' : ''}
+            ${isHighlighted ? 'bg-yellow-500/20 border-l-2 border-yellow-500' : ''}
           `}
           style={{ paddingLeft: `${level * 20 + 12}px` }}
           onClick={() => handleNodeClick(node)}

@@ -25,7 +25,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onCloseSearchPanel
 }) => {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-white flex-shrink-0">
+    <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-background flex-shrink-0">
       <div className="flex items-center gap-1">
         <input
           className="w-16 border rounded px-1 py-0.5 text-center"
@@ -53,7 +53,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         ) : (
           <button
-            className="px-3 py-1 border rounded bg-white hover:bg-gray-50"
+            className="px-3 py-1 border rounded bg-background hover:bg-muted"
             title="Apri pannello ricerca"
             onClick={onOpenSearchPanel}
           >

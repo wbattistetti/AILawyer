@@ -64,7 +64,17 @@ export const DraftOverlay: React.FC<DraftOverlayProps> = ({
   // ✅ Se coordSpace === 'host', converti host→pagina
   if (draft.coordSpace === 'host' && hostRef?.current) {
     const host = hostRef.current
-    const pageEl = pageElsRef.current.get(draft.page)
+    let pageEl = pageElsRef.current.get(draft.page)
+
+    // ✅ Se pagina non trovata in pageElsRef, prova a cercarla direttamente nel DOM
+    if (!pageEl) {
+      const found = host.querySelector(`[data-page="${draft.page}"]`) as HTMLElement
+      if (found) {
+        pageEl = found
+        // ✅ Aggiorna pageElsRef per prossime volte
+        pageElsRef.current.set(draft.page, found)
+      }
+    }
 
     if (pageEl) {
       const hostRect = host.getBoundingClientRect()
@@ -96,12 +106,29 @@ export const DraftOverlay: React.FC<DraftOverlayProps> = ({
       const x1Pct = x1Page / pageWidth
       const y1Pct = y1Page / pageHeight
 
+      // ✅ Debug log (solo se necessario)
+      // console.log('[DraftOverlay] Conversione host→pagina:', {
+      //   page: draft.page,
+      //   coordSpace: draft.coordSpace,
+      //   hostRect: { left: hostRect.left, top: hostRect.top, width: hostWidth, height: hostHeight },
+      //   pageRect: { left: pageRect.left, top: pageRect.top, width: pageWidth, height: pageHeight },
+      //   offsetX, offsetY,
+      //   draft: { x0Pct: draft.x0Pct, y0Pct: draft.y0Pct, x1Pct: draft.x1Pct, y1Pct: draft.y1Pct },
+      //   x0Host, y0Host, x1Host, y1Host,
+      //   x0Page, y0Page, x1Page, y1Page,
+      //   x0Pct, y0Pct, x1Pct, y1Pct
+      // })
+
       left = `${x0Pct * 100}%`
       top = `${y0Pct * 100}%`
       width = `${(x1Pct - x0Pct) * 100}%`
       height = `${(y1Pct - y0Pct) * 100}%`
     } else {
       // ✅ Fallback: usa coordinate host direttamente (non ideale ma meglio di niente)
+      console.warn('[DraftOverlay] Pagina non trovata, uso coordinate host:', {
+        page: draft.page,
+        availablePages: Array.from(pageElsRef.current.keys())
+      })
       left = `${draft.x0Pct * 100}%`
       top = `${draft.y0Pct * 100}%`
       width = `${(draft.x1Pct - draft.x0Pct) * 100}%`
@@ -109,6 +136,11 @@ export const DraftOverlay: React.FC<DraftOverlayProps> = ({
     }
   } else {
     // ✅ coordSpace === 'page' o non specificato: usa direttamente (come PDF viewer)
+    // console.log('[DraftOverlay] Usa coordinate pagina direttamente:', {
+    //   page: draft.page,
+    //   coordSpace: draft.coordSpace,
+    //   x0Pct: draft.x0Pct, y0Pct: draft.y0Pct, x1Pct: draft.x1Pct, y1Pct: draft.y1Pct
+    // })
     left = `${draft.x0Pct * 100}%`
     top = `${draft.y0Pct * 100}%`
     width = `${(draft.x1Pct - draft.x0Pct) * 100}%`

@@ -73,7 +73,7 @@ export function ArchivePanel({
 
       {/* Upload spinner overlay */}
       {uploads.some(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)) && (
-        <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
+        <div className="absolute inset-0 bg-background/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
           <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
           <div className="text-sm text-neutral-800">
             {(uploads.filter(u => u.status === 'uploading' || u.status === 'processing' || (u.progress > 0 && u.progress < 100)).length > 1)
@@ -117,7 +117,7 @@ export function ArchivePanel({
       )}
 
       {showAnalysis && (
-        <div className="flex-1 overflow-hidden border rounded bg-white">
+        <div className="flex-1 overflow-hidden border rounded bg-background">
           {/* AnalysisPanel sarà implementato separatamente */}
           <div className="p-4 text-center text-muted-foreground">
             Analysis Panel (da implementare)

@@ -140,7 +140,7 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
     return (
       <div
         ref={hostRef}
-        className="word-viewer-container h-full w-full overflow-auto bg-white"
+        className="word-viewer-container h-full w-full overflow-auto bg-background"
         // ✅ Disabilita selezione testo - solo drag rettangolo (OCR-style)
         style={{
           userSelect: 'none',
@@ -183,5 +183,5 @@ function splitHtmlIntoPages(html: string): string[] {
   // ✅ Wrappa l'HTML in un div con data-page e bordo che si adatta al tema
   // Bordo nero su tema chiaro, bianco su tema scuro
   // Sfondo bianco sempre per il contenuto del documento
-  return [`<div data-page="1" class="word-page border border-gray-900 dark:border-white bg-white shadow-sm">${html}</div>`]
+  return [`<div data-page="1" class="word-page border border-gray-900 dark:border-white bg-background shadow-sm">${html}</div>`]
 }

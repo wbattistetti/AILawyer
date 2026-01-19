@@ -164,23 +164,23 @@ export function GridToolbar({
   };
 
   return (
-    <div className={`bg-white border-b border-gray-200 p-4 ${className}`}>
+    <div className={`bg-background border-b border-border p-4 ${className}`}>
       {/* Search and Filters Row */}
       <div className="flex items-center gap-4 mb-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search files..."
             value={filters.search}
             onChange={(e) => onFiltersChange({ search: e.target.value })}
-            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-10 py-2 border border-border bg-background text-foreground rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {filters.search && (
             <button
               onClick={clearSearch}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="w-4 h-4" />
             </button>
@@ -188,7 +188,7 @@ export function GridToolbar({
         </div>
 
         {/* Filter Toggle */}
-        <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900">
+        <button className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
           <Filter className="w-4 h-4" />
           Filters
         </button>
@@ -196,7 +196,7 @@ export function GridToolbar({
 
       {/* Kind Filters */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm text-gray-600 mr-2">Types:</span>
+        <span className="text-sm text-muted-foreground mr-2">Types:</span>
         {FILE_KINDS.map(({ kind, label, color, icon: Icon, iconColor }) => (
           <button
             key={kind}
@@ -205,11 +205,11 @@ export function GridToolbar({
               flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border transition-colors
               ${filters.kinds.has(kind)
                 ? `${color} border-current`
-                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                : 'bg-muted text-muted-foreground border-border hover:bg-accent'
               }
             `}
           >
-            <Icon className={`w-4 h-4 ${filters.kinds.has(kind) ? iconColor : 'text-gray-500'}`} />
+            <Icon className={`w-4 h-4 ${filters.kinds.has(kind) ? iconColor : 'text-muted-foreground'}`} />
             {label}
           </button>
         ))}
@@ -217,7 +217,7 @@ export function GridToolbar({
         {filters.kinds.size < 5 && (
           <button
             onClick={selectAllTypes}
-            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground hover:bg-accent transition-colors"
             title="Seleziona tutti i tipi di file"
           >
             Tutti
@@ -227,7 +227,7 @@ export function GridToolbar({
         {filters.kinds.size > 0 && (
           <button
             onClick={deselectAllTypes}
-            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            className="flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground hover:bg-accent transition-colors"
             title="Deseleziona tutti i tipi di file"
           >
             Nessuno
@@ -240,7 +240,7 @@ export function GridToolbar({
         <div className="flex items-center gap-2">
           {/* ✅ 1. Status - SOLO conteggio file filtrati (più chiaro) */}
           {!scanning && (
-            <div className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
+            <div className="px-3 py-1 bg-muted text-foreground text-sm font-medium rounded-full">
               <span>{visibleFiles} file{visibleFiles !== 1 ? 's' : ''}</span>
             </div>
           )}

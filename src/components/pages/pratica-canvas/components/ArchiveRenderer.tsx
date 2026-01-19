@@ -290,7 +290,7 @@ export function ArchiveRenderer({
                         )}
                         {(hideHeaders || openMap[comparto.id]) && (
                             <div
-                                className={hideHeaders ? "" : "bg-white"}
+                                className={hideHeaders ? "" : "bg-background"}
                                 style={hideHeaders ? {} : { background: hoverBody === comparto.id ? hexToRgba(colorFor(comparto.nome), 0.06) : undefined }}
                                 // ✅ In modalità drawer (hideHeaders), i drop sono gestiti dal container padre
                                 // ✅ In modalità archivio normale, gestisci drop qui
@@ -464,7 +464,7 @@ export function ArchiveRenderer({
                 )
             })}
             {showOverlay && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
+                <div className="absolute inset-0 bg-background/70 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 pointer-events-none">
                     <RefreshCw className="w-7 h-7 animate-spin text-blue-700 mb-2" />
                     <div className="text-sm text-neutral-800">
                         Caricamento file...

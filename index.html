@@ -5,6 +5,27 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LegalFlow - Gestione Documentale per Studi Legali</title>
+    <!-- ✅ Aggiungi Google Fonts per i font configurabili -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Open+Sans:wght@400;500;600;700&family=Lato:wght@400;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- ✅ Applica tema PRIMA del mount React per evitare flash -->
+    <script>
+      (function() {
+        try {
+          const stored = localStorage.getItem('app-preferences');
+          if (stored) {
+            const prefs = JSON.parse(stored);
+            const theme = prefs.state?.theme || 'light';
+            if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+              document.documentElement.classList.add('dark');
+            }
+          }
+        } catch (e) {
+          // Ignora errori di parsing
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

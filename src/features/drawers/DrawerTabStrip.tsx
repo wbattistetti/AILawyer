@@ -595,19 +595,19 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
               onClick={() => {
                 setShowSearchBox(true)
               }}
-              className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-slate-300 shadow-md hover:bg-slate-50 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border shadow-md hover:bg-muted transition-colors"
               title="Cerca documento"
               style={{
                 position: 'relative',
                 zIndex: 21
               }}
             >
-              <Search size={24} className="text-slate-600" />
+              <Search size={24} className="text-muted-foreground" />
             </button>
           ) : (
             <div
               data-search-box="true"
-              className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg shadow-lg px-3 py-2"
+              className="flex items-center gap-2 bg-background border border-border rounded-lg shadow-lg px-3 py-2"
               style={{
                 position: 'relative',
                 zIndex: 21
@@ -616,7 +616,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                 setShowSearchIcon(true)
               }}
             >
-              <Search size={20} className="text-slate-500 flex-shrink-0" />
+              <Search size={20} className="text-muted-foreground flex-shrink-0" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -635,7 +635,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                   setShowSearchBox(false)
                   setSearchQuery('')
                 }}
-                className="text-slate-400 hover:text-slate-600 text-sm px-2"
+                className="text-muted-foreground hover:text-foreground text-sm px-2"
               >
                 ✕
               </button>
@@ -683,16 +683,16 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                 onDrop={(e) => handleDrop(e, item.id)}
                 className={`flex ${orientation === 'vertical' ? 'flex-row' : 'flex-col'} items-center justify-start transition-all flex-shrink-0`}
                 style={{
-                  // ✅ Sfondo arancione smorzato se il cassetto ha un dock pane aperto, altrimenti scuro
+                  // ✅ Sfondo configurabile per tema
                   backgroundColor: item.isOpen
-                    ? '#3a2d1f' // arancione smorzato/scuro per cassetti aperti (simile al golden-brown ma più arancione)
-                    : (isSelected ? '#3a3a3a' : '#2d2d2d'), // scuro normale
-                  // ✅ Bordino arancione per cassetti aperti, golden-brown per selezionata, altrimenti sottile grigio
+                    ? 'var(--drawer-bg-open)' // arancione smorzato/scuro per cassetti aperti
+                    : (isSelected ? 'var(--drawer-bg-selected)' : 'var(--drawer-bg)'), // configurabile per tema
+                  // ✅ Bordino configurabile per tema
                   border: item.isOpen
-                    ? `2px solid #f97316` // arancione per bordo cassetti aperti
+                    ? `2px solid var(--drawer-border-open)` // arancione per bordo cassetti aperti (mantiene significato semantico)
                     : (isSelected
-                      ? `2px solid #d4a574` // golden-brown per tab selezionata
-                      : `1px solid #4a4a4a`), // bordo sottile grigio per tab non selezionate
+                      ? `2px solid var(--drawer-border-selected)` // configurabile per tema
+                      : `1px solid var(--drawer-border)`), // configurabile per tema
                   // ✅ Angoli arrotondati dinamici in base alla posizione
                   ...getBorderRadius(position, orientation),
                   // ✅ Dimensione uniforme per tutti i cassetti (larghezza per orizzontale, altezza per verticale)
@@ -741,8 +741,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                     <span
                       style={{
                         fontWeight: 700,
-                        color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
-                        fontSize: '18px',
+                        color: isSelected ? 'var(--drawer-text-selected)' : 'var(--drawer-text)', // configurabile per tema
+                        fontSize: 'var(--font-size-lg)', // usa variabile scalabile
                         lineHeight: '1'
                       }}
                     >
@@ -753,7 +753,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                     {item.icon && (
                       <IconWithColor
                         icon={item.icon}
-                        color={isSelected ? '#d4a574' : (item.color || '#60a5fa')}
+                        color={isSelected ? 'var(--drawer-text-selected)' : (item.color || '#60a5fa')} // item.color mantiene significato semantico
                         size={20}
                       />
                     )}
@@ -762,8 +762,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                     {typeof item.documentCount === 'number' && item.documentCount > 0 && (
                       <span
                         style={{
-                          fontSize: '11px',
-                          color: isSelected ? '#d4a574' : '#9ca3af', // golden-brown se selezionata, grigio se non
+                          fontSize: 'var(--font-size-xs)', // usa variabile scalabile
+                          color: isSelected ? 'var(--drawer-text-selected)' : 'var(--drawer-text-muted)', // configurabile per tema
                           fontWeight: 500,
                           marginLeft: '2px'
                         }}
@@ -776,8 +776,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                   {/* Descrizione multi-linea wrappata centrata sotto (orizzontale) o a destra (verticale) */}
                   <span
                     style={{
-                      fontSize: `${optimalFontSize}px`,
-                      color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
+                      fontSize: `${optimalFontSize / 16}rem`, // ✅ Converti px in rem per scalabilità
+                      color: isSelected ? 'var(--drawer-text-selected)' : 'var(--drawer-text)', // configurabile per tema
                       fontWeight: 500,
                       textAlign: orientation === 'vertical' ? 'left' : 'center',
                       lineHeight: LINE_HEIGHT,
@@ -805,10 +805,10 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                     width: '12rem',
                     minWidth: '12rem',
                     aspectRatio: '3/4',
-                    border: '2px solid #f97316',
+                    border: '2px solid var(--drawer-border-open)',
                     borderStyle: 'dashed',
                     borderRadius: '8px',
-                    backgroundColor: '#fff7ed',
+                    backgroundColor: 'var(--ui-bg-light)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -832,8 +832,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                     Il documento "{confirmation.filename}" è già in "{confirmation.sourceCompartoNome}".
                   </div>
                   <div style={{
-                    fontSize: '9px',
-                    color: '#6b7280',
+                    fontSize: 'calc(var(--font-size-xs) * 0.75)', // 9px = 12px * 0.75
+                    color: 'var(--ui-text-subtle)',
                     textAlign: 'center',
                     padding: '6px'
                   }}>
@@ -860,8 +860,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                       }}
                       style={{
                         padding: '4px 8px',
-                        backgroundColor: '#2563eb',
-                        color: 'white',
+                        backgroundColor: 'hsl(var(--primary))',
+                        color: 'hsl(var(--primary-foreground))',
                         borderRadius: '4px',
                         fontSize: '10px',
                         fontWeight: 500,
@@ -887,10 +887,10 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                       }}
                       style={{
                         padding: '4px 8px',
-                        backgroundColor: '#d1d5db',
-                        color: '#374151',
+                        backgroundColor: 'var(--ui-border-subtle)',
+                        color: 'var(--ui-text-muted)',
                         borderRadius: '4px',
-                        fontSize: '10px',
+                        fontSize: 'var(--font-size-xs)',
                         fontWeight: 500,
                         border: 'none',
                         cursor: 'pointer'

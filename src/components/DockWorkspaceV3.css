@@ -7,15 +7,40 @@
   overflow: hidden;
 }
 
-/* Tema Dockview personalizzato */
+/* Tema Dockview personalizzato - si adatta al tema dell'app */
 .dockv3-root .dockview-theme-light {
-  --dv-activegroup-visiblepanel-tab-background-color: #ffffff;
-  --dv-activegroup-visiblepanel-tab-color: #333333;
-  --dv-group-view-background-color: #ffffff;
-  --dv-inactivegroup-visiblepanel-tab-background-color: #f5f5f5;
-  --dv-inactivegroup-visiblepanel-tab-color: #666666;
-  --dv-tabs-and-actions-container-background-color: #f8f8f8;
-  --dv-tab-divider-color: #e0e0e0;
+  --dv-activegroup-visiblepanel-tab-background-color: hsl(var(--card));
+  --dv-activegroup-visiblepanel-tab-color: hsl(var(--foreground));
+  --dv-group-view-background-color: hsl(var(--background));
+  --dv-inactivegroup-visiblepanel-tab-background-color: hsl(var(--muted));
+  --dv-inactivegroup-visiblepanel-tab-color: hsl(var(--muted-foreground));
+  --dv-tabs-and-actions-container-background-color: hsl(var(--muted));
+  --dv-tab-divider-color: hsl(var(--border));
+}
+
+/* ✅ Forza colori chiari sulle tab - previene interferenze da Dark Reader */
+.dockv3-root .dockview-theme-light .dv-tab,
+.dockv3-root .dockview-theme-light .dv-tab-active,
+.dockv3-root .dockview-theme-light [class*="dv-tab"] {
+  background-color: hsl(var(--muted)) !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.dockv3-root .dockview-theme-light .dv-tab-active,
+.dockv3-root .dockview-theme-light [class*="dv-tab"][class*="active"] {
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+/* ✅ Forza background chiaro sul container delle tab */
+.dockv3-root .dockview-theme-light [class*="tabs-and-actions"],
+.dockv3-root .dockview-theme-light [class*="tab-container"] {
+  background-color: hsl(var(--muted)) !important;
+}
+
+/* ✅ Forza background chiaro sui pannelli */
+.dockv3-root .dockview-theme-light .dv-group-view {
+  background-color: hsl(var(--background)) !important;
 }
 
 /* Assicura che Dockview occupi tutto lo spazio */
@@ -24,41 +49,41 @@
   height: 100%;
 }
 
-/* ✅ BORDI EVIDENZIATI TRA I PANNELLI */
+/* ✅ BORDI EVIDENZIATI TRA I PANNELLI - si adattano al tema */
 /* Bordo sui pannelli (group view) */
 .dockv3-root .dv-group-view {
-  border: 1px solid #e5e7eb !important;
+  border: 1px solid hsl(var(--border)) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* Bordo più spesso quando i pannelli sono affiancati (split) */
 .dockv3-root .dv-group-view + .dv-group-view {
-  border-left: 2px solid #d1d5db !important;
+  border-left: 2px solid hsl(var(--border)) !important;
 }
 
 /* Stile per i divisori/splitter tra i pannelli */
 .dockv3-root .dv-split-view-container {
-  background-color: #f3f4f6;
+  background-color: hsl(var(--muted));
 }
 
 .dockv3-root .dv-split-view-container .dv-split-view-divider {
-  background-color: #d1d5db !important;
-  border: 1px solid #9ca3af;
+  background-color: hsl(var(--border)) !important;
+  border: 1px solid hsl(var(--border));
 }
 
 /* Hover sui divisori per evidenziarli */
 .dockv3-root .dv-split-view-container .dv-split-view-divider:hover {
-  background-color: #9ca3af !important;
+  background-color: hsl(var(--muted-foreground)) !important;
 }
 
 /* Bordo superiore per separare i pannelli verticalmente */
 .dockv3-root .dv-group-view:not(:first-child) {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid hsl(var(--border));
 }
 
 /* Bordo più evidente quando ci sono più pannelli affiancati */
 .dockv3-root [class*="split-view"] .dv-group-view {
-  border-right: 1px solid #d1d5db !important;
+  border-right: 1px solid hsl(var(--border)) !important;
 }
 
 .dockv3-root [class*="split-view"] .dv-group-view:last-child {
@@ -69,13 +94,13 @@
 .dockv3-root [class*="splitter"],
 .dockv3-root [class*="divider"],
 .dockv3-root [class*="resizer"] {
-  background-color: #d1d5db !important;
-  border: 1px solid #9ca3af !important;
+  background-color: hsl(var(--border)) !important;
+  border: 1px solid hsl(var(--border)) !important;
 }
 
 .dockv3-root [class*="splitter"]:hover,
 .dockv3-root [class*="divider"]:hover {
-  background-color: #9ca3af !important;
+  background-color: hsl(var(--muted-foreground)) !important;
 }
 
 /* ✅ RIMOSSO: CSS che interferiva con Dockview

@@ -73,7 +73,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
   setShowAdvanced
 }) => {
   return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b bg-white flex-shrink-0 flex-wrap">
+    <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b bg-background flex-shrink-0 flex-wrap">
       {/* SINISTRA: Pagina + Strumenti */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Pagina */}
@@ -119,7 +119,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
             <StrikethroughIcon size={16} />
           </button>
           <button
-            className={`px-2 py-1 rounded border text-sm ${audit ? 'bg-gray-100 border-gray-400' : ''}`}
+            className={`px-2 py-1 rounded border text-sm ${audit ? 'bg-muted border-border' : ''}`}
             title="Audit mode (testo digitale)"
             onClick={() => setAudit(a => !a)}
           >
@@ -177,7 +177,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
           </button>
         ) : (
           <button
-            className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+            className="px-2 py-1 border rounded hover:bg-muted text-sm"
             title="Apri pannello ricerca"
             onClick={() => {
               setShowAdvanced(true)

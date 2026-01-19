@@ -48,13 +48,13 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
 
   if (!file) {
     return (
-      <div className={`h-full flex items-center justify-center bg-gray-50 ${className}`}>
+      <div className={`h-full flex items-center justify-center bg-muted ${className}`}>
         <div className="text-center">
           <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-gray-400">👁️</span>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Preview</h3>
-          <p className="text-sm text-gray-500">
+          <h3 className="text-lg font-medium text-foreground mb-2">No Preview</h3>
+          <p className="text-sm text-muted-foreground">
             Select a file to preview its contents
           </p>
         </div>
@@ -174,18 +174,18 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
 
   return (
     <div
-      className={`h-full w-full flex flex-col bg-white ${className} ${isDragging ? 'opacity-50' : ''}`}
+      className={`h-full w-full flex flex-col bg-background ${className} ${isDragging ? 'opacity-50' : ''}`}
       draggable={!!file}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+      <div className="flex items-center justify-between p-4 border-b border-border bg-muted">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-gray-900 truncate">
+          <h3 className="text-sm font-medium text-foreground truncate">
             {file.name}
           </h3>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             {file.kind.toUpperCase()} • {file.sizeBytes ? formatFileSize(file.sizeBytes) : 'Unknown size'}
             {tempFileName && <span className="ml-2 text-blue-600">• Temp file ready</span>}
           </p>
@@ -219,7 +219,7 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
 
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded"
             title="Close preview"
           >
             <X className="w-4 h-4" />
@@ -231,10 +231,10 @@ export function PreviewPane({ file, onClose, onOpenInSystem, className = '' }: P
       <div className="flex-1 overflow-auto relative">
         {/* ✅ Spinner iniziale quando si apre un nuovo file */}
         {isInitializing && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-              <p className="text-sm text-gray-600">Sto caricando il documento...</p>
+              <p className="text-sm text-muted-foreground">Sto caricando il documento...</p>
             </div>
           </div>
         )}

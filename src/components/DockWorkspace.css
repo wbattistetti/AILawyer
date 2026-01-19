@@ -18,7 +18,7 @@
 }
 
 .flexlayout__layout {
-  background: #ffffff;
+  background: hsl(var(--background));
 }
 
 .flexlayout__tab {
@@ -34,7 +34,7 @@
 
 .dock-strip {
   position: static;
-  background: #ffffff;
+  background: hsl(var(--background));
   border-bottom: 1px solid #e5e7eb;
   height: 40px;
   align-items: center;

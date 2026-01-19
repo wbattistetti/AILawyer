@@ -20,7 +20,7 @@ export const OcrInspector: React.FC<OcrInspectorProps> = ({
 
 	// Esponi le funzioni per l'uso esterno tramite ref
 	const ocrInspectorRef = React.useRef<any>(null)
-	
+
 	React.useImperativeHandle(ocrInspectorRef, () => ({
 		loadOcrPageText: (pageNum: number) => {
 			loadOcrPageText(pageNum)
@@ -39,7 +39,7 @@ export const OcrInspector: React.FC<OcrInspectorProps> = ({
         if (!lastOcrMatchesRef.current?.length) return
         drawOcrRects(lastOcrMatchesRef.current, undefined, hostRef)
       }
-      
+
       // Ridisegna quando l'utente scrolla (pagine diventano visibili)
       const onScroll = () => {
         if (!lastOcrMatchesRef.current?.length) return
@@ -86,8 +86,8 @@ export const OcrInspector: React.FC<OcrInspectorProps> = ({
 	if (!ocrInspectOpen || !ocrInspect) return null
 
 	return (
-		<div 
-			className="ocr-inspector fixed bg-white border border-gray-300 rounded-lg shadow-lg z-50 p-4 max-w-md max-h-96 overflow-auto"
+		<div
+			className="ocr-inspector fixed bg-background border border-border rounded-lg shadow-lg z-50 p-4 max-w-md max-h-96 overflow-auto"
 			style={{ left: ocrDrag.x, top: ocrDrag.y }}
 			onMouseDown={(e) => {
 				if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('drag-handle')) {
@@ -96,10 +96,10 @@ export const OcrInspector: React.FC<OcrInspectorProps> = ({
 				}
 			}}
 		>
-			<div className="drag-handle cursor-move bg-gray-100 p-2 mb-2 rounded text-sm font-medium text-gray-600">
+			<div className="drag-handle cursor-move bg-muted p-2 mb-2 rounded text-sm font-medium text-muted-foreground">
 				OCR Inspector - Pagina {ocrInspect.page}
 			</div>
-			<div className="text-sm text-gray-700 whitespace-pre-wrap">
+			<div className="text-sm text-foreground whitespace-pre-wrap">
 				{ocrInspect.text}
 			</div>
 		</div>

@@ -206,7 +206,7 @@ function FileRow({ index, style, data }: FileRowProps) {
       case 'audio':
         return <Music className={`${iconClass} text-orange-600`} />;
       default:
-        return <File className={`${iconClass} text-gray-600`} />;
+        return <File className={`${iconClass} text-foreground`} />;
     }
   };
 
@@ -233,8 +233,8 @@ function FileRow({ index, style, data }: FileRowProps) {
     <div
       style={style}
       className={`
-        flex items-center px-4 py-2 border-b border-gray-100 hover:bg-gray-50 cursor-pointer
-        ${isSelected ? 'bg-blue-50' : ''}
+        flex items-center px-4 py-2 border-b border-border hover:bg-accent cursor-pointer
+        ${isSelected ? 'bg-primary/10' : ''}
         ${isDragging ? 'opacity-50' : ''}
       `}
       draggable={true}
@@ -248,7 +248,7 @@ function FileRow({ index, style, data }: FileRowProps) {
         {isSelected ? (
           <CheckSquare className="w-4 h-4 text-blue-600" />
         ) : (
-          <Square className="w-4 h-4 text-gray-400" />
+          <Square className="w-4 h-4 text-muted-foreground" />
         )}
       </div>
 
@@ -260,7 +260,7 @@ function FileRow({ index, style, data }: FileRowProps) {
           <div className="absolute -top-1 -right-1">
             {file.hasNativeText === undefined ? (
               // Spinner quando sta controllando
-              <Loader2 className="w-3 h-3 text-gray-400 animate-spin" />
+              <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
             ) : file.hasNativeText === false ? (
               // Badge "Da trascrivere" quando serve OCR
               <span className="px-1 py-0.5 text-[8px] rounded bg-orange-500 text-white shadow-sm">
@@ -273,7 +273,7 @@ function FileRow({ index, style, data }: FileRowProps) {
 
       {/* File Name */}
       <div className="flex-1 min-w-[200px] min-w-0">
-        <div className="text-sm font-medium text-gray-900 whitespace-nowrap">
+        <div className="text-sm font-medium text-foreground whitespace-nowrap">
           {file.name}
         </div>
         {/* ❌ RIMOSSO: parentDirName non più mostrato */}
@@ -285,21 +285,21 @@ function FileRow({ index, style, data }: FileRowProps) {
         style={{ width: `${oggettoColumnWidth}px`, minWidth: `${oggettoColumnWidth}px` }}
       >
         {file.kind === 'pdf' && file.oggetto === undefined && isExtractionEnabled && objectExtractionStatus && !objectExtractionStatus.isComplete ? (
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="whitespace-nowrap">Sto analizzando l'oggetto...</span>
           </div>
         ) : file.kind === 'pdf' && file.oggetto === undefined ? (
           // ✅ Se estrazione disabilitata, mostra solo "Oggetto non disponibile"
-          <div className="text-xs text-gray-400 italic">
+          <div className="text-xs text-muted-foreground italic">
             Oggetto non disponibile
           </div>
         ) : file.kind === 'pdf' && (file.oggetto === null || file.oggetto === '') ? (
-          <div className="text-xs text-gray-400 italic">
+          <div className="text-xs text-muted-foreground italic">
             Oggetto non trovato
           </div>
         ) : file.oggetto && typeof file.oggetto === 'string' ? (
-          <div className="text-xs text-gray-700 break-words" title={file.oggetto}>
+          <div className="text-xs text-foreground break-words" title={file.oggetto}>
             {file.oggetto}
           </div>
         ) : null}
@@ -350,8 +350,8 @@ function FileRow({ index, style, data }: FileRowProps) {
               ${file.compartoNome
                 ? file.classificationSource === 'manual'
                   ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200'
-                  : 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200'
-                : 'bg-gray-100 text-gray-500 border border-gray-300 hover:bg-gray-200'
+                  : 'bg-primary/20 text-primary border border-primary/50 hover:bg-primary/30'
+                : 'bg-muted text-muted-foreground border border-border hover:bg-accent'
               }
             `}
             title={file.compartoNome || 'Clicca per selezionare tipo documento'}
@@ -362,12 +362,12 @@ function FileRow({ index, style, data }: FileRowProps) {
       </div>
 
       {/* File Size */}
-      <div className="flex-shrink-0 text-right text-xs text-gray-500 mr-4 min-w-[60px]">
+      <div className="flex-shrink-0 text-right text-xs text-muted-foreground mr-4 min-w-[60px]">
         {formatFileSize(file.sizeBytes)}
       </div>
 
       {/* Date */}
-      <div className="flex-shrink-0 text-right text-xs text-gray-500 mr-4 min-w-[80px]">
+      <div className="flex-shrink-0 text-right text-xs text-muted-foreground mr-4 min-w-[80px]">
         {formatDate(file.mtime)}
       </div>
 
@@ -375,9 +375,9 @@ function FileRow({ index, style, data }: FileRowProps) {
       <div className="w-8 h-8 flex items-center justify-center">
         <button
           onClick={handleMenuClick}
-          className="p-1 hover:bg-gray-200 rounded"
+          className="p-1 hover:bg-accent rounded"
         >
-          <MoreHorizontal className="w-4 h-4 text-gray-400" />
+          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
     </div>
@@ -446,7 +446,7 @@ export function FileGrid({
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {/* Header */}
-      <div className="flex items-center px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600">
+      <div className="flex items-center px-4 py-2 bg-muted border-b border-border text-xs font-medium text-muted-foreground">
         <div className="w-6 mr-3 flex-shrink-0"></div>
         <div className="w-8 mr-3 flex-shrink-0"></div>
         <div className="flex-1 min-w-[200px] min-w-0 flex items-center gap-2">
@@ -458,8 +458,8 @@ export function FileGrid({
                   const newOrder = sortBy === 'name' && sortOrder === 'asc' ? 'desc' : 'asc';
                   onSortChange('name', newOrder);
                 }}
-                className={`p-1 rounded hover:bg-gray-200 transition-colors ${
-                  sortBy === 'name' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'
+                className={`p-1 rounded hover:bg-accent transition-colors ${
+                  sortBy === 'name' ? 'bg-primary/20 text-primary' : 'text-muted-foreground'
                 }`}
                 title="Ordina per nome"
               >
@@ -470,8 +470,8 @@ export function FileGrid({
                   const newOrder = sortBy === 'date' && sortOrder === 'desc' ? 'asc' : 'desc';
                   onSortChange('date', newOrder);
                 }}
-                className={`p-1 rounded hover:bg-gray-200 transition-colors ${
-                  sortBy === 'date' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'
+                className={`p-1 rounded hover:bg-accent transition-colors ${
+                  sortBy === 'date' ? 'bg-primary/20 text-primary' : 'text-muted-foreground'
                 }`}
                 title="Ordina per data"
               >
@@ -529,9 +529,9 @@ export function FileGrid({
             />
           ))
         ) : (
-          <div className="flex items-center justify-center h-32 text-gray-500">
+          <div className="flex items-center justify-center h-32 text-muted-foreground">
             <div className="text-center">
-              <File className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <File className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm">No files found</p>
             </div>
           </div>

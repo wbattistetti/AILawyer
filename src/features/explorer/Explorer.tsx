@@ -503,7 +503,7 @@ export function Explorer({ adapter, className = '', praticaId, initialSelectedPa
                     <p className="text-sm text-amber-800 mb-4">
                       {restoreStatus.error || 'Il dispositivo salvato non è più disponibile. Seleziona la directory corretta per continuare.'}
                     </p>
-                    <div className="bg-white rounded p-3 mb-4 text-left">
+                    <div className="bg-card rounded p-3 mb-4 text-left">
                       {restoreStatus.unavailableDrive.savedDriveLabel && restoreStatus.unavailableDrive.savedDriveLabel !== restoreStatus.unavailableDrive.driveLetter && (
                         <p className="text-xs text-gray-600 mb-1">
                           <strong>Nome dispositivo:</strong> {restoreStatus.unavailableDrive.savedDriveLabel}

@@ -84,7 +84,20 @@ export function useRectSelection({
   ): DraftBox | null => {
     // ✅ Se abbiamo pageElsRef, prova a calcolare rispetto alla pagina
     if (pageElsRef) {
-      const pageEl = pageElsRef.current.get(page)
+      let pageEl = pageElsRef.current.get(page)
+
+      // ✅ Se pagina non trovata in pageElsRef, prova a cercarla direttamente nel DOM
+      // (può succedere se useViewerOverlays non ha ancora trovato la pagina)
+      if (!pageEl && hostRef.current) {
+        const host = hostRef.current
+        const found = host.querySelector(`[data-page="${page}"]`) as HTMLElement
+        if (found) {
+          pageEl = found
+          // ✅ Aggiorna pageElsRef per prossime volte
+          pageElsRef.current.set(page, found)
+        }
+      }
+
       if (pageEl) {
         const pageRect = pageEl.getBoundingClientRect()
 
@@ -107,6 +120,16 @@ export function useRectSelection({
         const x1Pct = Math.max(0, Math.min(1, x1 / pageRect.width))
         const y1Pct = Math.max(0, Math.min(1, y1 / pageRect.height))
 
+        // ✅ Debug log (solo se necessario)
+        // console.log('[useRectSelection][calculateDraftBox] Coordinate pagina:', {
+        //   page,
+        //   startX, startY, endX, endY,
+        //   pageRect: { left: pageRect.left, top: pageRect.top, width: pageRect.width, height: pageRect.height },
+        //   startXPage, startYPage, endXPage, endYPage,
+        //   x0, y0, x1, y1,
+        //   x0Pct, y0Pct, x1Pct, y1Pct
+        // })
+
         return {
           page,
           x0Pct,
@@ -115,6 +138,12 @@ export function useRectSelection({
           y1Pct,
           coordSpace: 'page' // ✅ Marca come coordinate pagina
         }
+      } else {
+        // ✅ Debug: pagina non trovata
+        console.warn('[useRectSelection][calculateDraftBox] Pagina non trovata in pageElsRef:', {
+          page,
+          availablePages: Array.from(pageElsRef.current.keys())
+        })
       }
     }
 

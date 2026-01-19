@@ -1532,7 +1532,7 @@ export function PraticaCanvasPage() {
         {/* Right: Preview panel in Archivio */}
         {false && (
           <div
-            className="relative bg-white border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
+            className="relative bg-background border rounded-md overflow-hidden flex flex-col max-w-[60vw]"
             style={{ width: 576 }}
           >
             <div className="px-3 py-2 border-b text-sm font-medium flex items-center justify-between">

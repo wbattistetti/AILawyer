@@ -52,7 +52,7 @@ export function NodeBlock({ node, color, count }: { node: CaseNode; color: strin
       )}
       <svg width={w} height={h} style={{ pointerEvents: 'none' }}>
         {/* Opaque fill to hide edges passing underneath the node, so links appear to exit/enter at the border */}
-        <g fill="#ffffff" stroke="none">
+        <g fill="hsl(var(--background))" stroke="none">
           {shapePath(node.kind, w, h)}
         </g>
         <g fill={color} fillOpacity={0.12} stroke={color} strokeWidth={2}>
@@ -63,7 +63,7 @@ export function NodeBlock({ node, color, count }: { node: CaseNode; color: strin
         <Icon size={30} strokeWidth={2.25} className="shrink-0 text-neutral-700" />
         <div className="font-medium text-center break-words text-ellipsis overflow-hidden" style={{ lineHeight: '1.1', maxWidth: w - 48 }} title={node.label}>{node.label}</div>
       </div>
-      <div className="absolute top-1 right-1 text-[10px] bg-white border rounded px-1 nodrag">{count}</div>
+      <div className="absolute top-1 right-1 text-[10px] bg-background border rounded px-1 nodrag">{count}</div>
     </div>
   )
 }

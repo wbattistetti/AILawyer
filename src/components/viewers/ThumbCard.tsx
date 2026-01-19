@@ -121,7 +121,7 @@ export function ThumbCard({
       onClick={(e) => { e.stopPropagation(); onSelect?.() }}
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
-      <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+      <div className={`relative w-48 h-64 border rounded-sm bg-background overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
         {/* Header bar - altezza dinamica in base al contenuto */}
         <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-center gap-2 px-2 py-1.5 min-h-[2rem] ${headerColorClass || 'bg-amber-500'}`}>
           {headerIcon ?? <FileText className="w-4 h-4 flex-shrink-0" />}
@@ -269,9 +269,9 @@ export function ThumbCard({
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition">
-        <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/90 backdrop-blur-sm shadow px-2 py-1 rounded">
+        <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-background/90 backdrop-blur-sm shadow px-2 py-1 rounded">
           <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreview?.() }}
             aria-label="Anteprima"
           >
@@ -279,7 +279,7 @@ export function ThumbCard({
           </button>
           {hasOcr && (
             <button
-              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white relative"
+              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted relative"
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreviewOcr?.() }}
               aria-label="Anteprima OCR"
               title="Apri PDF OCR"
@@ -290,8 +290,8 @@ export function ThumbCard({
           )}
           {!hasNativeText && (
             <button
-              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
-              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
+              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
               aria-label="OCR"
               title="Esegui OCR"
             >
@@ -299,14 +299,14 @@ export function ThumbCard({
             </button>
           )}
           <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onTable?.() }}
             aria-label="Azione tabella"
           >
             <Table className="w-4 h-4" />
           </button>
           <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-white"
+            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onRemove?.() }}
             aria-label="Rimuovi"
           >

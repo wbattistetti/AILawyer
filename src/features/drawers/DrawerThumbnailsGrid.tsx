@@ -113,7 +113,7 @@ export function DrawerThumbnailsGrid({
   if (docs.length === 0) {
     console.log('[DRAWER-THUMBNAILS-GRID][EMPTY] Nessun documento trovato per comparto:', compartoId)
     return (
-      <div className="w-full h-full flex items-center justify-center text-gray-500">
+      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
         <p>Nessun documento in questo comparto</p>
       </div>
     )
@@ -130,7 +130,7 @@ export function DrawerThumbnailsGrid({
       {/* Grid con scroll - struttura semplice e diretta */}
       <div className="flex-1 overflow-auto p-4" style={{
         minHeight: '200px',
-        backgroundColor: '#fff',
+        backgroundColor: 'hsl(var(--background))',
         outline: '1px solid orange',
         outlineOffset: '-1px'
       }}>

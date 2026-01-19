@@ -290,7 +290,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 		<React.Fragment>
 			<div className="fixed inset-0 z-[999]" onClick={handleClose} />
 			<div
-				className="fixed z-[1000] bg-white rounded-lg shadow-2xl border border-gray-200"
+				className="fixed z-[1000] bg-background rounded-lg shadow-2xl border border-border"
 				style={{
 					left: dialogPosition.left,
 					top: dialogPosition.top,
@@ -305,13 +305,13 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 					onMouseUp={() => { suppressClearRef.current = false }}
 				>
 					{/* Header */}
-					<div className="text-lg font-semibold mb-4 text-center text-gray-800 drop-shadow-sm">
+					<div className="text-lg font-semibold mb-4 text-center text-foreground drop-shadow-sm">
 						Aggiungi estratto
 					</div>
 
 					{loading ? (
 						<div className="flex items-center justify-center py-8">
-							<div className="text-gray-500">Caricamento dati...</div>
+							<div className="text-muted-foreground">Caricamento dati...</div>
 						</div>
 					) : (
 						<div className="space-y-4">
@@ -320,7 +320,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 								{/* Tipo estratto */}
 								<div>
 									<select
-										className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+										className="w-full border border-border rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
 										value={extractType}
 										onChange={(e) => {
 											setExtractType(e.target.value as any)
@@ -339,7 +339,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 								<div>
 									<input
 										type="date"
-										className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+										className="w-full border border-border rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
 										value={extractDate}
 										onChange={(e) => onExtractDateChange(e.target.value)}
 									/>
@@ -389,9 +389,9 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 
 							{/* Sezione Reati Esistenti (solo per tipo reato) */}
 							{extractType === 'reato' && getExistingReati().length > 0 && (
-								<div className="border border-gray-200 rounded-lg p-3 bg-gray-50 max-h-32 overflow-y-auto">
+								<div className="border border-border rounded-lg p-3 bg-muted max-h-32 overflow-y-auto">
 									{getExistingReati().map(reato => (
-										<div key={reato.id} className="text-sm text-gray-600 py-1 border-b border-gray-200 last:border-b-0">
+										<div key={reato.id} className="text-sm text-muted-foreground py-1 border-b border-border last:border-b-0">
 											• {reato.title || reato.content}
 										</div>
 									))}
@@ -402,7 +402,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 							{showNotes && (
 								<div>
 									<textarea
-										className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[80px] max-h-[160px] resize-y overflow-auto text-[13px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+										className="w-full border border-border rounded-lg px-3 py-2 min-h-[80px] max-h-[160px] resize-y overflow-auto text-[13px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
 										value={extractNotes}
 										onChange={(e) => onExtractNotesChange(e.target.value)}
 										placeholder="Aggiungi note opzionali..."
@@ -413,11 +413,11 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 					)}
 
 					{/* Pulsanti */}
-					<div className="mt-6 pt-3 border-t border-gray-200 flex justify-between items-center">
+					<div className="mt-6 pt-3 border-t border-border flex justify-between items-center">
 						{/* Pulsante Note */}
 						<button
 							type="button"
-							className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 px-3 py-2 font-medium transition-colors border border-gray-300 rounded-lg hover:bg-gray-50"
+							className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 px-3 py-2 font-medium transition-colors border border-border rounded-lg hover:bg-muted"
 							onClick={() => onShowNotesChange(!showNotes)}
 						>
 							{showNotes ? '▾' : '▸'} Note
@@ -426,7 +426,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 						{/* Pulsanti principali */}
 						<div className="flex gap-3">
 							<button
-								className="px-4 py-2 border border-gray-300 rounded-lg text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+								className="px-4 py-2 border border-border rounded-lg text-[13px] font-medium text-foreground hover:bg-muted transition-colors"
 								onClick={handleCancel}
 							>
 								Annulla

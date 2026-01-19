@@ -288,7 +288,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
         {/* Word Viewer */}
         <div
           ref={hostRef}
-          className="flex-1 overflow-auto relative min-h-0 bg-white"
+          className="flex-1 overflow-auto relative min-h-0 bg-background"
         >
           <WordViewerCore
             ref={viewerRef}

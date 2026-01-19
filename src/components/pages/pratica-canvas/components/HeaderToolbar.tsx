@@ -2,6 +2,7 @@ import { Button } from '../../../../components/ui/button';
 import { Switch } from '../../../../components/ui/switch';
 import { ArrowLeft, Upload, RefreshCw, Loader2, FolderOpen, User } from 'lucide-react';
 import { Pratica } from '../../../../types';
+import { SettingsButton } from '@/components/theme/SettingsDialog';
 
 interface HeaderToolbarProps {
   pratica: Pratica;
@@ -29,7 +30,7 @@ export function HeaderToolbar({
   onOpenCliente
 }: HeaderToolbarProps) {
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur border-b">
+    <div className="fixed top-0 left-0 right-0 z-[9999] bg-background/95 backdrop-blur border-b">
       <div className="w-full px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -82,7 +83,7 @@ export function HeaderToolbar({
             </Button>
 
             {/* Toggle "File su DB" */}
-            <div className="flex items-center space-x-2 px-3 py-1.5 border rounded-md bg-white">
+            <div className="flex items-center space-x-2 px-3 py-1.5 border rounded-md bg-card">
               <label htmlFor="save-files-toggle" className="text-sm text-muted-foreground cursor-pointer whitespace-nowrap">
                 File su DB
               </label>
@@ -115,6 +116,7 @@ export function HeaderToolbar({
               <Upload className="w-4 h-4 mr-2" />
               Carica documenti
             </Button>
+            <SettingsButton />
           </div>
         </div>
       </div>

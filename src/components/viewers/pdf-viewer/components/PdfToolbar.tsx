@@ -73,7 +73,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 }) => {
 
 	return (
-		<div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-white">
+		<div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-sm bg-background">
 			{/* Page navigation */}
 			<div className="flex items-center gap-1">
 				<input
@@ -97,7 +97,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 					</button>
 				) : (
 					<button
-						className="px-3 py-1 border rounded bg-white hover:bg-gray-50"
+						className="px-3 py-1 border rounded bg-background hover:bg-muted"
 						title="Apri pannello ricerca"
 						onClick={onToggleAdvanced}
 					>
@@ -131,7 +131,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 					<StrikethroughIcon size={16} />
 				</button>
 				<button
-					className={`px-2 py-1 rounded border ${audit?'bg-gray-100 border-gray-400':''}`}
+					className={`px-2 py-1 rounded border ${audit?'bg-muted border-border':''}`}
 					title="Audit mode (testo digitale)"
 					onClick={onAuditToggle}
 				>
@@ -157,7 +157,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 			{/* Right side controls */}
 			<div className="w-full md:w-auto md:ml-auto flex items-center gap-2 justify-start md:justify-end flex-wrap">
 				<div className="flex items-center gap-1">
-					<label className="text-xs text-gray-600">Selezione</label>
+					<label className="text-xs text-muted-foreground">Selezione</label>
 					<select
 						className="border rounded px-1 py-0.5 text-xs"
 						value={selectKind}

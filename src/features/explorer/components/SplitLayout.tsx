@@ -108,10 +108,10 @@ export function SplitLayout({
   };
 
   return (
-    <div className={`flex h-full w-full bg-gray-50 ${className}`}>
+    <div className={`flex h-full w-full bg-background ${className}`}>
       {/* Left Panel */}
       <div
-        className="flex-shrink-0 border-r border-gray-200 bg-white"
+        className="flex-shrink-0 border-r border-border bg-background"
         style={{ width: leftW }}
       >
         {left}
@@ -119,13 +119,13 @@ export function SplitLayout({
 
       {/* Left Resizer */}
       <div
-        className={`w-2 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors relative group ${
+        className={`w-2 bg-muted hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors relative group ${
           isDragging ? 'bg-blue-500' : ''
         }`}
         onMouseDown={handleLeftDrag}
         title="Trascina per ridimensionare"
       >
-        <div className="absolute inset-y-0 left-1/2 w-0.5 bg-gray-400 group-hover:bg-blue-500 transition-colors" />
+        <div className="absolute inset-y-0 left-1/2 w-0.5 bg-muted-foreground/50 group-hover:bg-blue-500 transition-colors" />
       </div>
 
       {/* Center Panel */}
@@ -147,12 +147,12 @@ export function SplitLayout({
             onMouseDown={handleRightDrag}
             title="Trascina per ridimensionare"
           >
-            <div className="absolute inset-y-0 left-1/2 w-0.5 bg-gray-400 group-hover:bg-blue-500 transition-colors" />
+            <div className="absolute inset-y-0 left-1/2 w-0.5 bg-muted-foreground/50 group-hover:bg-blue-500 transition-colors" />
           </div>
 
           {/* Right Content */}
           <div
-            className="flex-shrink-0 border-l border-gray-200 bg-white"
+            className="flex-shrink-0 border-l border-border bg-background"
             style={{ width: rightW }}
           >
             {right}
@@ -163,7 +163,7 @@ export function SplitLayout({
       {/* Toggle Right Panel Button */}
       <button
         onClick={() => setIsRightVisible(!isRightVisible)}
-        className="absolute top-4 right-4 z-10 p-2 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50"
+        className="absolute top-4 right-4 z-10 p-2 bg-background border border-border rounded-md shadow-sm hover:bg-accent"
         title={isRightVisible ? 'Hide preview' : 'Show preview'}
       >
         {isRightVisible ? (

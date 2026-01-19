@@ -100,9 +100,9 @@ export function PraticheDropdown({
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white border border-slate-300 rounded-lg shadow-xl z-50 overflow-hidden min-w-[400px] w-[500px]">
+        <div className="absolute top-full left-0 mt-2 bg-background border border-border rounded-lg shadow-xl z-50 overflow-hidden min-w-[400px] w-[500px]">
           {/* Search Bar */}
-          <div className="p-3 border-b bg-slate-50">
+          <div className="p-3 border-b bg-muted">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -110,7 +110,7 @@ export function PraticheDropdown({
                 placeholder="Cerca pratica..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-3 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -187,7 +187,7 @@ export function PraticheDropdown({
 
                 {/* Separatore tra bozze e pratiche salvate */}
                 {bozze.length > 0 && praticheSalvate.length > 0 && (
-                  <div className="px-3 py-2 bg-slate-100 border-b border-slate-200">
+                  <div className="px-3 py-2 bg-muted border-b border-border">
                     <span className="text-xs font-semibold text-slate-600">Pratiche salvate ({praticheSalvate.length})</span>
                   </div>
                 )}
@@ -196,7 +196,7 @@ export function PraticheDropdown({
                 {praticheSalvate.length > 0 && (
                   <>
                     {bozze.length === 0 && (
-                      <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
+                      <div className="px-3 py-2 bg-muted border-b border-border">
                         <span className="text-xs font-semibold text-slate-600">Pratiche salvate ({praticheSalvate.length})</span>
                       </div>
                     )}
