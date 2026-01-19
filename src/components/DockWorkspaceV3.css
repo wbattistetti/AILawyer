@@ -24,12 +24,27 @@
 .dockv3-root .dockview-theme-light [class*="dv-tab"] {
   background-color: hsl(var(--muted)) !important;
   color: hsl(var(--muted-foreground)) !important;
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
 }
 
 .dockv3-root .dockview-theme-light .dv-tab-active,
 .dockv3-root .dockview-theme-light [class*="dv-tab"][class*="active"] {
   background-color: hsl(var(--card)) !important;
   color: hsl(var(--foreground)) !important;
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
+}
+
+/* ✅ Font-size scalabile per tutte le tab Dockview */
+.dockv3-root .dv-tab,
+.dockv3-root .dv-tab-active,
+.dockv3-root [class*="dv-tab"],
+.dockv3-root .dv-tab .dv-tab-title,
+.dockv3-root .dv-tab span,
+.dockv3-root .dv-tab label {
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
 }
 
 /* ✅ Forza background chiaro sul container delle tab */

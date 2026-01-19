@@ -2712,10 +2712,20 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
 
   // ✅ Calcola font size ottimale dei cassetti PRIMA di calcolare la larghezza
   const drawerOptimalFontSize = useMemo(() => {
-    if (drawerTabs.length === 0) return 14
+    // ✅ Leggi font-size-base e font-family dal tema
+    const baseSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-size-base')) || 16
+    const themeFontSize = baseSize
+    const themeFontFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-family') ||
+                            getComputedStyle(document.documentElement).fontFamily ||
+                            'sans-serif'
 
-    const MAX_FONT_SIZE = 14
-    const MIN_FONT_SIZE = 8
+    if (drawerTabs.length === 0) {
+      return themeFontSize * 0.875 // 87.5% del base
+    }
+
+    // ✅ MAX e MIN relativi al font-size-base
+    const MAX_FONT_SIZE = themeFontSize * 0.875 // 87.5% del font-size-base
+    const MIN_FONT_SIZE = themeFontSize * 0.5   // 50% del font-size-base
     const PADDING_X = 8
 
     // Trova la parola più lunga tra tutte le labels dei cassetti
@@ -2748,10 +2758,13 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     const context = canvas.getContext('2d')
     if (!context) return MAX_FONT_SIZE
 
+    // ✅ Usa font-family del tema
+    const fontFamily = themeFontFamily.trim()
+
     // Prova font size da MAX verso MIN
     let fontSize = MAX_FONT_SIZE
     while (fontSize >= MIN_FONT_SIZE) {
-      context.font = `medium ${fontSize}px sans-serif`
+      context.font = `500 ${fontSize}px ${fontFamily}` // 500 = font-medium
       const metrics = context.measureText(longestWord)
 
       if (metrics.width <= availableTextWidth) {
@@ -2761,7 +2774,7 @@ function DockWorkspaceV2Component(props: Props, ref: React.Ref<DockWorkspaceV2Ha
     }
 
     return MIN_FONT_SIZE
-  }, [drawerTabs])
+  }, [drawerTabs]) // ✅ Re-calcola quando cambiano i drawerTabs (e implicitamente quando cambia il tema via MutationObserver su document.documentElement)
 
   // ✅ Calcola larghezza dinamica sidebar: testo misurato + 15px x 2
   const archiveSidebarWidth = useMemo(() => {

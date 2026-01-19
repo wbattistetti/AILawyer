@@ -323,6 +323,8 @@
   background-color: transparent !important; /* ✅ SFONDO TRASPARENTE */
   border-left: 4px solid var(--tab-border-color, transparent) !important;
   font-weight: var(--tab-font-weight, 400) !important; /* Usa CSS variable per font-weight */
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
   transition: all 0.3s ease !important;
 }
 
@@ -370,11 +372,26 @@
 /* ✅ Le tab nei pannelli dockati NON devono avere grassetto */
 .dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab {
   font-weight: 400 !important; /* Normale per tab nei pannelli */
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
 }
 
 .dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab .flexlayout__tab_button_content,
 .dockv2-root .flexlayout__tabset:not(.flexlayout__border_tabset) .flexlayout__tab .flexlayout__tab_button_text {
   font-weight: 400 !important; /* Normale per testo nei pannelli */
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
+}
+
+/* ✅ Font-size scalabile per tutte le tab FlexLayout */
+.dockv2-root .flexlayout__tab,
+.dockv2-root .flexlayout__tab .flexlayout__tab_button,
+.dockv2-root .flexlayout__tab .flexlayout__tab_button_content,
+.dockv2-root .flexlayout__tab .flexlayout__tab_button_text,
+.dockv2-root .flexlayout__tab span,
+.dockv2-root .flexlayout__tab label {
+  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
+  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
 }
 
 /* Icona tab nella sidebar - deve essere visibile */

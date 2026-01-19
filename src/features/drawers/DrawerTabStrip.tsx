@@ -134,6 +134,9 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
   const [availableHeight, setAvailableHeight] = React.useState<number | null>(null)
   // ✅ Stato per tracciare conferme pendenti per TAB (ghost sopra la TAB)
   const [pendingConfirmationsByTab, setPendingConfirmationsByTab] = React.useState<Map<string, any>>(new Map())
+  // ✅ Stato per font-size-base e font-family del tema (per re-calcolare quando cambiano)
+  const [themeFontSize, setThemeFontSize] = React.useState<number>(16)
+  const [themeFontFamily, setThemeFontFamily] = React.useState<string>('sans-serif')
 
   // ✅ Focus input quando si apre la search box
   React.useEffect(() => {
@@ -141,6 +144,42 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
       searchInputRef.current.focus()
     }
   }, [showSearchBox])
+
+  // ✅ Leggi font-size-base e font-family dal tema
+  React.useEffect(() => {
+    const updateThemeFonts = () => {
+      const baseSize = getComputedStyle(document.documentElement).getPropertyValue('--font-size-base')
+      const size = parseFloat(baseSize) || 16
+      setThemeFontSize(size)
+
+      const family = getComputedStyle(document.documentElement).getPropertyValue('--font-family') ||
+                    getComputedStyle(document.documentElement).fontFamily ||
+                    'sans-serif'
+      setThemeFontFamily(family.trim())
+    }
+
+    updateThemeFonts()
+
+    // ✅ Ascolta cambiamenti al font-size-base e font-family
+    const observer = new MutationObserver(() => {
+      updateThemeFonts()
+    })
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style']
+    })
+
+    // ✅ Ascolta anche eventi personalizzati per cambiamenti tema
+    const handleThemeChange = () => {
+      updateThemeFonts()
+    }
+    window.addEventListener('resize', handleThemeChange) // Re-calcola anche su resize
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', handleThemeChange)
+    }
+  }, [])
 
   // ✅ Misura la dimensione disponibile del container
   React.useEffect(() => {
@@ -364,9 +403,10 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
     }
   }
 
-  // ✅ Costanti per il calcolo
-  const MAX_FONT_SIZE = 14 // px - limite massimo
-  const MIN_FONT_SIZE = 8 // px - limite minimo per leggibilità
+  // ✅ Costanti per il calcolo - RELATIVE al font-size-base del tema
+  // MAX_FONT_SIZE = 14px quando base = 16px, quindi 14/16 = 0.875 del base
+  const MAX_FONT_SIZE = React.useMemo(() => themeFontSize * 0.875, [themeFontSize]) // 87.5% del font-size-base
+  const MIN_FONT_SIZE = React.useMemo(() => themeFontSize * 0.5, [themeFontSize])   // 50% del font-size-base (minimo leggibile)
   const LINE_HEIGHT = 1.3 // relativo al font size
   // ✅ Gap dinamico: più piccolo se ci sono molti cassetti (per farli stare tutti)
   const getGapBetweenDrawers = React.useMemo(() => {
@@ -380,6 +420,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
   const NUMBER_HEIGHT = 16 // altezza approssimativa numero
 
   // ✅ Calcola la dimensione uniforme per tutti i cassetti (larghezza per orizzontale, altezza per verticale)
+  // ✅ I cassetti rimangono sempre su una sola riga, il testo può andare a capo su più righe
   const uniformTabSize = React.useMemo(() => {
     if (orientation === 'vertical') {
       // Per verticale: calcola altezza uniforme
@@ -392,7 +433,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
       const minHeight = items.length >= 15 ? 45 : 60
       return Math.max(minHeight, drawerHeight)
     } else {
-      // Per orizzontale: calcola larghezza uniforme (comportamento originale)
+      // Per orizzontale: calcola larghezza uniforme - SEMPRE su una sola riga
       if (!availableWidth || items.length === 0) return 100 // fallback
       const gap = getGapBetweenDrawers
       const totalGaps = (items.length - 1) * gap
@@ -424,45 +465,55 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
     return longest
   }, [items])
 
-  // ✅ Calcola il font size ottimale che permette alla parola più lunga di stare nella dimensione disponibile
+  // ✅ Usa direttamente una percentuale del font-size-base del tema (es. 75%)
+  // Invece di calcolare un font-size che si adatta allo spazio, usiamo il font-size del tema
+  // e adattiamo le dimensioni dei cassetti (eventualmente su 2 righe) per contenere il testo
   const optimalFontSize = React.useMemo(() => {
-    if (longestWord === '') return MAX_FONT_SIZE
+    // ✅ Usa 75% del font-size-base del tema
+    // Se l'utente ha impostato 24px, i cassetti useranno 24 * 0.75 = 18px
+    const baseFontSize = themeFontSize * 0.75
 
-    // Per orizzontale: usa larghezza del tab, per verticale: usa larghezza disponibile del container (o 200px di default)
-    let availableTextWidth: number
-    if (orientation === 'vertical') {
-      // Per verticale, usa la larghezza disponibile del container (o 200px di default)
-      availableTextWidth = availableWidth ? availableWidth - (PADDING_X * 2) : 200 - (PADDING_X * 2)
-    } else {
-      // Per orizzontale: usa larghezza del tab
-      availableTextWidth = uniformTabWidth ? uniformTabWidth - (PADDING_X * 2) : 0
-    }
+    // ✅ Opzionale: verifica se il testo ci sta, altrimenti riduci leggermente
+    // ma sempre mantenendo una dimensione ragionevole rispetto al font-size-base
+    if (longestWord === '') return baseFontSize
 
-    if (!availableTextWidth || availableTextWidth <= 0) return MAX_FONT_SIZE
+    // Per orizzontale: verifica se il testo ci sta nella larghezza del tab
+    if (orientation === 'horizontal' && uniformTabWidth) {
+      const availableTextWidth = uniformTabWidth - (PADDING_X * 2)
+      if (availableTextWidth > 0) {
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d')
+        if (context) {
+          const fontFamily = themeFontFamily
+          // ✅ Prova prima con il font-size base (75% del tema)
+          context.font = `500 ${baseFontSize}px ${fontFamily}`
+          const metrics = context.measureText(longestWord)
 
-    // Crea un canvas temporaneo per misurare il testo
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    if (!context) return MAX_FONT_SIZE
+          if (metrics.width <= availableTextWidth) {
+            // ✅ Il font-size base ci sta, usalo
+            return baseFontSize
+          }
 
-    // Prova font size da MAX_FONT_SIZE verso il basso fino a trovare quello che ci sta
-    let fontSize = MAX_FONT_SIZE
-    while (fontSize >= MIN_FONT_SIZE) {
-      context.font = `medium ${fontSize}px sans-serif` // medium = font-medium
-      const metrics = context.measureText(longestWord)
+          // ✅ Se non ci sta, riduci solo fino a un minimo ragionevole (60% del font-size-base)
+          const minFontSize = themeFontSize * 0.6
+          let fontSize = baseFontSize
+          while (fontSize >= minFontSize) {
+            context.font = `500 ${fontSize}px ${fontFamily}`
+            const testMetrics = context.measureText(longestWord)
+            if (testMetrics.width <= availableTextWidth) {
+              return fontSize
+            }
+            fontSize -= 0.5
+          }
 
-      if (metrics.width <= availableTextWidth) {
-        // Questo font size va bene, è il massimo possibile
-        return fontSize
+          return minFontSize
+        }
       }
-
-      // Prova font size più piccolo
-      fontSize -= 0.5 // ✅ Incrementi di 0.5px per precisione
     }
 
-    // Se nemmeno MIN_FONT_SIZE ci sta, restituisci comunque il minimo
-    return MIN_FONT_SIZE
-  }, [orientation, uniformTabWidth, uniformTabHeight, longestWord])
+    // ✅ Per verticale o se non c'è uniformTabWidth, usa direttamente il baseFontSize
+    return baseFontSize
+  }, [orientation, uniformTabWidth, longestWord, themeFontSize, themeFontFamily])
 
   // ✅ Calcola il numero di righe necessarie per ogni label usando il font size ottimale
   const calculateTextLines = React.useCallback((label: string, size: number): number => {
@@ -476,7 +527,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
     const context = canvas.getContext('2d')
     if (!context) return 1
 
-    context.font = `medium ${optimalFontSize}px sans-serif` // medium = font-medium, usa font size ottimale
+    context.font = `500 ${optimalFontSize}px ${themeFontFamily}` // 500 = font-medium, usa font-family del tema
     const lineHeightPx = optimalFontSize * LINE_HEIGHT
 
     // Dividi il testo in parole
@@ -499,7 +550,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
     }
 
     return lines
-  }, [orientation, optimalFontSize, availableWidth])
+  }, [orientation, optimalFontSize, availableWidth, themeFontFamily])
 
   // ✅ Calcola il numero massimo di righe tra tutti i cassetti
   const maxLines = React.useMemo(() => {
@@ -650,7 +701,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
         style={{
           gap: `${getGapBetweenDrawers}px`,
           position: 'relative',
-          overflow: 'visible' // ✅ Permette alla ghost di apparire sopra
+          overflow: 'visible', // ✅ Permette alla ghost di apparire sopra
+          flexWrap: 'nowrap' // ✅ I cassetti rimangono sempre su una sola riga, il testo va a capo su più righe se necessario
         }}
       >
         {items.map((item, index) => {
@@ -776,14 +828,15 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                   {/* Descrizione multi-linea wrappata centrata sotto (orizzontale) o a destra (verticale) */}
                   <span
                     style={{
-                      fontSize: `${optimalFontSize / 16}rem`, // ✅ Converti px in rem per scalabilità
+                      fontSize: `${optimalFontSize / themeFontSize}rem`, // ✅ Usa themeFontSize invece di 16 hardcoded
+                      fontFamily: themeFontFamily, // ✅ Aggiungi font-family del tema
                       color: isSelected ? 'var(--drawer-text-selected)' : 'var(--drawer-text)', // configurabile per tema
                       fontWeight: 500,
                       textAlign: orientation === 'vertical' ? 'left' : 'center',
                       lineHeight: LINE_HEIGHT,
-                      wordBreak: 'normal',
-                      overflowWrap: 'normal',
-                      hyphens: 'none',
+                      wordBreak: 'break-word', // ✅ Permetti wrapping delle parole se necessario
+                      overflowWrap: 'break-word', // ✅ Permetti wrapping per evitare overflow
+                      hyphens: 'auto', // ✅ Usa trattini automatici se utile
                       width: orientation === 'vertical' ? 'auto' : '100%',
                       flex: orientation === 'vertical' ? 1 : 'none'
                     }}
@@ -820,7 +873,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                   }}
                 >
                   <div style={{
-                    fontSize: '10px',
+                    fontSize: 'var(--font-size-xs)', // ✅ Usa variabile scalabile invece di 10px hardcoded
                     fontWeight: 500,
                     textAlign: 'center',
                     padding: '6px',
@@ -863,7 +916,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
                         backgroundColor: 'hsl(var(--primary))',
                         color: 'hsl(var(--primary-foreground))',
                         borderRadius: '4px',
-                        fontSize: '10px',
+                        fontSize: 'var(--font-size-xs)', // ✅ Usa variabile scalabile
                         fontWeight: 500,
                         border: 'none',
                         cursor: 'pointer'
