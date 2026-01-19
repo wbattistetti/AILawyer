@@ -1,6 +1,6 @@
 import { Button } from '../../../../components/ui/button';
 import { Switch } from '../../../../components/ui/switch';
-import { ArrowLeft, Upload, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, RefreshCw, Loader2, FolderOpen, User } from 'lucide-react';
 import { Pratica } from '../../../../types';
 
 interface HeaderToolbarProps {
@@ -12,6 +12,8 @@ interface HeaderToolbarProps {
   saveFilesToDb: boolean;
   onSaveFilesToDbChange: (value: boolean) => void;
   isSaving?: boolean;
+  onOpenExplorer?: () => void;
+  onOpenCliente?: () => void;
 }
 
 export function HeaderToolbar({
@@ -22,7 +24,9 @@ export function HeaderToolbar({
   onUploadDocuments,
   saveFilesToDb,
   onSaveFilesToDbChange,
-  isSaving = false
+  isSaving = false,
+  onOpenExplorer,
+  onOpenCliente
 }: HeaderToolbarProps) {
   return (
     <div className="fixed top-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur border-b">
@@ -41,11 +45,35 @@ export function HeaderToolbar({
             <div>
               <h1 className="text-xl font-bold">{pratica.nome}</h1>
               <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                <span>Cliente: {pratica.cliente}</span>
                 <span>Foro: {pratica.foro}</span>
                 {pratica.numeroRuolo && <span>N. {pratica.numeroRuolo}</span>}
               </div>
             </div>
+
+            {/* ✅ Nuovi pulsanti: Cliente e Explorer */}
+            {onOpenCliente && pratica.cliente && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenCliente}
+                className="flex items-center"
+              >
+                <User className="w-4 h-4 mr-2" />
+                {pratica.cliente}
+              </Button>
+            )}
+
+            {onOpenExplorer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenExplorer}
+                className="flex items-center"
+              >
+                <FolderOpen className="w-4 h-4 mr-2" />
+                Explorer
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center space-x-2">

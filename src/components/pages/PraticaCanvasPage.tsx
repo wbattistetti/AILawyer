@@ -1450,6 +1450,18 @@ export function PraticaCanvasPage() {
         onSaveFilesToDbChange={setSaveFilesToDb}
         isSaving={isSaving}
         onUploadDocuments={() => open()}
+        onOpenExplorer={() => {
+          // ✅ Apri Explorer tramite ref
+          if (dockV2Ref.current && 'openExplorer' in dockV2Ref.current) {
+            (dockV2Ref.current as any).openExplorer()
+          }
+        }}
+        onOpenCliente={() => {
+          // ✅ Apri analisi cliente (primo cliente disponibile)
+          if (dockV2Ref.current && 'openCliente' in dockV2Ref.current) {
+            (dockV2Ref.current as any).openCliente()
+          }
+        }}
       />
 
       {/* Spacer per l'header fisso */}

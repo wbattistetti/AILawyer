@@ -19,10 +19,10 @@ function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: st
       // Applica il colore a tutti gli elementi path, circle, etc. dentro l'SVG
       const allElements = svg.querySelectorAll('path, circle, rect, line, polyline, polygon, g')
       allElements.forEach(el => {
-        ;(el as SVGElement).setAttribute('stroke', color)
-        ;(el as SVGElement).setAttribute('fill', 'none')
-        ;(el as SVGElement).style.stroke = color
-        ;(el as SVGElement).style.fill = 'none'
+        ; (el as SVGElement).setAttribute('stroke', color)
+          ; (el as SVGElement).setAttribute('fill', 'none')
+          ; (el as SVGElement).style.stroke = color
+          ; (el as SVGElement).style.fill = 'none'
       })
       // Applica anche all'SVG stesso
       svg.style.color = color
@@ -43,15 +43,15 @@ function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: st
     >
       {React.isValidElement(icon) && typeof icon.type !== 'string'
         ? React.cloneElement(icon as React.ReactElement<any>, {
-            size: size,
-            className: 'drawer-tab-icon',
-            strokeWidth: 2.5,
-            fill: 'none',
-            style: {
-              width: `${size}px`,
-              height: `${size}px`
-            }
-          })
+          size: size,
+          className: 'drawer-tab-icon',
+          strokeWidth: 2.5,
+          fill: 'none',
+          style: {
+            width: `${size}px`,
+            height: `${size}px`
+          }
+        })
         : typeof icon === 'string'
           ? icon
           : icon}
@@ -75,9 +75,52 @@ type Props = {
   onSelect: (id: string) => void
   className?: string
   onDrop?: (files: File[], drawerId: string) => void
+  orientation?: 'horizontal' | 'vertical' // ✅ Orientamento: orizzontale (default) o verticale
+  position?: 'top' | 'bottom' | 'left' | 'right' // ✅ Posizione della striscia: top, bottom, left, right
 }
 
-export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop }: Props) {
+// ✅ Funzione helper per calcolare i bordi arrotondati in base alla posizione
+function getBorderRadius(position: 'top' | 'bottom' | 'left' | 'right', orientation: 'horizontal' | 'vertical'): React.CSSProperties {
+  const baseRadius = '8px'
+
+  if (orientation === 'horizontal') {
+    // Per orientamento orizzontale (top/bottom)
+    if (position === 'top') {
+      // Top: arrotondati in alto, piatti in basso
+      return {
+        borderRadius: baseRadius,
+        borderBottomLeftRadius: '0',
+        borderBottomRightRadius: '0',
+      }
+    } else {
+      // Bottom: arrotondati in basso, piatti in alto
+      return {
+        borderRadius: baseRadius,
+        borderTopLeftRadius: '0',
+        borderTopRightRadius: '0',
+      }
+    }
+  } else {
+    // Per orientamento verticale (left/right)
+    if (position === 'left') {
+      // Left: arrotondati a sinistra, piatti a destra
+      return {
+        borderRadius: baseRadius,
+        borderTopRightRadius: '0',
+        borderBottomRightRadius: '0',
+      }
+    } else {
+      // Right: arrotondati a destra, piatti a sinistra
+      return {
+        borderRadius: baseRadius,
+        borderTopLeftRadius: '0',
+        borderBottomLeftRadius: '0',
+      }
+    }
+  }
+}
+
+export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop, orientation = 'horizontal', position = 'bottom' }: Props) {
   const store = useDocumentStore()
   const [draggedOverId, setDraggedOverId] = React.useState<string | null>(null)
   const [hoveredDrawerId, setHoveredDrawerId] = React.useState<string | null>(null)
@@ -88,6 +131,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   const containerRef = React.useRef<HTMLDivElement>(null)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
   const [availableWidth, setAvailableWidth] = React.useState<number | null>(null)
+  const [availableHeight, setAvailableHeight] = React.useState<number | null>(null)
   // ✅ Stato per tracciare conferme pendenti per TAB (ghost sopra la TAB)
   const [pendingConfirmationsByTab, setPendingConfirmationsByTab] = React.useState<Map<string, any>>(new Map())
 
@@ -98,18 +142,25 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     }
   }, [showSearchBox])
 
-  // ✅ Misura la larghezza disponibile del container
+  // ✅ Misura la dimensione disponibile del container
   React.useEffect(() => {
-    const updateWidth = () => {
+    const updateSize = () => {
       if (containerRef.current) {
-        setAvailableWidth(containerRef.current.offsetWidth)
+        if (orientation === 'vertical') {
+          // Per verticale: misura sia altezza (per dimensione tab) che larghezza (per calcolo font/righe)
+          setAvailableHeight(containerRef.current.offsetHeight)
+          setAvailableWidth(containerRef.current.offsetWidth)
+        } else {
+          // Per orizzontale: misura solo larghezza (per dimensione tab)
+          setAvailableWidth(containerRef.current.offsetWidth)
+        }
       }
     }
 
-    updateWidth()
-    window.addEventListener('resize', updateWidth)
-    return () => window.removeEventListener('resize', updateWidth)
-  }, [])
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
+  }, [orientation])
 
   // ✅ Ascolta direttamente lo store per pendingMoveConfirmations (reattivo)
   const pendingMoveConfirmations = useDocumentStore(state => state.pendingMoveConfirmations)
@@ -165,7 +216,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         if (!doc || !doc.filename) return false
         const normalizedFilename = doc.filename.toLowerCase()
         return normalizedFilename.startsWith(normalizedQuery) ||
-               normalizedFilename.includes(normalizedQuery)
+          normalizedFilename.includes(normalizedQuery)
       })
 
       if (matchedDoc && matchedDoc.compartoId) {
@@ -273,7 +324,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         try {
           const archiveData = (window as any).__archiveData as {
             comparti?: Array<{ id: string; key: string; nome: string }>
-            documenti?: Array<{ id: string; filePath?: string; [key: string]: any }>
+            documenti?: Array<{ id: string; filePath?: string;[key: string]: any }>
           } | undefined
 
           const comparti = archiveData?.comparti || []
@@ -328,21 +379,34 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
   const ICON_TEXT_GAP = 6 // gap-1.5 = 6px tra icona e testo
   const NUMBER_HEIGHT = 16 // altezza approssimativa numero
 
-  // ✅ Calcola la larghezza uniforme per tutti i cassetti
-  const uniformTabWidth = React.useMemo(() => {
-    if (!availableWidth || items.length === 0) return 100 // fallback
+  // ✅ Calcola la dimensione uniforme per tutti i cassetti (larghezza per orizzontale, altezza per verticale)
+  const uniformTabSize = React.useMemo(() => {
+    if (orientation === 'vertical') {
+      // Per verticale: calcola altezza uniforme
+      if (!availableHeight || items.length === 0) return 100 // fallback
+      const gap = getGapBetweenDrawers
+      const totalGaps = (items.length - 1) * gap
+      const totalPadding = PADDING_Y * 2 // padding verticale container
+      const availableForDrawers = availableHeight - totalPadding
+      const drawerHeight = (availableForDrawers - totalGaps) / items.length
+      const minHeight = items.length >= 15 ? 45 : 60
+      return Math.max(minHeight, drawerHeight)
+    } else {
+      // Per orizzontale: calcola larghezza uniforme (comportamento originale)
+      if (!availableWidth || items.length === 0) return 100 // fallback
+      const gap = getGapBetweenDrawers
+      const totalGaps = (items.length - 1) * gap
+      const totalPadding = PADDING_X * 2 // padding laterale container
+      const availableForDrawers = availableWidth - totalPadding
+      const drawerWidth = (availableForDrawers - totalGaps) / items.length
+      const minWidth = items.length >= 15 ? 45 : 60
+      return Math.max(minWidth, drawerWidth)
+    }
+  }, [orientation, availableWidth, availableHeight, items.length, getGapBetweenDrawers])
 
-    const gap = getGapBetweenDrawers
-    const totalGaps = (items.length - 1) * gap
-    const totalPadding = PADDING_X * 2 // padding laterale container
-    const availableForDrawers = availableWidth - totalPadding
-    const drawerWidth = (availableForDrawers - totalGaps) / items.length
-
-    // ✅ Se ci sono 15+ cassetti, riduci ulteriormente il minimo per farli stare tutti
-    const minWidth = items.length >= 15 ? 45 : 60
-
-    return Math.max(minWidth, drawerWidth)
-  }, [availableWidth, items.length, getGapBetweenDrawers])
+  // ✅ Alias per backward compatibility e chiarezza
+  const uniformTabWidth = orientation === 'vertical' ? undefined : uniformTabSize
+  const uniformTabHeight = orientation === 'vertical' ? uniformTabSize : undefined
 
   // ✅ Trova la parola più lunga tra tutte le labels
   const longestWord = React.useMemo(() => {
@@ -360,12 +424,21 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     return longest
   }, [items])
 
-  // ✅ Calcola il font size ottimale che permette alla parola più lunga di stare nella larghezza disponibile
+  // ✅ Calcola il font size ottimale che permette alla parola più lunga di stare nella dimensione disponibile
   const optimalFontSize = React.useMemo(() => {
-    if (!uniformTabWidth || longestWord === '') return MAX_FONT_SIZE
+    if (longestWord === '') return MAX_FONT_SIZE
 
-    // Larghezza disponibile per il testo (larghezza cassetto - padding laterale)
-    const availableTextWidth = uniformTabWidth - (PADDING_X * 2)
+    // Per orizzontale: usa larghezza del tab, per verticale: usa larghezza disponibile del container (o 200px di default)
+    let availableTextWidth: number
+    if (orientation === 'vertical') {
+      // Per verticale, usa la larghezza disponibile del container (o 200px di default)
+      availableTextWidth = availableWidth ? availableWidth - (PADDING_X * 2) : 200 - (PADDING_X * 2)
+    } else {
+      // Per orizzontale: usa larghezza del tab
+      availableTextWidth = uniformTabWidth ? uniformTabWidth - (PADDING_X * 2) : 0
+    }
+
+    if (!availableTextWidth || availableTextWidth <= 0) return MAX_FONT_SIZE
 
     // Crea un canvas temporaneo per misurare il testo
     const canvas = document.createElement('canvas')
@@ -389,12 +462,14 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
 
     // Se nemmeno MIN_FONT_SIZE ci sta, restituisci comunque il minimo
     return MIN_FONT_SIZE
-  }, [uniformTabWidth, longestWord])
+  }, [orientation, uniformTabWidth, uniformTabHeight, longestWord])
 
   // ✅ Calcola il numero di righe necessarie per ogni label usando il font size ottimale
-  const calculateTextLines = React.useCallback((label: string, width: number): number => {
-    // Larghezza disponibile per il testo (larghezza cassetto - padding laterale)
-    const textWidth = width - (PADDING_X * 2)
+  const calculateTextLines = React.useCallback((label: string, size: number): number => {
+    // Larghezza disponibile per il testo (sempre basata sulla larghezza, non sull'altezza)
+    const textWidth = orientation === 'vertical'
+      ? (availableWidth ? availableWidth - (PADDING_X * 2) : 200 - (PADDING_X * 2)) // Per verticale, usa larghezza container
+      : size - (PADDING_X * 2) // Per orizzontale, usa larghezza tab
 
     // Crea un canvas temporaneo per misurare il testo
     const canvas = document.createElement('canvas')
@@ -424,38 +499,47 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
     }
 
     return lines
-  }, [optimalFontSize])
+  }, [orientation, optimalFontSize, availableWidth])
 
   // ✅ Calcola il numero massimo di righe tra tutti i cassetti
   const maxLines = React.useMemo(() => {
-    if (!uniformTabWidth || items.length === 0) return 2
+    const tabSize = orientation === 'vertical' ? uniformTabHeight : uniformTabWidth
+    if (!tabSize || items.length === 0) return 2
 
     let max = 1
     items.forEach(item => {
-      const lines = calculateTextLines(item.label, uniformTabWidth)
+      const lines = calculateTextLines(item.label, tabSize)
       if (lines > max) {
         max = lines
       }
     })
 
     return max
-  }, [items, uniformTabWidth, calculateTextLines])
+  }, [orientation, items, uniformTabWidth, uniformTabHeight, calculateTextLines])
 
-  // ✅ Calcola l'altezza uniforme per tutti i cassetti usando il font size ottimale
-  const uniformTabHeight = React.useMemo(() => {
-    // Altezza = padding top + numero/icona + gap + (righe testo * line height) + padding bottom
-    const textHeight = maxLines * (optimalFontSize * LINE_HEIGHT)
-    const headerHeight = Math.max(NUMBER_HEIGHT, ICON_HEIGHT) + ICON_TEXT_GAP
-    const totalHeight = (PADDING_Y * 2) + headerHeight + textHeight
+  // ✅ Calcola la dimensione finale uniforme per tutti i cassetti usando il font size ottimale
+  const finalUniformTabSize = React.useMemo(() => {
+    if (orientation === 'vertical') {
+      // Per verticale: usa la dimensione calcolata (altezza uniforme)
+      return uniformTabSize || 100
+    } else {
+      // Per orizzontale: calcola altezza in base al contenuto (comportamento originale)
+      const textHeight = maxLines * (optimalFontSize * LINE_HEIGHT)
+      const headerHeight = Math.max(NUMBER_HEIGHT, ICON_HEIGHT) + ICON_TEXT_GAP
+      const totalHeight = (PADDING_Y * 2) + headerHeight + textHeight
+      return Math.max(90, totalHeight) // minimo 90px
+    }
+  }, [orientation, uniformTabSize, maxLines, optimalFontSize])
 
-    return Math.max(90, totalHeight) // minimo 90px
-  }, [maxLines, optimalFontSize])
+  // ✅ Alias per chiarezza nel rendering
+  const finalTabWidth = orientation === 'vertical' ? undefined : uniformTabSize
+  const finalTabHeight = orientation === 'vertical' ? uniformTabSize : finalUniformTabSize
 
   return (
     <div
       ref={containerRef}
       data-drawer-strip="true"
-      className={`relative flex items-end gap-3 px-2 py-1 overflow-visible ${className || ''}`}
+      className={`relative flex ${orientation === 'vertical' ? 'flex-col' : 'items-end'} gap-3 px-2 py-1 overflow-visible ${className || ''}`}
       style={{
         minHeight: 'auto',
         overflow: 'visible' // ✅ Permetti overflow per mostrare l'icona sopra
@@ -469,7 +553,7 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
         const relatedTarget = e.relatedTarget
         if (relatedTarget && relatedTarget instanceof HTMLElement) {
           const isGoingToSearch = relatedTarget.closest('[data-search-icon]') ||
-                                   relatedTarget.closest('[data-search-box]')
+            relatedTarget.closest('[data-search-box]')
           if (isGoingToSearch) {
             return // Non nascondere, il mouse sta andando verso la search
           }
@@ -486,8 +570,8 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
           data-search-icon="true"
           className="absolute"
           style={{
-            left: '8px', // ✅ Un po' staccato dalla sinistra
-            bottom: '8px', // ✅ In basso, allineata al fondo dei cassetti
+            [orientation === 'vertical' ? 'top' : 'bottom']: '8px',
+            [orientation === 'vertical' ? 'right' : 'left']: '8px',
             zIndex: 20
           }}
           onMouseEnter={() => {
@@ -562,254 +646,264 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop 
 
       <div
         data-drawer-strip="true"
-        className="flex items-end"
+        className={`flex ${orientation === 'vertical' ? 'flex-col' : 'items-end'}`}
         style={{
           gap: `${getGapBetweenDrawers}px`,
           position: 'relative',
           overflow: 'visible' // ✅ Permette alla ghost di apparire sopra
         }}
       >
-      {items.map((item, index) => {
-        const isSelected = item.id === selectedId
-        const isDraggedOver = draggedOverId === item.id
-        const isHovered = hoveredDrawerId === item.id
-        const tabNumber = index + 1
+        {items.map((item, index) => {
+          const isSelected = item.id === selectedId
+          const isDraggedOver = draggedOverId === item.id
+          const isHovered = hoveredDrawerId === item.id
+          const tabNumber = index + 1
 
-        // ✅ Determina lo stato di highlight: selezionato > hover > dragged > normale
-        const isHighlighted = isSelected || isHovered || isDraggedOver
-        const confirmation = pendingConfirmationsByTab.get(item.id)
+          // ✅ Determina lo stato di highlight: selezionato > hover > dragged > normale
+          const isHighlighted = isSelected || isHovered || isDraggedOver
+          const confirmation = pendingConfirmationsByTab.get(item.id)
 
-        return (
-          <div key={item.id} style={{ position: 'relative' }}>
-          <button
-            key={item.id}
-            data-drawer-tab="true"
-            data-drawer-id={item.id}
-            onClick={() => {
-              onSelect(item.id)
-            }}
-            onMouseEnter={() => {
-              setHoveredDrawerId(item.id)
-            }}
-            onMouseLeave={() => {
-              setHoveredDrawerId(null)
-            }}
-            onDragOver={(e) => handleDragOver(e, item.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, item.id)}
-            className="flex flex-col items-center justify-start transition-all flex-shrink-0"
-            style={{
-              // ✅ Sfondo arancione smorzato se il cassetto ha un dock pane aperto, altrimenti scuro
-              backgroundColor: item.isOpen
-                ? '#3a2d1f' // arancione smorzato/scuro per cassetti aperti (simile al golden-brown ma più arancione)
-                : (isSelected ? '#3a3a3a' : '#2d2d2d'), // scuro normale
-              // ✅ Bordino arancione per cassetti aperti, golden-brown per selezionata, altrimenti sottile grigio
-              border: item.isOpen
-                ? `2px solid #f97316` // arancione per bordo cassetti aperti
-                : (isSelected
-                  ? `2px solid #d4a574` // golden-brown per tab selezionata
-                  : `1px solid #4a4a4a`), // bordo sottile grigio per tab non selezionate
-              borderRadius: '8px', // ✅ Angoli arrotondati
-              borderBottomLeftRadius: '0', // ✅ Angoli in basso senza arrotondamento
-              borderBottomRightRadius: '0',
-              // ✅ Larghezza uniforme per tutti i cassetti
-              width: `${uniformTabWidth}px`,
-              // ✅ Altezza uniforme calcolata in base al numero massimo di righe
-              height: `${uniformTabHeight}px`,
-              minHeight: `${uniformTabHeight}px`,
-              // ✅ Padding (sostituisce px-2 py-2.5)
-              padding: '10px 8px',
-              // ✅ Gap (sostituisce gap-1.5)
-              gap: '6px',
-              // ✅ Transform leggero quando hover per effetto "sollevamento"
-              transform: isHovered && !isSelected ? 'translateY(-2px)' : 'translateY(0)',
-              // ✅ Shadow quando selezionato o hover
-              boxShadow: isSelected || isHovered ? '0 4px 6px rgba(212, 165, 116, 0.3)' : 'none',
-            } as React.CSSProperties}
-          >
-            {/* ✅ Layout: numero e icona affiancati in alto, testo centrato sotto */}
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              width: '100%',
-              height: '100%',
-              position: 'relative'
-            }}>
-              {/* Numero e icona affiancati in alto */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                width: '100%',
-                marginBottom: '4px'
-              }}>
-                {/* Numero in alto a sinistra */}
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
-                    fontSize: '18px',
-                    lineHeight: '1'
-                  }}
-                >
-                  {tabNumber}.
-                </span>
+          return (
+            <div key={item.id} style={{ position: 'relative' }}>
+              <button
+                key={item.id}
+                data-drawer-tab="true"
+                data-drawer-id={item.id}
+                onClick={() => {
+                  onSelect(item.id)
+                }}
+                onMouseEnter={() => {
+                  setHoveredDrawerId(item.id)
+                }}
+                onMouseLeave={() => {
+                  setHoveredDrawerId(null)
+                }}
+                onDragOver={(e) => handleDragOver(e, item.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, item.id)}
+                className={`flex ${orientation === 'vertical' ? 'flex-row' : 'flex-col'} items-center justify-start transition-all flex-shrink-0`}
+                style={{
+                  // ✅ Sfondo arancione smorzato se il cassetto ha un dock pane aperto, altrimenti scuro
+                  backgroundColor: item.isOpen
+                    ? '#3a2d1f' // arancione smorzato/scuro per cassetti aperti (simile al golden-brown ma più arancione)
+                    : (isSelected ? '#3a3a3a' : '#2d2d2d'), // scuro normale
+                  // ✅ Bordino arancione per cassetti aperti, golden-brown per selezionata, altrimenti sottile grigio
+                  border: item.isOpen
+                    ? `2px solid #f97316` // arancione per bordo cassetti aperti
+                    : (isSelected
+                      ? `2px solid #d4a574` // golden-brown per tab selezionata
+                      : `1px solid #4a4a4a`), // bordo sottile grigio per tab non selezionate
+                  // ✅ Angoli arrotondati dinamici in base alla posizione
+                  ...getBorderRadius(position, orientation),
+                  // ✅ Dimensione uniforme per tutti i cassetti (larghezza per orizzontale, altezza per verticale)
+                  ...(orientation === 'vertical' ? {
+                    width: '100%',
+                    height: finalTabHeight ? `${finalTabHeight}px` : 'auto',
+                    minHeight: finalTabHeight ? `${finalTabHeight}px` : 'auto',
+                  } : {
+                    width: finalTabWidth ? `${finalTabWidth}px` : 'auto',
+                    height: finalTabHeight ? `${finalTabHeight}px` : 'auto',
+                    minHeight: finalTabHeight ? `${finalTabHeight}px` : 'auto',
+                  }),
+                  // ✅ Padding (sostituisce px-2 py-2.5)
+                  padding: '10px 8px',
+                  // ✅ Gap (sostituisce gap-1.5)
+                  gap: '6px',
+                  // ✅ Transform leggero quando hover per effetto "sollevamento" (solo orizzontale)
+                  transform: orientation === 'horizontal' && isHovered && !isSelected
+                    ? 'translateY(-2px)'
+                    : orientation === 'vertical' && isHovered && !isSelected
+                      ? 'translateX(-2px)'
+                      : 'translate(0, 0)',
+                  // ✅ Shadow quando selezionato o hover
+                  boxShadow: isSelected || isHovered ? '0 4px 6px rgba(212, 165, 116, 0.3)' : 'none',
+                } as React.CSSProperties}
+              >
+                {/* ✅ Layout: numero e icona affiancati, testo sotto (orizzontale) o a destra (verticale) */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: orientation === 'vertical' ? 'row' : 'column',
+                  alignItems: orientation === 'vertical' ? 'center' : 'flex-start',
+                  width: '100%',
+                  height: '100%',
+                  position: 'relative',
+                  gap: orientation === 'vertical' ? '8px' : '0'
+                }}>
+                  {/* Numero e icona affiancati */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    width: orientation === 'vertical' ? 'auto' : '100%',
+                    marginBottom: orientation === 'vertical' ? '0' : '4px'
+                  }}>
+                    {/* Numero in alto a sinistra */}
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
+                        fontSize: '18px',
+                        lineHeight: '1'
+                      }}
+                    >
+                      {tabNumber}.
+                    </span>
 
-                {/* Icona a fianco del numero */}
-                {item.icon && (
-                  <IconWithColor
-                    icon={item.icon}
-                    color={isSelected ? '#d4a574' : (item.color || '#60a5fa')}
-                    size={20}
-                  />
-                )}
+                    {/* Icona a fianco del numero */}
+                    {item.icon && (
+                      <IconWithColor
+                        icon={item.icon}
+                        color={isSelected ? '#d4a574' : (item.color || '#60a5fa')}
+                        size={20}
+                      />
+                    )}
 
-                {/* ✅ Conteggio documenti in piccolo tra parentesi - mostra solo se > 0 */}
-                {typeof item.documentCount === 'number' && item.documentCount > 0 && (
+                    {/* ✅ Conteggio documenti in piccolo tra parentesi - mostra solo se > 0 */}
+                    {typeof item.documentCount === 'number' && item.documentCount > 0 && (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          color: isSelected ? '#d4a574' : '#9ca3af', // golden-brown se selezionata, grigio se non
+                          fontWeight: 500,
+                          marginLeft: '2px'
+                        }}
+                      >
+                        ({item.documentCount})
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Descrizione multi-linea wrappata centrata sotto (orizzontale) o a destra (verticale) */}
                   <span
                     style={{
-                      fontSize: '11px',
-                      color: isSelected ? '#d4a574' : '#9ca3af', // golden-brown se selezionata, grigio se non
+                      fontSize: `${optimalFontSize}px`,
+                      color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
                       fontWeight: 500,
-                      marginLeft: '2px'
+                      textAlign: orientation === 'vertical' ? 'left' : 'center',
+                      lineHeight: LINE_HEIGHT,
+                      wordBreak: 'normal',
+                      overflowWrap: 'normal',
+                      hyphens: 'none',
+                      width: orientation === 'vertical' ? 'auto' : '100%',
+                      flex: orientation === 'vertical' ? 1 : 'none'
                     }}
                   >
-                    ({item.documentCount})
+                    {item.label}
                   </span>
-                )}
-              </div>
+                </div>
+              </button>
 
-              {/* Descrizione multi-linea wrappata centrata sotto */}
-              <span
-                style={{
-                  fontSize: `${optimalFontSize}px`,
-                  color: isSelected ? '#d4a574' : '#e5e7eb', // golden-brown se selezionata, bianco/grigio chiaro se non
-                  fontWeight: 500,
-                  textAlign: 'center',
-                  lineHeight: LINE_HEIGHT,
-                  wordBreak: 'normal',
-                  overflowWrap: 'normal',
-                  hyphens: 'none',
-                  width: '100%'
-                }}
-              >
-                {item.label}
-              </span>
-            </div>
-          </button>
-
-          {/* ✅ Miniatura ghost sopra la TAB quando serve conferma */}
-          {confirmation && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '-140px', // Sopra la TAB
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 1000,
-                width: '12rem',
-                minWidth: '12rem',
-                aspectRatio: '3/4',
-                border: '2px solid #f97316',
-                borderStyle: 'dashed',
-                borderRadius: '8px',
-                backgroundColor: '#fff7ed',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '8px',
-                gap: '6px',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                pointerEvents: 'auto'
-              }}
-            >
-              <div style={{
-                fontSize: '10px',
-                fontWeight: 500,
-                textAlign: 'center',
-                padding: '6px',
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                lineHeight: '1.3'
-              }}>
-                Il documento "{confirmation.filename}" è già in "{confirmation.sourceCompartoNome}".
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: '#6b7280',
-                textAlign: 'center',
-                padding: '6px'
-              }}>
-                Vuoi spostarlo qui?
-              </div>
-              <div style={{
-                display: 'flex',
-                gap: '6px',
-                marginTop: 'auto',
-                marginBottom: '8px'
-              }}>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // Emetti evento per conferma (gestito da useArchive)
-                    window.dispatchEvent(new CustomEvent('app:confirm-move-from-tab', {
-                      detail: confirmation
-                    }))
-                    setPendingConfirmationsByTab(prev => {
-                      const next = new Map(prev)
-                      next.delete(item.id)
-                      return next
-                    })
-                  }}
+              {/* ✅ Miniatura ghost sopra la TAB quando serve conferma */}
+              {confirmation && (
+                <div
                   style={{
-                    padding: '4px 8px',
-                    backgroundColor: '#2563eb',
-                    color: 'white',
-                    borderRadius: '4px',
-                    fontSize: '10px',
-                    fontWeight: 500,
-                    border: 'none',
-                    cursor: 'pointer'
+                    position: 'absolute',
+                    [orientation === 'vertical' ? 'left' : 'top']: orientation === 'vertical' ? '-160px' : '-140px',
+                    [orientation === 'vertical' ? 'top' : 'left']: '50%',
+                    transform: orientation === 'vertical' ? 'translateY(-50%)' : 'translateX(-50%)',
+                    zIndex: 1000,
+                    width: '12rem',
+                    minWidth: '12rem',
+                    aspectRatio: '3/4',
+                    border: '2px solid #f97316',
+                    borderStyle: 'dashed',
+                    borderRadius: '8px',
+                    backgroundColor: '#fff7ed',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '8px',
+                    gap: '6px',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    pointerEvents: 'auto'
                   }}
                 >
-                  Conferma
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    e.preventDefault()
-                    // Emetti evento per annullamento (gestito da useArchive)
-                    window.dispatchEvent(new CustomEvent('app:cancel-move-from-tab', {
-                      detail: confirmation
-                    }))
-                    setPendingConfirmationsByTab(prev => {
-                      const next = new Map(prev)
-                      next.delete(item.id)
-                      return next
-                    })
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: '#d1d5db',
-                    color: '#374151',
-                    borderRadius: '4px',
+                  <div style={{
                     fontSize: '10px',
                     fontWeight: 500,
-                    border: 'none',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Annulla
-                </button>
-              </div>
+                    textAlign: 'center',
+                    padding: '6px',
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    lineHeight: '1.3'
+                  }}>
+                    Il documento "{confirmation.filename}" è già in "{confirmation.sourceCompartoNome}".
+                  </div>
+                  <div style={{
+                    fontSize: '9px',
+                    color: '#6b7280',
+                    textAlign: 'center',
+                    padding: '6px'
+                  }}>
+                    Vuoi spostarlo qui?
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    gap: '6px',
+                    marginTop: 'auto',
+                    marginBottom: '8px'
+                  }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // Emetti evento per conferma (gestito da useArchive)
+                        window.dispatchEvent(new CustomEvent('app:confirm-move-from-tab', {
+                          detail: confirmation
+                        }))
+                        setPendingConfirmationsByTab(prev => {
+                          const next = new Map(prev)
+                          next.delete(item.id)
+                          return next
+                        })
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#2563eb',
+                        color: 'white',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 500,
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Conferma
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        // Emetti evento per annullamento (gestito da useArchive)
+                        window.dispatchEvent(new CustomEvent('app:cancel-move-from-tab', {
+                          detail: confirmation
+                        }))
+                        setPendingConfirmationsByTab(prev => {
+                          const next = new Map(prev)
+                          next.delete(item.id)
+                          return next
+                        })
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#d1d5db',
+                        color: '#374151',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 500,
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Annulla
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-          </div>
-        )
-      })}
+          )
+        })}
       </div>
     </div>
   )

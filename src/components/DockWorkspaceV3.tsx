@@ -5,7 +5,6 @@ import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOv
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 import { colorFor, iconFor } from '../features/drawers/drawerPalette'
-import { SidebarArchivi } from './SidebarArchivi'
 import { Users, FileText, Zap, Gavel, Landmark, Boxes, Phone, Shield, Clock, Hash, ScanText, FolderOpen, Search, User, CreditCard, Calendar, Network, Mail, Image } from 'lucide-react'
 import type { Comparto } from '@/types'
 import { api } from '@/lib/api'
@@ -85,6 +84,8 @@ export type Props = {
 export type DockWorkspaceV3Handle = {
   openDoc: (doc: DocTab) => void
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
+  openExplorer: () => void
+  openCliente: (clienteId?: string) => void
 }
 
 // Componente wrapper per pannelli con fullscreen toggle
@@ -168,6 +169,9 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     headerHeight = 0
   } = props
 
+  // ✅ Costante per la posizione della striscia dei cassetti (top, bottom, left, right)
+  const DRAWER_STRIP_POSITION: 'top' | 'bottom' | 'left' | 'right' = 'bottom'
+
   const dockviewApiRef = useRef<any>(null)
   const fullscreenTogglesRef = useRef<Map<string, () => void>>(new Map())
   const [fullscreenStates, setFullscreenStates] = useState<Map<string, boolean>>(new Map())
@@ -196,10 +200,6 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     }
   }, [])
 
-  // State per la sidebar archivi
-  const [isArchiveSidebarOpen, setIsArchiveSidebarOpen] = useState(false)
-  const [selectedArchiveTabId, setSelectedArchiveTabId] = useState<string | null>(null)
-  const archiveSidebarTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const drawerStripTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // ✅ Handler per mouse enter/leave della zona cassetti (solo se non fissato)
@@ -320,147 +320,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     })
   }, [praticaId])
 
-  // Prepara le tab per SidebarArchivi (stesso calcolo di V2)
-  const archiveTabs = useMemo(() => {
-    const staticTabs = [
-      { type: 'tab', name: 'Explorer', component: 'explorer', id: 'explorerTab' },
-      { type: 'tab', name: 'Anagrafiche', component: 'persons', id: 'personsTab' },
-      { type: 'tab', name: 'Contatti', component: 'contacts', id: 'contactsTab' },
-      { type: 'tab', name: 'Identificativi', component: 'ids', id: 'idsTab' },
-      { type: 'tab', name: 'Eventi', component: 'events', id: 'eventsTab' },
-      { type: 'tab', name: 'Grafo', component: 'graph', id: 'graphTab' }
-    ]
-
-    // Helper per determinare genere dal nome italiano (desinenze tipiche)
-    const getGenderFromName = (nome: string): 'M' | 'F' | null => {
-      if (!nome || nome.trim().length === 0) return null
-
-      const nomeLower = nome.toLowerCase().trim()
-
-      // Nomi femminili comuni italiani
-      const knownFemale = new Set([
-        'maria', 'giulia', 'anna', 'chiara', 'silvia', 'francesca', 'valentina',
-        'federica', 'alessia', 'roberta', 'luisa', 'sara', 'martina', 'elena',
-        'laura', 'cristina', 'paola', 'elisa', 'simona', 'monica', 'stefania'
-      ])
-
-      // Nomi maschili comuni che finiscono in 'a' (eccezioni)
-      const knownMale = new Set([
-        'luca', 'andrea', 'nicola', 'elias', 'matteo', 'gianluca', 'francesco',
-        'diego', 'emanuele', 'michele', 'gabriele', 'daniele', 'raffaele'
-      ])
-
-      // Controlla lista nomi noti
-      if (knownFemale.has(nomeLower)) return 'F'
-      if (knownMale.has(nomeLower)) return 'M'
-
-      // Desinenze tipicamente femminili italiane
-      const femaleEndings = ['ia', 'ea', 'ina', 'etta', 'ella', 'essa', 'ona', 'isa']
-      // Desinenze tipicamente maschili italiane
-      const maleEndings = ['o', 'io', 'eo', 'ino', 'etto', 'ello', 'one', 'e', 'i']
-
-      // Controlla desinenze femminili (più specifiche)
-      for (const ending of femaleEndings) {
-        if (nomeLower.endsWith(ending)) {
-          return 'F'
-        }
-      }
-
-      // Controlla desinenze maschili
-      for (const ending of maleEndings) {
-        if (nomeLower.endsWith(ending)) {
-          return 'M'
-        }
-      }
-
-      // Se finisce in 'a' e non è nelle eccezioni → femmina
-      if (nomeLower.endsWith('a') && nomeLower.length > 2) {
-        return 'F'
-      }
-
-      // Default: maschio (per nomi di genere indefinito o non riconosciuto)
-      return 'M'
-    }
-
-    const clienteTabs = clienti.map(cliente => {
-      const gender = getGenderFromName(cliente.nome)
-      return {
-        type: 'tab',
-        name: `${cliente.nome} ${cliente.cognome}`,
-        component: 'cliente-memoria',
-        id: `cliente-${cliente.id}-tab`,
-        gender
-      }
-    })
-
-    // ✅ Clienti in cima, poi staticTabs ordinate alfabeticamente
-    const allTabs = [...clienteTabs, ...staticTabs.sort((a, b) => {
-      const nameA = (a.name || '').toLowerCase().trim()
-      const nameB = (b.name || '').toLowerCase().trim()
-      return nameA.localeCompare(nameB, 'it', { sensitivity: 'base' })
-    })]
-
-    const tabs = allTabs.map(tab => {
-      const config = TAB_CONFIGS[tab.component]
-      if (!config) return null
-
-      // Per clienti, usa volto stilizzato basato su genere dal nome (solo viso con occhi e bocca)
-      let icon = React.createElement(config.icon)
-      if (tab.component === 'cliente-memoria' && 'gender' in tab) {
-        const gender = (tab as any).gender
-        // Volto stilizzato: solo cerchio viso con occhi e bocca (NO spalle/corpo)
-        if (gender === 'M') {
-          // Maschio: volto stilizzato maschile
-          icon = (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
-              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
-              <path d="M9 15c1 1.5 3 1.5 4 0" strokeWidth="2" />
-            </svg>
-          )
-        } else if (gender === 'F') {
-          // Femmina: volto stilizzato femminile (bocca sorridente)
-          icon = (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
-              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
-              <path d="M8 14c1 1.5 3 1.5 4 1.5s3 0 4-1.5" strokeWidth="1.5" />
-            </svg>
-          )
-        } else {
-          // Genere indefinito: usa maschio come default
-          icon = (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="9" cy="10" r="1.5" fill="currentColor" />
-              <circle cx="15" cy="10" r="1.5" fill="currentColor" />
-              <path d="M9 15c1 1.5 3 1.5 4 0" strokeWidth="2" />
-            </svg>
-          )
-        }
-      }
-
-      return {
-        id: tab.id,
-        component: tab.component,
-        name: tab.name,
-        icon,
-        colorBase: config.colorBase,
-        colorActive: config.colorActive
-      }
-    }).filter(Boolean) as Array<{
-      id: string
-      component: string
-      name: string
-      icon: React.ReactNode
-      colorBase: string
-      colorActive: string
-    }>
-
-    return tabs
-  }, [clienti])
+  // ✅ RIMOSSO: archiveTabs - non più necessario senza SidebarArchivi
+  // Se in futuro servono cassetti a sinistra, si usa un'altra istanza di DrawerTabStrip con position='left'
 
   // Prepara le tab per DrawerTabStrip
   const drawerTabs = useMemo<DrawerTabItem[]>(() => {
@@ -1351,7 +1212,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   }, [comparti])
 
   // Handler per click su archive tab (sidebar)
-  const handleArchiveTabClick = useCallback((component: string, tabId: string) => {
+  const handleArchiveTabClick = useCallback((component: string, tabId: string, title?: string) => {
     if (!dockviewApiRef.current) return
 
     const panelId = tabId
@@ -1366,7 +1227,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         existingPanel.api.setActive()
       }
     } else {
-      // Crea nuovo pannello nella zona left
+      // Crea nuovo pannello
       let panelComponent = component
       let params: any = {}
 
@@ -1374,6 +1235,11 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const clienteId = tabId.replace('cliente-', '').replace('-tab', '')
         panelComponent = 'cliente-memoria'
         params = { clienteId }
+        // Trova il nome del cliente
+        const cliente = clienti.find(c => c.id === clienteId)
+        if (cliente && !title) {
+          title = `${cliente.nome} ${cliente.cognome}`
+        }
       }
 
       const newPanel = dockviewApiRef.current.addPanel({
@@ -1383,21 +1249,21 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           ...params,
           component: panelComponent // ✅ Aggiungi component nei params
         },
-        title: archiveTabs.find(t => t.id === tabId)?.name || component,
+        title: title || component,
         closeable: true // ✅ Abilita pulsante close sulla tab
       })
-      console.log('[DOCK-V3] ➕ Pannello archivio creato:', panelId, 'Component:', panelComponent, 'Gruppo:', newPanel?.group?.id, 'Gruppo locked:', newPanel?.group?.locked)
+      console.log('[DOCK-V3] ➕ Pannello creato:', panelId, 'Component:', panelComponent, 'Gruppo:', newPanel?.group?.id, 'Gruppo locked:', newPanel?.group?.locked)
       // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
       if (newPanel?.group?.locked) {
         newPanel.group.locked = false
-        console.log('[DOCK-V3] 🔓 Gruppo archivio sbloccato:', newPanel.group.id)
+        console.log('[DOCK-V3] 🔓 Gruppo sbloccato:', newPanel.group.id)
       }
     }
 
     if (onLeftBorderTabChange) {
       onLeftBorderTabChange(component)
     }
-  }, [archiveTabs, onLeftBorderTabChange])
+  }, [onLeftBorderTabChange, clienti])
 
   // Expose API methods
   useImperativeHandle(ref, () => ({
@@ -1461,49 +1327,42 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           newPanel.group.locked = false
         }
       }
+    },
+    openExplorer: () => {
+      handleArchiveTabClick('explorer', 'explorerTab', 'Explorer')
+    },
+    openCliente: (clienteId?: string) => {
+      // Se non specificato, usa il primo cliente
+      if (!clienteId && clienti.length > 0) {
+        clienteId = clienti[0].id
+      }
+      if (clienteId) {
+        const cliente = clienti.find(c => c.id === clienteId)
+        const title = cliente ? `${cliente.nome} ${cliente.cognome}` : undefined
+        handleArchiveTabClick('cliente-memoria', `cliente-${clienteId}-tab`, title)
+      }
     }
-  }), [])
+  }), [handleArchiveTabClick, clienti])
 
   return (
     <div className={`dockv3-root w-full h-full relative ${isDragActiveRef.current ? 'drag-active' : ''}`}>
-      {/* Sidebar Archivi (left) */}
-      {archiveTabs.length > 0 && (
-        <SidebarArchivi
-          tabs={archiveTabs}
-          isOpen={isArchiveSidebarOpen}
-          selectedId={selectedArchiveTabId}
-          onSelect={(component, id) => {
-            setSelectedArchiveTabId(id)
-            handleArchiveTabClick(component, id)
-          }}
-          onToggle={() => {
-            setIsArchiveSidebarOpen(prev => !prev)
-            if (archiveSidebarTimeoutRef.current) {
-              clearTimeout(archiveSidebarTimeoutRef.current)
-              archiveSidebarTimeoutRef.current = null
-            }
-          }}
-          onMouseEnter={() => {
-            setIsArchiveSidebarOpen(true)
-            if (archiveSidebarTimeoutRef.current) {
-              clearTimeout(archiveSidebarTimeoutRef.current)
-            }
-          }}
-          onMouseLeave={() => {
-            archiveSidebarTimeoutRef.current = setTimeout(() => {
-              setIsArchiveSidebarOpen(false)
-            }, 300)
-          }}
-          headerHeight={headerHeight}
-          isDrawerStripVisible={isDrawerStripVisible}
-        />
-      )}
+      {/* ✅ RIMOSSO: Sidebar Archivi (left) - ora si usa DrawerTabStrip se necessario */}
 
       {/* Main Dockview Area */}
       <div
         className="w-full h-full relative transition-all duration-300"
         style={{
-          paddingBottom: isDrawerStripPinned && isDrawerStripVisible ? '120px' : '0px' // ✅ Spinge su il contenuto quando fissati
+          paddingTop: `${headerHeight}px`, // ✅ Aggiungi padding-top per compensare l'header
+          ...(isDrawerStripPinned && isDrawerStripVisible
+            ? DRAWER_STRIP_POSITION === 'top'
+              ? { paddingTop: `${headerHeight + 120}px` } // ✅ Somma headerHeight + padding cassetti
+              : DRAWER_STRIP_POSITION === 'bottom'
+              ? { paddingBottom: '120px' }
+              : DRAWER_STRIP_POSITION === 'left'
+              ? { paddingLeft: '120px' }
+              : { paddingRight: '120px' }
+            : {}
+          ),
         }}
       >
         <DockviewReact
@@ -1517,8 +1376,20 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       {/* ✅ Linguetta "Cassetti" quando nascosti (Stato 1) */}
       {drawerTabs.length > 0 && !isDrawerStripVisible && (
         <div
-          className="fixed bottom-0 left-1/2 transform -translate-x-1/2 z-50"
+          className={`fixed z-50 ${
+            DRAWER_STRIP_POSITION === 'top'
+              ? 'left-1/2 transform -translate-x-1/2'
+              : DRAWER_STRIP_POSITION === 'bottom'
+              ? 'bottom-0 left-1/2 transform -translate-x-1/2'
+              : DRAWER_STRIP_POSITION === 'left'
+              ? 'left-0 top-1/2 transform -translate-y-1/2'
+              : 'right-0 top-1/2 transform -translate-y-1/2'
+          }`}
           style={{
+            ...(DRAWER_STRIP_POSITION === 'top'
+              ? { top: `${headerHeight}px` } // ✅ Posizionata subito sotto l'header
+              : {}
+            ),
             pointerEvents: 'auto',
           }}
           onMouseEnter={() => {
@@ -1530,12 +1401,26 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           }}
         >
           <div
-            className="flex items-center gap-2 px-4 py-2 rounded-t-lg cursor-pointer transition-all"
+            className={`flex items-center gap-2 px-4 py-2 cursor-pointer transition-all ${
+              DRAWER_STRIP_POSITION === 'top'
+                ? 'rounded-b-lg'
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? 'rounded-t-lg'
+                : DRAWER_STRIP_POSITION === 'left'
+                ? 'rounded-r-lg'
+                : 'rounded-l-lg'
+            }`}
             style={{
               background: 'rgba(241, 245, 249, 0.95)',
               border: '1px solid #cbd5e1',
-              borderBottom: 'none',
-              boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)',
+              ...(DRAWER_STRIP_POSITION === 'top'
+                ? { borderTop: 'none', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' }
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? { borderBottom: 'none', boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)' }
+                : DRAWER_STRIP_POSITION === 'left'
+                ? { borderLeft: 'none', boxShadow: '2px 0 8px rgba(0, 0, 0, 0.1)' }
+                : { borderRight: 'none', boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.1)' }
+              ),
             }}
           >
             <span className="text-sm font-medium text-gray-700">Cassetti</span>
@@ -1561,28 +1446,81 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         </div>
       )}
 
-      {/* Drawer Tab Strip (bottom) - Stati 2 e 3 */}
+      {/* Drawer Tab Strip - Stati 2 e 3 */}
       {drawerTabs.length > 0 && isDrawerStripVisible && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ${
-            isDrawerStripVisible ? 'translate-y-0' : 'translate-y-full'
+          className={`fixed z-50 transition-transform duration-300 ${
+            DRAWER_STRIP_POSITION === 'top' || DRAWER_STRIP_POSITION === 'bottom'
+              ? 'left-0 right-0'
+              : 'top-0 bottom-0'
+          } ${
+            isDrawerStripVisible
+              ? DRAWER_STRIP_POSITION === 'top'
+                ? 'translate-y-0'
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? 'translate-y-0'
+                : DRAWER_STRIP_POSITION === 'left'
+                ? 'translate-x-0'
+                : 'translate-x-0'
+              : DRAWER_STRIP_POSITION === 'top'
+                ? '-translate-y-full'
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? 'translate-y-full'
+                : DRAWER_STRIP_POSITION === 'left'
+                ? '-translate-x-full'
+                : 'translate-x-full'
           }`}
           data-drawer-strip="true"
           style={{
+            ...(DRAWER_STRIP_POSITION === 'top'
+              ? { top: `${headerHeight}px`, paddingBottom: '76px' }
+              : DRAWER_STRIP_POSITION === 'bottom'
+              ? { bottom: '0px', paddingTop: '76px' }
+              : DRAWER_STRIP_POSITION === 'left'
+              ? { left: '0px', paddingRight: '76px' }
+              : { right: '0px', paddingLeft: '76px' }
+            ),
             pointerEvents: 'auto',
-            // ✅ Estendi la zona di hover con padding-top invisibile (2 cm = 76px)
-            paddingTop: '76px',
           }}
           onMouseEnter={handleDrawerStripMouseEnter}
           onMouseLeave={handleDrawerStripMouseLeave}
         >
-            {/* ✅ Pulsante PIN in alto a destra sopra i cassetti (sempre visibile quando i cassetti sono aperti) */}
+            {/* ✅ Pulsante PIN posizionato in base all'orientamento */}
             <div
-              className="absolute top-0 right-0 z-10"
+              className="absolute z-10"
               style={{
-                transform: 'translateY(-100%)',
-                marginTop: '4px',
-                marginRight: '4px'
+                ...(DRAWER_STRIP_POSITION === 'top'
+                  ? {
+                      bottom: '0',
+                      right: '0',
+                      transform: 'translateY(100%)',
+                      marginBottom: '4px',
+                      marginRight: '4px'
+                    }
+                  : DRAWER_STRIP_POSITION === 'bottom'
+                  ? {
+                      top: '0',
+                      right: '0',
+                      transform: 'translateY(-100%)',
+                      marginTop: '4px',
+                      marginRight: '4px'
+                    }
+                  : DRAWER_STRIP_POSITION === 'left'
+                  ? {
+                      top: '0',
+                      right: '0',
+                      transform: 'translateX(100%)',
+                      marginTop: '4px',
+                      marginRight: '4px'
+                    }
+                  : {
+                      top: '0',
+                      left: '0',
+                      transform: 'translateX(-100%)',
+                      marginTop: '4px',
+                      marginLeft: '4px'
+                    }
+                ),
               }}
             >
               <button
@@ -1603,7 +1541,16 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             </div>
 
           {/* ✅ Wrapper interno per contenere i cassetti con margine negativo per compensare il padding */}
-          <div style={{ marginTop: '-76px' }}>
+          <div style={{
+            ...(DRAWER_STRIP_POSITION === 'top'
+              ? { marginBottom: '-76px' }
+              : DRAWER_STRIP_POSITION === 'bottom'
+              ? { marginTop: '-76px' }
+              : DRAWER_STRIP_POSITION === 'left'
+              ? { marginRight: '-76px' }
+              : { marginLeft: '-76px' }
+            ),
+          }}>
             <DrawerTabStrip
               items={drawerTabs}
               selectedId={selectedDrawerId}
@@ -1614,6 +1561,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                   handleDrawerTabClick(comparto.chiave, comparto.id)
                 }
               }}
+              orientation={DRAWER_STRIP_POSITION === 'top' || DRAWER_STRIP_POSITION === 'bottom' ? 'horizontal' : 'vertical'}
+              position={DRAWER_STRIP_POSITION}
             />
           </div>
         </div>

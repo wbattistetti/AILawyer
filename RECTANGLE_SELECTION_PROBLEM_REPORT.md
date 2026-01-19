@@ -508,3 +508,4 @@ Renderizzare il rettangolo direttamente nel `host` invece che nell'elemento pagi
 **Versione codice**: Dopo refactoring unificazione selezione
 **Status**: ⚠️ Parzialmente risolto - problemi rimanenti con coordinate
 **Priorità**: 🔴 ALTA - L'angolo non segue il mouse è un bug critico UX
+Ma

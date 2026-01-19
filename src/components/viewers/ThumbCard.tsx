@@ -122,11 +122,10 @@ export function ThumbCard({
       onDoubleClick={(e) => { e.stopPropagation(); onPreview?.() }}
     >
       <div className={`relative w-48 h-64 border rounded-sm bg-white overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
-        {/* Header bar - altezza dinamica in base al contenuto (padding e line-height ottimizzati per evitare taglio) */}
-        <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-start gap-2 px-2 pt-1 pb-2 ${headerColorClass || 'bg-amber-500'}`}>
-          {headerIcon ?? <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />}
-          <div className="text-xs font-semibold break-words leading-[1.6] flex-1" style={{ paddingBottom: '2px' }} title={title}>{title}</div>
-          <div className="flex-1" />
+        {/* Header bar - altezza dinamica in base al contenuto */}
+        <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-center gap-2 px-2 py-1.5 min-h-[2rem] ${headerColorClass || 'bg-amber-500'}`}>
+          {headerIcon ?? <FileText className="w-4 h-4 flex-shrink-0" />}
+          <div className="text-xs font-semibold break-words leading-[1.5] flex-1 min-w-0" title={title}>{title}</div>
         </div>
         {/* Label stato OCR sotto l'header, allineata a destra */}
         {(() => {
