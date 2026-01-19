@@ -55,11 +55,6 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	// ✅ Convert draft to array (single or multi-page)
 	const draftArray = Array.isArray(draft) ? draft : (draft ? [draft] : [])
 
-	// ✅ DEBUG: Log draft per verificare se viene passato
-	if (draft) {
-		console.log('[ANNOT-OVERLAYS] Draft received:', draft, 'draftArray:', draftArray)
-	}
-
 	// ✅ Combine all annotations including multi-page drafts
 	const allAnnotations = [
 		...(selectedAnnot ? [selectedAnnot] : []),
@@ -93,9 +88,6 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 		<>
 			{allAnnotations.map((a, idx) => {
 				const root = overlayRootsRef.current.get(a.page)
-				if (a.id === 'draft') {
-					console.log('[ANNOT-OVERLAYS] Rendering draft:', a, 'root found:', !!root, 'page:', a.page)
-				}
 
 				if (!root) {
 					if (a.id === 'draft' || a.id === 'sel') {
@@ -108,6 +100,7 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					return null
 				}
 
+
 				const left = `${a.x0Pct * 100}%`
 				const top = `${a.y0Pct * 100}%`
 				const width = `${(a.x1Pct - a.x0Pct) * 100}%`
@@ -115,6 +108,7 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 
 				let node: React.ReactNode = null
 				if (a.type === 'highlight') {
+
 					node = (
 						<div
 							style={{
@@ -124,8 +118,11 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 								width,
 								height,
 								pointerEvents: 'none',
-								background: a.color ?? 'rgba(96, 165, 250, 0.4)',
-								borderRadius: 2
+								background: a.color ?? 'rgba(59, 130, 246, 0.3)',
+								border: a.id === 'draft' ? '2px solid rgba(59, 130, 246, 0.8)' : 'none', // ✅ Bordo visibile per draft
+								borderRadius: 2,
+								zIndex: a.id === 'draft' ? 9999 : 10, // ✅ Z-index molto alto per draft
+								boxSizing: 'border-box' // ✅ Include il bordo nelle dimensioni
 							}}
 						/>
 					)

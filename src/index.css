@@ -101,7 +101,10 @@
     background-color: hsl(var(--background)) !important; /* ✅ Aggiungi !important per forzare i colori */
   }
 
-  body {
+  /* ✅ Selettori ultra-specifici per prevenire interferenze da estensioni */
+  html[data-theme="light"] body,
+  html[data-theme="dark"] body,
+  html body {
     /* ✅ Usa !important per forzare i colori - soluzione architetturale pulita */
     background-color: hsl(var(--background)) !important;
     color: hsl(var(--foreground)) !important;
@@ -110,6 +113,22 @@
   }
 
   /* ✅ Assicura che #root abbia il background corretto con !important */
+  html[data-theme="light"] #root,
+  html[data-theme="dark"] #root,
+  html #root {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    min-height: 100vh;
+  }
+
+  /* ✅ Fallback per body e #root senza data-theme (per compatibilità) */
+  body {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    font-family: var(--font-family);
+    font-size: 1rem;
+  }
+
   #root {
     background-color: hsl(var(--background)) !important;
     color: hsl(var(--foreground)) !important;

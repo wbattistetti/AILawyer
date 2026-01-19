@@ -20,18 +20,7 @@ export function useArchive(
   // ✅ CRITICO: Usa selettori reattivi Zustand per aggiornamenti automatici
   const documenti = useDocumentStore(state => {
     const docs = Array.from(state.documents.values())
-    // ✅ LOG: Verifica aggiornamenti documenti nello store (sempre, per debug)
-    const docsWithThumbnails = docs.filter(d => !!(d as any).thumbnailDataUrl)
-    console.log('📚 [USE-ARCHIVE][DOCUMENTI-SELECTOR] Documenti aggiornati dallo store', {
-      totalDocs: docs.length,
-      docsWithThumbnails: docsWithThumbnails.map(d => ({
-        id: d.id.substring(0, 16) + '...',
-        filename: d.filename,
-        hasThumbnail: !!(d as any).thumbnailDataUrl,
-        thumbnailLength: (d as any).thumbnailDataUrl?.length || 0,
-        thumbnailPreview: (d as any).thumbnailDataUrl?.substring(0, 50) || 'NULL'
-      }))
-    })
+    // ✅ LOG rimosso: troppo verboso, eseguito ad ogni render
     return docs
   })
   const uploads = useDocumentStore(state => Array.from(state.uploads.values()))

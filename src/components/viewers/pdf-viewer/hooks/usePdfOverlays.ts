@@ -60,20 +60,31 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind }: UsePdfOverla
                 const parsed = parseInt(holder.getAttribute('data-page-number') || '', 10)
                 if (!Number.isFinite(parsed) || parsed <= 0) continue
                 const pageNum = parsed
-					const pageLayer = (holder as any).querySelector('.rpv-core__page-layer') as HTMLElement | null
+                const pageLayer = (holder as any).querySelector('.rpv-core__page-layer') as HTMLElement | null
                 if (!pageLayer) continue
                 pageElsRef.current.set(pageNum, pageLayer)
                 elToPageRef.current.set(pageLayer, pageNum)
+                // ✅ RIPRISTINATO: Overlay root appeso al textLayer (come nella versione funzionante)
+                // Le coordinate sono calcolate rispetto al pageLayer, ma l'overlay root deve essere dentro il textLayer
+                // perché il textLayer ha le stesse dimensioni del pageLayer e questo funzionava prima
                 const textLayer = (pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement) || pageLayer
                 if (!textLayer.style.position) textLayer.style.position = 'relative'
                 let over = overlayRootsRef.current.get(pageNum)
                 if (!over) {
                     over = document.createElement('div')
                     over.className = 'ai-overlay-root'
-                    Object.assign(over.style, { position:'absolute', inset:'0', pointerEvents:'none', zIndex:'100' })
-                    textLayer.appendChild(over)
-                    overlayRootsRef.current.set(pageNum, over)
-                    added++
+                    Object.assign(over.style, {
+                        position:'absolute',
+                        inset:'0',
+                        pointerEvents:'none',
+                        zIndex:'100'
+                    })
+                    // ✅ Verifica che textLayer sia nel DOM prima di appendere
+                    if (document.contains(textLayer)) {
+                        textLayer.appendChild(over)
+                        overlayRootsRef.current.set(pageNum, over)
+                        added++
+                    }
                 }
                 let sel = selectRootsRef.current.get(pageNum)
                 if (!sel) {

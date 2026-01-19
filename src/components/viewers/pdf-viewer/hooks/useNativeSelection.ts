@@ -218,7 +218,7 @@ export const useNativeSelection = ({
 			return
 		}
 
-		console.log('[NATIVE-SEL][DOWN] Event received', { extractOpen: extractOpenRef.current, selectMode, selectKind })
+		// console.log('[NATIVE-SEL][DOWN] Event received', { extractOpen: extractOpenRef.current, selectMode, selectKind })
 		if (extractOpenRef.current) return
 
 		// ✅ IMPORTANTE: useNativeSelection gestisce solo la selezione testo nativo
@@ -228,7 +228,7 @@ export const useNativeSelection = ({
 		const target = ev.target as HTMLElement
 		const host = hostRef.current
 		if (!host) {
-			console.log('[NATIVE-SEL][DOWN] No host, exiting')
+			// console.log('[NATIVE-SEL][DOWN] No host, exiting')
 			return
 		}
 
@@ -237,12 +237,12 @@ export const useNativeSelection = ({
 			return
 		}
 
-		console.log('[NATIVE-SEL][DOWN] Host found, checking overlay')
+		// console.log('[NATIVE-SEL][DOWN] Host found, checking overlay')
 
 		// ✅ CRITICO: Se esiste un overlay attivo, blocca l'inizio di un nuovo drag
 		const overlayExists = document.querySelector('[data-extract-overlay="true"]')
 		if (overlayExists) {
-			console.log('[NATIVE-SEL][DOWN] Overlay exists')
+			// console.log('[NATIVE-SEL][DOWN] Overlay exists')
 			// ✅ Verifica se il click è dentro l'overlay
 			const isInsideOverlay = target && (
 				target.closest('[data-extract-overlay="true"]') ||
@@ -251,7 +251,7 @@ export const useNativeSelection = ({
 			)
 
 			if (isInsideOverlay) {
-				console.log('[NATIVE-SEL][DOWN] Click inside overlay, exiting')
+				// console.log('[NATIVE-SEL][DOWN] Click inside overlay, exiting')
 				return // ✅ NON iniziare un nuovo drag se l'overlay è attivo
 			}
 
@@ -262,10 +262,10 @@ export const useNativeSelection = ({
 		const x = ev.clientX
 		const y = ev.clientY
 		const hostR = host.getBoundingClientRect()
-		console.log('[NATIVE-SEL][DOWN] Mouse pos:', { x, y }, 'Host bounds:', hostR)
+		// console.log('[NATIVE-SEL][DOWN] Mouse pos:', { x, y }, 'Host bounds:', hostR)
 
 		if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) {
-			console.log('[NATIVE-SEL][DOWN] Click outside viewer bounds, exiting')
+			// console.log('[NATIVE-SEL][DOWN] Click outside viewer bounds, exiting')
 			// Click fuori dal viewer: cancella tutto
 			if (persistentSelectionsRef.current.length > 0 || draftRef.current) {
 				setPersistentSelections([])
@@ -280,7 +280,7 @@ export const useNativeSelection = ({
 		// useNativeSelection gestisce solo la selezione testo nativo (quando l'utente seleziona testo con il mouse)
 		// Quindi qui NON cancelliamo le persistent selections - quelle sono gestite da useRectSelection
 
-		console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non gestiamo persistent selections da useRectSelection)')
+		// console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non gestiamo persistent selections da useRectSelection)')
 		// ✅ NON cancellare persistent selections - quelle sono gestite da useRectSelection
 		// ✅ NON gestire mousedown per drag rettangolo - quello è gestito da useRectSelection
 		// ✅ La selezione testo nativo viene gestita da onSelChange, non da onMouseDown
@@ -292,7 +292,7 @@ export const useNativeSelection = ({
 		// Quindi qui NON creiamo draft box - lasciamo che il browser gestisca la selezione testo nativa
 		// e intercettiamo solo quando l'utente completa la selezione (onSelChange)
 
-		console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non drag rettangolo)')
+		// console.log('[NATIVE-SEL][DOWN] Permettendo selezione testo nativo (non drag rettangolo)')
 		// ✅ NON bloccare la selezione nativa - lasciamo che il browser la gestisca
 		// ✅ NON creare draft box - quello è gestito da useRectSelection
 		// ✅ NON impostare isSelectingRef - quello è gestito da useRectSelection
@@ -302,9 +302,9 @@ export const useNativeSelection = ({
 		// ❌ CODICE LEGACY RIMOSSO: La logica di drag rettangolo è stata spostata in useRectSelection
 		// Trova la pagina del mouse down
 		let pn = 0
-		console.log('[NATIVE-SEL][DOWN] Finding page number...')
+		// console.log('[NATIVE-SEL][DOWN] Finding page number...')
 		const holders = Array.from((host.querySelectorAll('[data-page-number]') as NodeListOf<HTMLElement>))
-		console.log('[NATIVE-SEL][DOWN] Found holders:', holders.length)
+		// console.log('[NATIVE-SEL][DOWN] Found holders:', holders.length)
 
 		for (const h of holders) {
 			const layer = h.querySelector('.rpv-core__page-layer') as HTMLElement | null
@@ -315,25 +315,25 @@ export const useNativeSelection = ({
 				const parsed = parseInt(h.getAttribute('data-page-number') || '', 10)
 				if (Number.isFinite(parsed) && parsed > 0) {
 					pn = parsed
-					console.log('[NATIVE-SEL][DOWN] Found page from holders:', pn)
+					// console.log('[NATIVE-SEL][DOWN] Found page from holders:', pn)
 					break
 				}
 			}
 		}
 
 		if (!pn) {
-			console.log('[NATIVE-SEL][DOWN] No page from holders, trying fallback...')
+			// console.log('[NATIVE-SEL][DOWN] No page from holders, trying fallback...')
 			// fallback to closest
 			const t = ev.target as HTMLElement
 			const pageLayer = t.closest('.rpv-core__page-layer') as HTMLElement | null
 			if (pageLayer) {
 				pn = elToPageRef.current.get(pageLayer) || 0
-				console.log('[NATIVE-SEL][DOWN] Found page from closest:', pn)
+				// console.log('[NATIVE-SEL][DOWN] Found page from closest:', pn)
 			}
 		}
 
 		if (!pn) {
-			console.log('[NATIVE-SEL][DOWN] No page from fallback, trying document query...')
+			// console.log('[NATIVE-SEL][DOWN] No page from fallback, trying document query...')
 			const holdersDoc = Array.from((document.querySelectorAll('[data-page-number]') as NodeListOf<HTMLElement>))
 			for (const h of holdersDoc) {
 				const layer = h.querySelector('.rpv-core__page-layer') as HTMLElement | null
@@ -344,7 +344,7 @@ export const useNativeSelection = ({
 					const parsed = parseInt(h.getAttribute('data-page-number') || '', 10)
 					if (Number.isFinite(parsed) && parsed > 0) {
 						pn = parsed
-						console.log('[NATIVE-SEL][DOWN] Found page from document query:', pn)
+						// console.log('[NATIVE-SEL][DOWN] Found page from document query:', pn)
 						break
 					}
 				}
@@ -353,7 +353,7 @@ export const useNativeSelection = ({
 
 		if (pn > 0) {
 			mouseDownPageRef.current = pn
-			console.log('[NATIVE-SEL][DOWN] Set mouseDownPageRef to:', pn)
+			// console.log('[NATIVE-SEL][DOWN] Set mouseDownPageRef to:', pn)
 		} else {
 			console.warn('[NATIVE-SEL][DOWN] ⚠️ Could not find page number!')
 		}
@@ -361,7 +361,7 @@ export const useNativeSelection = ({
 		// seed a zero-area draft to keep visual highlight persistent from the first pixel
 		try {
 			const layer = pageElsRef.current.get(mouseDownPageRef.current || 0)
-			console.log('[NATIVE-SEL][DOWN] Getting layer for page:', mouseDownPageRef.current, 'Layer found:', !!layer)
+			// console.log('[NATIVE-SEL][DOWN] Getting layer for page:', mouseDownPageRef.current, 'Layer found:', !!layer)
 			if (layer) {
 				const r = layer.getBoundingClientRect()
 				const ax = (x - r.left) / r.width

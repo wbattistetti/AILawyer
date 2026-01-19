@@ -65,7 +65,7 @@ export function useRectSelection({
   hostRef,
   onSelection,
   onDraftChange,
-  pageElsRef, // ✅ AGGIUNTO
+  pageElsRef, // ✅ Ref alle pagine per calcolare coordinate rispetto alla pagina
   isClickInsideOverlay,
   minSize = 10
 }: UseRectSelectionProps) {
@@ -82,7 +82,7 @@ export function useRectSelection({
     endY: number,
     page: number
   ): DraftBox | null => {
-    // ✅ Se abbiamo pageElsRef, prova a calcolare rispetto alla pagina
+    // ✅ PRIORITÀ: Se abbiamo pageElsRef, calcola coordinate rispetto alla pagina
     if (pageElsRef) {
       let pageEl = pageElsRef.current.get(page)
 
@@ -237,7 +237,10 @@ export function useRectSelection({
   // ✅ Gestisce drag rettangolo usando useIsolatedGlobalListeners
   const handleMouseDown = useCallback((e: MouseEvent) => {
       const host = hostRef.current
-      if (!host) return
+      if (!host) {
+        console.warn('[useRectSelection][handleMouseDown] Host non trovato')
+        return
+      }
 
       if (e.button !== 0) return // Solo click sinistro
 
@@ -288,6 +291,8 @@ export function useRectSelection({
         )
         if (draftBox) {
           onDraftChange(draftBox)
+        } else {
+          console.warn('[useRectSelection][handleMouseDown] Draft box null!')
         }
       }
 
@@ -299,7 +304,9 @@ export function useRectSelection({
   }, [hostRef, isClickInsideOverlay, onDraftChange, calculateDraftBox])
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-      if (!isSelectingRef.current || !startPosRef.current) return
+      if (!isSelectingRef.current || !startPosRef.current) {
+        return
+      }
 
       // ✅ Rimuovi selezione testo durante drag
       const selection = window.getSelection()
@@ -314,7 +321,9 @@ export function useRectSelection({
         }
 
         rafRef.current = requestAnimationFrame(() => {
-          if (!isSelectingRef.current || !startPosRef.current || !currentPageRef.current) return
+          if (!isSelectingRef.current || !startPosRef.current || !currentPageRef.current) {
+            return
+          }
 
           const page = currentPageRef.current
           const draftBox = calculateDraftBox(
@@ -327,7 +336,14 @@ export function useRectSelection({
 
           if (draftBox) {
             onDraftChange(draftBox)
+          } else {
+            console.warn('[useRectSelection][handleMouseMove] Draft box null durante drag!')
           }
+        })
+      } else {
+        console.warn('[useRectSelection][handleMouseMove] Missing onDraftChange or currentPageRef', {
+          hasOnDraftChange: !!onDraftChange,
+          currentPage: currentPageRef.current
         })
       }
   }, [onDraftChange, calculateDraftBox])

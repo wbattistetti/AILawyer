@@ -287,10 +287,10 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
     }
 
     window.addEventListener('drop', handleGlobalDrop, true) // ✅ Usa capture phase per intercettare prima
-    console.log('[ExtractBlock] 🌍 Listener globale drop registrato per blockId:', blockRef.current.id)
+    // console.log('[ExtractBlock] 🌍 Listener globale drop registrato per blockId:', blockRef.current.id)
     return () => {
       window.removeEventListener('drop', handleGlobalDrop, true)
-      console.log('[ExtractBlock] 🌍 Listener globale drop rimosso per blockId:', blockRef.current.id)
+      // console.log('[ExtractBlock] 🌍 Listener globale drop rimosso per blockId:', blockRef.current.id)
     }
   }, []) // ✅ Nessuna dipendenza: il listener usa ref per accedere ai valori correnti
 

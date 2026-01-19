@@ -4,23 +4,67 @@ import { usePreferencesStore, getEffectiveTheme, getFontFamilyCss } from '@/stor
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { theme, fontFamily, fontSize } = usePreferencesStore()
 
-  // ✅ DEBUG: MutationObserver per tracciare modifiche al body (temporaneo per diagnosticare)
+  // ✅ MutationObserver AGGressivo: riapplica i colori quando vengono modificati da estensioni
   useEffect(() => {
+    const effectiveTheme = getEffectiveTheme(theme)
+    const root = document.documentElement
+
+    // ✅ Funzione per riapplicare i colori del tema
+    const reapplyThemeColors = () => {
+      const bgValue = getComputedStyle(root).getPropertyValue('--background')
+      const fgValue = getComputedStyle(root).getPropertyValue('--foreground')
+
+      if (bgValue && fgValue) {
+        // ✅ Forza i colori usando setProperty con !important
+        document.body.style.setProperty('background-color', `hsl(${bgValue})`, 'important')
+        document.body.style.setProperty('color', `hsl(${fgValue})`, 'important')
+
+        const rootEl = document.getElementById('root')
+        if (rootEl) {
+          rootEl.style.setProperty('background-color', `hsl(${bgValue})`, 'important')
+          rootEl.style.setProperty('color', `hsl(${fgValue})`, 'important')
+        }
+      }
+    }
+
     const observer = new MutationObserver((mutations) => {
+      let shouldReapply = false
+
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
           const target = mutation.target as HTMLElement
           if (target === document.body || target.id === 'root') {
-            const stack = new Error().stack
-            console.warn('🚨 [THEME-DEBUG] Body/Root style modified by:', {
-              target: target.tagName,
-              backgroundColor: getComputedStyle(target).backgroundColor,
-              color: getComputedStyle(target).color,
-              stack: stack?.split('\n').slice(2, 6).join('\n') // Mostra solo le prime righe dello stack
-            })
+            // ✅ Verifica se i colori sono stati modificati da un'estensione
+            const computedBg = getComputedStyle(target).backgroundColor
+            const computedColor = getComputedStyle(target).color
+
+            // ✅ Se i colori non corrispondono al tema, riapplica
+            const expectedBg = `hsl(${getComputedStyle(root).getPropertyValue('--background')})`
+            const expectedColor = `hsl(${getComputedStyle(root).getPropertyValue('--foreground')})`
+
+            // ✅ Confronta approssimativo (le estensioni possono modificare i valori)
+            if (computedBg !== expectedBg || computedColor !== expectedColor) {
+              shouldReapply = true
+              console.warn('🚨 [THEME-DEBUG] Colors modified by extension, reapplying...', {
+                target: target.tagName,
+                expectedBg,
+                computedBg,
+                expectedColor,
+                computedColor
+              })
+            }
           }
         }
       })
+
+      if (shouldReapply) {
+        // ✅ Riapplica i colori dopo un breve delay per evitare loop
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            reapplyThemeColors()
+          })
+        }, 50)
+      }
     })
 
     observer.observe(document.body, {
@@ -36,8 +80,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       })
     }
 
-    return () => observer.disconnect()
-  }, [])
+    // ✅ Riapplica periodicamente i colori (ogni 500ms) per forzare il tema
+    const intervalId = setInterval(() => {
+      reapplyThemeColors()
+    }, 500)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(intervalId)
+    }
+  }, [theme])
 
   useEffect(() => {
     console.log('🎨 [THEME-PROVIDER] Applying preferences:', { theme, fontFamily, fontSize })
@@ -62,10 +114,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // ✅ SOLO classe dark - niente inline styles (soluzione architetturale pulita)
     if (effectiveTheme === 'dark') {
       root.classList.add('dark')
+      root.setAttribute('data-theme', 'dark') // ✅ Aggiungi attributo data-theme per identificare il tema
       console.log('🎨 [THEME-PROVIDER] Added dark class to root')
     } else {
       root.classList.remove('dark')
+      root.setAttribute('data-theme', 'light') // ✅ Aggiungi attributo data-theme per identificare il tema
       console.log('🎨 [THEME-PROVIDER] Removed dark class from root')
+    }
+
+    // ✅ Forza i colori immediatamente usando setProperty con !important
+    const bgValue = getComputedStyle(root).getPropertyValue('--background')
+    const fgValue = getComputedStyle(root).getPropertyValue('--foreground')
+
+    if (bgValue && fgValue) {
+      document.body.style.setProperty('background-color', `hsl(${bgValue})`, 'important')
+      document.body.style.setProperty('color', `hsl(${fgValue})`, 'important')
+
+      const rootEl = document.getElementById('root')
+      if (rootEl) {
+        rootEl.style.setProperty('background-color', `hsl(${bgValue})`, 'important')
+        rootEl.style.setProperty('color', `hsl(${fgValue})`, 'important')
+      }
     }
 
     // ✅ DEBUG: Verifica stato DOPO il cambio

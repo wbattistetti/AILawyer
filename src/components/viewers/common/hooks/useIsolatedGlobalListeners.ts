@@ -95,7 +95,24 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
     if (!host || !target) return false
 
     const element = target as HTMLElement
-    return host.contains(element)
+
+    // ✅ Verifica diretta: elemento è dentro host
+    if (host.contains(element)) {
+      return true
+    }
+
+    // ✅ Verifica alternativa: se l'elemento è un canvas/SVG dentro il PDF viewer,
+    // potrebbe essere che l'elemento non sia un discendente diretto ma sia comunque dentro il host
+    // Cerca il parent più vicino che è dentro il host
+    let current: HTMLElement | null = element
+    while (current && current !== host) {
+      if (host.contains(current)) {
+        return true
+      }
+      current = current.parentElement
+    }
+
+    return false
   }, [hostRef])
 
   // ✅ Helper: crea wrapper per listener che verifica sempre host.contains
@@ -106,13 +123,45 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
     if (!originalListener) return undefined
 
     return (e: MouseEvent | KeyboardEvent) => {
-      // ✅ CRITICO: Verifica sempre che l'evento sia dentro il nostro host
-      if (!isEventInHost(e.target)) {
-        // ✅ Se l'evento è fuori dal host, resetta lo stato se necessario
-        if (shouldResetOnExit && onResetState) {
-          onResetState()
+      const isInHost = isEventInHost(e.target)
+
+      // ✅ Per mousemove, verifica le coordinate del mouse invece di solo l'elemento target
+      // (durante il drag, il mouse può muoversi su elementi diversi ma essere ancora sopra il host)
+      if (originalListener === listeners.onMouseMove && e instanceof MouseEvent) {
+        const host = hostRef.current
+        if (host) {
+          const hostRect = host.getBoundingClientRect()
+          const isMouseOverHost = (
+            e.clientX >= hostRect.left &&
+            e.clientX <= hostRect.right &&
+            e.clientY >= hostRect.top &&
+            e.clientY <= hostRect.bottom
+          )
+
+          if (!isMouseOverHost) {
+            // ✅ Mouse fuori dal host, resetta se necessario
+            if (shouldResetOnExit && onResetState) {
+              onResetState()
+            }
+            return
+          }
+          // ✅ Mouse è sopra il host, procedi anche se target non è nel host
+        } else if (!isInHost) {
+          // ✅ Host non trovato e target non è nel host, ignora
+          if (shouldResetOnExit && onResetState) {
+            onResetState()
+          }
+          return
         }
-        return // Ignora eventi fuori dal host
+      } else {
+        // ✅ Per altri eventi (mousedown, mouseup), verifica sempre che l'evento sia dentro il nostro host
+        if (!isInHost) {
+          // ✅ Se l'evento è fuori dal host, resetta lo stato se necessario
+          if (shouldResetOnExit && onResetState) {
+            onResetState()
+          }
+          return // Ignora eventi fuori dal host
+        }
       }
 
       // ✅ Verifica che il viewer sia ancora attivo (doppio controllo)

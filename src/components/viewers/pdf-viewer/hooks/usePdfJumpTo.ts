@@ -6,6 +6,7 @@ export interface UsePdfJumpToProps {
 	hostRef: React.MutableRefObject<HTMLDivElement | null>
 	viewerRef: React.RefObject<any> // PdfViewerHandle
 	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
+	pageElsRef: React.MutableRefObject<Map<number, HTMLElement>> // ✅ Aggiunto per creare overlay root nel posto giusto
 	setSelectedAnnot: (annot: any) => void
 	areas: Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>
 	setAreas: (areas: Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>) => void
@@ -18,6 +19,7 @@ export const usePdfJumpTo = ({
 	hostRef,
 	viewerRef,
 	overlayRootsRef,
+	pageElsRef, // ✅ Aggiunto
 	setSelectedAnnot,
 	areas,
 	setAreas,
@@ -182,6 +184,9 @@ export const usePdfJumpTo = ({
 				// drawOcrRects([{ page: m.page, x0Pct: nx0, y0Pct: ny0, x1Pct: nx1, y1Pct: ny1 }], 'rgba(16,185,129,1)') // Ora gestito dal componente OcrInspector
 			}
 		} catch (e) { console.warn('[GOTO][bbox-refine][err]', e) }
+		// ✅ RIPRISTINATO: Usa textLayer per overlay root (come nella versione funzionante)
+		// textLayer e effectiveTextLayer sono già stati trovati sopra (righe 95-113)
+		// Usa effectiveTextLayer che è già stato calcolato
 		let root = overlayRootsRef.current.get(m.page)
 		if (!root) {
 			root = document.createElement('div')

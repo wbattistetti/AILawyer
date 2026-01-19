@@ -25,7 +25,9 @@ import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
 import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
-import { isWordDocument } from '../viewers/common/utils/viewerUtils'
+import { isWordDocument, isImageDocument, isVideoDocument, isAudioDocument } from '../viewers/common/utils/viewerUtils'
+import { ImageViewer } from '@/features/explorer/components/viewers/ImageViewer'
+import { MediaViewer } from '@/features/explorer/components/viewers/MediaViewer'
 import { WordViewerShell } from '../viewers/word-viewer/WordViewerShell'
 import { useErrorHandling } from './pratica-canvas/hooks/useErrorHandling'
 import { useWorkspaceManager } from './pratica-canvas/hooks/useWorkspaceManager';
@@ -452,6 +454,63 @@ export function PraticaCanvasPage() {
           hasNativeText={true} // Word ha sempre testo nativo
           isActive={isActive} // ✅ Passa isActive per isolamento
         />
+      )
+    }
+
+    // ✅ Usa ImageViewer per immagini
+    if (isImageDocument(doc)) {
+      return (
+        <div className="w-full h-full overflow-auto bg-background">
+          <ImageViewer
+            file={{
+              id: doc.id,
+              path: fileUrl,
+              name: doc.filename,
+              kind: 'image',
+              sizeBytes: (doc as any).sizeBytes,
+              mtime: (doc as any).mtime
+            }}
+            className="w-full h-full"
+          />
+        </div>
+      )
+    }
+
+    // ✅ Usa MediaViewer per video
+    if (isVideoDocument(doc)) {
+      return (
+        <div className="w-full h-full overflow-auto bg-background">
+          <MediaViewer
+            file={{
+              id: doc.id,
+              path: fileUrl,
+              name: doc.filename,
+              kind: 'video',
+              sizeBytes: (doc as any).sizeBytes,
+              mtime: (doc as any).mtime
+            }}
+            className="w-full h-full"
+          />
+        </div>
+      )
+    }
+
+    // ✅ Usa MediaViewer per audio
+    if (isAudioDocument(doc)) {
+      return (
+        <div className="w-full h-full overflow-auto bg-background">
+          <MediaViewer
+            file={{
+              id: doc.id,
+              path: fileUrl,
+              name: doc.filename,
+              kind: 'audio',
+              sizeBytes: (doc as any).sizeBytes,
+              mtime: (doc as any).mtime
+            }}
+            className="w-full h-full"
+          />
+        </div>
       )
     }
 

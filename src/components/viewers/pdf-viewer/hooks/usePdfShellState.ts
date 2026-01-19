@@ -45,7 +45,11 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
   // Utility hooks
   const { pdfDocRef } = usePdfDocument({ fileUrl })
-  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef } = usePdfOverlays({ hostRef })
+  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef } = usePdfOverlays({
+    hostRef,
+    selectMode: viewerState.selectMode,
+    selectKind: 'NATIVE'
+  })
 
   // Zoom functionality
   const scaleRef = useRef<number>(1)
@@ -81,6 +85,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     hostRef,
     viewerRef,
     overlayRootsRef,
+    pageElsRef, // ✅ Aggiunto per creare overlay root nel posto giusto
     setSelectedAnnot: viewerState.setSelectedAnnot,
     areas,
     setAreas,
@@ -97,7 +102,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     enabled: viewerState.selectMode, // ✅ Sempre attiva quando selectMode=true
     isActive,
     hostRef: hostRef as React.RefObject<HTMLElement>,
-    pageElsRef,
+    pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
     onDraftChange: useCallback((draftBox: DraftBox | null) => {
       // ✅ Converti DraftBox in Annotation per AnnotationOverlays
       if (draftBox) {
