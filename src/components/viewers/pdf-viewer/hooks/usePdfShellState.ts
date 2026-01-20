@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react'
+import type { ExtractCard } from '../../common/types/viewer.types'
 import { usePdfViewerState } from './usePdfViewerState'
 import { usePdfSearch } from './usePdfSearch'
 import { useNativeSelection } from './useNativeSelection'
@@ -15,6 +16,8 @@ import { usePdfExtract } from './usePdfExtract'
 import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
 import { captureSelectionScreenshotWithFallback } from '../../common/utils/screenshot'
 import type { PersistentSelection } from '../types'
+import type { RectSelection, ExtractedContent, ExtractCard } from '../../common/types/viewer.types'
+import { extractContentFromRect } from '../utils/extractContentFromRect'
 
 interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
@@ -50,6 +53,16 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     selectMode: viewerState.selectMode,
     selectKind: 'NATIVE'
   })
+
+  // ✅ Funzione per estrarre contenuto da rettangolo (specifica del viewer)
+  const extractContentFromRectImpl = useCallback(async (rect: RectSelection): Promise<ExtractedContent> => {
+    return extractContentFromRect(rect, {
+      hostRef,
+      pageElsRef,
+      hasNativeText: viewerState.hasNativeText ?? false,
+      pdfDocRef
+    })
+  }, [hostRef, pageElsRef, viewerState.hasNativeText, pdfDocRef])
 
   // Zoom functionality
   const scaleRef = useRef<number>(1)
@@ -99,7 +112,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   // Funziona per PDF, Word, immagini - sempre screenshot, testo opzionale
   const rectSelection = useRectSelection({
     viewerId: docId || 'pdf-viewer',
-    enabled: viewerState.selectMode, // ✅ Sempre attiva quando selectMode=true
+    enabled: true, // ✅ Sempre abilitato (come Word) - elimina dipendenza da selectMode
     isActive,
     hostRef: hostRef as React.RefObject<HTMLElement>,
     pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
@@ -121,96 +134,82 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
         setDraft(null)
       }
     }, [setDraft]),
-    onSelection: useCallback(async (selection) => {
-      // ✅ Calcola coordinate percentuali rispetto alla pagina
-      const pageEl = pageElsRef.current.get(selection.pageNumber)
-      if (!pageEl) return
+    onSelection: useCallback(async (rect: RectSelection) => {
+      try {
+        // ✅ 1. Estrai contenuto usando extractContentFromRect (specifica del viewer)
+        const content = await extractContentFromRectImpl(rect)
 
-      const pageRect = pageEl.getBoundingClientRect()
-      const percentCoords = {
-        x0Pct: selection.viewportBox.x / pageRect.width,
-        y0Pct: selection.viewportBox.y / pageRect.height,
-        x1Pct: (selection.viewportBox.x + selection.viewportBox.w) / pageRect.width,
-        y1Pct: (selection.viewportBox.y + selection.viewportBox.h) / pageRect.height
+        // ✅ 2. Crea ExtractCard viewer-agnostica
+        const card: ExtractCard = {
+          id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          rect: rect.rect,
+          pageIndex: rect.pageIndex,
+          viewerId: rect.viewerId,
+          viewerType: 'pdf',
+          content,
+          createdAt: new Date()
+        }
+
+        // ✅ 3. Converti ExtractCard in PersistentSelection (per retrocompatibilità con UI esistente)
+        const pageNumber = rect.pageIndex + 1 // ✅ Converti a 1-based
+        const percentCoords = rect.bbox || {
+          x0Pct: 0,
+          y0Pct: 0,
+          x1Pct: 1,
+          y1Pct: 1
+        }
+
+        // ✅ Converti imageSnippet (Blob) in imageDataUrl (string) per PersistentSelection
+        let imageDataUrl: string | undefined
+        if (content.imageSnippet) {
+          try {
+            imageDataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onloadend = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(content.imageSnippet!)
+            })
+          } catch (error) {
+            console.warn('[PdfShellState] Errore conversione Blob in data URL:', error)
+          }
+        }
+
+        const persistentSelection: PersistentSelection = {
+          id: card.id,
+          page: pageNumber,
+          x0Pct: percentCoords.x0Pct,
+          y0Pct: percentCoords.y0Pct,
+          x1Pct: percentCoords.x1Pct,
+          y1Pct: percentCoords.y1Pct,
+          text: content.text || '',
+          viewportBox: {
+            x: rect.rect.x,
+            y: rect.rect.y,
+            w: rect.rect.width,
+            h: rect.rect.height
+          },
+          source: docId || 'Documento',
+          imageDataUrl
+        }
+
+        // ✅ 4. Salva lastSelection per ExtractBlockOverlay
+        viewerState.setLastSelection({
+          pdfPageNumber: pageNumber,
+          viewportBox: persistentSelection.viewportBox,
+          text: content.text || '',
+          imageDataUrl
+        })
+
+        // ✅ 5. Aggiungi alla lista di persistent selections
+        viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
+
+        // ✅ 6. Dispatch evento per ExtractCard (opzionale, per integrazione futura)
+        // window.dispatchEvent(new CustomEvent('app:extract-card-created', { detail: { card } }))
+
+      } catch (error) {
+        console.error('[PdfShellState] Errore in onSelection:', error)
       }
-
-      // ✅ Crea PersistentSelection IMMEDIATAMENTE (senza screenshot)
-      const selectionId = `pdf-persist-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const persistentSelection: PersistentSelection = {
-        id: selectionId,
-        page: selection.pageNumber,
-        x0Pct: percentCoords.x0Pct,
-        y0Pct: percentCoords.y0Pct,
-        x1Pct: percentCoords.x1Pct,
-        y1Pct: percentCoords.y1Pct,
-        text: '', // ✅ Sempre vuoto inizialmente - testo estratto opzionale a posteriori
-        viewportBox: selection.viewportBox,
-        source: docId || 'Documento',
-        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
-      }
-
-      // ✅ Salva lastSelection per ExtractBlockOverlay (IMMEDIATAMENTE)
-      viewerState.setLastSelection({
-        pdfPageNumber: selection.pageNumber,
-        viewportBox: selection.viewportBox,
-        text: '',
-        imageDataUrl: undefined // ✅ Sarà aggiornato quando lo screenshot è pronto
-      })
-
-      // ✅ Aggiungi alla lista di persistent selections (IMMEDIATAMENTE)
-      viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
-
-      // ✅ Cattura screenshot VELOCE immediato + ad alta risoluzione in background
-      // Nota: Per PDF nativi, ExtractBlockOverlay usa già cropCanvasFromViewportBox (veloce)
-      // Questa chiamata è utile per documenti OCR o casi edge
-      if (hostRef.current) {
-        captureSelectionScreenshotWithFallback(hostRef.current, selection.viewportBox)
-          .then(({ fast, highQuality }) => {
-            // ✅ Mostra subito screenshot veloce (scale: 1) - ~0.5-1 sec invece di ~2 sec
-            viewerState.setPersistentSelections(prev =>
-              prev.map(ps =>
-                ps.id === selectionId
-                  ? { ...ps, imageDataUrl: fast }
-                  : ps
-              )
-            )
-
-            viewerState.setLastSelection(prev =>
-              prev ? { ...prev, imageDataUrl: fast } : prev
-            )
-
-            // ✅ Sostituisci con screenshot ad alta risoluzione quando pronto (scale: 2)
-            // Non blocca l'UI - l'utente vede già qualcosa
-            highQuality
-              .then((highResImage) => {
-                // ✅ Verifica che la selezione esista ancora (evita race conditions)
-                viewerState.setPersistentSelections(prev => {
-                  const exists = prev.some(ps => ps.id === selectionId)
-                  if (!exists) return prev
-
-                  return prev.map(ps =>
-                    ps.id === selectionId
-                      ? { ...ps, imageDataUrl: highResImage }
-                      : ps
-                  )
-                })
-
-                viewerState.setLastSelection(prev => {
-                  if (!prev) return prev
-                  // ✅ Verifica che sia ancora la stessa selezione
-                  return { ...prev, imageDataUrl: highResImage }
-                })
-              })
-              .catch((error) => {
-                console.warn('[PdfShellState] Errore durante cattura screenshot ad alta risoluzione:', error)
-                // ✅ Non è critico - l'utente ha già lo screenshot veloce
-              })
-          })
-          .catch((error) => {
-            console.warn('[PdfShellState] Errore durante cattura screenshot:', error)
-          })
-      }
-    }, [pageElsRef, hostRef, docId, viewerState]),
+    }, [extractContentFromRectImpl, docId, viewerState]),
     isClickInsideOverlay: useCallback((target: HTMLElement) => {
       // ✅ Verifica se click è dentro overlay ExtractBlock
       return !!(

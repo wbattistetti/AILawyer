@@ -25,10 +25,21 @@ export interface PdfBbox {
 }
 
 export interface ViewerSelection {
+  type?: 'rectangle' | 'text' // ✅ Tipo di selezione
   pageNumber: number
   viewportBox: ViewportBox
   text?: string
   bboxPdf?: PdfBbox
+  /**
+   * ✅ Coordinate percentuali rispetto alla pagina (x0Pct, y0Pct, x1Pct, y1Pct)
+   * Calcolate automaticamente da useRectSelection
+   */
+  bbox?: {
+    x0Pct: number
+    y0Pct: number
+    x1Pct: number
+    y1Pct: number
+  }
 }
 
 export interface ViewerExtract {
@@ -40,7 +51,100 @@ export interface ViewerExtract {
   source?: string
 }
 
-export type ViewerType = 'pdf' | 'word'
+export type ViewerType = 'pdf' | 'word' | 'image'
+
+/**
+ * ✅ Selezione rettangolo standardizzata (identica per tutti i viewer)
+ * Emessa da useRectSelection - formato unificato
+ */
+export interface RectSelection {
+  /**
+   * ✅ Rettangolo in pixel (coordinate assolute viewport)
+   */
+  rect: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+  /**
+   * ✅ Indice pagina (0-based)
+   */
+  pageIndex: number
+  /**
+   * ✅ ID univoco del viewer (es. docId)
+   */
+  viewerId: string
+  /**
+   * ✅ Coordinate percentuali (opzionale, per retrocompatibilità)
+   */
+  bbox?: {
+    x0Pct: number
+    y0Pct: number
+    x1Pct: number
+    y1Pct: number
+  }
+}
+
+/**
+ * ✅ Contenuto estratto da un rettangolo
+ * Restituito da extractContentFromRect() - specifico del viewer
+ */
+export interface ExtractedContent {
+  /**
+   * ✅ Testo nativo (se disponibile)
+   */
+  text?: string
+  /**
+   * ✅ Testo OCR (se disponibile)
+   */
+  ocrText?: string
+  /**
+   * ✅ Immagine ritagliata (opzionale)
+   */
+  imageSnippet?: Blob
+  /**
+   * ✅ Metadati aggiuntivi (viewer-specific)
+   */
+  metadata?: Record<string, any>
+}
+
+/**
+ * ✅ Card di estratto viewer-agnostica
+ * Formato universale per tutti i viewer
+ */
+export interface ExtractCard {
+  id: string
+  /**
+   * ✅ Rettangolo selezionato (pixel)
+   */
+  rect: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+  /**
+   * ✅ Indice pagina (0-based)
+   */
+  pageIndex: number
+  /**
+   * ✅ ID univoco del viewer
+   */
+  viewerId: string
+  /**
+   * ✅ Tipo di viewer
+   */
+  viewerType: ViewerType
+  /**
+   * ✅ Contenuto estratto
+   */
+  content: ExtractedContent
+  /**
+   * ✅ Data creazione
+   */
+  createdAt: Date
+}
 
 export interface ViewerShellProps {
   fileUrl: string
@@ -52,8 +156,12 @@ export interface ViewerShellProps {
   docName?: string
   hasNativeText?: boolean
   /**
-   * ✅ Se il viewer è attualmente attivo (visibile/focus)
-   * Deve essere passato dal componente padre (es. da DockWorkspace)
+   * ✅ API del pannello Dockview - usata per gestire l'attivazione via onDidActiveChange
+   * Se non fornita, il viewer non gestisce l'attivazione automaticamente
+   */
+  panelApi?: any
+  /**
+   * @deprecated Usa panelApi invece. Mantenuto per retrocompatibilità.
    */
   isActive?: boolean
 }

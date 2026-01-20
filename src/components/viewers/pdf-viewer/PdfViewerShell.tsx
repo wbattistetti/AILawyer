@@ -23,8 +23,12 @@ interface PdfViewerShellProps {
   docName?: string
   hasNativeText?: boolean
   /**
-   * ✅ Se il viewer è attualmente attivo (visibile/focus)
-   * Deve essere passato dal componente padre (es. da DockWorkspace)
+   * ✅ API del pannello Dockview - usata per gestire l'attivazione via onDidActiveChange
+   * Se non fornita, il viewer non gestisce l'attivazione automaticamente
+   */
+  panelApi?: any
+  /**
+   * @deprecated Usa panelApi invece. Mantenuto per retrocompatibilità.
    */
   isActive?: boolean
 }
@@ -39,10 +43,57 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   praticaId,
   docName,
   hasNativeText,
-  isActive = false // ✅ Default false per sicurezza
+  panelApi,
+  isActive: isActiveProp // ✅ Mantenuto per retrocompatibilità
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
+
+  // ✅ State interno per gestire l'attivazione via panelApi.onDidActiveChange
+  const [isActive, setIsActive] = React.useState<boolean>(() => {
+    // ✅ Inizializza con panelApi.isActive se disponibile, altrimenti usa prop legacy
+    if (panelApi && typeof panelApi.isActive === 'boolean') {
+      return panelApi.isActive
+    }
+    return isActiveProp ?? false
+  })
+
+  // ✅ Registra listener per onDidActiveChange se panelApi è disponibile
+  React.useEffect(() => {
+    if (!panelApi) {
+      // ✅ Se non c'è panelApi, usa prop legacy
+      console.log('[PDF-VIEWER] panelApi non disponibile, uso prop legacy:', { docId, isActiveProp })
+      setIsActive(isActiveProp ?? false)
+      return
+    }
+
+    console.log('[PDF-VIEWER] panelApi disponibile:', { docId, hasOnDidActiveChange: typeof panelApi.onDidActiveChange === 'function', isActive: panelApi.isActive })
+
+    // ✅ Verifica se onDidActiveChange esiste
+    if (typeof panelApi.onDidActiveChange === 'function') {
+      const disposable = panelApi.onDidActiveChange((event: any) => {
+        // ✅ event.isActive è boolean che indica se il pannello è attivo
+        console.log('[PDF-VIEWER] onDidActiveChange chiamato:', { docId, isActive: event.isActive, event })
+        setIsActive(event.isActive ?? false)
+      })
+
+      // ✅ Controlla anche lo stato iniziale
+      if (typeof panelApi.isActive === 'boolean') {
+        console.log('[PDF-VIEWER] Stato iniziale da panelApi.isActive:', { docId, isActive: panelApi.isActive })
+        setIsActive(panelApi.isActive)
+      }
+
+      return () => {
+        disposable.dispose()
+      }
+    } else {
+      // ✅ Fallback: usa proprietà diretta se disponibile
+      console.warn('[PDF-VIEWER] onDidActiveChange non disponibile, uso fallback:', { docId, isActive: panelApi.isActive })
+      if (typeof panelApi.isActive === 'boolean') {
+        setIsActive(panelApi.isActive)
+      }
+    }
+  }, [panelApi, isActiveProp, docId])
 
   // Plugin management
   const plugins = usePdfPlugins()
@@ -54,13 +105,13 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     docId,
     onPageChange,
     viewerRef,
-    isActive // ✅ Passa isActive per isolamento
+    isActive // ✅ Passa isActive (ora gestito internamente)
   })
 
   // Zoom hook integration
   const { containerRef: zoomContainerRef } = useCleanPdfZoom({
     zoomToPlugin: (scale: number) => {
-      console.log('[ZOOM] Calling plugin with scale', scale.toFixed(3))
+      // ✅ Log rimosso per ridurre spam
       if (typeof shell?.zoomTo === 'function') {
         shell.zoomTo(scale)
       }

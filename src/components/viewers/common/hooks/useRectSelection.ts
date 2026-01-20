@@ -1,11 +1,18 @@
 /**
  * ✅ Hook comune per drag rettangolo (OCR-style)
- * Usato da PDF viewer (selectKind='OCR') e Word viewer
+ * Usato da PDF viewer e Word viewer
  * Enterprise-ready: usa useIsolatedGlobalListeners per isolamento completo
+ *
+ * MODELLO SEMPLIFICATO:
+ * 1. Rettangolo → coordinate schermo (sempre)
+ * 2. Coordinate schermo → pagina sotto cursore (sempre via elementFromPoint)
+ * 3. Pagina → bounding rect (sempre via getBoundingClientRect)
+ * 4. Coordinate schermo → coordinate pagina (sempre via sottrazione + normalizzazione)
+ * 5. Nessun altro layer di logica
  */
 
 import { useEffect, useRef, useCallback } from 'react'
-import { ViewerSelection, ViewportBox } from '../types/viewer.types'
+import { ViewerSelection, ViewportBox, RectSelection } from '../types/viewer.types'
 import { calculateViewportBox, getPageNumberFromElement } from '../utils/coordinateUtils'
 import { useIsolatedGlobalListeners } from './useIsolatedGlobalListeners'
 
@@ -37,14 +44,17 @@ export interface UseRectSelectionProps {
    */
   isActive: boolean
   hostRef: React.RefObject<HTMLElement>
-  onSelection: (selection: ViewerSelection) => void
+  /**
+   * ✅ Callback chiamato quando la selezione è completata
+   * Riceve RectSelection standardizzata (formato unificato per tutti i viewer)
+   */
+  onSelection: (selection: RectSelection) => void
   /**
    * Callback opzionale per aggiornare il rettangolo draft durante il drag
    */
   onDraftChange?: (draft: DraftBox | null) => void
   /**
-   * ✅ Ref alle pagine per calcolare coordinate rispetto alla pagina (come PDF viewer)
-   * Se fornito, calcola coordinate rispetto alla pagina; altrimenti usa host come fallback
+   * ✅ Ref alle pagine (opzionale, usato solo per debug/log, NON come fallback)
    */
   pageElsRef?: React.MutableRefObject<Map<number, HTMLElement>>
   /**
@@ -65,118 +75,133 @@ export function useRectSelection({
   hostRef,
   onSelection,
   onDraftChange,
-  pageElsRef, // ✅ Ref alle pagine per calcolare coordinate rispetto alla pagina
+  pageElsRef, // ✅ Opzionale, solo per debug
   isClickInsideOverlay,
   minSize = 10
 }: UseRectSelectionProps) {
   const isSelectingRef = useRef(false)
   const startPosRef = useRef<{ x: number; y: number } | null>(null)
-  const currentPageRef = useRef<number | null>(null)
   const rafRef = useRef<number | null>(null)
 
-  // ✅ Helper: calcola coordinate rispetto alla pagina o host
-  const calculateDraftBox = useCallback((
+  // ✅ Helper: trova pagina sotto coordinate schermo (sempre via elementFromPoint)
+  const findPageAtPoint = useCallback((clientX: number, clientY: number): {
+    pageEl: HTMLElement | null
+    pageNumber: number | null
+  } => {
+    const host = hostRef.current
+    if (!host) {
+      return { pageEl: null, pageNumber: null }
+    }
+
+    // ✅ SEMPRE usa elementFromPoint (non cache)
+    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement
+    if (!elementAtPoint) {
+      return { pageEl: null, pageNumber: null }
+    }
+
+    // ✅ Risali fino a trovare la pagina (PDF o Word)
+    let current: HTMLElement | null = elementAtPoint
+    let depth = 0
+    while (current && current !== host && depth < 20) {
+      // ✅ PDF: .rpv-core__page-layer
+      if (current.classList.contains('rpv-core__page-layer')) {
+        const pageNumber = getPageNumberFromElement(current, host)
+        return { pageEl: current, pageNumber }
+      }
+
+      // ✅ Word: [data-page]
+      if (current.hasAttribute('data-page')) {
+        const pageNumber = getPageNumberFromElement(current, host)
+        return { pageEl: current, pageNumber }
+      }
+
+      // ✅ PDF: [data-page-number] → cerca .rpv-core__page-layer dentro
+      if (current.hasAttribute('data-page-number')) {
+        const pageLayer = current.querySelector('.rpv-core__page-layer') as HTMLElement
+        if (pageLayer) {
+          const pageNumber = getPageNumberFromElement(pageLayer, host)
+          return { pageEl: pageLayer, pageNumber }
+        }
+      }
+
+      current = current.parentElement
+      depth++
+    }
+
+    return { pageEl: null, pageNumber: null }
+  }, [hostRef])
+
+  // ✅ Helper: calcola draft box da pagina trovata
+  const calculateDraftBoxFromPage = useCallback((
+    pageEl: HTMLElement,
+    pageNumber: number,
     startX: number,
     startY: number,
     endX: number,
-    endY: number,
-    page: number
+    endY: number
   ): DraftBox | null => {
-    // ✅ PRIORITÀ: Se abbiamo pageElsRef, calcola coordinate rispetto alla pagina
-    if (pageElsRef) {
-      let pageEl = pageElsRef.current.get(page)
+    // ✅ 2. Ottieni bounding rect (sempre aggiornato)
+    const pageRect = pageEl.getBoundingClientRect()
 
-      // ✅ Se pagina non trovata in pageElsRef, prova a cercarla direttamente nel DOM
-      // (può succedere se useViewerOverlays non ha ancora trovato la pagina)
-      if (!pageEl && hostRef.current) {
-        const host = hostRef.current
-        const found = host.querySelector(`[data-page="${page}"]`) as HTMLElement
-        if (found) {
-          pageEl = found
-          // ✅ Aggiorna pageElsRef per prossime volte
-          pageElsRef.current.set(page, found)
-        }
-      }
+    // ✅ 3. Converti coordinate schermo → coordinate pagina
+    const startXPage = startX - pageRect.left
+    const startYPage = startY - pageRect.top
+    const endXPage = endX - pageRect.left
+    const endYPage = endY - pageRect.top
 
-      if (pageEl) {
-        const pageRect = pageEl.getBoundingClientRect()
+    // ✅ 4. Calcola min/max per rettangolo
+    const x0 = Math.min(startXPage, endXPage)
+    const y0 = Math.min(startYPage, endYPage)
+    const x1 = Math.max(startXPage, endXPage)
+    const y1 = Math.max(startYPage, endYPage)
 
-        // ✅ IMPORTANTE: clientX/clientY sono coordinate assolute rispetto al viewport
-        // Converti in coordinate relative alla pagina
-        const startXPage = startX - pageRect.left
-        const startYPage = startY - pageRect.top
-        const endXPage = endX - pageRect.left
-        const endYPage = endY - pageRect.top
-
-        // ✅ Calcola min/max per ottenere angolo in alto-sx e basso-dx
-        const x0 = Math.min(startXPage, endXPage)
-        const y0 = Math.min(startYPage, endYPage)
-        const x1 = Math.max(startXPage, endXPage)
-        const y1 = Math.max(startYPage, endYPage)
-
-        // ✅ Converti in percentuali (clamp tra 0 e 1)
-        const x0Pct = Math.max(0, Math.min(1, x0 / pageRect.width))
-        const y0Pct = Math.max(0, Math.min(1, y0 / pageRect.height))
-        const x1Pct = Math.max(0, Math.min(1, x1 / pageRect.width))
-        const y1Pct = Math.max(0, Math.min(1, y1 / pageRect.height))
-
-        // ✅ Debug log (solo se necessario)
-        // console.log('[useRectSelection][calculateDraftBox] Coordinate pagina:', {
-        //   page,
-        //   startX, startY, endX, endY,
-        //   pageRect: { left: pageRect.left, top: pageRect.top, width: pageRect.width, height: pageRect.height },
-        //   startXPage, startYPage, endXPage, endYPage,
-        //   x0, y0, x1, y1,
-        //   x0Pct, y0Pct, x1Pct, y1Pct
-        // })
-
-        return {
-          page,
-          x0Pct,
-          y0Pct,
-          x1Pct,
-          y1Pct,
-          coordSpace: 'page' // ✅ Marca come coordinate pagina
-        }
-      } else {
-        // ✅ Debug: pagina non trovata
-        console.warn('[useRectSelection][calculateDraftBox] Pagina non trovata in pageElsRef:', {
-          page,
-          availablePages: Array.from(pageElsRef.current.keys())
-        })
-      }
-    }
-
-    // ✅ Fallback: calcola rispetto al host
-    const host = hostRef.current
-    if (!host) return null
-
-    const hostRect = host.getBoundingClientRect()
-    const startXHost = startX - hostRect.left
-    const startYHost = startY - hostRect.top
-    const endXHost = endX - hostRect.left
-    const endYHost = endY - hostRect.top
-
-    // ✅ Calcola min/max per ottenere angolo in alto-sx e basso-dx
-    const x0 = Math.min(startXHost, endXHost)
-    const y0 = Math.min(startYHost, endYHost)
-    const x1 = Math.max(startXHost, endXHost)
-    const y1 = Math.max(startYHost, endYHost)
-
-    const x0Pct = Math.max(0, Math.min(1, x0 / hostRect.width))
-    const y0Pct = Math.max(0, Math.min(1, y0 / hostRect.height))
-    const x1Pct = Math.max(0, Math.min(1, x1 / hostRect.width))
-    const y1Pct = Math.max(0, Math.min(1, y1 / hostRect.height))
+    // ✅ 5. Normalizza in percentuale
+    const x0Pct = Math.max(0, Math.min(1, x0 / pageRect.width))
+    const y0Pct = Math.max(0, Math.min(1, y0 / pageRect.height))
+    const x1Pct = Math.max(0, Math.min(1, x1 / pageRect.width))
+    const y1Pct = Math.max(0, Math.min(1, y1 / pageRect.height))
 
     return {
-      page,
+      page: pageNumber,
       x0Pct,
       y0Pct,
       x1Pct,
       y1Pct,
-      coordSpace: 'host' // ✅ Marca come coordinate host
+      coordSpace: 'page'
     }
-  }, [hostRef, pageElsRef])
+  }, [])
+
+  // ✅ Helper: calcola draft box (sempre da coordinate schermo)
+  const calculateDraftBox = useCallback((
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+  ): DraftBox | null => {
+    const host = hostRef.current
+    if (!host) return null
+
+    // ✅ 1. Trova pagina sotto punto iniziale (sempre via elementFromPoint)
+    const { pageEl, pageNumber } = findPageAtPoint(startX, startY)
+
+    if (!pageEl || !pageNumber) {
+      // ✅ Se non trovato, prova punto finale
+      const endResult = findPageAtPoint(endX, endY)
+      if (endResult.pageEl && endResult.pageNumber) {
+        return calculateDraftBoxFromPage(
+          endResult.pageEl,
+          endResult.pageNumber,
+          startX,
+          startY,
+          endX,
+          endY
+        )
+      }
+      return null
+    }
+
+    return calculateDraftBoxFromPage(pageEl, pageNumber, startX, startY, endX, endY)
+  }, [hostRef, findPageAtPoint, calculateDraftBoxFromPage])
 
   // ✅ Disabilita selezione testo nativa
   useEffect(() => {
@@ -204,16 +229,12 @@ export function useRectSelection({
   // ✅ Reset completo quando enabled è false o isActive è false
   useEffect(() => {
     if (!enabled || !isActive) {
-      // ✅ Reset stato
       isSelectingRef.current = false
       startPosRef.current = null
-      currentPageRef.current = null
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
-
-      // ✅ Pulisci draft
       if (onDraftChange) {
         onDraftChange(null)
       }
@@ -224,7 +245,6 @@ export function useRectSelection({
   const resetState = useCallback(() => {
     isSelectingRef.current = false
     startPosRef.current = null
-    currentPageRef.current = null
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
@@ -234,208 +254,147 @@ export function useRectSelection({
     }
   }, [onDraftChange])
 
-  // ✅ Gestisce drag rettangolo usando useIsolatedGlobalListeners
-  const handleMouseDown = useCallback((e: MouseEvent) => {
-      const host = hostRef.current
-      if (!host) {
-        console.warn('[useRectSelection][handleMouseDown] Host non trovato')
-        return
-      }
-
-      if (e.button !== 0) return // Solo click sinistro
-
-      const target = e.target as HTMLElement
-
-      // ✅ Verifica se click è dentro overlay (se funzione fornita)
-      if (isClickInsideOverlay && isClickInsideOverlay(target)) {
-        return
-      }
-
-      // ✅ Verifica default: overlay ExtractBlock
-      const isInsideOverlay = target && (
-        target.closest('[data-extract-overlay="true"]') ||
-        target.closest('.extract-block-overlay')
-      )
-
-      if (isInsideOverlay) {
-        return
-      }
-
-      isSelectingRef.current = true
-
-      // ✅ Salva coordinate assolute (clientX/clientY) invece di relative
-      // Questo permette di ricalcolare correttamente durante mousemove anche con scroll/resize
-      startPosRef.current = {
-        x: e.clientX,  // ✅ Coordinate assolute
-        y: e.clientY   // ✅ Coordinate assolute
-      }
-
-      // ✅ Trova pagina iniziale
-      const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement
-      if (elementAtPoint) {
-        currentPageRef.current = getPageNumberFromElement(elementAtPoint, host)
-      } else {
-        // ✅ Fallback: usa pagina 1 se non trovata
-        currentPageRef.current = 1
-      }
-
-      // ✅ Crea draft iniziale zero-area IMMEDIATAMENTE
-      if (onDraftChange) {
-        const page = currentPageRef.current || 1
-        const draftBox = calculateDraftBox(
-          e.clientX,
-          e.clientY,
-          e.clientX,
-          e.clientY,
-          page
-        )
-        if (draftBox) {
-          onDraftChange(draftBox)
-        } else {
-          console.warn('[useRectSelection][handleMouseDown] Draft box null!')
+      // ✅ Handler mouse down
+      const handleMouseDown = useCallback((e: MouseEvent) => {
+        if (!enabled || !isActive) {
+          console.warn('[RECT-SEL] ⚠️ MOUSE-DOWN bloccato:', { viewerId, enabled, isActive })
+          return
         }
-      }
+    if (e.button !== 0) return // Solo click sinistro
 
-      // ✅ Rimuovi selezione testo se presente
-      const selection = window.getSelection()
-      if (selection) {
-        selection.removeAllRanges()
-      }
-  }, [hostRef, isClickInsideOverlay, onDraftChange, calculateDraftBox])
+    const host = hostRef.current
+    if (!host) {
+      return
+    }
 
+    const target = e.target as HTMLElement
+    if (isClickInsideOverlay && isClickInsideOverlay(target)) return
+    if (target.closest('[data-extract-overlay="true"]') || target.closest('.extract-block-overlay')) return
+
+    isSelectingRef.current = true
+
+    // ✅ Salva coordinate schermo (sempre assolute)
+    startPosRef.current = {
+      x: e.clientX,
+      y: e.clientY
+    }
+
+    // ✅ Crea draft iniziale zero-area
+    if (onDraftChange) {
+      const { pageEl, pageNumber } = findPageAtPoint(e.clientX, e.clientY)
+
+      if (pageNumber) {
+        onDraftChange({
+          page: pageNumber,
+          x0Pct: 0,
+          y0Pct: 0,
+          x1Pct: 0,
+          y1Pct: 0,
+          coordSpace: 'page'
+        })
+      }
+    }
+
+    // ✅ Rimuovi selezione testo se presente
+    const selection = window.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+    }
+  }, [enabled, isActive, hostRef, isClickInsideOverlay, onDraftChange, findPageAtPoint, viewerId])
+
+  // ✅ Handler mouse move
   const handleMouseMove = useCallback((e: MouseEvent) => {
-      if (!isSelectingRef.current || !startPosRef.current) {
-        return
+    if (!isSelectingRef.current || !startPosRef.current) return
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+    }
+
+    rafRef.current = requestAnimationFrame(() => {
+      if (!isSelectingRef.current || !startPosRef.current) return
+
+      const draftBox = calculateDraftBox(
+        startPosRef.current.x,
+        startPosRef.current.y,
+        e.clientX,
+        e.clientY
+      )
+
+      if (draftBox && onDraftChange) {
+        onDraftChange(draftBox)
       }
+    })
+  }, [calculateDraftBox, onDraftChange])
 
-      // ✅ Rimuovi selezione testo durante drag
-      const selection = window.getSelection()
-      if (selection) {
-        selection.removeAllRanges()
-      }
-
-      // ✅ Aggiorna draft box (con throttling via requestAnimationFrame)
-      if (onDraftChange && currentPageRef.current) {
-        if (rafRef.current) {
-          cancelAnimationFrame(rafRef.current)
-        }
-
-        rafRef.current = requestAnimationFrame(() => {
-          if (!isSelectingRef.current || !startPosRef.current || !currentPageRef.current) {
-            return
-          }
-
-          const page = currentPageRef.current
-          const draftBox = calculateDraftBox(
-            startPosRef.current.x,
-            startPosRef.current.y,
-            e.clientX,
-            e.clientY,
-            page
-          )
-
-          if (draftBox) {
-            onDraftChange(draftBox)
-          } else {
-            console.warn('[useRectSelection][handleMouseMove] Draft box null durante drag!')
-          }
-        })
-      } else {
-        console.warn('[useRectSelection][handleMouseMove] Missing onDraftChange or currentPageRef', {
-          hasOnDraftChange: !!onDraftChange,
-          currentPage: currentPageRef.current
-        })
-      }
-  }, [onDraftChange, calculateDraftBox])
-
+  // ✅ Handler mouse up
   const handleMouseUp = useCallback((e: MouseEvent) => {
-      const host = hostRef.current
-      if (!host) {
-        resetState()
-        return
+    if (!isSelectingRef.current || !startPosRef.current) return
+
+    const host = hostRef.current
+    if (!host) {
+      resetState()
+      return
+    }
+
+    isSelectingRef.current = false
+
+    // ✅ Calcola draft box finale
+    const draftBox = calculateDraftBox(
+      startPosRef.current.x,
+      startPosRef.current.y,
+      e.clientX,
+      e.clientY
+    )
+
+    if (!draftBox) {
+      resetState()
+      return
+    }
+
+    // ✅ Calcola viewport box per screenshot
+    const viewportBox = calculateViewportBox(
+      startPosRef.current.x,
+      startPosRef.current.y,
+      e.clientX,
+      e.clientY,
+      host
+    )
+
+    if (viewportBox.w < minSize || viewportBox.h < minSize) {
+      resetState()
+      return
+    }
+
+    // ✅ Crea selezione standardizzata (formato unificato)
+    const rectSelection: RectSelection = {
+      rect: {
+        x: viewportBox.x,
+        y: viewportBox.y,
+        width: viewportBox.w,
+        height: viewportBox.h
+      },
+      pageIndex: draftBox.page - 1, // ✅ Converti a 0-based
+      viewerId,
+      bbox: {
+        x0Pct: draftBox.x0Pct,
+        y0Pct: draftBox.y0Pct,
+        x1Pct: draftBox.x1Pct,
+        y1Pct: draftBox.y1Pct
       }
+    }
 
-      if (!isSelectingRef.current || !startPosRef.current) {
-        isSelectingRef.current = false
-        return
-      }
+    // ✅ Emetti selezione standardizzata
+    Promise.resolve(onSelection(rectSelection)).then(() => {
+      resetState()
+    }).catch((error) => {
+      console.error('[RECT-SEL] Errore in onSelection:', error)
+      resetState()
+    })
 
-      const target = e.target as HTMLElement
+    startPosRef.current = null
+  }, [hostRef, calculateDraftBox, onSelection, resetState, minSize])
 
-      // ✅ Verifica se click è dentro overlay
-      if (isClickInsideOverlay && isClickInsideOverlay(target)) {
-        isSelectingRef.current = false
-        startPosRef.current = null
-        return
-      }
-
-      const isInsideOverlay = target && (
-        target.closest('[data-extract-overlay="true"]') ||
-        target.closest('.extract-block-overlay')
-      )
-
-      if (isInsideOverlay) {
-        resetState()
-        return
-      }
-
-      isSelectingRef.current = false
-
-      // ✅ Ricalcola hostRect per mouseup (per gestire scroll/resize)
-      const hostRect = host.getBoundingClientRect()
-
-      // ✅ IMPORTANTE: calculateViewportBox si aspetta coordinate assolute (viewport)
-      // Non sottrarre hostRect.left/top qui, lo fa calculateViewportBox
-      const viewportBox = calculateViewportBox(
-        startPosRef.current.x, // ✅ Coordinata assoluta (viewport)
-        startPosRef.current.y, // ✅ Coordinata assoluta (viewport)
-        e.clientX, // ✅ Coordinata assoluta (viewport)
-        e.clientY, // ✅ Coordinata assoluta (viewport)
-        host
-      )
-
-      // ✅ Verifica dimensione minima
-      if (viewportBox.w < minSize || viewportBox.h < minSize) {
-        resetState()
-        return
-      }
-
-      // ✅ Trova pagina dal punto centrale
-      const centerX = viewportBox.x + viewportBox.w / 2
-      const centerY = viewportBox.y + viewportBox.h / 2
-      const elementAtPoint = document.elementFromPoint(
-        hostRect.left + centerX,
-        hostRect.top + centerY
-      ) as HTMLElement
-
-      if (!elementAtPoint) {
-        resetState()
-        return
-      }
-
-      const pageNumber = getPageNumberFromElement(elementAtPoint, host)
-
-      // ✅ Crea selezione (solo screenshot, nessun testo)
-      const viewerSelection: ViewerSelection = {
-        pageNumber,
-        viewportBox,
-        text: '' // ✅ Sempre vuoto - solo screenshot
-      }
-
-      // ✅ IMPORTANTE: onSelection è asincrono (fa screenshot)
-      // NON pulire il draft subito - lascia che onSelection gestisca la pulizia
-      // Il draft rimane visibile fino a quando la PersistentSelection viene creata
-      Promise.resolve(onSelection(viewerSelection)).then(() => {
-        // ✅ Pulisci draft solo DOPO che onSelection ha finito
-        resetState()
-      }).catch((error) => {
-        console.error('[useRectSelection] Errore in onSelection:', error)
-        // ✅ In caso di errore, pulisci comunque
-        resetState()
-      })
-  }, [hostRef, onSelection, isClickInsideOverlay, minSize, resetState, calculateViewportBox, getPageNumberFromElement])
-
-  // ✅ Usa useIsolatedGlobalListeners per gestire listener globali isolati
+  // ✅ SOLO listener globali isolati (nessun listener locale)
   useIsolatedGlobalListeners({
     viewerId,
     hostRef,
@@ -450,22 +409,8 @@ export function useRectSelection({
       capture: false,
       passive: true
     },
-    onResetState: resetState // ✅ Reset automatico quando mouse esce dal host
+    onResetState: resetState
   })
-
-  // ✅ Listener locale su host per mousedown (più efficiente)
-  useEffect(() => {
-    if (!enabled || !isActive) return
-
-    const host = hostRef.current
-    if (!host) return
-
-    host.addEventListener('mousedown', handleMouseDown)
-
-    return () => {
-      host.removeEventListener('mousedown', handleMouseDown)
-    }
-  }, [enabled, isActive, hostRef, handleMouseDown])
 
   return {
     isSelectingRef

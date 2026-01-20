@@ -72,6 +72,7 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
   options = {},
   onResetState
 }: IsolatedGlobalListenersConfig<T>) {
+
   const {
     capture = false,
     passive = true
@@ -88,6 +89,16 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
     onKeyDown?: (e: KeyboardEvent) => void
     onSelectionChange?: () => void
   }>({})
+
+  // ✅ Ref per listeners e onResetState (evita re-render quando cambiano)
+  const listenersRef = useRef(listeners)
+  const onResetStateRef = useRef(onResetState)
+
+  // ✅ Aggiorna ref quando cambiano (senza causare re-render)
+  useEffect(() => {
+    listenersRef.current = listeners
+    onResetStateRef.current = onResetState
+  }, [listeners, onResetState])
 
   // ✅ Helper: verifica se un evento è dentro il nostro host
   const isEventInHost = useCallback((target: EventTarget | null): boolean => {
@@ -127,7 +138,7 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
 
       // ✅ Per mousemove, verifica le coordinate del mouse invece di solo l'elemento target
       // (durante il drag, il mouse può muoversi su elementi diversi ma essere ancora sopra il host)
-      if (originalListener === listeners.onMouseMove && e instanceof MouseEvent) {
+      if (originalListener === listenersRef.current.onMouseMove && e instanceof MouseEvent) {
         const host = hostRef.current
         if (host) {
           const hostRect = host.getBoundingClientRect()
@@ -140,16 +151,16 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
 
           if (!isMouseOverHost) {
             // ✅ Mouse fuori dal host, resetta se necessario
-            if (shouldResetOnExit && onResetState) {
-              onResetState()
+            if (shouldResetOnExit && onResetStateRef.current) {
+              onResetStateRef.current()
             }
             return
           }
           // ✅ Mouse è sopra il host, procedi anche se target non è nel host
         } else if (!isInHost) {
           // ✅ Host non trovato e target non è nel host, ignora
-          if (shouldResetOnExit && onResetState) {
-            onResetState()
+          if (shouldResetOnExit && onResetStateRef.current) {
+            onResetStateRef.current()
           }
           return
         }
@@ -157,8 +168,8 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
         // ✅ Per altri eventi (mousedown, mouseup), verifica sempre che l'evento sia dentro il nostro host
         if (!isInHost) {
           // ✅ Se l'evento è fuori dal host, resetta lo stato se necessario
-          if (shouldResetOnExit && onResetState) {
-            onResetState()
+          if (shouldResetOnExit && onResetStateRef.current) {
+            onResetStateRef.current()
           }
           return // Ignora eventi fuori dal host
         }
@@ -177,12 +188,40 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
         isProcessingRef.current = false
       }
     }
-  }, [enabled, isActive, isEventInHost, onResetState])
+  }, [enabled, isActive, isEventInHost])
 
   // ✅ Gestisce attaccamento/rimozione listener
   useEffect(() => {
     const host = hostRef.current
+
+    // ✅ Log diagnostico: listener attaccati/staccati
+    if (enabled && isActive) {
+      console.log('[LISTENERS] ✅ Attaccati:', { viewerId, enabled, isActive })
+    } else {
+      console.warn('[LISTENERS] ⚠️ NON attaccati:', { viewerId, enabled, isActive })
+    }
+
+    // ✅ CRITICO: Rimuovi SEMPRE i listener vecchi PRIMA di aggiungere nuovi
+    const attached = attachedListenersRef.current
+    if (attached.onMouseDown) {
+      document.removeEventListener('mousedown', attached.onMouseDown, capture)
+    }
+    if (attached.onMouseMove) {
+      document.removeEventListener('mousemove', attached.onMouseMove, { passive })
+    }
+    if (attached.onMouseUp) {
+      document.removeEventListener('mouseup', attached.onMouseUp, capture)
+    }
+    if (attached.onKeyDown) {
+      document.removeEventListener('keydown', attached.onKeyDown, capture)
+    }
+    if (attached.onSelectionChange) {
+      document.removeEventListener('selectionchange', attached.onSelectionChange, capture)
+    }
+    attachedListenersRef.current = {}
+
     if (!host) {
+      console.warn('[LISTENERS] ⚠️ Host non trovato:', { viewerId })
       // ✅ Cleanup anche se host non esiste
       return () => {
         // Rimuovi tutti i listener se erano stati attaccati
@@ -206,37 +245,20 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
       }
     }
 
-    // ✅ CRITICO: Listener attivi SOLO se enabled && isActive
-    if (!enabled || !isActive) {
-      // ✅ Rimuovi listener se erano stati attaccati in precedenza
-      const attached = attachedListenersRef.current
-      if (attached.onMouseDown) {
-        document.removeEventListener('mousedown', attached.onMouseDown, capture)
-      }
-      if (attached.onMouseMove) {
-        document.removeEventListener('mousemove', attached.onMouseMove, { passive })
-      }
-      if (attached.onMouseUp) {
-        document.removeEventListener('mouseup', attached.onMouseUp, capture)
-      }
-      if (attached.onKeyDown) {
-        document.removeEventListener('keydown', attached.onKeyDown, capture)
-      }
-      if (attached.onSelectionChange) {
-        document.removeEventListener('selectionchange', attached.onSelectionChange, capture)
-      }
-      attachedListenersRef.current = {}
-      return
-    }
+        // ✅ CRITICO: Listener attivi SOLO se enabled && isActive
+        if (!enabled || !isActive) {
+          return
+        }
 
     // ✅ Crea wrapper per ogni listener con verifica host.contains
     // ✅ onMouseMove e onMouseUp resettano lo stato se il mouse esce dal host
+    // ✅ Usa listenersRef.current per evitare dipendenze che causano re-render
     const wrappedListeners = {
-      onMouseDown: createWrappedListener(listeners.onMouseDown, false),
-      onMouseMove: createWrappedListener(listeners.onMouseMove, true), // ✅ Reset se mouse esce
-      onMouseUp: createWrappedListener(listeners.onMouseUp, true), // ✅ Reset se mouse esce
-      onKeyDown: createWrappedListener(listeners.onKeyDown, false),
-      onSelectionChange: listeners.onSelectionChange ? () => {
+      onMouseDown: createWrappedListener(listenersRef.current.onMouseDown, false),
+      onMouseMove: createWrappedListener(listenersRef.current.onMouseMove, true), // ✅ Reset se mouse esce
+      onMouseUp: createWrappedListener(listenersRef.current.onMouseUp, true), // ✅ Reset se mouse esce
+      onKeyDown: createWrappedListener(listenersRef.current.onKeyDown, false),
+      onSelectionChange: listenersRef.current.onSelectionChange ? () => {
         // ✅ Per selectionchange, verifica che la selezione sia dentro il host
         const sel = window.getSelection()
         if (sel && sel.rangeCount > 0) {
@@ -245,7 +267,7 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
             return // Selezione non è nel nostro viewer, ignora
           }
         }
-        listeners.onSelectionChange!()
+        listenersRef.current.onSelectionChange!()
       } : undefined
     }
 
@@ -291,7 +313,7 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
       }
       attachedListenersRef.current = {}
     }
-  }, [enabled, isActive, hostRef, listeners, capture, passive, createWrappedListener, isEventInHost, onResetState])
+  }, [enabled, isActive, hostRef, capture, passive, createWrappedListener, isEventInHost])
 
   return {
     isProcessing: isProcessingRef.current

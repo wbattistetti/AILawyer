@@ -12,6 +12,8 @@ import type { DrawerType } from '../features/drawers/types'
 import { deduplicateDocuments } from '@/utils/documentDeduplication'
 import './DockWorkspaceV3.css'
 
+// ✅ RIMOSSO: Context non più necessario - ogni viewer gestisce la propria attivazione via props.api.onDidActiveChange
+
 type DocTab = { id: string; title: string }
 
 // ✅ Mappatura colori e icone per ogni tipo di tab (stesso di V2)
@@ -69,7 +71,7 @@ export type Props = {
   renderPersons?: () => React.ReactNode
   renderContacts?: () => React.ReactNode
   renderIds?: () => React.ReactNode
-  renderDoc?: (docId: string, isActive?: boolean) => React.ReactNode
+  renderDoc?: (docId: string, panelApi?: any) => React.ReactNode
   storageKey?: string
   renderEvents?: () => React.ReactNode
   renderExplorer?: () => React.ReactNode
@@ -395,6 +397,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     )
   }
 
+  // ✅ RIMOSSO: State e ref per activePanelId - ogni viewer gestisce la propria attivazione via props.api.onDidActiveChange
+
   // Factory per i componenti Dockview
   const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> = useMemo(() => {
     const registerToggle = (id: string, fn: () => void) => {
@@ -531,12 +535,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       },
       'doc': (props: IDockviewPanelProps<{ docId?: string }>) => {
         const docId = props.params?.docId || props.api.id.replace('doc-', '')
-        // ✅ Calcola isActive per questo pannello
-        const isActive = props.api.group?.model?.activePanel?.id === props.api.id
+
+        // ✅ Passa props.api direttamente - il viewer gestisce la propria attivazione via onDidActiveChange
         return (
           <PanelContentWrapper>
             <div className="w-full h-full overflow-auto bg-background">
-              {renderDoc ? renderDoc(docId, isActive) : <div>Documento non disponibile</div>}
+              {renderDoc ? renderDoc(docId, props.api) : <div>Documento non disponibile</div>}
             </div>
           </PanelContentWrapper>
         )
@@ -1094,9 +1098,13 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     // ✅ Aggiungi listener globale per mouseup
     document.addEventListener('mouseup', handleMouseUp)
 
-    // ✅ Listener alternativo: monitora tutti i cambiamenti di layout (potrebbe catturare gli spostamenti)
+    // ✅ RIMOSSO: updateActivePanel, handleTabClick, click listener - ogni viewer gestisce la propria attivazione
+
+    // ✅ Listener per layout changes (event-driven, più efficiente del polling)
     let layoutChangeCount = 0
     const disposableLayoutChange = event.api.onDidLayoutChange(() => {
+      // ✅ RIMOSSO: updateActivePanel - ogni viewer gestisce la propria attivazione
+
       layoutChangeCount++
       const currentPositions = new Map<string, string>()
       event.api.groups.forEach((group) => {
@@ -1144,6 +1152,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     // Salva layout quando cambia
     const disposableLayout = event.api.onDidLayoutChange(() => {
+      // ✅ RIMOSSO: updateActivePanel - ogni viewer gestisce la propria attivazione
+
       try {
         const layout = event.api.toJSON()
         localStorage.setItem(storageKey, JSON.stringify(layout))
@@ -1154,6 +1164,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     return () => {
       document.removeEventListener('mouseup', handleMouseUp)
+      // ✅ RIMOSSO: cleanup click listener e polling - non più necessari
       // ✅ RIMOSSO cleanupGlobalListeners - non ci sono più handler globali
       disposableGroups.dispose()
       disposablePanels.dispose()

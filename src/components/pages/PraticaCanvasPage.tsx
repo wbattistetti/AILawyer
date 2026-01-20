@@ -420,7 +420,7 @@ export function PraticaCanvasPage() {
   // legacy tabs bar: replaced by DockWorkspace
 
   // Reusable viewer for a documento with Verify mode toggle
-  const renderDocViewer = (doc: Documento, isActive: boolean = false) => {
+  const renderDocViewer = (doc: Documento, panelApi?: any) => {
     // ✅ PRIORITÀ 1: localUrl (blob URL per file piccoli durante editing)
     // ✅ PRIORITÀ 2: s3Key (per documenti salvati - repository) - SEMPRE preferire s3Key se disponibile
     // ✅ PRIORITÀ 3: filePath (per file grandi durante editing - streaming diretto) - SOLO se s3Key non disponibile
@@ -452,7 +452,7 @@ export function PraticaCanvasPage() {
           praticaId={id || ''}
           docName={doc.filename}
           hasNativeText={true} // Word ha sempre testo nativo
-          isActive={isActive} // ✅ Passa isActive per isolamento
+          panelApi={panelApi} // ✅ Passa panelApi per gestione attivazione automatica
         />
       )
     }
@@ -527,7 +527,7 @@ export function PraticaCanvasPage() {
         }}
         docName={doc.filename}
         hasNativeText={doc.hasNativeText}
-        isActive={isActive} // ✅ Passa isActive per isolamento
+        panelApi={panelApi} // ✅ Passa panelApi per gestione attivazione automatica
       />
     )
   }
@@ -1562,10 +1562,10 @@ export function PraticaCanvasPage() {
               toast={toast}
             />
           )}
-          renderDoc={(docId: string, isActive?: boolean) => {
+          renderDoc={(docId: string, panelApi?: any) => {
             const doc = documenti.find(d => d.id === docId)
             if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
-            return renderDocViewer(doc, isActive ?? false)
+            return renderDocViewer(doc, panelApi)
           }}
           renderEvents={() => <EventsTab />}
           renderContacts={() => <ThingCardsPanel kind="contact" />}
