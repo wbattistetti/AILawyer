@@ -26,12 +26,27 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 	const lastLogTimeRef = useRef<Map<number, number>>(new Map())
 
 	// ✅ Funzione helper per creare overlay root quando textLayer è pronto
-	const createOverlayRootForPage = (pageNum: number, textLayer: HTMLElement) => {
+	// ✅ Attacca il root al pageLayer per evitare l'opacità del textLayer
+	const createOverlayRootForPage = (pageNum: number, pageLayer: HTMLElement, textLayer: HTMLElement) => {
+		const pageRect = pageLayer.getBoundingClientRect()
+		const textRect = textLayer.getBoundingClientRect()
+		const left = textRect.left - pageRect.left
+		const top = textRect.top - pageRect.top
+
 		// Verifica che non esista già
 		if (overlayRootsRef.current.has(pageNum)) {
 			const existing = overlayRootsRef.current.get(pageNum)!
 			if (document.contains(existing)) {
-				return false // Già esiste e è valido
+				Object.assign(existing.style, {
+					position: 'absolute',
+					left: `${left}px`,
+					top: `${top}px`,
+					width: `${textRect.width}px`,
+					height: `${textRect.height}px`,
+					pointerEvents: 'none',
+					zIndex: '100'
+				})
+				return false // Già esiste e aggiornato
 			}
 			// Rimuovi se non è più nel DOM
 			overlayRootsRef.current.delete(pageNum)
@@ -43,12 +58,15 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 			over.className = 'ai-overlay-root'
 			Object.assign(over.style, {
 				position: 'absolute',
-				inset: '0',
+				left: `${left}px`,
+				top: `${top}px`,
+				width: `${textRect.width}px`,
+				height: `${textRect.height}px`,
 				pointerEvents: 'none',
 				zIndex: '100'
 			})
-			if (!textLayer.style.position) textLayer.style.position = 'relative'
-			textLayer.appendChild(over)
+			if (!pageLayer.style.position) pageLayer.style.position = 'relative'
+			pageLayer.appendChild(over)
 			overlayRootsRef.current.set(pageNum, over)
 			return true
 		}
@@ -180,7 +198,7 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 							const pageNum = getPageNumber(pageLayer)
 							if (pageNum) {
 								// ✅ Evento: textLayer è stato aggiunto, crea overlay root
-								if (createOverlayRootForPage(pageNum, el)) {
+								if (createOverlayRootForPage(pageNum, pageLayer, el)) {
 									added++
 								}
 							}
@@ -196,7 +214,7 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 								const pageNum = getPageNumber(pageLayer)
 								if (pageNum) {
 									// ✅ Evento: textLayer è stato aggiunto, crea overlay root
-									if (createOverlayRootForPage(pageNum, textLayer)) {
+									if (createOverlayRootForPage(pageNum, pageLayer, textLayer)) {
 										added++
 									}
 								}
@@ -229,9 +247,12 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 						}
 						// ✅ Crea root se non esiste o se è stato appena rimosso
 						if (!overlayRootsRef.current.has(pageNum)) {
-							if (createOverlayRootForPage(pageNum, textLayer)) {
+							if (createOverlayRootForPage(pageNum, pageLayer, textLayer)) {
 								added++
 							}
+						} else {
+							// ✅ Aggiorna il root esistente per mantenere allineamento con textLayer
+							createOverlayRootForPage(pageNum, pageLayer, textLayer)
 						}
 					}
 				}
@@ -384,9 +405,9 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTic
 			}
 		}
 
-		// ✅ Se abbiamo trovato un textLayer valido, crea il root
-		if (textLayer && document.contains(textLayer)) {
-			return createOverlayRootForPage(pageNum, textLayer)
+		// ✅ Se abbiamo trovato un textLayer valido, crea/aggiorna il root
+		if (textLayer && pageLayer && document.contains(textLayer)) {
+			return createOverlayRootForPage(pageNum, pageLayer, textLayer)
 		}
 
 		// ✅ Log throttled (solo ogni 2 secondi per pagina) se non riusciamo a trovare il textLayer

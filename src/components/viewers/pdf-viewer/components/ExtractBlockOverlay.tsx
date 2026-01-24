@@ -393,8 +393,12 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const pageRect = pageLayer?.getBoundingClientRect()
 	if (!pageRect) return null
 
-	const selectionWidth = (selection.x1Pct - selection.x0Pct) * pageRect.width
-	const selectionHeight = (selection.y1Pct - selection.y0Pct) * pageRect.height
+	// ✅ Usa le dimensioni reali dell'overlay root (textLayer) per coerenza con le percentuali
+	const rootRect = root.getBoundingClientRect()
+	const baseRect = (rootRect.width > 0 && rootRect.height > 0) ? rootRect : pageRect
+
+	const selectionWidth = (selection.x1Pct - selection.x0Pct) * baseRect.width
+	const selectionHeight = (selection.y1Pct - selection.y0Pct) * baseRect.height
 
 	// ✅ Usa altezza reale misurata invece di valore stimato
 	const headerHeight = actualHeaderHeight
@@ -406,9 +410,9 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const width = `${(selection.x1Pct - selection.x0Pct) * 100}%`
 	// ✅ Top: inizia SOPRA il rettangolo per includere l'header
 	const top = `calc(${selection.y0Pct * 100}% - ${headerHeight}px)`
-	// ✅ Height: auto si adatta al contenuto, min-height include header + rettangolo ESATTO + footer + osservazione
+	// ✅ Altezza esatta: header + rettangolo + footer (+ eventuale osservazione)
 	// ✅ IMPORTANTE: selectionHeight deve corrispondere esattamente alle dimensioni del contenuto nella card
-	const minHeight = headerHeight + selectionHeight + footerHeight + observationHeight
+	const overlayHeight = headerHeight + selectionHeight + footerHeight + observationHeight
 
 	const overlayNode = (
 		<div
@@ -420,12 +424,12 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				left,
 				top, // ✅ Inizia SOPRA il rettangolo per includere l'header
 				width,
-				minHeight: `${minHeight}px`, // ✅ Min-height per garantire spazio per tutto
-				height: 'auto', // ✅ Si adatta al contenuto
+				height: `${overlayHeight}px`, // ✅ Altezza esatta per evitare espansioni
+				maxHeight: `${overlayHeight}px`,
 				zIndex: 10000,
 				pointerEvents: 'auto',
-				overflow: 'visible', // ✅ Cambiato a visible per permettere all'header di essere visibile sopra
-				background: 'hsl(var(--background))', // ✅ Usa CSS variable del tema invece di white hardcoded
+				overflow: 'hidden', // ✅ Evita che il contenuto allarghi la card oltre il rettangolo
+				background: '#ffffff', // ✅ Fondo opaco (non trasparente)
 				border: '2px solid rgba(59,130,246,0.8)', // ✅ Bordo simile al rettangolo
 				borderRadius: 2,
 				boxShadow: '0 2px 8px rgba(0,0,0,0.15)' // ✅ Ombra per distinguerlo dal documento
@@ -440,7 +444,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			<div
 				ref={contentWrapperRef} // ✅ Ref per misurare altezza header
 				className="flex flex-col relative"
-				style={{ overflow: 'visible' }} // ✅ Cambiato a visible per non tagliare il contenuto
+				style={{ overflow: 'hidden' }} // ✅ Mantieni layout dentro l'altezza fissata
 				onClick={(e) => {
 					e.stopPropagation()
 				}}
