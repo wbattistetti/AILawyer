@@ -39,6 +39,10 @@ export interface UseRectSelectionProps {
   enabled: boolean
   hostRef: React.RefObject<HTMLElement>
   /**
+   * Incrementa quando l'host reale è pronto (per riattaccare i listener)
+   */
+  hostReadyTick?: number
+  /**
    * ✅ Callback chiamato quando la selezione è completata
    * Riceve RectSelection standardizzata (formato unificato per tutti i viewer)
    */
@@ -66,6 +70,7 @@ export function useRectSelection({
   viewerId,
   enabled,
   hostRef,
+  hostReadyTick = 0,
   onSelection,
   onDraftChange,
   pageElsRef, // ✅ Opzionale, solo per debug
@@ -76,7 +81,44 @@ export function useRectSelection({
   const startPosRef = useRef<{ x: number; y: number } | null>(null)
   const startPageRef = useRef<{ pageEl: HTMLElement; pageNumber: number } | null>(null) // ✅ Salva la pagina iniziale
   const rafRef = useRef<number | null>(null)
-  const lastLogTimeRef = useRef<number>(0) // ✅ Per throttling dei log durante il drag
+
+  const getPageNumberLoose = (element: HTMLElement | null): number | null => {
+    let current = element
+    while (current) {
+      const pageNumberAttr = current.getAttribute('data-page-number')
+      if (pageNumberAttr) {
+        const parsed = parseInt(pageNumberAttr, 10)
+        if (Number.isFinite(parsed) && parsed > 0) return parsed
+      }
+      const pageAttr = current.getAttribute('data-page')
+      if (pageAttr) {
+        const parsed = parseInt(pageAttr, 10)
+        if (Number.isFinite(parsed) && parsed > 0) return parsed
+      }
+      current = current.parentElement
+    }
+    return null
+  }
+
+  const findPageFromEventPath = (e: MouseEvent): { pageEl: HTMLElement | null; pageNumber: number | null } => {
+    const path = (e.composedPath?.() || []) as HTMLElement[]
+    for (const node of path) {
+      if (!(node instanceof HTMLElement)) continue
+      if (node.classList.contains('rpv-core__page-layer')) {
+        return { pageEl: node, pageNumber: getPageNumberLoose(node) }
+      }
+      if (node.hasAttribute?.('data-page-number')) {
+        const innerLayer = node.querySelector('.rpv-core__page-layer') as HTMLElement | null
+        if (innerLayer) {
+          return { pageEl: innerLayer, pageNumber: getPageNumberLoose(innerLayer) }
+        }
+      }
+      if (node.hasAttribute?.('data-page')) {
+        return { pageEl: node, pageNumber: getPageNumberLoose(node) }
+      }
+    }
+    return { pageEl: null, pageNumber: null }
+  }
 
   // ✅ Helper: trova pagina sotto coordinate schermo (sempre via elementFromPoint)
   const findPageAtPoint = useCallback((clientX: number, clientY: number): {
@@ -92,6 +134,13 @@ export function useRectSelection({
     const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement
     if (!elementAtPoint) {
       return { pageEl: null, pageNumber: null }
+    }
+
+    // ✅ Prima prova: trova direttamente il page-layer più vicino al punto
+    const closestPageLayer = elementAtPoint.closest?.('.rpv-core__page-layer') as HTMLElement | null
+    if (closestPageLayer) {
+      const pageNumber = getPageNumberLoose(closestPageLayer)
+      return { pageEl: closestPageLayer, pageNumber }
     }
 
     // ✅ Risali fino a trovare la pagina (PDF o Word)
@@ -221,170 +270,6 @@ export function useRectSelection({
       coordSpace: 'page' as const
     }
 
-    // ✅ Log dettagliato delle coordinate (con throttling: max 1 ogni 200ms)
-    const now = Date.now()
-    if (now - lastLogTimeRef.current > 200) {
-      // ✅ Calcola gli angoli del rettangolo in coordinate schermo
-      const rectTopLeftScreenX = pageRect.left + x0
-      const rectTopLeftScreenY = pageRect.top + y0
-      const rectBottomRightScreenX = pageRect.left + x1
-      const rectBottomRightScreenY = pageRect.top + y1
-
-      // ✅ Calcola la distanza tra il mouse e l'angolo in basso a destra del rettangolo
-      const distanceX = Math.abs(endX - rectBottomRightScreenX)
-      const distanceY = Math.abs(endY - rectBottomRightScreenY)
-      const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
-
-      // ✅ Calcola la distanza tra il punto iniziale e l'angolo in alto a sinistra del rettangolo
-      const startDistanceX = Math.abs(startX - rectTopLeftScreenX)
-      const startDistanceY = Math.abs(startY - rectTopLeftScreenY)
-      const startDistance = Math.sqrt(startDistanceX * startDistanceX + startDistanceY * startDistanceY)
-
-      // ✅ Verifica dimensioni del root overlay e del textLayer (se disponibili)
-      let rootRect: DOMRect | null = null
-      let textLayerRect: DOMRect | null = null
-      let rootSizeMismatch = false
-      let textLayerSizeMismatch = false
-      let debugInfo: any = {}
-      if (startPageRef.current) {
-        const pageLayer = startPageRef.current.pageEl
-
-        // ✅ Trova il textLayer: può essere dentro il pageLayer o dentro il suo parent container
-        let textLayer: HTMLElement | null = null
-
-        // Strategia 1: cerca dentro il pageLayer stesso
-        textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement | null
-        debugInfo.textLayerFoundInPageLayer = !!textLayer
-
-        // Strategia 2: se non trovato, cerca nel parent container con data-page-number
-        if (!textLayer) {
-          const pageContainer = pageLayer.closest('[data-page-number]') as HTMLElement | null
-          debugInfo.pageContainerFound = !!pageContainer
-          if (pageContainer) {
-            textLayer = pageContainer.querySelector('.rpv-core__text-layer') as HTMLElement | null
-            debugInfo.textLayerFoundInContainer = !!textLayer
-          }
-        }
-
-        // Strategia 3: se ancora non trovato, cerca nel parent del pageLayer
-        if (!textLayer) {
-          const parent = pageLayer.parentElement
-          if (parent) {
-            textLayer = parent.querySelector('.rpv-core__text-layer') as HTMLElement | null
-            debugInfo.textLayerFoundInParent = !!textLayer
-          }
-        }
-
-        debugInfo.textLayerFound = !!textLayer
-
-        if (textLayer) {
-          textLayerRect = textLayer.getBoundingClientRect()
-          const overlayRoot = textLayer.querySelector('.ai-overlay-root') as HTMLElement | null
-          debugInfo.overlayRootFound = !!overlayRoot
-          if (overlayRoot) {
-            rootRect = overlayRoot.getBoundingClientRect()
-            // ✅ Verifica se le dimensioni del root corrispondono a quelle della pagina
-            const widthDiff = Math.abs(rootRect.width - pageRect.width)
-            const heightDiff = Math.abs(rootRect.height - pageRect.height)
-            rootSizeMismatch = widthDiff > 1 || heightDiff > 1 // Tolleranza di 1px
-          }
-          // ✅ Verifica se le dimensioni del textLayer corrispondono a quelle della pagina
-          const textWidthDiff = Math.abs(textLayerRect.width - pageRect.width)
-          const textHeightDiff = Math.abs(textLayerRect.height - pageRect.height)
-          textLayerSizeMismatch = textWidthDiff > 1 || textHeightDiff > 1 // Tolleranza di 1px
-        }
-      }
-
-      // ✅ Log con distanze in evidenza
-      const distanceStr = `DISTANZA bottom-right: ${Math.round(distance)}px (X: ${Math.round(distanceX)}px, Y: ${Math.round(distanceY)}px) | DISTANZA top-left: ${Math.round(startDistance)}px (X: ${Math.round(startDistanceX)}px, Y: ${Math.round(startDistanceY)}px)`
-      const logData: any = {
-        startPoint: { x: Math.round(startX), y: Math.round(startY) },
-        mouse: { x: Math.round(endX), y: Math.round(endY) },
-        rectTopLeftScreen: { x: Math.round(rectTopLeftScreenX), y: Math.round(rectTopLeftScreenY) },
-        rectBottomRightScreen: { x: Math.round(rectBottomRightScreenX), y: Math.round(rectBottomRightScreenY) },
-        rectTopLeftPage: { x: Math.round(x0), y: Math.round(y0) },
-        rectBottomRightPage: { x: Math.round(x1), y: Math.round(y1) },
-        rectTopLeftPct: { x: (x0Pct * 100).toFixed(2) + '%', y: (y0Pct * 100).toFixed(2) + '%' },
-        rectBottomRightPct: { x: (x1Pct * 100).toFixed(2) + '%', y: (y1Pct * 100).toFixed(2) + '%' },
-        pageRect: {
-          width: Math.round(pageRect.width),
-          height: Math.round(pageRect.height),
-          left: Math.round(pageRect.left),
-          top: Math.round(pageRect.top)
-        },
-        debug: debugInfo
-      }
-
-      if (textLayerRect) {
-        logData.textLayerRect = {
-          width: Math.round(textLayerRect.width),
-          height: Math.round(textLayerRect.height),
-          left: Math.round(textLayerRect.left),
-          top: Math.round(textLayerRect.top)
-        }
-        logData.textLayerSizeMismatch = textLayerSizeMismatch
-        if (textLayerSizeMismatch) {
-          logData.textLayerSizeDiff = {
-            width: Math.round(textLayerRect.width - pageRect.width),
-            height: Math.round(textLayerRect.height - pageRect.height)
-          }
-        }
-      }
-      if (rootRect) {
-        logData.rootRect = {
-          width: Math.round(rootRect.width),
-          height: Math.round(rootRect.height),
-          left: Math.round(rootRect.left),
-          top: Math.round(rootRect.top)
-        }
-        logData.rootSizeMismatch = rootSizeMismatch
-        if (rootSizeMismatch) {
-          logData.rootSizeDiff = {
-            width: Math.round(rootRect.width - pageRect.width),
-            height: Math.round(rootRect.height - pageRect.height)
-          }
-        }
-      }
-
-      console.log(`[RECT-SEL] 📐 ${distanceStr}`, logData)
-
-      // ✅ Log esplicito per debug rendering
-      // ✅ Log esplicito con dimensioni in evidenza
-      const pageW = Math.round(pageRect.width)
-      const pageH = Math.round(pageRect.height)
-      const textW = textLayerRect ? Math.round(textLayerRect.width) : 0
-      const textH = textLayerRect ? Math.round(textLayerRect.height) : 0
-      const rootW = rootRect ? Math.round(rootRect.width) : 0
-      const rootH = rootRect ? Math.round(rootRect.height) : 0
-
-      const sizeInfo = `DIMENSIONI: page=${pageW}x${pageH} | textLayer=${textW}x${textH} | root=${rootW}x${rootH}`
-      const mismatchInfo = textLayerSizeMismatch || rootSizeMismatch
-        ? `⚠️ MISMATCH: textLayer=${textLayerSizeMismatch ? `${textW-pageW}x${textH-pageH}` : 'OK'} | root=${rootSizeMismatch ? `${rootW-pageW}x${rootH-pageH}` : 'OK'}`
-        : '✅ Dimensioni OK'
-
-      console.log(`[RECT-SEL] 🔍 ${sizeInfo} | ${mismatchInfo}`)
-      console.log(`[RECT-SEL] 🔍 DEBUG RENDERING:`, {
-        pageContainerFound: debugInfo.pageContainerFound,
-        textLayerFound: debugInfo.textLayerFound,
-        overlayRootFound: debugInfo.overlayRootFound,
-        pageRect: { w: pageW, h: pageH },
-        textLayerRect: textLayerRect ? { w: textW, h: textH } : 'NOT FOUND',
-        rootRect: rootRect ? { w: rootW, h: rootH } : 'NOT FOUND',
-        textLayerSizeMismatch,
-        rootSizeMismatch,
-        textLayerSizeDiff: textLayerSizeMismatch && textLayerRect ? {
-          w: textW - pageW,
-          h: textH - pageH
-        } : null,
-        rootSizeDiff: rootSizeMismatch && rootRect ? {
-          w: rootW - pageW,
-          h: rootH - pageH
-        } : null
-      })
-
-      lastLogTimeRef.current = now
-    }
-
     return result
   }, [])
 
@@ -512,7 +397,6 @@ export function useRectSelection({
       return
     }
 
-    console.log('[RECT-SEL] ✅ Drag START:', { viewerId, point: { x: e.clientX, y: e.clientY } })
     // ✅ Ferma la propagazione per evitare interferenze con listener globali
     e.stopPropagation()
     isSelectingRef.current = true
@@ -524,10 +408,10 @@ export function useRectSelection({
     }
 
     // ✅ CRITICO: Salva la pagina iniziale (dove inizia il drag)
-    const { pageEl: startPageEl, pageNumber: startPageNumber } = findPageAtPoint(e.clientX, e.clientY)
+    const { pageEl: startPageEl, pageNumber: startPageNumber } = findPageFromEventPath(e)
+    console.log('[RECT-SEL] ✅ Drag START:', { viewerId, page: startPageNumber })
     if (startPageEl && startPageNumber) {
       startPageRef.current = { pageEl: startPageEl, pageNumber: startPageNumber }
-      console.log('[RECT-SEL] 📌 Pagina iniziale salvata:', { viewerId, page: startPageNumber })
     } else {
       startPageRef.current = null
       console.warn('[RECT-SEL] ⚠️ Pagina iniziale non trovata:', { viewerId, point: { x: e.clientX, y: e.clientY } })
@@ -550,7 +434,7 @@ export function useRectSelection({
     if (selection) {
       selection.removeAllRanges()
     }
-  }, [enabled, hostRef, isClickInsideOverlay, onDraftChange, findPageAtPoint, viewerId])
+  }, [enabled, hostRef, isClickInsideOverlay, onDraftChange, findPageAtPoint, viewerId, findPageFromEventPath])
 
   // ✅ Handler mouse move
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -594,7 +478,7 @@ export function useRectSelection({
       return
     }
 
-    console.log('[RECT-SEL] ✅ Drag END:', { viewerId, point: { x: e.clientX, y: e.clientY } })
+    console.log('[RECT-SEL] ✅ Drag END:', { viewerId, page: startPageRef.current?.pageNumber })
     // ✅ Ferma la propagazione per evitare interferenze con listener globali
     e.stopPropagation()
     isSelectingRef.current = false
@@ -650,15 +534,6 @@ export function useRectSelection({
       }
     }
 
-    console.log('[RECT-SEL] 💾 Salvataggio selezione:', {
-      viewerId,
-      page: draftBox.page,
-      pageIndex: rectSelection.pageIndex,
-      bbox: rectSelection.bbox,
-      rect: rectSelection.rect,
-      startPoint: { x: startPosRef.current.x, y: startPosRef.current.y },
-      endPoint: { x: e.clientX, y: e.clientY }
-    })
 
     // ✅ Emetti selezione standardizzata
     Promise.resolve(onSelection(rectSelection)).then(() => {
@@ -713,7 +588,7 @@ export function useRectSelection({
         host.removeEventListener('mouseup', wrappedMouseUp, true) // capture: true
       }
     }
-  }, [viewerId]) // ✅ Solo viewerId nelle dipendenze (per isolamento tra viewer diversi)
+  }, [viewerId, hostReadyTick]) // ✅ Riattacca quando l'host reale diventa disponibile
 
   return {
     isSelectingRef

@@ -223,7 +223,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
               }
               zoomDebounceRef.current = window.setTimeout(() => {
                 try { zoomTo(s) } catch {}
-                const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+                const viewer = hostRef.current as HTMLElement | null
                 if (viewer) viewer.style.setProperty('--scale-factor', String(s))
               }, 80)
             }}

@@ -15,6 +15,7 @@ interface AnnotationOverlaysProps {
 	lastSelection: any
 	docName?: string
 	hasNativeText?: boolean
+	ensureOverlayRootForPage?: (pageNum: number) => boolean
 }
 
 export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
@@ -27,7 +28,8 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	pageElsRef,
 	lastSelection,
 	docName,
-	hasNativeText
+	hasNativeText,
+	ensureOverlayRootForPage
 }) => {
 	const [hoveredSelectionId, setHoveredSelectionId] = useState<string | null>(null)
 	const [draggingSelectionId, setDraggingSelectionId] = useState<string | null>(null)
@@ -87,28 +89,65 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	return (
 		<>
 			{allAnnotations.map((a, idx) => {
-				const root = overlayRootsRef.current.get(a.page)
+				let root = overlayRootsRef.current.get(a.page)
 
-
-				if (!root) {
+				// ✅ Se il root non esiste o non è nel DOM, prova a ricrearlo
+				if (!root || !document.contains(root)) {
 					if (a.id === 'draft' || a.id === 'sel') {
-						console.warn('[ANNOT-OVERLAYS] ⚠️ Root overlay non trovato per pagina:', a.page, {
-							allRoots: Array.from(overlayRootsRef.current.keys()),
-							annotId: a.id,
-							annotPage: a.page
-						})
+						// ✅ Prova a ricreare il root se la funzione è disponibile
+						if (ensureOverlayRootForPage) {
+							const recreated = ensureOverlayRootForPage(a.page)
+							if (recreated) {
+								root = overlayRootsRef.current.get(a.page)
+								if (root && document.contains(root)) {
+									// ✅ Root ricreato con successo, continua il rendering
+								} else {
+									// ✅ Root non ancora disponibile, salta questo render
+									return null
+								}
+							} else {
+								// ✅ Impossibile ricreare il root, salta questo render
+								return null
+							}
+						} else {
+							// ✅ Funzione non disponibile, log e salta
+							const pageEl = pageElsRef.current.get(a.page)
+							let textLayerExists = false
+							let textLayerInDOM = false
+
+							if (pageEl) {
+								const textLayer = pageEl.querySelector('.rpv-core__text-layer') as HTMLElement | null
+								if (!textLayer) {
+									const pageContainer = pageEl.closest('[data-page-number]') as HTMLElement | null
+									if (pageContainer) {
+										const textLayer2 = pageContainer.querySelector('.rpv-core__text-layer') as HTMLElement | null
+										textLayerExists = !!textLayer2
+										textLayerInDOM = textLayer2 ? document.contains(textLayer2) : false
+									}
+								} else {
+									textLayerExists = true
+									textLayerInDOM = document.contains(textLayer)
+								}
+							}
+
+							console.warn('[ANNOT-OVERLAYS] ⚠️ Root overlay NON TROVATO per pagina:', a.page, {
+								allRoots: Array.from(overlayRootsRef.current.keys()),
+								annotId: a.id,
+								annotPage: a.page,
+								pageElExists: !!pageEl,
+								textLayerExists,
+								textLayerInDOM,
+								ensureOverlayRootForPageAvailable: !!ensureOverlayRootForPage
+							})
+							return null
+						}
+					} else {
+						return null
 					}
-					return null
 				}
 
-				// ✅ Verifica che il root sia ancora nel DOM
-				if (!document.contains(root)) {
-					if (a.id === 'draft') {
-						console.warn('[ANNOT-OVERLAYS] ⚠️ Root non è nel DOM per draft pagina:', a.page, {
-							root: { tagName: root.tagName, id: root.id, className: root.className },
-							allRoots: Array.from(overlayRootsRef.current.keys())
-						})
-					}
+				// ✅ Verifica finale che il root sia ancora nel DOM (dopo eventuale ricreazione)
+				if (!root || !document.contains(root)) {
 					return null
 				}
 

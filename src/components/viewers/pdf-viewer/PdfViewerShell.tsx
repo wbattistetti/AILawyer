@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { usePdfShellState } from './hooks/usePdfShellState'
 import { usePdfPanelResizer } from './hooks/usePdfPanelResizer'
 import { usePdfPlugins } from './hooks/usePdfPlugins'
@@ -47,6 +47,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   isActive: isActiveProp // ✅ Mantenuto per retrocompatibilità
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const viewerRef = useRef<any>(null) // PdfViewerHandle ref
 
   // ✅ State interno per gestire l'attivazione via panelApi.onDidActiveChange
@@ -98,6 +99,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   // Plugin management
   const plugins = usePdfPlugins()
 
+  const [viewerReadyTick, setViewerReadyTick] = useState(0)
+
   // Unified state management
   const shell = usePdfShellState({
     hostRef,
@@ -105,7 +108,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     docId,
     onPageChange,
     viewerRef,
-    isActive // ✅ Passa isActive (ora gestito internamente)
+    isActive, // ✅ Passa isActive (ora gestito internamente)
+    viewerReadyTick
   })
 
   // Zoom hook integration
@@ -128,11 +132,11 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   // ✅ FIX DEFINITIVO: Forza struttura corretta con altezze limitate
   useEffect(() => {
     const enforceStructure = () => {
-      if (!hostRef.current) return
+      if (!scrollHostRef.current) return
 
       // 1. Trova flexlayout__tab (container principale del tab)
       let tab: HTMLElement | null = null
-      let current: HTMLElement | null = hostRef.current
+      let current: HTMLElement | null = scrollHostRef.current
       for (let i = 0; i < 15 && current; i++) {
         if (current.classList.contains('flexlayout__tab')) {
           tab = current
@@ -165,8 +169,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       }
 
       // 4. Trova container principale PdfViewerShell (flex flex-col h-full)
-      const mainContainer = hostRef.current.closest('.flex.flex-col.h-full') as HTMLElement | null
-      if (!mainContainer || mainContainer === hostRef.current) return
+      const mainContainer = scrollHostRef.current.closest('.flex.flex-col.h-full') as HTMLElement | null
+      if (!mainContainer || mainContainer === scrollHostRef.current) return
 
       // Limita altezza container principale
       mainContainer.style.height = `${tabHeight}px`
@@ -189,15 +193,15 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       }
 
       // 7. PDF_HOST: deve avere altezza limitata e overflow-auto
-      if (hostRef.current) {
-        hostRef.current.style.height = `${contentAreaHeight}px`
-        hostRef.current.style.maxHeight = `${contentAreaHeight}px`
-        hostRef.current.style.overflowY = 'auto'
-        hostRef.current.style.overflowX = 'hidden'
+      if (scrollHostRef.current) {
+        scrollHostRef.current.style.height = `${contentAreaHeight}px`
+        scrollHostRef.current.style.maxHeight = `${contentAreaHeight}px`
+        scrollHostRef.current.style.overflowY = 'auto'
+        scrollHostRef.current.style.overflowX = 'hidden'
       }
 
       // 8. SearchPanel: trova e limita container risultati
-      const searchPanel = hostRef.current.parentElement?.querySelector('[class*="h-full"][class*="border-l"]') as HTMLElement | null
+      const searchPanel = scrollHostRef.current.parentElement?.querySelector('[class*="h-full"][class*="border-l"]') as HTMLElement | null
       if (searchPanel) {
         // Limita altezza SearchPanel al contentAreaHeight
         searchPanel.style.height = `${contentAreaHeight}px`
@@ -301,7 +305,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           {/* PDF Viewer - scrollbar arancione - SEMPLIFICATO: direttamente flex-1 overflow-auto */}
           <div
             ref={(el) => {
-              hostRef.current = el
+              scrollHostRef.current = el
               if (zoomContainerRef) (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
             }}
             className="flex-1 overflow-auto relative min-h-0"
@@ -330,6 +334,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
                 setLastSelection={shell.setLastSelection}
                 setExtractOpen={shell.setExtractOpen}
                 docId={docId}
+                scrollRef={scrollHostRef}
+                onViewerReady={() => setViewerReadyTick((tick) => tick + 1)}
               />
             </div>
 
@@ -362,6 +368,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         lastSelection={shell.lastSelection}
         docName={docName}
         hasNativeText={shell.hasNativeText}
+        ensureOverlayRootForPage={shell.ensureOverlayRootForPage}
       />
 
       {/* Debug: mostra prima parola di ogni pagina */}

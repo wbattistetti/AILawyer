@@ -39,6 +39,8 @@ interface PdfViewerCoreProps {
 	setLastSelection: (selection: any) => void
 	setExtractOpen: (open: boolean) => void
 	docId?: string
+	scrollRef?: React.RefObject<HTMLElement>
+	onViewerReady?: () => void
 }
 
 function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerHandle>) {
@@ -63,11 +65,33 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		setExtractPage,
 		setLastSelection,
 		setExtractOpen,
-		docId
+		docId,
+		scrollRef,
+		onViewerReady
 	} = props
 	const [ready, setReady] = useState(false);
 	const queueRef = useRef<Array<() => void>>([]);
+	const lastViewerRef = useRef<HTMLElement | null>(null);
 	const { toast } = useToast();
+
+	const getScrollContainer = () =>
+		(scrollRef?.current as HTMLElement | null) ||
+		(hostRef.current?.parentElement as HTMLElement | null)
+
+	const syncViewerRef = () => {
+		const container = getScrollContainer()
+		if (!container) return
+		const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | null
+		if (viewer) {
+			if (lastViewerRef.current !== viewer) {
+				lastViewerRef.current = viewer
+				hostRef.current = viewer as any
+				onViewerReady?.()
+			} else {
+				hostRef.current = viewer as any
+			}
+		}
+	}
 
 	const execOrQueue = (fn: () => void) => {
 		if (ready) fn();
@@ -109,13 +133,22 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		}
 	}, []) // ✅ Esegui solo al mount, in modo sincrono
 
+	// ✅ Associa hostRef al vero viewer PDF (.rpv-core__viewer)
+	useLayoutEffect(() => {
+		syncViewerRef()
+	}, [ready, scrollRef])
+
 	// ✅ Imposta --scale-factor sul container principale IMMEDIATAMENTE al mount (sincrono)
 	// Questo assicura che la variabile CSS sia disponibile PRIMA che i text layer vengano renderizzati
 	useLayoutEffect(() => {
-		const container = hostRef.current as HTMLElement | null
+		const container = getScrollContainer()
+		const viewer = hostRef.current as HTMLElement | null
+		const scale = scaleRef.current || 1
 		if (container) {
-			const scale = scaleRef.current || 1
 			container.style.setProperty('--scale-factor', String(scale))
+		}
+		if (viewer) {
+			viewer.style.setProperty('--scale-factor', String(scale))
 		}
 	}, []) // ✅ Esegui solo al mount, in modo sincrono prima del paint
 
@@ -123,14 +156,11 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 	useEffect(() => {
 		if (!ready) return
 
-		const container = hostRef.current
-		if (container) {
+		const viewer = hostRef.current as HTMLElement | null
+		if (viewer) {
 			// Aspetta un po' per il DOM
 			setTimeout(() => {
-				const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-				if (viewer) {
-					viewer.style.textAlign = 'center'
-				}
+				viewer.style.textAlign = 'center'
 			}, 100)
 		}
 	}, [ready])
@@ -141,41 +171,47 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 
 		const updateScaleFactor = () => {
 			const scale = scaleRef.current || 1
-			const container = hostRef.current as HTMLElement | null
-			if (!container) return
-
-			// ✅ Imposta sul container principale
-			container.style.setProperty('--scale-factor', String(scale))
-
-			// ✅ Imposta sul viewer
-			const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | undefined
+			const container = getScrollContainer()
+			const viewer = hostRef.current as HTMLElement | null
+			const scope = (container || viewer) as HTMLElement | null
+			if (container) {
+				// ✅ Imposta sul container principale
+				container.style.setProperty('--scale-factor', String(scale))
+			}
 			if (viewer) {
+				// ✅ Imposta sul viewer
 				viewer.style.setProperty('--scale-factor', String(scale))
 			}
+			if (scope) {
+				// ✅ Imposta su tutti i page-layer
+				const pageLayers = scope.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
+				pageLayers.forEach((layer) => {
+					layer.style.setProperty('--scale-factor', String(scale))
+				})
 
-			// ✅ Imposta su tutti i page-layer
-			const pageLayers = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
-			pageLayers.forEach((layer) => {
-				layer.style.setProperty('--scale-factor', String(scale))
-			})
-
-			// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
-			const textLayers = container.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
-			textLayers.forEach((layer) => {
-				layer.style.setProperty('--scale-factor', String(scale))
-			})
+				// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
+				const textLayers = scope.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
+				textLayers.forEach((layer) => {
+					layer.style.setProperty('--scale-factor', String(scale))
+				})
+			}
 		}
 
 		// Aggiorna immediatamente
 		updateScaleFactor()
+		syncViewerRef()
 
 		// ✅ MutationObserver minimale: aggiorna solo quando vengono aggiunti nuovi text layer
 		const observer = new MutationObserver((mutations) => {
 			let hasNewTextLayer = false
+			let hasViewer = false
 			for (const mutation of mutations) {
 				if (mutation.type === 'childList') {
 					for (const node of mutation.addedNodes) {
 						if (node instanceof HTMLElement) {
+							if (node.classList?.contains('rpv-core__viewer') || node.querySelector?.('.rpv-core__viewer')) {
+								hasViewer = true
+							}
 							// ✅ Verifica se è un text layer o contiene un text layer
 							if (node.classList?.contains('textLayer') ||
 							    node.classList?.contains('rpv-core__text-layer') ||
@@ -188,15 +224,18 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					}
 				}
 			}
+			if (hasViewer) {
+				syncViewerRef()
+			}
 			// ✅ Aggiorna solo se è stato aggiunto un nuovo text layer
 			if (hasNewTextLayer) {
 				updateScaleFactor()
 			}
 		})
 
-		const container = hostRef.current
-		if (container) {
-			observer.observe(container, {
+		const observerTarget = (getScrollContainer() || hostRef.current) as HTMLElement | null
+		if (observerTarget) {
+			observer.observe(observerTarget, {
 				subtree: true,
 				childList: true
 			})
@@ -247,27 +286,29 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					const total = doc?.numPages || 0
 					if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
 					if (total) { setTotalPages(total); setPageInput('1') }
+					syncViewerRef()
 
 					// ✅ Imposta --scale-factor su tutti i container necessari
 					const scale = scaleRef.current || 1
 					const updateScale = () => {
-						const container = hostRef.current as HTMLElement | null
+						const container = getScrollContainer()
+						const viewer = hostRef.current as HTMLElement | null
+						const scope = (container || viewer) as HTMLElement | null
 						if (container) {
 							container.style.setProperty('--scale-factor', String(scale))
 						}
-						const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 						if (viewer) {
 							viewer.style.setProperty('--scale-factor', String(scale))
 						}
 						// ✅ Imposta anche su tutti i page-layer e text-layer
-						const pageLayers = hostRef.current?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
+						const pageLayers = scope?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
 						if (pageLayers) {
 							pageLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
 							})
 						}
 						// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
-						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
+						const textLayers = scope?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
 						if (textLayers) {
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
@@ -293,23 +334,24 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 						; (window as any).__rpvLastZoomScale = s
 
 						// ✅ Aggiorna --scale-factor su tutti i container necessari
-						const container = hostRef.current as HTMLElement | null
+						const container = getScrollContainer()
+						const viewer = hostRef.current as HTMLElement | null
+						const scope = (container || viewer) as HTMLElement | null
 						if (container) {
 							container.style.setProperty('--scale-factor', String(s))
 						}
-						const viewer = hostRef.current?.querySelector('.rpv-core__viewer') as HTMLElement | undefined
 						if (viewer) {
 							viewer.style.setProperty('--scale-factor', String(s))
 						}
 						// ✅ Aggiorna anche su tutti i page-layer (dove viene renderizzato il text layer)
-						const pageLayers = hostRef.current?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
+						const pageLayers = scope?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
 						if (pageLayers) {
 							pageLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(s))
 							})
 						}
 						// ✅ Aggiorna anche su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
-						const textLayers = hostRef.current?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
+						const textLayers = scope?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
 						if (textLayers) {
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(s))
@@ -326,22 +368,25 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					const scale = scaleRef.current || 1
 					// ✅ Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
 					requestAnimationFrame(() => {
-						const container = hostRef.current as HTMLElement | null
+						const container = getScrollContainer()
+						const viewer = hostRef.current as HTMLElement | null
+						const scope = (container || viewer) as HTMLElement | null
 						if (container) {
 							// ✅ Imposta sul container principale
 							container.style.setProperty('--scale-factor', String(scale))
+						}
+						if (viewer) {
 							// ✅ Imposta sul viewer
-							const viewer = container.querySelector('.rpv-core__viewer') as HTMLElement | undefined
-							if (viewer) {
-								viewer.style.setProperty('--scale-factor', String(scale))
-							}
+							viewer.style.setProperty('--scale-factor', String(scale))
+						}
+						if (scope) {
 							// ✅ Imposta su tutti i page-layer
-							const pageLayers = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
+							const pageLayers = scope.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
 							pageLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
 							})
 							// ✅ Imposta su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
-							const textLayers = container.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
+							const textLayers = scope.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement>
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(scale))
 							})
@@ -399,6 +444,9 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 
 					return (
 						<div
+							data-page-number={pageNumber}
+							data-page={pageNumber}
+							className="ai-pdf-page-root"
 							style={{ position: 'relative', width: '100%', height: '100%' }}
 							onDoubleClick={handleDoubleClick}
 							title="Doppio clic per copiare il testo della pagina nella clipboard"

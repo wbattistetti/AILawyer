@@ -29,9 +29,10 @@ interface UsePdfShellStateProps {
    * ✅ Se il viewer è attualmente attivo (visibile/focus)
    */
   isActive?: boolean
+  viewerReadyTick?: number
 }
 
-export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false }: UsePdfShellStateProps) {
+export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0 }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
@@ -48,10 +49,11 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
   // Utility hooks
   const { pdfDocRef } = usePdfDocument({ fileUrl })
-  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef } = usePdfOverlays({
+  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, ensureOverlayRootForPage } = usePdfOverlays({
     hostRef,
     selectMode: viewerState.selectMode,
-    selectKind: 'NATIVE'
+    selectKind: 'NATIVE',
+    viewerReadyTick
   })
 
   // ✅ Funzione per estrarre contenuto da rettangolo (specifica del viewer)
@@ -62,7 +64,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
       hasNativeText: viewerState.hasNativeText ?? false,
       pdfDocRef
     })
-  }, [hostRef, pageElsRef, viewerState.hasNativeText, pdfDocRef])
+  }, [hostRef, pageElsRef, viewerState.hasNativeText, pdfDocRef, ensureOverlayRootForPage])
 
   // Zoom functionality
   const scaleRef = useRef<number>(1)
@@ -114,10 +116,35 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     viewerId: docId || 'pdf-viewer',
     enabled: true, // ✅ Sempre abilitato (come Word) - elimina dipendenza da selectMode
     hostRef: hostRef as React.RefObject<HTMLElement>,
+    hostReadyTick: viewerReadyTick,
     pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
     onDraftChange: useCallback((draftBox: DraftBox | null) => {
       // ✅ Converti DraftBox in Annotation per AnnotationOverlays
       if (draftBox) {
+        const hasOverlayRoot = overlayRootsRef.current.has(draftBox.page)
+        const allRoots = Array.from(overlayRootsRef.current.keys())
+        const overlayRootInDOM = hasOverlayRoot ? document.contains(overlayRootsRef.current.get(draftBox.page)!) : false
+
+        // ✅ Se il root non esiste o non è nel DOM, prova a ricrearlo
+        if (!hasOverlayRoot || !overlayRootInDOM) {
+          console.warn('[RECT-SEL] ⚠️ Draft creato SENZA overlayRoot:', {
+            page: draftBox.page,
+            hasOverlayRoot,
+            overlayRootInDOM,
+            allRoots
+          })
+
+          // ✅ Prova a ricreare il root
+          if (ensureOverlayRootForPage) {
+            const recreated = ensureOverlayRootForPage(draftBox.page)
+            if (recreated) {
+              console.log('[RECT-SEL] ✅ OverlayRoot ricreato per pagina:', draftBox.page)
+            } else {
+              console.warn('[RECT-SEL] ⚠️ Impossibile ricreare overlayRoot per pagina:', draftBox.page)
+            }
+          }
+        }
+
         const annotation: any = {
           id: 'draft',
           page: draftBox.page,
@@ -132,7 +159,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
       } else {
         setDraft(null)
       }
-    }, [setDraft]),
+    }, [setDraft, overlayRootsRef]),
     onSelection: useCallback(async (rect: RectSelection) => {
       try {
         // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
@@ -326,6 +353,9 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     lastNativeRangeRef,
     lastDraftBoxRef,
     suppressClearRef,
+
+    // Overlay management
+    ensureOverlayRootForPage,
 
     // Persistent selections
     persistentSelections: viewerState.persistentSelections,

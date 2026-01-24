@@ -4,6 +4,7 @@ export interface UsePdfOverlaysProps {
 	hostRef: React.RefObject<HTMLElement>
 	selectMode: boolean
 	selectKind: 'NATIVE' | 'OCR'
+	viewerReadyTick?: number
 }
 
 export interface UsePdfOverlaysReturn {
@@ -13,14 +14,16 @@ export interface UsePdfOverlaysReturn {
 	elToPageRef: React.MutableRefObject<Map<HTMLElement, number>>
 	selectTick: number
 	setSelectTick: (tick: number | ((prev: number) => number)) => void
+	ensureOverlayRootForPage: (pageNum: number) => boolean
 }
 
-export function usePdfOverlays({ hostRef, selectMode, selectKind }: UsePdfOverlaysProps): UsePdfOverlaysReturn {
+export function usePdfOverlays({ hostRef, selectMode, selectKind, viewerReadyTick = 0 }: UsePdfOverlaysProps): UsePdfOverlaysReturn {
 	const overlayRootsRef = useRef<Map<number, HTMLElement>>(new Map())
 	const selectRootsRef = useRef<Map<number, HTMLElement>>(new Map())
 	const pageElsRef = useRef<Map<number, HTMLElement>>(new Map())
 	const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
 	const [selectTick, setSelectTick] = useState<number>(0)
+	const lastLogTimeRef = useRef<Map<number, number>>(new Map())
 
 	// ✅ Funzione helper per creare overlay root quando textLayer è pronto
 	const createOverlayRootForPage = (pageNum: number, textLayer: HTMLElement) => {
@@ -292,7 +295,126 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind }: UsePdfOverla
 			scs.forEach(sc => sc.removeEventListener('scroll', onAny, { capture: true } as any))
 			window.removeEventListener('resize', onAny)
 		}
-	}, [selectMode, selectKind, hostRef])
+	}, [selectMode, selectKind, hostRef, viewerReadyTick])
+
+	// ✅ Funzione per forzare la ricreazione di un overlay root quando viene rilevato orfano
+	const ensureOverlayRootForPage = (pageNum: number): boolean => {
+		const host = hostRef.current
+		if (!host) {
+			console.warn('[OVERLAYS] ⚠️ Host non disponibile per ensureOverlayRootForPage:', pageNum)
+			return false
+		}
+
+		// ✅ CRITICO: Rimuovi prima il root orfano dalla mappa se esiste ma non è nel DOM
+		if (overlayRootsRef.current.has(pageNum)) {
+			const existingRoot = overlayRootsRef.current.get(pageNum)!
+			if (!document.contains(existingRoot)) {
+				overlayRootsRef.current.delete(pageNum)
+			} else {
+				// ✅ Root esiste ed è nel DOM, non serve ricrearlo
+				return false
+			}
+		}
+
+		// ✅ Cerca il textLayer in modo robusto
+		let textLayer: HTMLElement | null = null
+		let pageLayer: HTMLElement | null = null
+
+		// ✅ Strategia 1: Usa pageElsRef se disponibile E valido nel DOM
+		const pageEl = pageElsRef.current.get(pageNum)
+		if (pageEl) {
+			if (document.contains(pageEl)) {
+				pageLayer = pageEl
+				textLayer = pageEl.querySelector('.rpv-core__text-layer') as HTMLElement | null
+			} else {
+				// ✅ CRITICO: Rimuovi riferimento obsoleto se pageEl non è più nel DOM
+				pageElsRef.current.delete(pageNum)
+			}
+		}
+
+		// ✅ Strategia 2: Cerca nel DOM usando data-page-number
+		if (!textLayer || !document.contains(textLayer)) {
+			const holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
+			let foundHolder = false
+			for (const holder of holders) {
+				const pageNumAttr = parseInt(holder.getAttribute('data-page-number') || '', 10)
+				if (pageNumAttr === pageNum) {
+					foundHolder = true
+					const foundPageLayer = (holder as any).querySelector('.rpv-core__page-layer') as HTMLElement | null
+					if (foundPageLayer && document.contains(foundPageLayer)) {
+						pageLayer = foundPageLayer
+						pageElsRef.current.set(pageNum, foundPageLayer)
+						const foundTextLayer = foundPageLayer.querySelector('.rpv-core__text-layer') as HTMLElement | null
+						if (foundTextLayer && document.contains(foundTextLayer)) {
+							textLayer = foundTextLayer
+							break
+						}
+					}
+					// ✅ Prova anche a cercare textLayer direttamente nel holder
+					const foundTextLayer2 = holder.querySelector('.rpv-core__text-layer') as HTMLElement | null
+					if (foundTextLayer2 && document.contains(foundTextLayer2)) {
+						textLayer = foundTextLayer2
+						if (!pageLayer) {
+							pageLayer = foundTextLayer2.closest('.rpv-core__page-layer') as HTMLElement | null
+							if (pageLayer) {
+								pageElsRef.current.set(pageNum, pageLayer)
+							}
+						}
+						break
+					}
+				}
+			}
+		}
+
+		// ✅ Strategia 3: Cerca tutti i textLayer e verifica quale appartiene alla pagina
+		if (!textLayer || !document.contains(textLayer)) {
+			const allTextLayers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
+			for (const tl of allTextLayers) {
+				if (!document.contains(tl)) continue
+				const parentPageLayer = tl.closest('.rpv-core__page-layer') as HTMLElement | null
+				if (parentPageLayer) {
+					const foundPageNum = getPageNumber(parentPageLayer)
+					if (foundPageNum === pageNum) {
+						textLayer = tl
+						pageLayer = parentPageLayer
+						pageElsRef.current.set(pageNum, parentPageLayer)
+						break
+					}
+				}
+			}
+		}
+
+		// ✅ Se abbiamo trovato un textLayer valido, crea il root
+		if (textLayer && document.contains(textLayer)) {
+			return createOverlayRootForPage(pageNum, textLayer)
+		}
+
+		// ✅ Log throttled (solo ogni 2 secondi per pagina) se non riusciamo a trovare il textLayer
+		const now = Date.now()
+		const lastLogTime = lastLogTimeRef.current.get(pageNum) || 0
+		if (now - lastLogTime > 2000) {
+			lastLogTimeRef.current.set(pageNum, now)
+			const holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
+			const holdersForPage = holders.filter(h => parseInt(h.getAttribute('data-page-number') || '', 10) === pageNum)
+			const allTextLayers = Array.from(host.querySelectorAll('.rpv-core__text-layer')) as HTMLElement[]
+			const textLayersInDOM = allTextLayers.filter(tl => document.contains(tl))
+			const pageLayers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
+			const pageLayersInDOM = pageLayers.filter(pl => document.contains(pl))
+
+			console.warn('[OVERLAYS] ⚠️ TextLayer non trovato per pagina:', pageNum, {
+				pageElExists: !!pageEl,
+				pageElInDOM: pageEl ? document.contains(pageEl) : false,
+				hostInDOM: document.contains(host),
+				totalHolders: holders.length,
+				holdersForPage: holdersForPage.length,
+				totalTextLayers: allTextLayers.length,
+				textLayersInDOM: textLayersInDOM.length,
+				totalPageLayers: pageLayers.length,
+				pageLayersInDOM: pageLayersInDOM.length
+			})
+		}
+		return false
+	}
 
 	return {
 		overlayRootsRef,
@@ -300,6 +422,7 @@ export function usePdfOverlays({ hostRef, selectMode, selectKind }: UsePdfOverla
 		pageElsRef,
 		elToPageRef,
 		selectTick,
-		setSelectTick
+		setSelectTick,
+		ensureOverlayRootForPage
 	}
 }
