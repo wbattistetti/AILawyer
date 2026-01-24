@@ -14,10 +14,6 @@ export interface UseWordRectSelectionProps {
    * Se il viewer è abilitato
    */
   enabled: boolean
-  /**
-   * Se il viewer è attualmente attivo (visibile/focus)
-   */
-  isActive: boolean
   hostRef: React.RefObject<HTMLDivElement>
   onSelection: (selection: any) => void
   onDraftChange?: (draft: DraftBox | null) => void
@@ -30,7 +26,6 @@ export interface UseWordRectSelectionProps {
 export function useWordRectSelection({
   viewerId,
   enabled,
-  isActive,
   hostRef,
   onSelection,
   onDraftChange,
@@ -40,7 +35,6 @@ export function useWordRectSelection({
   return useRectSelection({
     viewerId,
     enabled,
-    isActive,
     hostRef: hostRef as React.RefObject<HTMLElement>,
     onSelection,
     onDraftChange,

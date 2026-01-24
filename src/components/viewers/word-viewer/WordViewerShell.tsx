@@ -139,25 +139,24 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   useWordRectSelection({
     viewerId: docId || 'word-viewer', // ✅ ID univoco per isolamento
     enabled: true,
-    isActive, // ✅ Passa isActive per isolamento
     hostRef,
     onDraftChange: setDraft, // ✅ Aggiorna draft durante drag
     pageElsRef, // ✅ PASSATO: per calcolare coordinate rispetto alla pagina
     onSelection: async (rect: RectSelection) => {
       try {
-        // ✅ 1. Estrai contenuto usando extractContentFromRect (specifica del viewer)
-        const content = await extractContentFromRectImpl(rect)
-
-        // ✅ 2. Crea ExtractCard viewer-agnostica
+        // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
         const card: ExtractCard = {
           id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           rect: rect.rect,
           pageIndex: rect.pageIndex,
           viewerId: rect.viewerId,
           viewerType: 'word',
-          content,
+          // ✅ content non viene incluso qui - viene estratto solo quando necessario
           createdAt: new Date()
         }
+
+        // ✅ 2. Estrai contenuto SOLO quando necessario (per PersistentSelection/overlay)
+        const content = await extractContentFromRectImpl(rect)
 
         // ✅ 3. Converti ExtractCard in PersistentSelection (per retrocompatibilità con UI esistente)
         const pageNumber = rect.pageIndex + 1 // ✅ Converti a 1-based

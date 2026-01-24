@@ -113,7 +113,6 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   const rectSelection = useRectSelection({
     viewerId: docId || 'pdf-viewer',
     enabled: true, // ✅ Sempre abilitato (come Word) - elimina dipendenza da selectMode
-    isActive,
     hostRef: hostRef as React.RefObject<HTMLElement>,
     pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
     onDraftChange: useCallback((draftBox: DraftBox | null) => {
@@ -136,19 +135,19 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     }, [setDraft]),
     onSelection: useCallback(async (rect: RectSelection) => {
       try {
-        // ✅ 1. Estrai contenuto usando extractContentFromRect (specifica del viewer)
-        const content = await extractContentFromRectImpl(rect)
-
-        // ✅ 2. Crea ExtractCard viewer-agnostica
+        // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
         const card: ExtractCard = {
           id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           rect: rect.rect,
           pageIndex: rect.pageIndex,
           viewerId: rect.viewerId,
           viewerType: 'pdf',
-          content,
+          // ✅ content non viene incluso qui - viene estratto solo quando necessario
           createdAt: new Date()
         }
+
+        // ✅ 2. Estrai contenuto SOLO quando necessario (per PersistentSelection/overlay)
+        const content = await extractContentFromRectImpl(rect)
 
         // ✅ 3. Converti ExtractCard in PersistentSelection (per retrocompatibilità con UI esistente)
         const pageNumber = rect.pageIndex + 1 // ✅ Converti a 1-based

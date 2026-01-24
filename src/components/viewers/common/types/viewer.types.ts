@@ -112,6 +112,9 @@ export interface ExtractedContent {
 /**
  * ✅ Card di estratto viewer-agnostica
  * Formato universale per tutti i viewer
+ *
+ * La card contiene SOLO il rettangolo selezionato.
+ * Il contenuto estratto è opzionale e viene caricato on-demand quando necessario.
  */
 export interface ExtractCard {
   id: string
@@ -137,9 +140,10 @@ export interface ExtractCard {
    */
   viewerType: ViewerType
   /**
-   * ✅ Contenuto estratto
+   * ✅ Contenuto estratto (opzionale - lazy loading)
+   * Viene estratto solo quando necessario (es. per overlay, export, etc.)
    */
-  content: ExtractedContent
+  content?: ExtractedContent
   /**
    * ✅ Data creazione
    */

@@ -89,12 +89,24 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 			{allAnnotations.map((a, idx) => {
 				const root = overlayRootsRef.current.get(a.page)
 
+
 				if (!root) {
 					if (a.id === 'draft' || a.id === 'sel') {
 						console.warn('[ANNOT-OVERLAYS] ⚠️ Root overlay non trovato per pagina:', a.page, {
 							allRoots: Array.from(overlayRootsRef.current.keys()),
 							annotId: a.id,
 							annotPage: a.page
+						})
+					}
+					return null
+				}
+
+				// ✅ Verifica che il root sia ancora nel DOM
+				if (!document.contains(root)) {
+					if (a.id === 'draft') {
+						console.warn('[ANNOT-OVERLAYS] ⚠️ Root non è nel DOM per draft pagina:', a.page, {
+							root: { tagName: root.tagName, id: root.id, className: root.className },
+							allRoots: Array.from(overlayRootsRef.current.keys())
 						})
 					}
 					return null
@@ -108,7 +120,6 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 
 				let node: React.ReactNode = null
 				if (a.type === 'highlight') {
-
 					node = (
 						<div
 							style={{
@@ -118,18 +129,23 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 								width,
 								height,
 								pointerEvents: 'none',
-								background: a.color ?? 'rgba(59, 130, 246, 0.3)',
-								border: a.id === 'draft' ? '2px solid rgba(59, 130, 246, 0.8)' : 'none', // ✅ Bordo visibile per draft
+								background: a.color ?? (a.id === 'draft' ? 'rgba(59, 130, 246, 0.4)' : 'rgba(59, 130, 246, 0.3)'), // ✅ Opacità aumentata per draft (0.4 invece di 0.3)
+								border: a.id === 'draft' ? '2px solid rgba(59, 130, 246, 1)' : 'none', // ✅ Bordo più visibile per draft (1 invece di 0.8)
 								borderRadius: 2,
 								zIndex: a.id === 'draft' ? 9999 : 10, // ✅ Z-index molto alto per draft
 								boxSizing: 'border-box' // ✅ Include il bordo nelle dimensioni
 							}}
 						/>
 					)
+
 				}
 				if (a.type === 'underline') node = <div style={{ position: 'absolute', left, top, width, height: 2, background: a.color, pointerEvents: 'none' }} />
 				if (a.type === 'strike') node = <div style={{ position: 'absolute', left, top, width, height: 2, background: a.color, pointerEvents: 'none' }} />
 				if (a.type === 'comment') node = <div style={{ position: 'absolute', left, top, width: 12, height: 12, background: '#f59e0b', borderRadius: 2, pointerEvents: 'none' }} title={a.text} />
+
+				// ✅ Renderizza il portal
+				if (!node || !root) return null
+
 				return <React.Fragment key={`${a.id}-${a.page}-${idx}`}>{createPortal(node, root)}</React.Fragment>
 			})}
 
