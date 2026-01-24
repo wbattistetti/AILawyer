@@ -1348,7 +1348,7 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
             ) : null}
 
             {/* Testo estratto - NON mostrare quando è overlay (solo immagine del rettangolo) */}
-            {hasText && !isOverlay && (
+            {hasText && !isOverlay && !hasImage && (
               <div className="text-sm text-gray-700 whitespace-pre-wrap break-words bg-gray-50 p-2 rounded">
                 {extract.content}
               </div>
