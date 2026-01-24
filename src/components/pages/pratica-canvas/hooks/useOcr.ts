@@ -49,9 +49,8 @@ export function useOcr(praticaId: string | undefined) {
         limitPages
       })
 
-      // Determina se è un file locale (modalità privacy)
-      // Può essere: 1) documento temporaneo (temp:) o 2) documento salvato con s3Key "local:..."
-      const isLocal = documento.id.startsWith('temp:') || documento.s3Key?.startsWith('local:')
+      // Modalità solo in memoria: usa sempre OCR locale, nessun job DB
+      const isLocal = true
 
       let job: { id: string; status: string }
 
@@ -263,12 +262,6 @@ export function useOcr(praticaId: string | undefined) {
           })
           return
         }
-      } else {
-        // Documento nel database: usa endpoint normale (con Job nel DB)
-        toast({ title: 'OCR avviato', description: documento.filename })
-        const jobResult = await api.queueOcr(documento.id, mode, limitPages)
-        job = jobResult
-        console.log('[OCR][queue-ok]', { docId: documento.id, jobId: job.id })
       }
 
       // Aggiorna state con documento.id (funziona sia per locali che per DB)
@@ -280,19 +273,8 @@ export function useOcr(praticaId: string | undefined) {
       const poll = async () => {
         if (!active) return
         try {
-          // Per file locali: usa endpoint in-memory, per DB: usa getJob
-          let progress: { progress: number; status: string; result?: any; error?: string }
-          if (isLocal) {
-            progress = await api.getOcrProgressLocal(documento.s3Key)
-          } else {
-            const j = await api.getJob(job.id)
-            progress = {
-              progress: j.progress || 0,
-              status: j.status,
-              result: j.result ? (typeof j.result === 'string' ? JSON.parse(j.result) : j.result) : undefined,
-              error: j.error || undefined
-            }
-          }
+          // Solo in-memory OCR: usa endpoint locale
+          const progress = await api.getOcrProgressLocal(documento.s3Key)
 
           // Log rimosso (troppo rumoroso)
           // console.log('[OCR] progress response', { ... })
