@@ -360,7 +360,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 							{/* RIGA 2: Contenuto estratto (full width) */}
 							<div>
 								<textarea
-									className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none overflow-hidden"
+									className="w-full border border-border rounded-lg px-3 py-2 text-[14px] bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-ring transition-colors resize-none overflow-hidden"
 									placeholder={getContentPlaceholder(extractType)}
 									value={extractContent}
 									onChange={(e) => {
@@ -417,7 +417,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 						{/* Pulsante Note */}
 						<button
 							type="button"
-							className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 px-3 py-2 font-medium transition-colors border border-border rounded-lg hover:bg-muted"
+							className="text-sm text-primary hover:text-primary/80 flex items-center gap-1 px-3 py-2 font-medium transition-colors border border-border rounded-lg hover:bg-muted"
 							onClick={() => onShowNotesChange(!showNotes)}
 						>
 							{showNotes ? '▾' : '▸'} Note
@@ -432,7 +432,7 @@ export const ExtractDialog: React.FC<ExtractDialogProps> = ({
 								Annulla
 							</button>
 							<button
-								className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 text-[13px] font-medium hover:bg-blue-700 disabled:hover:bg-blue-600 transition-colors"
+								className="px-4 py-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50 text-[13px] font-medium hover:bg-primary/90 disabled:hover:bg-primary transition-colors"
 								disabled={loading || !extractType || !extractContent.trim() || !extractDate.trim() || !selectedClientIds.length ||
 									(extractType !== 'reato' && !selectedParentId)}
 								onClick={handleSave}

@@ -134,6 +134,19 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     const enforceStructure = () => {
       if (!scrollHostRef.current) return
 
+      // ✅ Salva lo stato del focus PRIMA di manipolare il DOM
+      const activeElement = document.activeElement
+      const wasSearchInputFocused = activeElement?.tagName === 'INPUT' &&
+        activeElement.closest('[class*="border-l"]') !== null // È dentro SearchPanel
+      const savedInput = wasSearchInputFocused ? activeElement as HTMLInputElement : null
+
+      if (savedInput) {
+        console.log('[ENFORCE][FOCUS] Salvato focus su input di ricerca prima di manipolare DOM', {
+          input: savedInput,
+          value: (savedInput as HTMLInputElement).value
+        })
+      }
+
       // 1. Trova flexlayout__tab (container principale del tab)
       let tab: HTMLElement | null = null
       let current: HTMLElement | null = scrollHostRef.current
@@ -208,7 +221,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         searchPanel.style.maxHeight = `${contentAreaHeight}px`
         searchPanel.style.overflow = 'hidden'
 
-        const searchHeader = searchPanel.querySelector('[class*="border-b"][class*="bg-gray-50"]') as HTMLElement | null
+      const searchHeader = searchPanel.querySelector('.pdf-search-header') as HTMLElement | null
         const headerHeight = searchHeader?.offsetHeight || 45
         const resultsHeight = contentAreaHeight - headerHeight
 
@@ -246,6 +259,37 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             }
           }
         }
+      }
+
+      // ✅ Ripristina SEMPRE il focus se era sull'input di ricerca
+      // Questo è necessario perché la manipolazione del DOM può causare blur temporanei
+      if (savedInput && document.contains(savedInput)) {
+        // Usa doppio requestAnimationFrame per assicurarsi che il DOM sia completamente pronto
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (document.contains(savedInput)) {
+              const currentActive = document.activeElement
+              // Ripristina sempre se non è già l'input, o se l'input non ha il focus visibile
+              const needsRestore = currentActive !== savedInput ||
+                !document.hasFocus() ||
+                savedInput !== document.activeElement
+
+              if (needsRestore) {
+                console.log('[ENFORCE][FOCUS] Ripristino focus dopo manipolazione DOM', {
+                  wasFocused: savedInput,
+                  currentActive,
+                  hasFocus: document.hasFocus(),
+                  needsRestore
+                })
+                savedInput.focus()
+                savedInput.select()
+                console.log('[ENFORCE][FOCUS] Focus ripristinato con successo')
+              } else {
+                console.log('[ENFORCE][FOCUS] Focus già presente e attivo, nessun ripristino necessario')
+              }
+            }
+          })
+        })
       }
     }
 

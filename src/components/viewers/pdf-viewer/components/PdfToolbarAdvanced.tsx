@@ -55,7 +55,7 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 	zoomTo
 }) => {
 	return (
-		<div className="flex items-center justify-between p-2 border-b bg-gray-50 flex-shrink-0">
+		<div className="flex items-center justify-between p-2 border-b bg-background flex-shrink-0">
 			<div className="flex items-center gap-2">
 				{/* Pulsante per aprire il pannello quando è chiuso */}
 				{!showAdvanced && (
@@ -69,7 +69,7 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 				{/* Pulsante per chiudere il pannello quando è aperto */}
 				{showAdvanced && (
 					<button
-						className="px-2 py-1 border rounded bg-blue-100 border-blue-400"
+						className="px-2 py-1 border rounded bg-accent text-accent-foreground hover:bg-accent/80"
 						title="Chiudi pannello ricerca"
 						onClick={()=>setShowAdvanced(false)}
 					>
@@ -78,21 +78,21 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 				)}
 
 				<div className="flex items-center gap-2">
-					<button className={`px-2 py-1 rounded border ${tool==='highlight'?'bg-yellow-100 border-yellow-400':''}`} title="Evidenzia" onClick={()=>setTool(tool==='highlight'?'none':'highlight')}>
+					<button className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='highlight'?'bg-accent text-accent-foreground border-border':''}`} title="Evidenzia" onClick={()=>setTool(tool==='highlight'?'none':'highlight')}>
 						<Highlighter size={16} />
 					</button>
-					<button className={`px-2 py-1 rounded border ${tool==='underline'?'bg-sky-100 border-sky-400':''}`} title="Sottolinea" onClick={()=>setTool(tool==='underline'?'none':'underline')}>
+					<button className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='underline'?'bg-accent text-accent-foreground border-border':''}`} title="Sottolinea" onClick={()=>setTool(tool==='underline'?'none':'underline')}>
 						<UnderlineIcon size={16} />
 					</button>
-					<button className={`px-2 py-1 rounded border ${tool==='strike'?'bg-red-100 border-red-400':''}`} title="Barra" onClick={()=>setTool(tool==='strike'?'none':'strike')}>
+					<button className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='strike'?'bg-accent text-accent-foreground border-border':''}`} title="Barra" onClick={()=>setTool(tool==='strike'?'none':'strike')}>
 						<StrikethroughIcon size={16} />
 					</button>
-					<button className={`px-2 py-1 rounded border ${audit?'bg-gray-100 border-gray-400':''}`} title="Audit mode (testo digitale)" onClick={()=>setAudit(a=>!a)}>Audit</button>
-					<button className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
+					<button className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${audit?'bg-accent text-accent-foreground border-border':''}`} title="Audit mode (testo digitale)" onClick={()=>setAudit(a=>!a)}>Audit</button>
+					<button className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='comment'?'bg-accent text-accent-foreground border-border':''}`} title="Commento" onClick={()=>setTool(tool==='comment'?'none':'comment')}>
 						<MessageSquare size={16} />
 					</button>
 					<button
-						className={`px-2 py-1 rounded border ${autoDeskew ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
+						className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${autoDeskew ? 'bg-accent text-accent-foreground border-border' : ''}`}
 						title={autoDeskew ? 'Raddrizza: ON' : 'Raddrizza quando serve'}
 						onClick={async()=>{
 							const next = !autoDeskew
@@ -119,13 +119,13 @@ export const PdfToolbarAdvanced: React.FC<PdfToolbarAdvancedProps> = ({
 
 			<div className="w-full md:w-auto md:ml-auto flex items-center gap-2 justify-start md:justify-end flex-wrap">
 				<div className="flex items-center gap-1">
-					<label className="text-xs text-gray-600">Selezione</label>
-					<select className="border rounded px-1 py-0.5 text-xs" value={selectKind} onChange={(e)=>setSelectKind(e.target.value as any)}>
+					<label className="text-xs text-muted-foreground">Selezione</label>
+					<select className="border rounded px-1 py-0.5 text-xs bg-background text-foreground" value={selectKind} onChange={(e)=>setSelectKind(e.target.value as any)}>
 						<option value="NATIVE">Nativa</option>
 						<option value="OCR">OCR</option>
 					</select>
 				</div>
-				<span className="text-xs w-10 text-right">{zoomPct}%</span>
+				<span className="text-xs w-10 text-right text-muted-foreground">{zoomPct}%</span>
 				<input
 					type="range"
 					min={50}

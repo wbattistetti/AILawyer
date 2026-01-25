@@ -45,7 +45,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="ml-auto flex items-center gap-2">
         {showAdvanced ? (
           <button
-            className="px-3 py-1 border rounded bg-blue-100 border-blue-400 hover:bg-blue-200"
+            className="px-3 py-1 border rounded bg-accent text-accent-foreground hover:bg-accent/80"
             title="Chiudi pannello ricerca"
             onClick={onCloseSearchPanel}
           >

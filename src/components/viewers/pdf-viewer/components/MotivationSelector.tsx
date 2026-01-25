@@ -37,14 +37,14 @@ export const MotivationSelector: React.FC<MotivationSelectorProps> = ({
     }
 
     return (
-        <div className={`border border-gray-300 rounded-lg p-2 ${maxHeight} overflow-y-auto`}>
+        <div className={`border border-border rounded-lg p-2 ${maxHeight} overflow-y-auto bg-background`}>
             {/* Search box (solo se necessario) */}
             {showSearch && (
                 <div className="mb-2">
                     <input
                         type="text"
                         placeholder="Cerca motivazioni..."
-                        className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full text-xs border border-border rounded px-2 py-1 bg-background text-foreground focus:ring-1 focus:ring-ring focus:border-ring"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -54,19 +54,19 @@ export const MotivationSelector: React.FC<MotivationSelectorProps> = ({
             {/* Lista motivazioni */}
             {filteredMotivations.length > 0 ? (
                 filteredMotivations.map(motivation => (
-                    <label key={motivation.id} className="flex items-center space-x-2 py-1 hover:bg-gray-50 cursor-pointer rounded">
+                    <label key={motivation.id} className="flex items-center space-x-2 py-1 hover:bg-muted cursor-pointer rounded">
                         <input
                             type="radio"
                             name="motivationSelection"
                             checked={selectedId === motivation.id}
                             onChange={() => handleSelectMotivation(motivation.id)}
-                            className="border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="border-border text-primary focus:ring-ring"
                         />
-                        <span className="text-sm text-gray-700">{motivation.title || motivation.content}</span>
+                        <span className="text-sm text-foreground">{motivation.title || motivation.content}</span>
                     </label>
                 ))
             ) : (
-                <div className="text-xs text-gray-500 py-2 text-center">
+                <div className="text-xs text-muted-foreground py-2 text-center">
                     {searchTerm ? 'Nessuna motivazione trovata' : emptyMessage}
                 </div>
             )}

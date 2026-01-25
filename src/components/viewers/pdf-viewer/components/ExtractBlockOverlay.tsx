@@ -505,7 +505,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 									e.stopPropagation()
 								}}
 								disabled={isExtractingText}
-								className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+								className="px-2 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{isExtractingText ? 'Estrazione...' : 'Estrai testo'}
 							</button>
@@ -541,7 +541,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 								e.stopPropagation()
 								handleCancel()
 							}}
-							className="px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded text-xs font-medium transition-colors"
+							className="px-2 py-1 bg-muted text-foreground hover:bg-muted/80 rounded text-xs font-medium transition-colors"
 						>
 							Annulla
 						</button>
@@ -550,7 +550,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 								e.stopPropagation()
 								handleAddExtract()
 							}}
-							className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors"
+							className="px-2 py-1 bg-primary text-primary-foreground hover:bg-primary/90 rounded text-xs font-medium transition-colors"
 						>
 							Salva estratto
 						</button>

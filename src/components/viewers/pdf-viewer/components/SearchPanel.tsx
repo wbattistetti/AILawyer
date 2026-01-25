@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import { SearchProvider } from '../../../search/SearchProvider'
 import { SearchPanelTree } from '../../../search/SearchPanelTree'
@@ -18,7 +18,7 @@ interface SearchPanelProps {
 	searchCacheRef: React.MutableRefObject<Map<string, any[]>>
 }
 
-export const SearchPanel: React.FC<SearchPanelProps> = ({
+export const SearchPanel = React.memo<SearchPanelProps>(({
 	showAdvanced,
 	setShowAdvanced,
 	panelW,
@@ -31,6 +31,17 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 	goToMatch,
 	searchCacheRef
 }) => {
+	const searchPanelTreeRef = useRef<SearchPanelTreeHandle>(null)
+	const renderCountRef = useRef(0)
+
+	renderCountRef.current++
+	console.log('[SEARCH][PANEL][RENDER] SearchPanel renderizzato', {
+		timestamp: Date.now(),
+		renderCount: renderCountRef.current,
+		showAdvanced,
+		panelW
+	})
+
 	if (!showAdvanced) return null
 
 	return (
@@ -45,7 +56,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 					document.body.style.cursor = 'col-resize'
 					document.body.style.userSelect = 'none'
 				}}
-				className="group cursor-col-resize transition-colors hover:bg-blue-400 bg-transparent flex items-center justify-center"
+				className="group cursor-col-resize transition-colors hover:bg-muted bg-transparent flex items-center justify-center"
 				style={{
 					width: '6px',
 					minWidth: '6px',
@@ -57,11 +68,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 				}}
 				title="Trascina per ridimensionare"
 			>
-				<GripVertical size={12} className="text-transparent group-hover:text-blue-700 transition-colors" />
+				<GripVertical size={12} className="text-transparent group-hover:text-muted-foreground transition-colors" />
 			</div>
 			<div className="h-full border-l bg-background flex flex-col overflow-hidden" style={{ width: panelW }}>
 				{/* Header pannello ricerca con X per chiudere - FISSO */}
-				<div className="flex items-center justify-between px-3 py-2 border-b bg-muted flex-shrink-0">
+				<div className="pdf-search-header flex items-center justify-between px-3 py-2 border-b bg-muted flex-shrink-0">
 					<h3 className="font-semibold text-sm">Risultati ricerca</h3>
 					<button
 						className="p-1 hover:bg-muted rounded"
@@ -163,9 +174,25 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 						} catch { }
 					}
 				})}>
-					<SearchPanelTree showInput={true} showScopeSelector={false} initialQuery={searchQ} />
+					<SearchPanelTree
+						ref={searchPanelTreeRef}
+						showInput={true}
+						showScopeSelector={false}
+						initialQuery={searchQ}
+						isVisible={showAdvanced}
+					/>
 				</SearchProvider>
 			</div>
 		</React.Fragment>
 	)
-}
+}, (prevProps, nextProps) => {
+	// Memoizzazione: re-render solo se cambiano queste props critiche
+	return (
+		prevProps.showAdvanced === nextProps.showAdvanced &&
+		prevProps.panelW === nextProps.panelW &&
+		prevProps.searchQ === nextProps.searchQ &&
+		prevProps.docId === nextProps.docId &&
+		prevProps.fileUrl === nextProps.fileUrl &&
+		prevProps.totalPages === nextProps.totalPages
+	)
+})

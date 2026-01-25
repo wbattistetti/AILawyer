@@ -217,7 +217,7 @@ export const FloatingExtractButton: React.FC<FloatingExtractButtonProps> = ({
 				ref={buttonRef}
 				data-extract-button="true"
 				type="button"
-				className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-colors pointer-events-auto cursor-pointer"
+				className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-colors pointer-events-auto cursor-pointer"
 				style={{
 					left: `${position.x}px`,
 					top: `${position.y}px`,

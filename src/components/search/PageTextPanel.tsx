@@ -161,7 +161,7 @@ export const PageTextPanel: React.FC<PageTextPanelProps> = ({
   return (
     <div
       ref={panelRef}
-      className="fixed bg-white border-2 border-gray-300 shadow-2xl rounded-lg flex flex-col"
+      className="fixed bg-popover text-popover-foreground border-2 border-border shadow-2xl rounded-lg flex flex-col"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -176,25 +176,25 @@ export const PageTextPanel: React.FC<PageTextPanelProps> = ({
       <div
         ref={headerRef}
         onMouseDown={handleHeaderMouseDown}
-        className="flex items-center justify-between px-4 py-2 bg-gray-100 border-b border-gray-300 rounded-t-lg cursor-move select-none"
+        className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border rounded-t-lg cursor-move select-none"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Move size={16} className="text-gray-500 flex-shrink-0" />
-          <span className="text-sm font-semibold text-gray-700 truncate">
+          <Move size={16} className="text-muted-foreground flex-shrink-0" />
+          <span className="text-sm font-semibold text-foreground truncate">
             {docTitle || 'Documento'} - Pagina {pageNumber}
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={handleMaximize}
-            className="p-1 hover:bg-gray-200 rounded transition-colors"
+            className="p-1 hover:bg-muted rounded transition-colors"
             title={isMaximized ? 'Riduci' : 'Ingrandisci'}
           >
             {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-red-100 hover:text-red-600 rounded transition-colors"
+            className="p-1 hover:bg-destructive/10 hover:text-destructive rounded transition-colors"
             title="Chiudi"
           >
             <X size={16} />
@@ -206,23 +206,23 @@ export const PageTextPanel: React.FC<PageTextPanelProps> = ({
       <div className="flex-1 overflow-auto p-4 bg-white">
         {loading && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-gray-500">Caricamento testo pagina...</div>
+            <div className="text-muted-foreground">Caricamento testo pagina...</div>
           </div>
         )}
 
         {error && (
           <div className="flex flex-col items-center justify-center h-full gap-2">
-            <div className="text-red-600 font-semibold">{error}</div>
-            <div className="text-xs text-gray-500">Richiesta pagina: {pageNumber}</div>
+            <div className="text-destructive font-semibold">{error}</div>
+            <div className="text-xs text-muted-foreground">Richiesta pagina: {pageNumber}</div>
           </div>
         )}
 
         {!loading && !error && text && (
           <div className="flex flex-col h-full">
-            <div className="text-xs text-gray-500 mb-2 pb-2 border-b">
+            <div className="text-xs text-muted-foreground mb-2 pb-2 border-b border-border">
               Testo estratto dalla pagina {pageNumber} (lunghezza: {text.length} caratteri)
             </div>
-            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-800 leading-relaxed flex-1">
+            <pre className="whitespace-pre-wrap font-mono text-sm text-foreground leading-relaxed flex-1">
               {text}
             </pre>
           </div>
@@ -230,7 +230,7 @@ export const PageTextPanel: React.FC<PageTextPanelProps> = ({
 
         {!loading && !error && !text && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-gray-500">Nessun testo disponibile</div>
+            <div className="text-muted-foreground">Nessun testo disponibile</div>
           </div>
         )}
       </div>
@@ -239,22 +239,22 @@ export const PageTextPanel: React.FC<PageTextPanelProps> = ({
       {!isMaximized && (
         <>
           <div
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize bg-gray-300 hover:bg-gray-400"
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize bg-border hover:bg-muted"
             onMouseDown={(e) => handleResize(e, 'se')}
             style={{ clipPath: 'polygon(100% 0, 0 100%, 100% 100%)' }}
           />
           <div
-            className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize bg-gray-300 hover:bg-gray-400"
+            className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize bg-border hover:bg-muted"
             onMouseDown={(e) => handleResize(e, 'sw')}
             style={{ clipPath: 'polygon(0 0, 100% 100%, 0 100%)' }}
           />
           <div
-            className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize bg-gray-300 hover:bg-gray-400"
+            className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize bg-border hover:bg-muted"
             onMouseDown={(e) => handleResize(e, 'ne')}
             style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
           />
           <div
-            className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize bg-gray-300 hover:bg-gray-400"
+            className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize bg-border hover:bg-muted"
             onMouseDown={(e) => handleResize(e, 'nw')}
             style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
           />

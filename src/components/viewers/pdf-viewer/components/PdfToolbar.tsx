@@ -89,7 +89,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 			<div className="ml-auto flex items-center gap-2">
 				{showAdvanced ? (
 					<button
-						className="px-3 py-1 border rounded bg-blue-100 border-blue-400 hover:bg-blue-200"
+						className="px-3 py-1 border rounded bg-accent text-accent-foreground hover:bg-accent/80"
 						title="Chiudi pannello ricerca"
 						onClick={onToggleAdvanced}
 					>
@@ -124,7 +124,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 					<UnderlineIcon size={16} />
 				</button>
 				<button
-					className={`px-2 py-1 rounded border ${tool==='strike'?'bg-red-100 border-red-400':''}`}
+					className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='strike'?'bg-accent text-accent-foreground border-border':''}`}
 					title="Barra"
 					onClick={() => onToolChange(tool==='strike'?'none':'strike')}
 				>
@@ -138,14 +138,14 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 					Audit
 				</button>
 				<button
-					className={`px-2 py-1 rounded border ${tool==='comment'?'bg-amber-100 border-amber-400':''}`}
+					className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool==='comment'?'bg-accent text-accent-foreground border-border':''}`}
 					title="Commento"
 					onClick={() => onToolChange(tool==='comment'?'none':'comment')}
 				>
 					<MessageSquare size={16} />
 				</button>
 				<button
-					className={`px-2 py-1 rounded border ${autoDeskew ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
+					className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${autoDeskew ? 'bg-accent text-accent-foreground border-border' : ''}`}
 					title={autoDeskew ? 'Raddrizza: ON' : 'Raddrizza quando serve'}
 					onClick={onDeskewToggle}
 				>

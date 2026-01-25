@@ -79,7 +79,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
         {/* Pagina */}
         <div className="flex items-center gap-1">
           <input
-            className="w-16 border rounded px-1 py-0.5 text-center text-sm"
+            className="w-16 border rounded px-1 py-0.5 text-center text-sm bg-background text-foreground"
             value={pageInput}
             onChange={(e) => onPageInputChange(e.target.value.replace(/[^0-9]/g, ''))}
             onKeyDown={(e) => {
@@ -89,51 +89,51 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
               }
             }}
           />
-          <span className="text-sm text-gray-600 whitespace-nowrap">/ {totalPages || '-'}</span>
+          <span className="text-sm text-muted-foreground whitespace-nowrap">/ {totalPages || '-'}</span>
         </div>
 
         {/* Separatore */}
-        <div className="h-6 w-px bg-gray-300" />
+        <div className="h-6 w-px bg-border" />
 
         {/* Strumenti di annotazione */}
         <div className="flex items-center gap-1">
           <button
-            className={`px-2 py-1 rounded border ${tool === 'highlight' ? 'bg-yellow-100 border-yellow-400' : ''}`}
+            className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool === 'highlight' ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title="Evidenzia"
             onClick={() => setTool(tool === 'highlight' ? 'none' : 'highlight')}
           >
             <Highlighter size={16} />
           </button>
           <button
-            className={`px-2 py-1 rounded border ${tool === 'underline' ? 'bg-sky-100 border-sky-400' : ''}`}
+            className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool === 'underline' ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title="Sottolinea"
             onClick={() => setTool(tool === 'underline' ? 'none' : 'underline')}
           >
             <UnderlineIcon size={16} />
           </button>
           <button
-            className={`px-2 py-1 rounded border ${tool === 'strike' ? 'bg-red-100 border-red-400' : ''}`}
+            className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool === 'strike' ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title="Barra"
             onClick={() => setTool(tool === 'strike' ? 'none' : 'strike')}
           >
             <StrikethroughIcon size={16} />
           </button>
           <button
-            className={`px-2 py-1 rounded border text-sm ${audit ? 'bg-muted border-border' : ''}`}
+            className={`px-2 py-1 rounded border text-sm bg-background text-foreground hover:bg-muted ${audit ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title="Audit mode (testo digitale)"
             onClick={() => setAudit(a => !a)}
           >
             Audit
           </button>
           <button
-            className={`px-2 py-1 rounded border ${tool === 'comment' ? 'bg-amber-100 border-amber-400' : ''}`}
+            className={`px-2 py-1 rounded border bg-background text-foreground hover:bg-muted ${tool === 'comment' ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title="Commento"
             onClick={() => setTool(tool === 'comment' ? 'none' : 'comment')}
           >
             <MessageSquare size={16} />
           </button>
           <button
-            className={`px-2 py-1 rounded border text-sm ${autoDeskew ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : ''}`}
+            className={`px-2 py-1 rounded border text-sm bg-background text-foreground hover:bg-muted ${autoDeskew ? 'bg-accent text-accent-foreground border-border' : ''}`}
             title={autoDeskew ? 'Raddrizza: ON' : 'Raddrizza quando serve'}
             onClick={async () => {
               const next = !autoDeskew
@@ -165,7 +165,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
         {/* Pulsante Ricerca */}
         {showAdvanced ? (
           <button
-            className="px-2 py-1 border rounded bg-blue-100 border-blue-400 hover:bg-blue-200 text-sm"
+            className="px-2 py-1 border rounded bg-accent text-accent-foreground hover:bg-accent/80 text-sm"
             title="Chiudi pannello ricerca"
             onClick={() => {
               setShowAdvanced(false)
@@ -177,7 +177,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
           </button>
         ) : (
           <button
-            className="px-2 py-1 border rounded hover:bg-muted text-sm"
+            className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted text-sm"
             title="Apri pannello ricerca"
             onClick={() => {
               setShowAdvanced(true)
@@ -190,14 +190,14 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
         )}
 
         {/* Separatore */}
-        <div className="h-6 w-px bg-gray-300" />
+        <div className="h-6 w-px bg-border" />
 
         {/* Selezione e Zoom */}
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
-            <label className="text-xs text-gray-600">Selezione</label>
+            <label className="text-xs text-muted-foreground">Selezione</label>
             <select
-              className="border rounded px-1 py-0.5 text-xs"
+              className="border rounded px-1 py-0.5 text-xs bg-background text-foreground"
               value={selectKind}
               onChange={(e) => setSelectKind(e.target.value as 'NATIVE' | 'OCR')}
             >
@@ -205,7 +205,7 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
               <option value="OCR">OCR</option>
             </select>
           </div>
-          <span className="text-xs w-10 text-right">{zoomPct}%</span>
+          <span className="text-xs w-10 text-right text-muted-foreground">{zoomPct}%</span>
           <input
             type="range"
             min={50}

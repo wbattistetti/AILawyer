@@ -1,160 +1,289 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
 import { useToast } from '@/hooks/use-toast'
 import { extractPageText } from '@/utils/extractPageText'
 
-export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelector?: boolean; initialQuery?: string }>(({ showInput=true, showScopeSelector=true, initialQuery })=>{
-  const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
-  const { toast } = useToast()
-  const [q, setQ] = useState(initialQuery || '')
-  const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
-  const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
-  const lastScrolledQuery = useRef<string | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+export interface SearchPanelTreeHandle {
+  focusInput: () => void
+}
 
-  // Stato per gestire contesti espansi e slider
-  const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
-  const [contextLines, setContextLines] = useState<Record<string, number>>({}) // matchId -> righe (0-10)
-  const [hoveredMatchId, setHoveredMatchId] = useState<string | null>(null)
-  const [loadingContext, setLoadingContext] = useState<Record<string, boolean>>({})
+interface SearchPanelTreeProps {
+  showInput?: boolean
+  showScopeSelector?: boolean
+  initialQuery?: string
+  isVisible?: boolean
+}
 
-  // Auto-scroll al nodo appena cercato (solo UNA volta per query)
-  useEffect(() => {
-    if (initialQuery && results.length > 0 && initialQuery !== lastScrolledQuery.current) {
-      // Trova il nodo con la query corrente
-      const targetNode = results.find(r => r.query === initialQuery)
-      if (targetNode && nodeRefs.current[targetNode.query]) {
-        lastScrolledQuery.current = initialQuery
-        setTimeout(() => {
-          nodeRefs.current[targetNode.query]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }, 100)
+export const SearchPanelTree = React.memo(
+  forwardRef<SearchPanelTreeHandle, SearchPanelTreeProps>(
+    ({ showInput=true, showScopeSelector=true, initialQuery, isVisible }, ref) => {
+      const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
+      const { toast } = useToast()
+      const [q, setQ] = useState(initialQuery || '')
+      const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
+      const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
+      const [selectedId, setSelectedId] = useState<string | null>(null)
+      const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
+      const lastScrolledQuery = useRef<string | null>(null)
+      const inputRef = useRef<HTMLInputElement | null>(null)
+      const renderCountRef = useRef(0)
+
+      renderCountRef.current++
+      console.log('[SEARCH][RENDER] SearchPanelTree renderizzato', {
+        timestamp: Date.now(),
+        renderCount: renderCountRef.current,
+        showInput,
+        isVisible,
+        hasInputRef: !!inputRef.current
+      })
+
+      // Stato per gestire contesti espansi e slider
+      const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
+      const [contextLines, setContextLines] = useState<Record<string, number>>({}) // matchId -> righe (0-10)
+      const [hoveredMatchId, setHoveredMatchId] = useState<string | null>(null)
+      const [loadingContext, setLoadingContext] = useState<Record<string, boolean>>({})
+
+      // Esponi il metodo focusInput tramite ref per controllo esplicito quando serve
+      useImperativeHandle(ref, () => ({
+        focusInput: () => {
+          if (inputRef.current) {
+            inputRef.current.focus()
+            inputRef.current.select()
+          }
+        }
+      }), [])
+
+      // Focus sull'input quando il pannello diventa visibile (solo una volta)
+      const hasFocusedRef = useRef(false)
+      useEffect(() => {
+        if (isVisible && showInput && inputRef.current && !hasFocusedRef.current) {
+          // Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
+          requestAnimationFrame(() => {
+            if (inputRef.current) {
+              inputRef.current.focus()
+              inputRef.current.select()
+              hasFocusedRef.current = true
+              console.log('[SEARCH][FOCUS][EFFECT] Focus applicato via useEffect')
+            }
+          })
+        }
+
+        // Reset quando il pannello viene chiuso
+        if (!isVisible) {
+          hasFocusedRef.current = false
+        }
+      }, [isVisible, showInput])
+
+      // Mantieni il focus: riapplica quando viene perso (se il pannello è ancora visibile)
+      useEffect(() => {
+        if (!isVisible || !showInput || !inputRef.current) return
+
+        const input = inputRef.current
+        let blurTimeoutId: number | null = null
+
+        const handleBlur = (e: FocusEvent) => {
+          const activeElement = document.activeElement
+          const relatedTarget = e.relatedTarget as HTMLElement | null
+
+          console.log('[SEARCH][FOCUS][BLUR] Blur event ricevuto', {
+            activeElement,
+            relatedTarget,
+            isSameInput: activeElement === input,
+            inputValue: (input as HTMLInputElement).value
+          })
+
+          // ✅ Se il blur è causato da un altro elemento che prende il focus, non interferire
+          // Ma verifica che NON sia lo stesso input (può succedere durante re-render)
+          if (activeElement &&
+              activeElement !== document.body &&
+              activeElement !== document.documentElement &&
+              activeElement !== input &&
+              relatedTarget !== input) {
+            console.log('[SEARCH][FOCUS][BLUR-HANDLED] Blur normale, elemento ha preso focus:', {
+              activeElement,
+              relatedTarget,
+              tag: activeElement.tagName,
+              id: activeElement.id
+            })
+            return
+          }
+
+          // ✅ Se nessun elemento ha preso il focus OPPURE è lo stesso input (re-render),
+          // riapplica dopo un breve delay
+          blurTimeoutId = window.setTimeout(() => {
+            if (inputRef.current && isVisible) {
+              const currentActive = document.activeElement
+              // Ripristina sempre se non è già l'input (anche se è body/document o lo stesso input)
+              if (currentActive !== inputRef.current) {
+                console.log('[SEARCH][FOCUS][RESTORE] Ripristino focus dopo blur', {
+                  currentActive,
+                  willFocus: inputRef.current
+                })
+                inputRef.current.focus()
+                inputRef.current.select()
+              } else {
+                console.log('[SEARCH][FOCUS][RESTORE] Focus già presente, nessun ripristino necessario')
+              }
+            }
+          }, 50)
+        }
+
+        input.addEventListener('blur', handleBlur)
+
+        return () => {
+          input.removeEventListener('blur', handleBlur)
+          if (blurTimeoutId !== null) {
+            clearTimeout(blurTimeoutId)
+          }
+        }
+      }, [isVisible, showInput])
+
+      // Intercetta chiamate dirette a blur() sull'input
+      useEffect(() => {
+        if (!inputRef.current) return
+
+        const input = inputRef.current
+        const originalBlur = input.blur.bind(input)
+
+        // Override blur() per tracciare chi lo chiama
+        input.blur = function(...args: any[]) {
+          console.log('[SEARCH][FOCUS][BLUR-CALLED] blur() chiamato direttamente', {
+            timestamp: Date.now(),
+            stackTrace: new Error().stack,
+            activeElement: document.activeElement
+          })
+          return originalBlur(...args)
+        }
+
+        return () => {
+          input.blur = originalBlur
+        }
+      }, [])
+
+      // Auto-scroll al nodo appena cercato (solo UNA volta per query)
+      useEffect(() => {
+        if (initialQuery && results.length > 0 && initialQuery !== lastScrolledQuery.current) {
+          // Trova il nodo con la query corrente
+          const targetNode = results.find(r => r.query === initialQuery)
+          if (targetNode && nodeRefs.current[targetNode.query]) {
+            lastScrolledQuery.current = initialQuery
+            setTimeout(() => {
+              nodeRefs.current[targetNode.query]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }, 100)
+          }
+        }
+      }, [results.length, initialQuery])
+
+      const onSubmit = () => {
+        if (q.trim()) {
+          search(q.trim())
+          // Non svuotare più la query per mantenere l'evidenziazione
+        }
       }
-    }
-  }, [results.length, initialQuery])
+      const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
+      const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
 
-  // Auto-focus sull'input quando il pannello viene mostrato
-  useEffect(() => {
-    if (showInput && inputRef.current) {
-      // Piccolo delay per assicurarsi che il DOM sia pronto
-      const timeoutId = setTimeout(() => {
-        inputRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [showInput])
+      // Funzione per recuperare contesto espanso dal backend
+      const fetchExpandedContext = useCallback(async (
+        matchId: string,
+        docId: string,
+        charIdx: number | undefined,
+        lines: number
+      ) => {
+        // Validazione: charIdx deve essere presente e valido
+        if (charIdx === undefined || charIdx < 0) {
+          console.warn('[SEARCH][context] Invalid charIdx', { matchId, docId, charIdx })
+          return
+        }
 
-  const onSubmit = () => {
-    if (q.trim()) {
-      search(q.trim())
-      // Non svuotare più la query per mantenere l'evidenziazione
-    }
-  }
-  const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
-  const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
+        // Validazione: lines deve essere nel range valido
+        if (lines < 0 || lines > 10) {
+          console.warn('[SEARCH][context] Invalid lines value', { matchId, docId, lines })
+          return
+        }
 
-  // Funzione per recuperare contesto espanso dal backend
-  const fetchExpandedContext = useCallback(async (
-    matchId: string,
-    docId: string,
-    charIdx: number | undefined,
-    lines: number
-  ) => {
-    // Validazione: charIdx deve essere presente e valido
-    if (charIdx === undefined || charIdx < 0) {
-      console.warn('[SEARCH][context] Invalid charIdx', { matchId, docId, charIdx })
-      return
-    }
+        // Reset: rimuovi testo espanso se lines === 0
+        if (lines === 0) {
+          setExpandedTexts(prev => {
+            const next = { ...prev }
+            delete next[matchId]
+            return next
+          })
+          setContextLines(prev => {
+            const next = { ...prev }
+            delete next[matchId]
+            return next
+          })
+          setLoadingContext(prev => {
+            const next = { ...prev }
+            delete next[matchId]
+            return next
+          })
+          return
+        }
 
-    // Validazione: lines deve essere nel range valido
-    if (lines < 0 || lines > 10) {
-      console.warn('[SEARCH][context] Invalid lines value', { matchId, docId, lines })
-      return
-    }
+        // Evita chiamate duplicate
+        if (loadingContext[matchId]) {
+          return
+        }
 
-    // Reset: rimuovi testo espanso se lines === 0
-    if (lines === 0) {
-      setExpandedTexts(prev => {
-        const next = { ...prev }
-        delete next[matchId]
-        return next
-      })
-      setContextLines(prev => {
-        const next = { ...prev }
-        delete next[matchId]
-        return next
-      })
-      setLoadingContext(prev => {
-        const next = { ...prev }
-        delete next[matchId]
-        return next
-      })
-      return
-    }
+        setLoadingContext(prev => ({ ...prev, [matchId]: true }))
 
-    // Evita chiamate duplicate
-    if (loadingContext[matchId]) {
-      return
-    }
+        try {
+          const url = `/api/search/context?docId=${encodeURIComponent(docId)}&charIdx=${charIdx}&linesBefore=${lines}&linesAfter=${lines}`
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
 
-    setLoadingContext(prev => ({ ...prev, [matchId]: true }))
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Errore sconosciuto' }))
+            console.error('[SEARCH][context] Fetch failed', {
+              matchId,
+              docId,
+              charIdx,
+              lines,
+              status: response.status,
+              statusText: response.statusText,
+              error: errorData
+            })
+            return
+          }
 
-    try {
-      const url = `/api/search/context?docId=${encodeURIComponent(docId)}&charIdx=${charIdx}&linesBefore=${lines}&linesAfter=${lines}`
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+          const data = await response.json()
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Errore sconosciuto' }))
-        console.error('[SEARCH][context] Fetch failed', {
-          matchId,
-          docId,
-          charIdx,
-          lines,
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        })
-        return
-      }
+          // Validazione risposta
+          if (!data || typeof data !== 'object') {
+            console.error('[SEARCH][context] Invalid response format', { matchId, docId, data })
+            return
+          }
 
-      const data = await response.json()
-
-      // Validazione risposta
-      if (!data || typeof data !== 'object') {
-        console.error('[SEARCH][context] Invalid response format', { matchId, docId, data })
-        return
-      }
-
-      if (data.expandedText && typeof data.expandedText === 'string') {
-        setExpandedTexts(prev => ({ ...prev, [matchId]: data.expandedText }))
-        setContextLines(prev => ({ ...prev, [matchId]: lines }))
-      } else {
-        console.warn('[SEARCH][context] Missing or invalid expandedText', { matchId, docId, data })
-      }
-    } catch (error) {
-      console.error('[SEARCH][context] Error fetching context', {
-        matchId,
-        docId,
-        charIdx,
-        lines,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      })
-    } finally {
-      setLoadingContext(prev => {
-        const next = { ...prev }
-        delete next[matchId]
-        return next
-      })
-    }
-  }, [loadingContext])
+          if (data.expandedText && typeof data.expandedText === 'string') {
+            setExpandedTexts(prev => ({ ...prev, [matchId]: data.expandedText }))
+            setContextLines(prev => ({ ...prev, [matchId]: lines }))
+          } else {
+            console.warn('[SEARCH][context] Missing or invalid expandedText', { matchId, docId, data })
+          }
+        } catch (error) {
+          console.error('[SEARCH][context] Error fetching context', {
+            matchId,
+            docId,
+            charIdx,
+            lines,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+          })
+        } finally {
+          setLoadingContext(prev => {
+            const next = { ...prev }
+            delete next[matchId]
+            return next
+          })
+        }
+      }, [loadingContext])
 
   const renderSnippet = (snippet: string, query?: string) => {
     // Usa la query passata come parametro o fallback a initialQuery
@@ -168,7 +297,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
     return (
       <span style={{ whiteSpace:'normal', wordBreak:'break-word' }}>
         {before}
-        <strong className="font-bold text-amber-700">{match}</strong>
+        <strong className="font-semibold text-foreground bg-accent/40 rounded px-0.5">{match}</strong>
         {after}
       </span>
     )
@@ -178,23 +307,57 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
   return (
     <div className="flex flex-1 w-full flex-col text-sm">
       {showInput && (
-        <div className="p-2 border-b flex items-center gap-2">
-          <SearchIcon size={16} className="text-slate-600" />
-          <input ref={inputRef} list="search-history" value={q} onChange={(e)=>setQ(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }} className="flex-1 border rounded px-2 py-1" placeholder="Cerca..." />
+        <div className="p-2 border-b bg-background text-foreground flex items-center gap-2">
+          <SearchIcon size={16} className="text-muted-foreground" />
+          <input
+            ref={inputRef}
+            type="text"
+            list="search-history"
+            value={q}
+            onChange={(e)=>setQ(e.target.value)}
+            onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }}
+            onFocus={(e) => {
+              console.log('[SEARCH][FOCUS][ONFOCUS] Input ha ricevuto focus', {
+                timestamp: Date.now(),
+                target: e.target,
+                relatedTarget: e.relatedTarget,
+                activeElement: document.activeElement,
+                stackTrace: new Error().stack
+              })
+            }}
+            onBlur={(e) => {
+              console.log('[SEARCH][FOCUS][ONBLUR] Input ha perso focus', {
+                timestamp: Date.now(),
+                target: e.target,
+                relatedTarget: e.relatedTarget,
+                activeElementAfterBlur: document.activeElement,
+                activeElementTag: document.activeElement?.tagName,
+                activeElementId: document.activeElement?.id,
+                activeElementClass: document.activeElement?.className,
+                stackTrace: new Error().stack
+              })
+            }}
+            className="flex-1 border rounded px-2 py-1 bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            placeholder="Cerca..."
+          />
           <datalist id="search-history">
             {history.map(h => <option key={h} value={h} />)}
           </datalist>
           {showScopeSelector && (
-            <select value={scope} onChange={(e)=>setScope(e.target.value as SearchScope)} className="border rounded px-1 py-1">
+            <select
+              value={scope}
+              onChange={(e)=>setScope(e.target.value as SearchScope)}
+              className="border rounded px-1 py-1 bg-background text-foreground"
+            >
               <option value="current">Questo PDF</option>
               <option value="open">Documenti aperti</option>
               <option value="archive">Tutto archivio</option>
             </select>
           )}
-          <button className="px-2 py-1 border rounded" onClick={onSubmit}>Cerca</button>
+          <button className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted" onClick={onSubmit}>Cerca</button>
         </div>
       )}
-      {busy && <div className="p-2 text-gray-500">Indicizzazione/ricerca in corso…</div>}
+      {busy && <div className="p-2 text-muted-foreground">Indicizzazione/ricerca in corso…</div>}
       <div className="flex-1 overflow-auto min-h-0">
         {results.length===0 ? (
           <div className="p-3 text-muted-foreground">Nessun risultato</div>
@@ -208,12 +371,12 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                   className="py-1"
                   ref={(el) => { nodeRefs.current[node.query] = el }}
                 >
-                  <div className="flex items-center gap-2 px-2 hover:bg-gray-50">
-                    <span className="text-gray-500 cursor-pointer" onClick={()=>toggle(node.id)}>{open ? '▾' : '▸'}</span>
-                    <SearchIcon size={14} className={node.total === 0 ? "text-red-600" : "text-slate-700"} />
-                    <span className={`font-semibold truncate ${node.total === 0 ? "text-red-600" : ""}`}>{node.query}</span>
-                    <span className={node.total === 0 ? "text-red-600" : "text-gray-500"}>({node.total})</span>
-                    <span className="ml-auto text-xs text-gray-400 cursor-pointer hover:text-red-600" onClick={()=>clearNode(node.id)}>🗑</span>
+                  <div className="flex items-center gap-2 px-2 hover:bg-muted/40">
+                    <span className="text-muted-foreground cursor-pointer" onClick={()=>toggle(node.id)}>{open ? '▾' : '▸'}</span>
+                    <SearchIcon size={14} className={node.total === 0 ? "text-destructive" : "text-foreground"} />
+                    <span className={`font-semibold truncate ${node.total === 0 ? "text-destructive" : "text-foreground"}`}>{node.query}</span>
+                    <span className={node.total === 0 ? "text-destructive" : "text-muted-foreground"}>({node.total})</span>
+                    <span className="ml-auto text-xs text-muted-foreground cursor-pointer hover:text-destructive" onClick={()=>clearNode(node.id)}>🗑</span>
                   </div>
                   {open && (
                     <ul className="pl-6 py-1">
@@ -245,7 +408,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                   return (
                                   <li
                                     key={matchId}
-                                    className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
+                                    className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-muted' : 'hover:bg-muted/40'}`}
                                     onMouseEnter={() => setHoveredMatchId(matchId)}
                                     onMouseLeave={() => setHoveredMatchId(null)}
                                     onClick={async()=>{
@@ -271,16 +434,16 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                       await navigateTo(m)
                                     }}
                                   >
-                                    <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                    <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
                                       {renderSnippet(displayText, q)}
                                       {isLoading && (
-                                        <span className="text-xs text-gray-400 italic ml-1">Caricamento...</span>
+                                        <span className="text-xs text-muted-foreground italic ml-1">Caricamento...</span>
                                       )}
                                     </div>
                                     {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
                                       <div
-                                        className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-white/98 border border-gray-300 rounded-sm shadow-lg z-10"
+                                        className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-popover/95 border border-border rounded-sm shadow-lg z-10"
                                         onMouseDown={(e) => e.stopPropagation()}
                                       >
                                         <button
@@ -290,11 +453,11 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                               fetchExpandedContext(matchId, m.docId, m.charIdx, 0)
                                             }
                                           }}
-                                          className="w-7 h-7 flex items-center justify-center hover:bg-blue-50 rounded mb-2 transition-colors group"
+                                          className="w-7 h-7 flex items-center justify-center hover:bg-muted rounded mb-2 transition-colors group"
                                           title="Reset: torna al contesto minimo (1 riga)"
                                           type="button"
                                         >
-                                          <RotateCcw size={14} className="text-gray-600 group-hover:text-blue-600 transition-colors" />
+                                          <RotateCcw size={14} className="text-muted-foreground group-hover:text-foreground transition-colors" />
                                         </button>
                                         <div
                                           className="flex flex-col items-center flex-1 mb-2 relative"
@@ -316,7 +479,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                             style={{ writingMode: 'bt-lr', width: '24px' }}
                                           />
                                         </div>
-                                        <span className="text-xs text-gray-600 mt-1 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                        <span className="text-xs text-muted-foreground mt-1 font-semibold bg-muted px-1.5 py-0.5 rounded">
                                           {currentLines}
                                         </span>
                                       </div>
@@ -330,11 +493,11 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                         // ✅ Quando c'è un titolo (scope 'archive' o 'open'), mostra l'header documento
                         return (
                           <li key={g.doc.id} className="mb-1">
-                            <div className="px-2 py-0.5 text-gray-700 font-medium flex items-center gap-2">
-                              <span className="text-gray-500 cursor-pointer" onClick={()=>toggleDoc(g.doc.id)}>{o ? '▾' : '▸'}</span>
-                              <FileText size={14} className="text-gray-600" />
+                            <div className="px-2 py-0.5 text-foreground font-medium flex items-center gap-2">
+                              <span className="text-muted-foreground cursor-pointer" onClick={()=>toggleDoc(g.doc.id)}>{o ? '▾' : '▸'}</span>
+                              <FileText size={14} className="text-muted-foreground" />
                               <span>{g.doc.title}</span>
-                              <span className="text-gray-400">({g.matches.length})</span>
+                              <span className="text-muted-foreground">({g.matches.length})</span>
                             </div>
                             {o && (
                               <ul className="pl-4">
@@ -360,7 +523,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                   return (
                                     <li
                                       key={matchId}
-                                      className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-amber-100' : 'hover:bg-blue-50'}`}
+                                      className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-muted' : 'hover:bg-muted/40'}`}
                                       onMouseEnter={() => setHoveredMatchId(matchId)}
                                       onMouseLeave={() => setHoveredMatchId(null)}
                                       onClick={async()=>{
@@ -386,16 +549,16 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                       await navigateTo(m)
                                     }}
                                     >
-                                      <TypeIcon size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                      <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 min-w-0">
                                         {renderSnippet(displayText, q)}
                                         {isLoading && (
-                                          <span className="text-xs text-gray-400 italic ml-1">Caricamento...</span>
+                                          <span className="text-xs text-muted-foreground italic ml-1">Caricamento...</span>
                                         )}
                                       </div>
                                       {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
                                         <div
-                                          className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-white/98 border border-gray-300 rounded-sm shadow-lg z-10"
+                                          className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-popover/95 border border-border rounded-sm shadow-lg z-10"
                                           onMouseDown={(e) => e.stopPropagation()}
                                         >
                                           <button
@@ -405,11 +568,11 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                                 fetchExpandedContext(matchId, m.docId, m.charIdx, 0)
                                               }
                                             }}
-                                            className="w-7 h-7 flex items-center justify-center hover:bg-blue-50 rounded mb-2 transition-colors group"
+                                            className="w-7 h-7 flex items-center justify-center hover:bg-muted rounded mb-2 transition-colors group"
                                             title="Reset: torna al contesto minimo (1 riga)"
                                             type="button"
                                           >
-                                            <RotateCcw size={14} className="text-gray-600 group-hover:text-blue-600 transition-colors" />
+                                            <RotateCcw size={14} className="text-muted-foreground group-hover:text-foreground transition-colors" />
                                           </button>
                                           <div
                                             className="flex flex-col items-center flex-1 mb-2 relative"
@@ -431,7 +594,7 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
                                               style={{ writingMode: 'bt-lr', width: '24px' }}
                                             />
                                           </div>
-                                          <span className="text-xs text-gray-600 mt-1 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                          <span className="text-xs text-muted-foreground mt-1 font-semibold bg-muted px-1.5 py-0.5 rounded">
                                             {currentLines}
                                           </span>
                                         </div>
@@ -454,6 +617,8 @@ export const SearchPanelTree = React.memo<{ showInput?: boolean; showScopeSelect
       </div>
     </div>
   )
-})
+    }
+  )
+)
 
 
