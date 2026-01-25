@@ -23,17 +23,72 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
     const [error, setError] = useState<string | null>(null)
     const [totalPages, setTotalPages] = useState(1) // Word non ha pagine reali, ma possiamo dividerlo
     const [currentPage, setCurrentPage] = useState(page || 1)
+    // ✅ Stessa logica del PDF viewer: usa SOLO ref, NO state (aggiorna via setProperty)
     const scaleRef = useRef<number>(1)
+    const renderCountRef = useRef(0)
 
     // ✅ Espone metodi tramite ref
     React.useImperativeHandle(ref, () => ({
-      zoomTo: (scale: number) => {
-        scaleRef.current = scale
+      zoomTo: (newScale: number) => {
+        const prevScale = scaleRef.current
+        scaleRef.current = newScale
+
+        console.log('🟢 [WORD-ZOOM][zoomTo-Core] ===== ZOOM CORE CHIAMATO =====', {
+          timestamp: Date.now(),
+          prevScale: prevScale.toFixed(3),
+          newScale: newScale.toFixed(3),
+          delta: Math.abs(newScale - prevScale).toFixed(3),
+          hasHostRef: !!hostRef?.current,
+          hasContentRef: !!contentRef.current,
+          caller: new Error().stack?.split('\n')[2]
+        })
+
+        // ✅ Stessa logica del PDF viewer: aggiorna SOLO via setProperty (NO state, NO re-render)
+        // ✅ IMPORTANTE: NON aggiornare hostRef (contiene anche altri elementi come DraftOverlay)
+        // ✅ Aggiorna SOLO il contentRef (wrapper interno con transform: scale())
         if (contentRef.current) {
-          contentRef.current.style.transform = `scale(${scale})`
-          contentRef.current.style.transformOrigin = 'top left'
+          const beforeContentRect = contentRef.current.getBoundingClientRect()
+
+          console.log('[WORD-ZOOM][zoomTo] Prima di aggiornare CSS variable (content wrapper)', {
+            contentRect: {
+              width: beforeContentRect.width.toFixed(2),
+              height: beforeContentRect.height.toFixed(2),
+              top: beforeContentRect.top.toFixed(2),
+              left: beforeContentRect.left.toFixed(2)
+            },
+            currentScaleFactor: contentRef.current.style.getPropertyValue('--scale-factor')
+          })
+
+          // ✅ Aggiorna SOLO sul wrapper interno (contentRef) - NON sul hostRef
+          // ✅ Questo isola lo zoom solo al contenuto del Word viewer
+          contentRef.current.style.setProperty('--scale-factor', String(newScale))
+
+          requestAnimationFrame(() => {
+            const afterContentRect = contentRef.current?.getBoundingClientRect()
+            if (afterContentRect) {
+              console.log('[WORD-ZOOM][zoomTo] Dopo aggiornamento CSS variable (content)', {
+                contentRect: {
+                  width: afterContentRect.width.toFixed(2),
+                  height: afterContentRect.height.toFixed(2),
+                  top: afterContentRect.top.toFixed(2),
+                  left: afterContentRect.left.toFixed(2)
+                },
+                widthChanged: Math.abs(afterContentRect.width - beforeContentRect.width) > 0.1,
+                heightChanged: Math.abs(afterContentRect.height - beforeContentRect.height) > 0.1,
+                newScaleFactor: contentRef.current?.style.getPropertyValue('--scale-factor')
+              })
+            }
+          })
+        } else {
+          console.warn('[WORD-ZOOM][zoomTo] contentRef.current non disponibile')
         }
-        onZoom?.(scale)
+
+        console.log('[WORD-ZOOM][zoomTo] Chiamata onZoom callback', {
+          scale: newScale.toFixed(3),
+          hasCallback: !!onZoom
+        })
+
+        onZoom?.(newScale)
       },
       jumpToPage: (pageNum: number) => {
         const page = Math.max(1, Math.min(pageNum, totalPages))
@@ -115,6 +170,35 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
       }
     }, [page, currentPage])
 
+    // ✅ Observer per tracciare cambiamenti di layout che potrebbero causare flickering
+    useEffect(() => {
+      if (!hostRef?.current || !contentRef.current) return
+
+      const host = hostRef.current
+      const content = contentRef.current
+
+      const resizeObserver = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+          const { width, height } = entry.contentRect
+          console.log('[WORD-ZOOM][RESIZE] Layout cambiato', {
+            timestamp: Date.now(),
+            target: entry.target === host ? 'host' : entry.target === content ? 'content' : 'unknown',
+            width: width.toFixed(2),
+            height: height.toFixed(2),
+              scaleFactor: (entry.target as HTMLElement).style.getPropertyValue('--scale-factor'),
+              currentScale: scaleRef.current.toFixed(3)
+          })
+        })
+      })
+
+      resizeObserver.observe(host)
+      resizeObserver.observe(content)
+
+      return () => {
+        resizeObserver.disconnect()
+      }
+    }, []) // ✅ Stessa logica del PDF viewer: ResizeObserver non dipende da scale (aggiornato via setProperty)
+
     if (isLoading) {
       return (
         <div className="flex items-center justify-center h-full">
@@ -137,30 +221,82 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
       )
     }
 
+    // ✅ Log quando il componente viene renderizzato
+    renderCountRef.current++
+
+    // ✅ Log solo ogni 10 render per ridurre spam durante zoom continuo (Ctrl+rotella)
+    if (renderCountRef.current > 1 && renderCountRef.current % 10 === 0) {
+      console.log('[WORD-ZOOM][RENDER] Componente renderizzato', {
+        timestamp: Date.now(),
+        renderCount: renderCountRef.current,
+        currentScale: scaleRef.current.toFixed(3),
+        hasHostRef: !!hostRef?.current,
+        hasContentRef: !!contentRef.current,
+        htmlContentLength: htmlContent.length
+      })
+
+      if (contentRef.current) {
+        const contentRect = contentRef.current.getBoundingClientRect()
+        const computedStyle = window.getComputedStyle(contentRef.current)
+        console.log('[WORD-ZOOM][RENDER] Content wrapper rect e stili', {
+          width: contentRect.width.toFixed(2),
+          height: contentRect.height.toFixed(2),
+          scaleFactor: contentRef.current.style.getPropertyValue('--scale-factor'),
+          transform: computedStyle.transform
+        })
+      }
+    }
+
     return (
       <div
-        ref={hostRef}
         className="word-viewer-container h-full w-full overflow-auto bg-background"
         // ✅ Disabilita selezione testo - solo drag rettangolo (OCR-style)
+        // ✅ hostRef è del WordViewerShell, non del WordViewerCore (come nel PDF viewer)
+        // ✅ IMPORTANTE: Reset esplicito della CSS variable per evitare ereditarietà
+        // ✅ La variabile viene applicata SOLO sul wrapper interno (contentRef)
         style={{
           userSelect: 'none',
           WebkitUserSelect: 'none',
           MozUserSelect: 'none',
-          msUserSelect: 'none'
+          msUserSelect: 'none',
+          // ✅ Reset esplicito per evitare che la CSS variable venga ereditata da elementi fuori
+          ['--scale-factor' as any]: '1'
         }}
       >
+        {/* ✅ Wrapper scalabile: usa transform: scale() per evitare re-layout del container */}
+        {/* ✅ IMPORTANTE: Isolato con isolation per evitare che lo scale influenzi altri elementi */}
         <div
           ref={contentRef}
-          className="word-viewer-content p-8 max-w-4xl mx-auto"
           style={{
-            transform: `scale(${scaleRef.current})`,
+            // ✅ transform: scale() non causa re-layout del container parent
+            // ✅ Il contenuto viene scalato visivamente, ma lo spazio occupato rimane lo stesso
+            // ✅ Lo scroll gestisce il contenuto più grande (come PDF viewer)
+            transform: `scale(var(--scale-factor, 1))`,
             transformOrigin: 'top left',
-            transition: 'transform 0.2s ease-out',
-            userSelect: 'none',
-            WebkitUserSelect: 'none'
+            // ✅ Isolamento completo per evitare che lo scale influenzi overlay o altri elementi
+            isolation: 'isolate',
+            // ✅ Ottimizzazioni per performance (come PDF viewer)
+            willChange: 'transform',
+            backfaceVisibility: 'hidden',
+            contain: 'layout style paint'
           }}
-          dangerouslySetInnerHTML={{ __html: htmlContent }}
-        />
+        >
+          <div
+            className="word-viewer-content p-8 max-w-4xl mx-auto"
+            style={{
+              // ✅ Dimensioni base (non scalate) - lo scaling viene fatto dal wrapper
+              userSelect: 'none',
+              WebkitUserSelect: 'none'
+            }}
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
+        </div>
+        {/* ✅ Stile globale */}
+        <style>{`
+          .word-viewer-content * {
+            box-sizing: border-box;
+          }
+        `}</style>
       </div>
     )
   }
@@ -168,7 +304,18 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
 
 WordViewerCoreInner.displayName = 'WordViewerCore'
 
-export const WordViewerCore = WordViewerCoreInner
+// ✅ Avvolgi con React.memo per prevenire re-render inutili durante lo zoom continuo
+// ✅ Re-render solo se cambiano props rilevanti (non onZoom che cambia ad ogni zoom)
+export const WordViewerCore = React.memo(WordViewerCoreInner, (prevProps, nextProps) => {
+  return (
+    prevProps.fileUrl === nextProps.fileUrl &&
+    prevProps.page === nextProps.page &&
+    prevProps.docId === nextProps.docId &&
+    prevProps.hostRef === nextProps.hostRef &&
+    prevProps.onDocumentLoad === nextProps.onDocumentLoad
+    // ✅ onZoom e onPageChange possono cambiare senza causare re-render
+  )
+})
 
 /**
  * ✅ Divide HTML in "pagine" virtuali per coerenza con PDF viewer

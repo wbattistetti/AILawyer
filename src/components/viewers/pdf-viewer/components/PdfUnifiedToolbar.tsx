@@ -222,9 +222,10 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
                 window.clearTimeout(zoomDebounceRef.current)
               }
               zoomDebounceRef.current = window.setTimeout(() => {
+                // ✅ Chiama SOLO la callback zoomTo fornita dal viewer
+                // ✅ NON manipolare direttamente il DOM (hostRef)
+                // ✅ Ogni viewer gestisce internamente come applicare lo zoom
                 try { zoomTo(s) } catch {}
-                const viewer = hostRef.current as HTMLElement | null
-                if (viewer) viewer.style.setProperty('--scale-factor', String(s))
               }, 80)
             }}
           />

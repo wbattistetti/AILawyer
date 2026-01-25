@@ -329,30 +329,94 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 				onZoom={(e: any) => {
 					const s = (e?.scale || e?.zoom) as number
 					if (typeof s === 'number') {
+						const prevScale = scaleRef.current
 						scaleRef.current = s
 						setZoomPct(Math.round(s * 100))
 						; (window as any).__rpvLastZoomScale = s
+
+						console.log('[PDF-ZOOM][onZoom] Chiamato', {
+							timestamp: Date.now(),
+							prevScale: prevScale.toFixed(3),
+							newScale: s.toFixed(3),
+							delta: Math.abs(s - prevScale).toFixed(3)
+						})
 
 						// ✅ Aggiorna --scale-factor su tutti i container necessari
 						const container = getScrollContainer()
 						const viewer = hostRef.current as HTMLElement | null
 						const scope = (container || viewer) as HTMLElement | null
+
 						if (container) {
+							const beforeRect = container.getBoundingClientRect()
+							console.log('[PDF-ZOOM][onZoom] Prima di aggiornare CSS variable (container)', {
+								containerRect: {
+									width: beforeRect.width.toFixed(2),
+									height: beforeRect.height.toFixed(2)
+								},
+								currentScaleFactor: container.style.getPropertyValue('--scale-factor')
+							})
+
 							container.style.setProperty('--scale-factor', String(s))
+
+							requestAnimationFrame(() => {
+								const afterRect = container.getBoundingClientRect()
+								console.log('[PDF-ZOOM][onZoom] Dopo aggiornamento CSS variable (container)', {
+									containerRect: {
+										width: afterRect.width.toFixed(2),
+										height: afterRect.height.toFixed(2)
+									},
+									widthChanged: Math.abs(afterRect.width - beforeRect.width) > 0.1,
+									heightChanged: Math.abs(afterRect.height - beforeRect.height) > 0.1,
+									newScaleFactor: container.style.getPropertyValue('--scale-factor')
+								})
+							})
 						}
+
 						if (viewer) {
+							const beforeRect = viewer.getBoundingClientRect()
+							console.log('[PDF-ZOOM][onZoom] Prima di aggiornare CSS variable (viewer)', {
+								viewerRect: {
+									width: beforeRect.width.toFixed(2),
+									height: beforeRect.height.toFixed(2)
+								},
+								currentScaleFactor: viewer.style.getPropertyValue('--scale-factor')
+							})
+
 							viewer.style.setProperty('--scale-factor', String(s))
+
+							requestAnimationFrame(() => {
+								const afterRect = viewer.getBoundingClientRect()
+								console.log('[PDF-ZOOM][onZoom] Dopo aggiornamento CSS variable (viewer)', {
+									viewerRect: {
+										width: afterRect.width.toFixed(2),
+										height: afterRect.height.toFixed(2)
+									},
+									widthChanged: Math.abs(afterRect.width - beforeRect.width) > 0.1,
+									heightChanged: Math.abs(afterRect.height - beforeRect.height) > 0.1,
+									newScaleFactor: viewer.style.getPropertyValue('--scale-factor')
+								})
+							})
 						}
+
 						// ✅ Aggiorna anche su tutti i page-layer (dove viene renderizzato il text layer)
 						const pageLayers = scope?.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement> | undefined
 						if (pageLayers) {
+							console.log('[PDF-ZOOM][onZoom] Aggiornamento page-layers', {
+								count: pageLayers.length,
+								scale: s.toFixed(3)
+							})
 							pageLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(s))
 							})
 						}
+
 						// ✅ Aggiorna anche su tutti i text-layer (sia .rpv-core__text-layer che .textLayer)
 						const textLayers = scope?.querySelectorAll('.rpv-core__text-layer, .textLayer') as NodeListOf<HTMLElement> | undefined
 						if (textLayers) {
+							console.log('[PDF-ZOOM][onZoom] Aggiornamento text-layers', {
+								count: textLayers.length,
+								scale: s.toFixed(3)
+							})
 							textLayers.forEach((layer) => {
 								layer.style.setProperty('--scale-factor', String(s))
 							})

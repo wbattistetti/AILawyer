@@ -130,8 +130,14 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   })
 
   // ✅ FIX DEFINITIVO: Forza struttura corretta con altezze limitate
+  // ⚠️ TEST: enforceStructure DISATTIVATA per verificare se è ancora necessaria
+  // Se il layout funziona senza, possiamo eliminarla completamente
   useEffect(() => {
     const enforceStructure = () => {
+      // ⚠️ TEST: enforceStructure DISATTIVATA - early return
+      return
+
+      /* COMMENTATO PER TEST - riattivare se necessario
       if (!scrollHostRef.current) return
 
       // ✅ Salva lo stato del focus PRIMA di manipolare il DOM
@@ -291,8 +297,11 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           })
         })
       }
+      FINE COMMENTO PER TEST */
     }
 
+    // ⚠️ TEST: enforceStructure DISATTIVATA - commenta queste righe per il test
+    /*
     // Esegui immediatamente e poi periodicamente
     const timeout1 = setTimeout(enforceStructure, 100)
     const timeout2 = setTimeout(enforceStructure, 500)
@@ -305,7 +314,37 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       clearInterval(interval)
       window.removeEventListener('resize', enforceStructure)
     }
+    */
+
+    // ⚠️ TEST: Nessun cleanup necessario quando enforceStructure è disattivata
+    return () => {}
   }, [hostRef])
+
+  // ✅ ResizeObserver per tracciare cambiamenti di layout durante lo zoom
+  useEffect(() => {
+    if (!scrollHostRef.current) return
+
+    const container = scrollHostRef.current
+    const resizeObserver = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const { width, height } = entry.contentRect
+        console.log('[PDF-ZOOM][RESIZE] Layout cambiato', {
+          timestamp: Date.now(),
+          target: 'scrollHost',
+          width: width.toFixed(2),
+          height: height.toFixed(2),
+          scaleFactor: (entry.target as HTMLElement).style.getPropertyValue('--scale-factor'),
+          currentScale: shell.scaleRef?.current?.toFixed(3) || '1.000'
+        })
+      })
+    })
+
+    resizeObserver.observe(container)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [shell.scaleRef])
 
   // ✅ Struttura MASSIMAMENTE semplificata: NO wrapper inutili, struttura piatta
   return (

@@ -20,6 +20,7 @@ import { DraftOverlay } from './components/DraftOverlay'
 import type { DraftBox } from '../common/hooks/useRectSelection'
 import type { RectSelection, ExtractedContent, ExtractCard } from '../common/types/viewer.types'
 import { extractContentFromRect } from './utils/extractContentFromRect'
+import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 
 export const WordViewerShell: React.FC<ViewerShellProps> = ({
   fileUrl,
@@ -97,6 +98,73 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   usePdfPanelResizer({
     resizingRef,
     setPanelW
+  })
+
+  // ✅ zoomTo deve essere definito PRIMA di useCleanPdfZoom
+  const zoomTo = useCallback((scale: number) => {
+    const prevScale = scaleRef.current
+    scaleRef.current = scale
+
+    console.log('🔵 [WORD-ZOOM][zoomTo-Shell] ===== ZOOM WORD VIEWER CHIAMATO =====', {
+      timestamp: Date.now(),
+      prevScale: prevScale.toFixed(3),
+      newScale: scale.toFixed(3),
+      delta: Math.abs(scale - prevScale).toFixed(3),
+      hasViewerRef: !!viewerRef.current,
+      caller: new Error().stack?.split('\n')[2]
+    })
+
+    // ✅ Fix: Salva beforeRect PRIMA del requestAnimationFrame (fuori dall'if)
+    const beforeRect = hostRef.current?.getBoundingClientRect()
+
+    if (hostRef.current && beforeRect) {
+      console.log('[WORD-ZOOM][zoomTo-Shell] Prima di chiamare viewerRef.zoomTo', {
+        hostRect: {
+          width: beforeRect.width.toFixed(2),
+          height: beforeRect.height.toFixed(2)
+        },
+        currentScaleFactor: hostRef.current.style.getPropertyValue('--scale-factor')
+      })
+    }
+
+    viewerRef.current?.zoomTo(scale)
+
+    requestAnimationFrame(() => {
+      if (hostRef.current && beforeRect) {
+        const afterRect = hostRef.current.getBoundingClientRect()
+        console.log('[WORD-ZOOM][zoomTo-Shell] Dopo viewerRef.zoomTo', {
+          hostRect: {
+            width: afterRect.width.toFixed(2),
+            height: afterRect.height.toFixed(2)
+          },
+          newScaleFactor: hostRef.current.style.getPropertyValue('--scale-factor'),
+          widthChanged: Math.abs(afterRect.width - beforeRect.width) > 0.1,
+          heightChanged: Math.abs(afterRect.height - beforeRect.height) > 0.1
+        })
+      }
+    })
+
+    // ✅ Debounce setZoomPct per evitare re-render durante lo zoom continuo
+    if (zoomDebounceRef.current) {
+      clearTimeout(zoomDebounceRef.current)
+    }
+    zoomDebounceRef.current = window.setTimeout(() => {
+      console.log('[WORD-ZOOM][zoomTo-Shell] Aggiornamento zoomPct dopo debounce', {
+        scale: scale.toFixed(3),
+        zoomPct: Math.round(scale * 100)
+      })
+      setZoomPct(Math.round(scale * 100))
+    }, 100) // Aggiorna solo dopo 100ms di inattività
+  }, [])
+
+  // ✅ Zoom hook per Ctrl+rotella (stesso del PDF viewer)
+  // ✅ IMPORTANTE: Questo intercetta Ctrl+rotella e chiama zoomTo del Word viewer
+  const { containerRef: zoomContainerRef } = useCleanPdfZoom({
+    zoomToPlugin: (scale: number) => {
+      // ✅ Chiama zoomTo del Word viewer invece del PDF viewer
+      zoomTo(scale)
+    },
+    getCurrentScale: () => scaleRef.current || 1
   })
 
   // ✅ State per persistent selections (come PDF viewer)
@@ -236,14 +304,27 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   }, [totalPages, onPageChange])
 
   const handleZoom = useCallback((scale: number) => {
+    const prevScale = scaleRef.current
     scaleRef.current = scale
-    setZoomPct(Math.round(scale * 100))
-  }, [])
 
-  const zoomTo = useCallback((scale: number) => {
-    scaleRef.current = scale
-    viewerRef.current?.zoomTo(scale)
-    setZoomPct(Math.round(scale * 100))
+    console.log('[WORD-ZOOM][handleZoom] Chiamato', {
+      timestamp: Date.now(),
+      prevScale: prevScale.toFixed(3),
+      newScale: scale.toFixed(3),
+      delta: Math.abs(scale - prevScale).toFixed(3)
+    })
+
+    // ✅ Debounce setZoomPct per evitare re-render durante lo zoom continuo
+    if (zoomDebounceRef.current) {
+      clearTimeout(zoomDebounceRef.current)
+    }
+    zoomDebounceRef.current = window.setTimeout(() => {
+      console.log('[WORD-ZOOM][handleZoom] Aggiornamento zoomPct dopo debounce', {
+        scale: scale.toFixed(3),
+        zoomPct: Math.round(scale * 100)
+      })
+      setZoomPct(Math.round(scale * 100))
+    }, 100) // Aggiorna solo dopo 100ms di inattività
   }, [])
 
   // ✅ Toolbar state (semplificato per Word - no deskew, audit, etc.)
@@ -296,8 +377,16 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Word Viewer */}
         <div
-          ref={hostRef}
+          ref={(el) => {
+            hostRef.current = el
+            // ✅ Collega anche zoomContainerRef per gestire Ctrl+rotella
+            if (zoomContainerRef) {
+              (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+            }
+          }}
           className="flex-1 overflow-auto relative min-h-0 bg-background"
+          // ✅ La CSS variable --scale-factor è gestita dal WordViewerCore tramite hostRef
+          // ✅ Ctrl+rotella è gestito da useCleanPdfZoom tramite zoomContainerRef
         >
           <WordViewerCore
             ref={viewerRef}

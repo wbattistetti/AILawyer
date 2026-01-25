@@ -70,6 +70,16 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   const scaleRef = useRef<number>(1)
   const zoomDebounceRef = useRef<number | null>(null)
   const zoomTo = (scale: number) => {
+    const prevScale = scaleRef.current
+
+    console.log('[PDF-ZOOM][zoomTo-Shell] Chiamato', {
+      timestamp: Date.now(),
+      prevScale: prevScale.toFixed(3),
+      newScale: scale.toFixed(3),
+      delta: Math.abs(scale - prevScale).toFixed(3),
+      hasViewerRef: !!viewerRef.current
+    })
+
     scaleRef.current = scale
     // Zoom ora gestito tramite viewerRef
     viewerRef.current?.zoomTo?.(scale);
