@@ -1,6 +1,5 @@
 /**
- * ✅ Word Viewer Shell - Componente principale per visualizzare documenti Word
- * Riutilizza logica comune dal PDF viewer dove possibile
+ * Word Viewer Shell - Componente principale per visualizzare documenti Word
  */
 
 import React, { useRef, useState, useCallback, useEffect } from 'react'
@@ -30,44 +29,32 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   docId,
   praticaId,
   docName,
-  hasNativeText = true, // Word ha sempre testo nativo
+  hasNativeText = true,
   panelApi,
-  isActive: isActiveProp // ✅ Mantenuto per retrocompatibilità
+  isActive: isActiveProp
 }) => {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<WordViewerHandle>(null)
 
-  // ✅ State interno per gestire l'attivazione via panelApi.onDidActiveChange
   const [isActive, setIsActive] = React.useState<boolean>(() => {
-    // ✅ Inizializza con panelApi.isActive se disponibile, altrimenti usa prop legacy
     if (panelApi && typeof panelApi.isActive === 'boolean') {
       return panelApi.isActive
     }
     return isActiveProp ?? false
   })
 
-  // ✅ Registra listener per onDidActiveChange se panelApi è disponibile
   React.useEffect(() => {
     if (!panelApi) {
-      // ✅ Se non c'è panelApi, usa prop legacy
-      console.log('[WORD-VIEWER] panelApi non disponibile, uso prop legacy:', { docId, isActiveProp })
       setIsActive(isActiveProp ?? false)
       return
     }
 
-    console.log('[WORD-VIEWER] panelApi disponibile:', { docId, hasOnDidActiveChange: typeof panelApi.onDidActiveChange === 'function', isActive: panelApi.isActive })
-
-    // ✅ Verifica se onDidActiveChange esiste
     if (typeof panelApi.onDidActiveChange === 'function') {
       const disposable = panelApi.onDidActiveChange((event: any) => {
-        // ✅ event.isActive è boolean che indica se il pannello è attivo
-        console.log('[WORD-VIEWER] onDidActiveChange chiamato:', { docId, isActive: event.isActive, event })
         setIsActive(event.isActive ?? false)
       })
 
-      // ✅ Controlla anche lo stato iniziale
       if (typeof panelApi.isActive === 'boolean') {
-        console.log('[WORD-VIEWER] Stato iniziale da panelApi.isActive:', { docId, isActive: panelApi.isActive })
         setIsActive(panelApi.isActive)
       }
 
@@ -75,15 +62,12 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
         disposable.dispose()
       }
     } else {
-      // ✅ Fallback: usa proprietà diretta se disponibile
-      console.warn('[WORD-VIEWER] onDidActiveChange non disponibile, uso fallback:', { docId, isActive: panelApi.isActive })
       if (typeof panelApi.isActive === 'boolean') {
         setIsActive(panelApi.isActive)
       }
     }
   }, [panelApi, isActiveProp, docId])
 
-  // ✅ State management
   const [totalPages, setTotalPages] = useState(1)
   const [currentPage, setCurrentPage] = useState(page || 1)
   const [pageInput, setPageInput] = useState(String(page || 1))
@@ -91,89 +75,35 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   const scaleRef = useRef<number>(1)
   const zoomDebounceRef = useRef<number | null>(null)
 
-  // ✅ Search panel state
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
 
-  // ✅ Panel resizer
   usePdfPanelResizer({
     resizingRef,
     setPanelW
   })
 
-  // ✅ zoomTo deve essere definito PRIMA di useCleanPdfZoom
   const zoomTo = useCallback((scale: number) => {
-    const prevScale = scaleRef.current
     scaleRef.current = scale
-
-    console.log('🔵 [WORD-ZOOM][zoomTo-Shell] ===== ZOOM WORD VIEWER CHIAMATO =====', {
-      timestamp: Date.now(),
-      prevScale: prevScale.toFixed(3),
-      newScale: scale.toFixed(3),
-      delta: Math.abs(scale - prevScale).toFixed(3),
-      hasViewerRef: !!viewerRef.current,
-      caller: new Error().stack?.split('\n')[2]
-    })
-
-    // ✅ Fix: Salva beforeRect PRIMA del requestAnimationFrame (fuori dall'if)
-    const beforeRect = hostRef.current?.getBoundingClientRect()
-
-    if (hostRef.current && beforeRect) {
-      console.log('[WORD-ZOOM][zoomTo-Shell] Prima di chiamare viewerRef.zoomTo', {
-        hostRect: {
-          width: beforeRect.width.toFixed(2),
-          height: beforeRect.height.toFixed(2)
-        },
-        currentScaleFactor: hostRef.current.style.getPropertyValue('--scale-factor')
-      })
-    }
-
     viewerRef.current?.zoomTo(scale)
 
-    requestAnimationFrame(() => {
-      if (hostRef.current && beforeRect) {
-        const afterRect = hostRef.current.getBoundingClientRect()
-        console.log('[WORD-ZOOM][zoomTo-Shell] Dopo viewerRef.zoomTo', {
-          hostRect: {
-            width: afterRect.width.toFixed(2),
-            height: afterRect.height.toFixed(2)
-          },
-          newScaleFactor: hostRef.current.style.getPropertyValue('--scale-factor'),
-          widthChanged: Math.abs(afterRect.width - beforeRect.width) > 0.1,
-          heightChanged: Math.abs(afterRect.height - beforeRect.height) > 0.1
-        })
-      }
-    })
-
-    // ✅ Debounce setZoomPct per evitare re-render durante lo zoom continuo
     if (zoomDebounceRef.current) {
       clearTimeout(zoomDebounceRef.current)
     }
     zoomDebounceRef.current = window.setTimeout(() => {
-      console.log('[WORD-ZOOM][zoomTo-Shell] Aggiornamento zoomPct dopo debounce', {
-        scale: scale.toFixed(3),
-        zoomPct: Math.round(scale * 100)
-      })
       setZoomPct(Math.round(scale * 100))
-    }, 100) // Aggiorna solo dopo 100ms di inattività
+    }, 100)
   }, [])
 
-  // ✅ Zoom hook per Ctrl+rotella (stesso del PDF viewer)
-  // ✅ IMPORTANTE: Questo intercetta Ctrl+rotella e chiama zoomTo del Word viewer
   const { containerRef: zoomContainerRef } = useCleanPdfZoom({
-    zoomToPlugin: (scale: number) => {
-      // ✅ Chiama zoomTo del Word viewer invece del PDF viewer
-      zoomTo(scale)
-    },
+    zoomToPlugin: zoomTo,
     getCurrentScale: () => scaleRef.current || 1
   })
 
-  // ✅ State per persistent selections (come PDF viewer)
   const [persistentSelections, setPersistentSelections] = useState<PersistentSelection[]>([])
   const [lastSelection, setLastSelection] = useState<any | null>(null)
-  const [selectKind, setSelectKind] = useState<'NATIVE' | 'OCR'>('OCR') // ✅ Sempre OCR-style (solo drag rettangolo)
-  const [draft, setDraft] = useState<DraftBox | null>(null) // ✅ Rettangolo draft durante drag
+  const [selectKind, setSelectKind] = useState<'NATIVE' | 'OCR'>('OCR')
+  const [draft, setDraft] = useState<DraftBox | null>(null)
 
-  // ✅ Helper per convertire viewportBox in coordinate percentuali (usa utility comune)
   const convertToPercent = useCallback((viewportBox: { x: number; y: number; w: number; h: number }) => {
     const host = hostRef.current
     if (!host) {
@@ -182,7 +112,6 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
     return viewportBoxToPercent(viewportBox, host)
   }, [])
 
-  // ✅ Gestione overlay roots (usa hook comune)
   const { pageElsRef, overlayRootsRef } = useViewerOverlays({
     hostRef,
     pageSelector: '[data-page]',
@@ -194,40 +123,33 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
     }
   })
 
-  // ✅ Funzione per estrarre contenuto da rettangolo (specifica del viewer)
   const extractContentFromRectImpl = useCallback(async (rect: RectSelection): Promise<ExtractedContent> => {
     return extractContentFromRect(rect, {
       hostRef,
       pageElsRef,
-      hasNativeText: hasNativeText ?? true // Word ha sempre testo nativo
+      hasNativeText: hasNativeText ?? true
     })
   }, [hostRef, pageElsRef, hasNativeText])
 
-  // ✅ Selection hook (solo drag rettangolo)
   useWordRectSelection({
-    viewerId: docId || 'word-viewer', // ✅ ID univoco per isolamento
+    viewerId: docId || 'word-viewer',
     enabled: true,
     hostRef,
-    onDraftChange: setDraft, // ✅ Aggiorna draft durante drag
-    pageElsRef, // ✅ PASSATO: per calcolare coordinate rispetto alla pagina
+    onDraftChange: setDraft,
+    pageElsRef,
     onSelection: async (rect: RectSelection) => {
       try {
-        // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
         const card: ExtractCard = {
           id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           rect: rect.rect,
           pageIndex: rect.pageIndex,
           viewerId: rect.viewerId,
           viewerType: 'word',
-          // ✅ content non viene incluso qui - viene estratto solo quando necessario
           createdAt: new Date()
         }
 
-        // ✅ 2. Estrai contenuto SOLO quando necessario (per PersistentSelection/overlay)
         const content = await extractContentFromRectImpl(rect)
-
-        // ✅ 3. Converti ExtractCard in PersistentSelection (per retrocompatibilità con UI esistente)
-        const pageNumber = rect.pageIndex + 1 // ✅ Converti a 1-based
+        const pageNumber = rect.pageIndex + 1
         const percentCoords = rect.bbox || {
           x0Pct: 0,
           y0Pct: 0,
@@ -235,7 +157,6 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
           y1Pct: 1
         }
 
-        // ✅ Converti imageSnippet (Blob) in imageDataUrl (string) per PersistentSelection
         let imageDataUrl: string | undefined
         if (content.imageSnippet) {
           try {
@@ -268,7 +189,6 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
           imageDataUrl
         }
 
-        // ✅ 4. Salva lastSelection per ExtractBlockOverlay
         setLastSelection({
           pdfPageNumber: pageNumber,
           viewportBox: persistentSelection.viewportBox,
@@ -276,19 +196,13 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
           imageDataUrl
         })
 
-        // ✅ 5. Aggiungi alla lista di persistent selections
         setPersistentSelections(prev => [...prev, persistentSelection])
-
-        // ✅ 6. Dispatch evento per ExtractCard (opzionale, per integrazione futura)
-        // window.dispatchEvent(new CustomEvent('app:extract-card-created', { detail: { card } }))
-
       } catch (error) {
         console.error('[WordViewerShell] Errore in onSelection:', error)
       }
     }
   })
 
-  // ✅ Handlers
   const handleDocumentLoad = useCallback((pages: number) => {
     setTotalPages(pages)
     setPageInput('1')
@@ -304,37 +218,19 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   }, [totalPages, onPageChange])
 
   const handleZoom = useCallback((scale: number) => {
-    const prevScale = scaleRef.current
     scaleRef.current = scale
-
-    console.log('[WORD-ZOOM][handleZoom] Chiamato', {
-      timestamp: Date.now(),
-      prevScale: prevScale.toFixed(3),
-      newScale: scale.toFixed(3),
-      delta: Math.abs(scale - prevScale).toFixed(3)
-    })
-
-    // ✅ Debounce setZoomPct per evitare re-render durante lo zoom continuo
     if (zoomDebounceRef.current) {
       clearTimeout(zoomDebounceRef.current)
     }
     zoomDebounceRef.current = window.setTimeout(() => {
-      console.log('[WORD-ZOOM][handleZoom] Aggiornamento zoomPct dopo debounce', {
-        scale: scale.toFixed(3),
-        zoomPct: Math.round(scale * 100)
-      })
       setZoomPct(Math.round(scale * 100))
-    }, 100) // Aggiorna solo dopo 100ms di inattività
+    }, 100)
   }, [])
 
-  // ✅ Toolbar state (semplificato per Word - no deskew, audit, etc.)
   const [tool, setTool] = useState<any>('select')
   const [audit, setAudit] = useState(false)
   const [autoDeskew, setAutoDeskew] = useState(false)
   const [skewAngles, setSkewAngles] = useState<Record<number, number>>({})
-
-  // ✅ Extract dialog handlers - gestiti direttamente da ExtractDialog
-  // Il dialog gestisce il salvataggio tramite l'evento 'app:extract-add'
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -379,14 +275,11 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
         <div
           ref={(el) => {
             hostRef.current = el
-            // ✅ Collega anche zoomContainerRef per gestire Ctrl+rotella
             if (zoomContainerRef) {
               (zoomContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el
             }
           }}
           className="flex-1 overflow-auto relative min-h-0 bg-background"
-          // ✅ La CSS variable --scale-factor è gestita dal WordViewerCore tramite hostRef
-          // ✅ Ctrl+rotella è gestito da useCleanPdfZoom tramite zoomContainerRef
         >
           <WordViewerCore
             ref={viewerRef}
@@ -403,17 +296,15 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
             onZoom={handleZoom}
           />
 
-          {/* ✅ Rettangolo draft durante drag */}
           {draft && (
             <DraftOverlay
               draft={draft}
               pageElsRef={pageElsRef}
               overlayRootsRef={overlayRootsRef}
-              hostRef={hostRef} // ✅ AGGIUNTO: per conversione host→pagina se coordSpace === 'host'
+              hostRef={hostRef}
             />
           )}
 
-          {/* ✅ ExtractBlockOverlay per l'ultima selezione (riutilizza quello del PDF viewer) */}
           {persistentSelections.length > 0 && (
             <ExtractBlockOverlay
               selection={persistentSelections[persistentSelections.length - 1]}
@@ -425,7 +316,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
               }}
               setPersistentSelections={setPersistentSelections}
               docName={docName}
-              hasNativeText={false} // ✅ Word sempre OCR-style (solo screenshot)
+              hasNativeText={false}
             />
           )}
         </div>
@@ -439,10 +330,8 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
             panelW={panelW}
             setPanelW={setPanelW}
             resizingRef={resizingRef}
-            // ✅ Per Word, la ricerca è semplice text search nell'HTML
             onSearch={async (query) => {
               // TODO: Implementare ricerca nel contenuto Word
-              // ✅ Log rimosso per ridurre spam
             }}
           />
         )}
