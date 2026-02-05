@@ -1,7 +1,7 @@
-import React, { useRef } from 'react'
+import React, { useRef, useEffect } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import { SearchProvider } from '../../../search/SearchProvider'
-import { SearchPanelTree } from '../../../search/SearchPanelTree'
+import { SearchPanelTree, SearchPanelTreeHandle } from '../../../search/SearchPanelTree'
 import { cryptoRandom } from '../../../../utils/misc'
 
 interface SearchPanelProps {
@@ -16,6 +16,7 @@ interface SearchPanelProps {
 	setMatches: (matches: any[]) => void
 	goToMatch: (match: any) => Promise<void>
 	searchCacheRef: React.MutableRefObject<Map<string, any[]>>
+	isActive?: boolean
 }
 
 export const SearchPanel = React.memo<SearchPanelProps>(({
@@ -29,25 +30,60 @@ export const SearchPanel = React.memo<SearchPanelProps>(({
 	totalPages,
 	setMatches,
 	goToMatch,
-	searchCacheRef
+	searchCacheRef,
+	isActive
 }) => {
-	const searchPanelTreeRef = useRef<SearchPanelTreeHandle>(null)
-	const renderCountRef = useRef(0)
+	// ✅ Ref per controllare il focus dell'input di ricerca
+	const searchTreeRef = useRef<SearchPanelTreeHandle>(null)
 
-	renderCountRef.current++
-	console.log('[SEARCH][PANEL][RENDER] SearchPanel renderizzato', {
-		timestamp: Date.now(),
-		renderCount: renderCountRef.current,
-		showAdvanced,
-		panelW
-	})
+	// ✅ Focus basato su evento quando il pannello si apre (senza timeout)
+	useEffect(() => {
+		if (showAdvanced && searchTreeRef.current) {
+			console.log('[SEARCH-PANEL][FOCUS] Tentativo focus input ricerca', {
+				showAdvanced,
+				isActive,
+				hasRef: !!searchTreeRef.current,
+				activeElement: document.activeElement,
+				activeElementTag: document.activeElement?.tagName
+			})
 
-	if (!showAdvanced) return null
+			// Il pannello è sempre montato, quindi inputRef.current è sempre disponibile
+			searchTreeRef.current.focusInput()
+
+			// ✅ Verifica se il focus è stato applicato
+			setTimeout(() => {
+				const input = document.querySelector('[data-role="pdf-search-input"]') as HTMLInputElement
+				const hasFocus = document.activeElement === input
+				console.log('[SEARCH-PANEL][FOCUS] Verifica focus dopo applicazione', {
+					hasFocus,
+					isActive,
+					activeElement: document.activeElement,
+					activeElementTag: document.activeElement?.tagName,
+					inputFound: !!input,
+					inputValue: input?.value
+				})
+			}, 50) // Piccolo delay per verificare se qualcuno ruba il focus
+		}
+	}, [showAdvanced, isActive])
+
+	// ✅ Ripristina focus quando il pannello torna attivo (fallback se Dockview ha disattivato)
+	useEffect(() => {
+		if (showAdvanced && isActive && searchTreeRef.current) {
+			console.log('[SEARCH-PANEL][FOCUS] Ripristino focus - pannello tornato attivo', {
+				showAdvanced,
+				isActive,
+				activeElement: document.activeElement,
+				activeElementTag: document.activeElement?.tagName
+			})
+			searchTreeRef.current.focusInput()
+		}
+	}, [showAdvanced, isActive])
 
 	return (
 		<React.Fragment>
-			{/* ✅ Slider stretto, trasparente, colorato solo al hover */}
-			<div
+			{/* ✅ Slider stretto, trasparente, colorato solo al hover - renderizzato solo quando visibile */}
+			{showAdvanced && (
+				<div
 				onMouseDown={(e) => {
 					if (e.button !== 0) return
 					e.preventDefault()
@@ -68,9 +104,21 @@ export const SearchPanel = React.memo<SearchPanelProps>(({
 				}}
 				title="Trascina per ridimensionare"
 			>
-				<GripVertical size={12} className="text-transparent group-hover:text-muted-foreground transition-colors" />
-			</div>
-			<div className="h-full border-l bg-background flex flex-col overflow-hidden" style={{ width: panelW }}>
+					<GripVertical size={12} className="text-transparent group-hover:text-muted-foreground transition-colors" />
+				</div>
+			)}
+			{/* ✅ Pannello sempre montato, nascosto/mostrato via CSS per mantenere stato e focus affidabile */}
+			<div
+				data-role="pdf-search-panel"
+				onMouseDown={(e) => {
+					e.stopPropagation()  // ✅ Impedisce a Dockview di disattivare il pannello
+				}}
+				className="h-full border-l bg-background flex flex-col overflow-hidden"
+				style={{
+					width: panelW,
+					display: showAdvanced ? 'flex' : 'none'
+				}}
+			>
 				{/* Header pannello ricerca con X per chiudere - FISSO */}
 				<div className="pdf-search-header flex items-center justify-between px-3 py-2 border-b bg-muted flex-shrink-0">
 					<h3 className="font-semibold text-sm">Risultati ricerca</h3>
@@ -83,7 +131,7 @@ export const SearchPanel = React.memo<SearchPanelProps>(({
 					</button>
 				</div>
 
-				<SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={true} onSearch={async (q, _scope) => {
+				<SearchProvider defaultScope={'current'} initialQuery={searchQ} autoSearch={false} onSearch={async (q, _scope) => {
 					console.log('[SEARCH][document] Backend search start', { q, docId, fileUrl: fileUrl?.substring(0, 100) })
 
 					try {
@@ -175,7 +223,7 @@ export const SearchPanel = React.memo<SearchPanelProps>(({
 					}
 				})}>
 					<SearchPanelTree
-						ref={searchPanelTreeRef}
+						ref={searchTreeRef}
 						showInput={true}
 						showScopeSelector={false}
 						initialQuery={searchQ}
@@ -193,6 +241,7 @@ export const SearchPanel = React.memo<SearchPanelProps>(({
 		prevProps.searchQ === nextProps.searchQ &&
 		prevProps.docId === nextProps.docId &&
 		prevProps.fileUrl === nextProps.fileUrl &&
-		prevProps.totalPages === nextProps.totalPages
+		prevProps.totalPages === nextProps.totalPages &&
+		prevProps.isActive === nextProps.isActive
 	)
 })

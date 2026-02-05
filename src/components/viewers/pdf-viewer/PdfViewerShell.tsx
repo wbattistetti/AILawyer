@@ -318,33 +318,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
 
     // ⚠️ TEST: Nessun cleanup necessario quando enforceStructure è disattivata
     return () => {}
-  }, [hostRef])
+  }, []) // ✅ Nessuna dipendenza - enforceStructure disattivata
 
-  // ✅ ResizeObserver per tracciare cambiamenti di layout durante lo zoom
-  useEffect(() => {
-    if (!scrollHostRef.current) return
-
-    const container = scrollHostRef.current
-    const resizeObserver = new ResizeObserver((entries) => {
-      entries.forEach((entry) => {
-        const { width, height } = entry.contentRect
-        console.log('[PDF-ZOOM][RESIZE] Layout cambiato', {
-          timestamp: Date.now(),
-          target: 'scrollHost',
-          width: width.toFixed(2),
-          height: height.toFixed(2),
-          scaleFactor: (entry.target as HTMLElement).style.getPropertyValue('--scale-factor'),
-          currentScale: shell.scaleRef?.current?.toFixed(3) || '1.000'
-        })
-      })
-    })
-
-    resizeObserver.observe(container)
-
-    return () => {
-      resizeObserver.disconnect()
-    }
-  }, [shell.scaleRef])
 
   // ✅ Struttura MASSIMAMENTE semplificata: NO wrapper inutili, struttura piatta
   return (
@@ -381,6 +356,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
           applyImmediateToPage={shell.applyImmediateToPage}
           zoomTo={shell.zoomTo}
           setShowAdvanced={shell.setShowAdvanced}
+          panelApi={panelApi}
         />
 
         {/* Content area: PDF viewer + Search panel side-by-side */}
@@ -435,6 +411,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             setMatches={shell.setMatches}
             goToMatch={shell.goToMatch}
             searchCacheRef={shell.searchCacheRef}
+            isActive={isActive}
           />
         </div>
       </div>

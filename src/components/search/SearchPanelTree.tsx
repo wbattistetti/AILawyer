@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
 import { useSearch, SearchScope } from './SearchProvider'
 import { useToast } from '@/hooks/use-toast'
@@ -27,16 +27,6 @@ export const SearchPanelTree = React.memo(
       const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
       const lastScrolledQuery = useRef<string | null>(null)
       const inputRef = useRef<HTMLInputElement | null>(null)
-      const renderCountRef = useRef(0)
-
-      renderCountRef.current++
-      console.log('[SEARCH][RENDER] SearchPanelTree renderizzato', {
-        timestamp: Date.now(),
-        renderCount: renderCountRef.current,
-        showInput,
-        isVisible,
-        hasInputRef: !!inputRef.current
-      })
 
       // Stato per gestire contesti espansi e slider
       const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
@@ -44,7 +34,8 @@ export const SearchPanelTree = React.memo(
       const [hoveredMatchId, setHoveredMatchId] = useState<string | null>(null)
       const [loadingContext, setLoadingContext] = useState<Record<string, boolean>>({})
 
-      // Esponi il metodo focusInput tramite ref per controllo esplicito quando serve
+      // ✅ Focus gestito esternamente via ref (chiamato da SearchPanel quando showAdvanced diventa true)
+      // Il pannello è sempre montato, quindi inputRef.current è sempre disponibile
       useImperativeHandle(ref, () => ({
         focusInput: () => {
           if (inputRef.current) {
@@ -54,112 +45,8 @@ export const SearchPanelTree = React.memo(
         }
       }), [])
 
-      // Focus sull'input quando il pannello diventa visibile (solo una volta)
-      const hasFocusedRef = useRef(false)
-      useEffect(() => {
-        if (isVisible && showInput && inputRef.current && !hasFocusedRef.current) {
-          // Usa requestAnimationFrame per assicurarsi che il DOM sia pronto
-          requestAnimationFrame(() => {
-            if (inputRef.current) {
-              inputRef.current.focus()
-              inputRef.current.select()
-              hasFocusedRef.current = true
-              console.log('[SEARCH][FOCUS][EFFECT] Focus applicato via useEffect')
-            }
-          })
-        }
-
-        // Reset quando il pannello viene chiuso
-        if (!isVisible) {
-          hasFocusedRef.current = false
-        }
-      }, [isVisible, showInput])
-
-      // Mantieni il focus: riapplica quando viene perso (se il pannello è ancora visibile)
-      useEffect(() => {
-        if (!isVisible || !showInput || !inputRef.current) return
-
-        const input = inputRef.current
-        let blurTimeoutId: number | null = null
-
-        const handleBlur = (e: FocusEvent) => {
-          const activeElement = document.activeElement
-          const relatedTarget = e.relatedTarget as HTMLElement | null
-
-          console.log('[SEARCH][FOCUS][BLUR] Blur event ricevuto', {
-            activeElement,
-            relatedTarget,
-            isSameInput: activeElement === input,
-            inputValue: (input as HTMLInputElement).value
-          })
-
-          // ✅ Se il blur è causato da un altro elemento che prende il focus, non interferire
-          // Ma verifica che NON sia lo stesso input (può succedere durante re-render)
-          if (activeElement &&
-              activeElement !== document.body &&
-              activeElement !== document.documentElement &&
-              activeElement !== input &&
-              relatedTarget !== input) {
-            console.log('[SEARCH][FOCUS][BLUR-HANDLED] Blur normale, elemento ha preso focus:', {
-              activeElement,
-              relatedTarget,
-              tag: activeElement.tagName,
-              id: activeElement.id
-            })
-            return
-          }
-
-          // ✅ Se nessun elemento ha preso il focus OPPURE è lo stesso input (re-render),
-          // riapplica dopo un breve delay
-          blurTimeoutId = window.setTimeout(() => {
-            if (inputRef.current && isVisible) {
-              const currentActive = document.activeElement
-              // Ripristina sempre se non è già l'input (anche se è body/document o lo stesso input)
-              if (currentActive !== inputRef.current) {
-                console.log('[SEARCH][FOCUS][RESTORE] Ripristino focus dopo blur', {
-                  currentActive,
-                  willFocus: inputRef.current
-                })
-                inputRef.current.focus()
-                inputRef.current.select()
-              } else {
-                console.log('[SEARCH][FOCUS][RESTORE] Focus già presente, nessun ripristino necessario')
-              }
-            }
-          }, 50)
-        }
-
-        input.addEventListener('blur', handleBlur)
-
-        return () => {
-          input.removeEventListener('blur', handleBlur)
-          if (blurTimeoutId !== null) {
-            clearTimeout(blurTimeoutId)
-          }
-        }
-      }, [isVisible, showInput])
-
-      // Intercetta chiamate dirette a blur() sull'input
-      useEffect(() => {
-        if (!inputRef.current) return
-
-        const input = inputRef.current
-        const originalBlur = input.blur.bind(input)
-
-        // Override blur() per tracciare chi lo chiama
-        input.blur = function(...args: any[]) {
-          console.log('[SEARCH][FOCUS][BLUR-CALLED] blur() chiamato direttamente', {
-            timestamp: Date.now(),
-            stackTrace: new Error().stack,
-            activeElement: document.activeElement
-          })
-          return originalBlur(...args)
-        }
-
-        return () => {
-          input.blur = originalBlur
-        }
-      }, [])
+      // ❌ RIMOSSO: useEffect con setTimeout per focus automatico
+      // Il focus è ora gestito in modo sincrono dall'esterno via ref quando il pannello si apre
 
       // Auto-scroll al nodo appena cercato (solo UNA volta per query)
       useEffect(() => {
@@ -311,34 +198,26 @@ export const SearchPanelTree = React.memo(
           <SearchIcon size={16} className="text-muted-foreground" />
           <input
             ref={inputRef}
+            data-role="pdf-search-input"
             type="text"
             list="search-history"
             value={q}
             onChange={(e)=>setQ(e.target.value)}
             onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }}
-            onFocus={(e) => {
-              console.log('[SEARCH][FOCUS][ONFOCUS] Input ha ricevuto focus', {
-                timestamp: Date.now(),
-                target: e.target,
-                relatedTarget: e.relatedTarget,
-                activeElement: document.activeElement,
-                stackTrace: new Error().stack
-              })
+            onClick={(e) => {
+              // Quando l'utente clicca nell'input, assicurati che abbia il focus
+              if (inputRef.current && document.activeElement !== inputRef.current) {
+                inputRef.current.focus()
+                inputRef.current.select()
+              }
             }}
-            onBlur={(e) => {
-              console.log('[SEARCH][FOCUS][ONBLUR] Input ha perso focus', {
-                timestamp: Date.now(),
-                target: e.target,
-                relatedTarget: e.relatedTarget,
-                activeElementAfterBlur: document.activeElement,
-                activeElementTag: document.activeElement?.tagName,
-                activeElementId: document.activeElement?.id,
-                activeElementClass: document.activeElement?.className,
-                stackTrace: new Error().stack
-              })
-            }}
+            autoFocus={false}
             className="flex-1 border rounded px-2 py-1 bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             placeholder="Cerca..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
           <datalist id="search-history">
             {history.map(h => <option key={h} value={h} />)}

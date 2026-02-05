@@ -39,6 +39,7 @@ interface PdfUnifiedToolbarProps {
   applyImmediateToPage: (page: number, angle: number) => void
   zoomTo: (scale: number) => void
   setShowAdvanced: (show: boolean) => void
+  panelApi?: any
 }
 
 export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
@@ -70,7 +71,8 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
   persistSkew,
   applyImmediateToPage,
   zoomTo,
-  setShowAdvanced
+  setShowAdvanced,
+  panelApi
 }) => {
   return (
     <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b bg-background flex-shrink-0 flex-wrap">
@@ -179,9 +181,15 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
           <button
             className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted text-sm"
             title="Apri pannello ricerca"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()  // ✅ Previeni che Dockview disattivi il pannello
               setShowAdvanced(true)
               onOpenSearchPanel()
+
+              // ✅ Mantieni il pannello attivo
+              if (panelApi && typeof panelApi.setActive === 'function') {
+                panelApi.setActive()
+              }
             }}
           >
             <Search size={16} className="inline-block mr-1" />
