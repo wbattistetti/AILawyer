@@ -271,7 +271,30 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     }
   }, [isDrawerStripPinned])
 
-  // ✅ Handler per toggle PIN
+  // ✅ Handler per aprire cassetti senza fissare (preview temporaneo)
+  const handleOpenDrawers = useCallback(() => {
+    // ✅ Apri solo, senza fissare
+    setIsDrawerStripVisible(true)
+    // ✅ Se c'è un timeout attivo, cancellalo
+    if (drawerStripTimeoutRef.current) {
+      clearTimeout(drawerStripTimeoutRef.current)
+      drawerStripTimeoutRef.current = null
+    }
+  }, [])
+
+  // ✅ Handler per aprire E fissare (quando si clicca su PIN dalla linguetta)
+  const handleOpenAndPin = useCallback(() => {
+    // ✅ Apri E fissa in un'unica azione
+    setIsDrawerStripVisible(true)
+    setIsDrawerStripPinned(true)
+    // ✅ Se c'è un timeout attivo, cancellalo
+    if (drawerStripTimeoutRef.current) {
+      clearTimeout(drawerStripTimeoutRef.current)
+      drawerStripTimeoutRef.current = null
+    }
+  }, [])
+
+  // ✅ Handler per toggle PIN (fissa/sfissa quando i cassetti sono già aperti)
   const handleTogglePin = useCallback(() => {
     setIsDrawerStripPinned(prev => {
       const newPinned = !prev
@@ -1384,10 +1407,10 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         />
       </div>
 
-      {/* ✅ Linguetta "Cassetti" quando nascosti (Stato 1) */}
+      {/* ✅ Due linguette separate affiancate quando nascosti (Stato 1) */}
       {drawerTabs.length > 0 && !isDrawerStripVisible && (
         <div
-          className={`fixed z-50 ${
+          className={`fixed z-50 flex items-center gap-2 ${
             DRAWER_STRIP_POSITION === 'top'
               ? 'left-1/2 transform -translate-x-1/2'
               : DRAWER_STRIP_POSITION === 'bottom'
@@ -1403,16 +1426,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             ),
             pointerEvents: 'auto',
           }}
-          onMouseEnter={() => {
-            setIsDrawerStripVisible(true)
-            if (drawerStripTimeoutRef.current) {
-              clearTimeout(drawerStripTimeoutRef.current)
-              drawerStripTimeoutRef.current = null
-            }
-          }}
         >
+          {/* ✅ Linguetta 1: "Cassetti" - hover per preview, click per aprire */}
           <div
-            className={`flex items-center gap-2 px-4 py-2 cursor-pointer transition-all ${
+            onMouseEnter={() => {
+              setIsDrawerStripVisible(true)
+              if (drawerStripTimeoutRef.current) {
+                clearTimeout(drawerStripTimeoutRef.current)
+                drawerStripTimeoutRef.current = null
+              }
+            }}
+            onClick={handleOpenDrawers}
+            className={`px-4 py-2 cursor-pointer transition-all ${
               DRAWER_STRIP_POSITION === 'top'
                 ? 'rounded-b-lg'
                 : DRAWER_STRIP_POSITION === 'bottom'
@@ -1435,24 +1460,40 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             }}
           >
             <span className="text-sm font-medium text-foreground">Cassetti</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleTogglePin()
-              }}
-              className="p-1 rounded hover:bg-muted transition-colors"
-              title={isDrawerStripPinned ? 'Sfissa cassetti' : 'Fissa cassetti'}
-            >
-              {isDrawerStripPinned ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 2.21-1.79 4-4 4s-4-1.79-4-4v-1c0-.55.45-1 1-1s1 .45 1 1v1c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h2v8c0 1.1.9 2 2 2s2-.9 2-2V4h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v8c0 2.21-1.79 4-4 4s-4-1.79-4-4V4h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v8c0 1.1.9 2 2 2s2-.9 2-2z"/>
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
-                </svg>
-              )}
-            </button>
+          </div>
+
+          {/* ✅ Linguetta 2: PIN - solo click (no hover) per aprire e fissare */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              handleOpenAndPin()
+            }}
+            className={`px-3 py-2 cursor-pointer transition-all ${
+              DRAWER_STRIP_POSITION === 'top'
+                ? 'rounded-b-lg'
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? 'rounded-t-lg'
+                : DRAWER_STRIP_POSITION === 'left'
+                ? 'rounded-r-lg'
+                : 'rounded-l-lg'
+            }`}
+            style={{
+              background: 'hsl(var(--card) / 0.95)',
+              border: '1px solid var(--ui-border-subtle)',
+              ...(DRAWER_STRIP_POSITION === 'top'
+                ? { borderTop: 'none', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' }
+                : DRAWER_STRIP_POSITION === 'bottom'
+                ? { borderBottom: 'none', boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)' }
+                : DRAWER_STRIP_POSITION === 'left'
+                ? { borderLeft: 'none', boxShadow: '2px 0 8px rgba(0, 0, 0, 0.1)' }
+                : { borderRight: 'none', boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.1)' }
+              ),
+            }}
+            title="Fissa cassetti"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V8.26a2 2 0 0 1 1.11-1.79l1.78-.9A2 2 0 0 0 9 5.24v5.52M15 10.76a2 2 0 0 0 1.11 1.79l1.78.9A2 2 0 0 1 19 15.24V8.26a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 5.24v5.52"/>
+            </svg>
           </div>
         </div>
       )}
