@@ -16,6 +16,9 @@ interface AnnotationOverlaysProps {
 	docName?: string
 	hasNativeText?: boolean
 	ensureOverlayRootForPage?: (pageNum: number) => boolean
+	praticaId?: string  // ✅ ID pratica per estrazione anagrafica
+	isExtractOverlayOpen?: boolean  // ✅ Stato React per overlay aperto
+	setIsExtractOverlayOpen?: (value: boolean) => void  // ✅ Setter per stato overlay
 }
 
 export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
@@ -29,12 +32,22 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 	lastSelection,
 	docName,
 	hasNativeText,
-	ensureOverlayRootForPage
+	ensureOverlayRootForPage,
+	praticaId,
+	isExtractOverlayOpen,
+	setIsExtractOverlayOpen
 }) => {
 	const [hoveredSelectionId, setHoveredSelectionId] = useState<string | null>(null)
 	const [draggingSelectionId, setDraggingSelectionId] = useState<string | null>(null)
 	const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null)
 	const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
+
+	// ✅ Aggiorna stato quando persistentSelections cambia
+	useEffect(() => {
+		if (setIsExtractOverlayOpen) {
+			setIsExtractOverlayOpen(persistentSelections.length > 0)
+		}
+	}, [persistentSelections.length, setIsExtractOverlayOpen])
 
 
 	// Track mouse position during drag
@@ -307,11 +320,16 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 					overlayRootsRef={overlayRootsRef}
 					lastSelection={lastSelection}
 					onClose={() => {
+						// ✅ Aggiorna stato PRIMA di rimuovere selezione (per evitare race condition)
+						if (setIsExtractOverlayOpen) {
+							setIsExtractOverlayOpen(false)
+						}
 						setPersistentSelections(prev => prev.slice(0, -1))
 					}}
 					setPersistentSelections={setPersistentSelections}
 					docName={docName}
 					hasNativeText={hasNativeText}
+					praticaId={praticaId}
 					onExtractAdd={(extract) => {
 						// ✅ Dispatch evento per aggiungere al cassetto
 						window.dispatchEvent(new CustomEvent('app:extract-add', { detail: { extract } }))

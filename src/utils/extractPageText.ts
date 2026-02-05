@@ -44,6 +44,28 @@ export async function extractPageText(docId: string, pageNumber: number): Promis
       const { api } = await import('@/lib/api')
       doc = await api.getDocumento(docId)
       raw = String(doc?.ocrText || '')
+
+      // ✅ NUOVO: Se non c'è testo nel DB ma il documento potrebbe avere OCR in memoria
+      // Prova a recuperare dalla memoria locale usando l'hash del documento
+      if (!raw && doc?.hash) {
+        try {
+          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+          const response = await fetch(`${API_BASE}/ocr/get-local-text/${encodeURIComponent(doc.hash)}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (data.texts && Array.isArray(data.texts)) {
+              // Unisci tutte le pagine con il separatore standard
+              raw = data.texts.join('\n\f\n')
+              console.log('[extractPageText] Testo OCR recuperato dalla memoria locale', { docId, pages: data.texts.length })
+            } else if (data.text && typeof data.text === 'string') {
+              raw = data.text
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('[extractPageText] Errore recupero OCR da memoria locale:', fetchErr)
+          // Non è un errore critico, continua con il flusso normale
+        }
+      }
     }
 
     if (!raw || !raw.trim()) {

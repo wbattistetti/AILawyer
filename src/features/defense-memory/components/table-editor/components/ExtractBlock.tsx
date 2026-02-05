@@ -22,7 +22,9 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   overlayHeaderOffset = 60,
   overlayContentHeight,
   onExpandInModal,
-  isImageLoading = false
+  isImageLoading = false,
+  imageOverlay,
+  imageRef
 }) => {
   const { extract, title, observation, hasObservation = false, collapsed = false, observations = [] } = block
   const [isCollapsed, setIsCollapsed] = useState(collapsed)
@@ -1302,8 +1304,9 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
           >
             {/* Immagine estratto (senza bordo interno) */}
             {hasImage && extract.imageDataUrl ? (
-              <div className={isOverlay ? "w-full m-0 p-0" : "rounded overflow-hidden"}>
+              <div className={isOverlay ? "w-full m-0 p-0 relative" : "rounded overflow-hidden relative"}>
                 <img
+                  ref={isOverlay && imageRef ? imageRef : undefined}
                   src={extract.imageDataUrl}
                   alt="Estratto"
                   className={isOverlay
@@ -1329,6 +1332,12 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
                     maxHeight: 'none' // ✅ Nessuna limitazione di altezza
                   }}
                 />
+                {/* ✅ Overlay opzionale sopra l'immagine (per highlight) */}
+                {imageOverlay && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    {imageOverlay}
+                  </div>
+                )}
               </div>
             ) : (isOverlay && !hasText) || isImageLoading ? (
               // ✅ Placeholder di caricamento più visibile quando è overlay senza testo OPPURE se l'immagine è in caricamento

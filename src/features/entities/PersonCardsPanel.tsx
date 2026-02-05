@@ -31,12 +31,49 @@ export function PersonCardsPanel({
   const [praticaId, setPraticaId] = useState<string | null>(null);
   const [docProgress, setDocProgress] = useState<{ total: number; done: number; current?: { docId: string; title: string; pages: number; page: number } } | null>(null)
   const [previewPersons, setPreviewPersons] = useState<PersonRecord[] | null>(null)
+  const [autoExtractEnabled, setAutoExtractEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('personAutoExtractEnabled')
+    return saved === 'true'
+  })
 
   useEffect(() => { refreshPending(); }, []);
 
   useEffect(() => { runSearch(filters); }, [filters]);
   // Re-run filtering when streaming preview changes
   useEffect(() => { if (previewPersons) runSearch(filters) }, [previewPersons]);
+
+  // ✅ Salva preferenza auto-estrazione
+  useEffect(() => {
+    localStorage.setItem('personAutoExtractEnabled', String(autoExtractEnabled))
+  }, [autoExtractEnabled])
+
+  // ✅ Estrazione automatica se toggle ON e ci sono documenti pending
+  useEffect(() => {
+    if (autoExtractEnabled && pending.length > 0 && status === 'pending') {
+      // Estrazione automatica solo per nuovi documenti
+      // Chiama onExtractClick ma evita loop infiniti controllando status
+      const timer = setTimeout(() => {
+        if (status === 'pending' && pending.length > 0) {
+          onExtractClick()
+        }
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExtractEnabled, pending.length])
+
+  // ✅ Listener per aggiornamento anagrafiche da estrazione manuale
+  useEffect(() => {
+    const handlePersonsUpdated = () => {
+      // Refresh ricerca automatica quando vengono aggiunte/aggiornate persone
+      runSearch(filters);
+    };
+
+    window.addEventListener('app:persons-updated', handlePersonsUpdated);
+    return () => {
+      window.removeEventListener('app:persons-updated', handlePersonsUpdated);
+    };
+  }, [filters]);
 
   async function refreshPending() {
     const all = await getAllDocsMeta();
@@ -231,6 +268,15 @@ export function PersonCardsPanel({
           >
             Analizza
           </button>
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoExtractEnabled}
+              onChange={(e) => setAutoExtractEnabled(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <span className="text-neutral-600">Analizza automaticamente nuovi documenti</span>
+          </label>
           <button
             className="px-3 py-1 rounded-lg border hover:bg-neutral-50"
             onClick={onSaveClick}

@@ -101,6 +101,9 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
 
   const [viewerReadyTick, setViewerReadyTick] = useState(0)
 
+  // ✅ Stato React per tracciare se l'overlay ExtractBlock è aperto
+  const [isExtractOverlayOpen, setIsExtractOverlayOpen] = useState(false)
+
   // Unified state management
   const shell = usePdfShellState({
     hostRef,
@@ -109,7 +112,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     onPageChange,
     viewerRef,
     isActive, // ✅ Passa isActive (ora gestito internamente)
-    viewerReadyTick
+    viewerReadyTick,
+    isExtractOverlayOpen  // ✅ Passa stato React per bloccare drag quando overlay è aperto
   })
 
   // Zoom hook integration
@@ -423,12 +427,15 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         draft={shell.draft}
         persistentSelections={shell.persistentSelections}
         setPersistentSelections={shell.setPersistentSelections}
+        isExtractOverlayOpen={isExtractOverlayOpen}
+        setIsExtractOverlayOpen={setIsExtractOverlayOpen}
         overlayRootsRef={shell.overlayRootsRef}
         pageElsRef={shell.pageElsRef}
         lastSelection={shell.lastSelection}
         docName={docName}
         hasNativeText={shell.hasNativeText}
         ensureOverlayRootForPage={shell.ensureOverlayRootForPage}
+        praticaId={praticaId}
       />
 
       {/* Debug: mostra prima parola di ogni pagina */}

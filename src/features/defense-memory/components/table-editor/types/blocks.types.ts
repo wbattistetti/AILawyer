@@ -130,6 +130,8 @@ export interface ExtractBlockProps {
   overlayContentHeight?: number  // ✅ Altezza esatta del contenuto quando è overlay (per mostrare tutto il rettangolo)
   onExpandInModal?: () => void  // ✅ Callback per espandere l'estratto in un modal a grandezza naturale
   isImageLoading?: boolean  // ✅ Se true, mostra spinner mentre l'immagine viene generata
+  imageOverlay?: React.ReactNode  // ✅ Overlay opzionale da renderizzare sopra l'immagine (per highlight)
+  imageRef?: React.RefObject<HTMLImageElement>  // ✅ Ref opzionale per l'immagine (per highlight overlay)
 }
 
 /**

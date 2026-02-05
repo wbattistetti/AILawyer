@@ -61,6 +61,11 @@ export interface UseRectSelectionProps {
    */
   isClickInsideOverlay?: (target: HTMLElement) => boolean
   /**
+   * ✅ Se un overlay di estrazione è attualmente aperto
+   * Quando true, blocca l'inizio di un nuovo drag (basato su stato React, non DOM)
+   */
+  isOverlayOpen?: boolean
+  /**
    * Dimensione minima del rettangolo (default: 10x10 pixel)
    */
   minSize?: number
@@ -75,6 +80,7 @@ export function useRectSelection({
   onDraftChange,
   pageElsRef, // ✅ Opzionale, solo per debug
   isClickInsideOverlay,
+  isOverlayOpen = false, // ✅ Nuovo parametro: stato React invece di controlli DOM
   minSize = 10
 }: UseRectSelectionProps) {
   const isSelectingRef = useRef(false)
@@ -389,13 +395,24 @@ export function useRectSelection({
       return
     }
 
+    // ✅ CRITICO: Blocca drag se overlay è aperto (basato su stato React, non DOM)
+    // Questo elimina race condition, overlay "zombie", problemi di timing
+    if (isOverlayOpen) {
+      return
+    }
+
     const target = e.target as HTMLElement
+
+    // ✅ Mantieni isClickInsideOverlay per altri overlay (es. toolbar, menu)
     if (isClickInsideOverlay && isClickInsideOverlay(target)) {
       return
     }
-    if (target.closest('[data-extract-overlay="true"]') || target.closest('.extract-block-overlay')) {
-      return
-    }
+
+    // ✅ RIMOSSO: Controllo DOM-based su data-extract-overlay
+    // Non serve più perché usiamo isOverlayOpen (stato React)
+    // if (target.closest('[data-extract-overlay="true"]') || target.closest('.extract-block-overlay')) {
+    //   return
+    // }
 
     // ✅ Ferma la propagazione per evitare interferenze con listener globali
     e.stopPropagation()
@@ -434,7 +451,7 @@ export function useRectSelection({
     if (selection) {
       selection.removeAllRanges()
     }
-  }, [enabled, hostRef, isClickInsideOverlay, onDraftChange, findPageAtPoint, viewerId, findPageFromEventPath])
+  }, [enabled, hostRef, isClickInsideOverlay, isOverlayOpen, onDraftChange, findPageAtPoint, viewerId, findPageFromEventPath])
 
   // ✅ Handler mouse move
   const handleMouseMove = useCallback((e: MouseEvent) => {

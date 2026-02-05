@@ -32,7 +32,7 @@ interface UsePdfShellStateProps {
   viewerReadyTick?: number
 }
 
-export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0 }: UsePdfShellStateProps) {
+export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0, isExtractOverlayOpen = false }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
@@ -117,6 +117,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     hostRef: hostRef as React.RefObject<HTMLElement>,
     hostReadyTick: viewerReadyTick,
     pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
+    isOverlayOpen: isExtractOverlayOpen, // ✅ Passa stato React invece di controllare DOM
     onDraftChange: useCallback((draftBox: DraftBox | null) => {
       // ✅ Converti DraftBox in Annotation per AnnotationOverlays
       if (draftBox) {

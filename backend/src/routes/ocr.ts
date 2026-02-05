@@ -390,6 +390,183 @@ export async function ocrRoutes(fastify: FastifyInstance) {
             })
         }
     })
+
+    // ✅ Endpoint per OCR su immagine singola (base64 data URL)
+    fastify.post<{ Body: { imageDataUrl: string } }>('/ocr/recognize-image', async (request, reply) => {
+        try {
+            const { imageDataUrl } = request.body as { imageDataUrl: string }
+
+            if (!imageDataUrl || typeof imageDataUrl !== 'string') {
+                return reply.status(400).send({ error: 'imageDataUrl richiesto (base64 data URL)' })
+            }
+
+            // Verifica che sia un data URL valido
+            if (!imageDataUrl.startsWith('data:image/')) {
+                return reply.status(400).send({ error: 'imageDataUrl deve essere un data URL valido (data:image/...)' })
+            }
+
+            fastify.log.info({ msg: 'OCR recognize-image request', imageSize: imageDataUrl.length })
+
+            // Estrai base64 dal data URL
+            const base64Data = imageDataUrl.split(',')[1]
+            if (!base64Data) {
+                return reply.status(400).send({ error: 'Data URL non valido' })
+            }
+
+            // Converti base64 in Buffer
+            const imageBuffer = Buffer.from(base64Data, 'base64')
+
+            // Per immagini singole, creiamo un worker temporaneo
+            const { createWorker } = await import('tesseract.js')
+
+            // Configura tessdata locale (stessa logica del servizio OCR)
+            const tessdataLocalDir = path.resolve(process.cwd(), 'tessdata')
+            if (!fs.existsSync(tessdataLocalDir)) fs.mkdirSync(tessdataLocalDir, { recursive: true })
+
+            const langCode = 'ita'
+            const trainedFile = path.join(tessdataLocalDir, `${langCode}.traineddata`)
+            const gzFile = path.join(tessdataLocalDir, `${langCode}.traineddata.gz`)
+
+            // Assicura che il modello sia disponibile (stessa logica del servizio OCR)
+            if (!fs.existsSync(gzFile)) {
+                if (!fs.existsSync(trainedFile)) {
+                    const url = `https://github.com/tesseract-ocr/tessdata_fast/raw/main/${langCode}.traineddata`
+                    fastify.log.info({ msg: 'Downloading traineddata', url })
+                    const res = await fetch(url)
+                    if (!res.ok) throw new Error(`Failed to download traineddata: ${res.status} ${res.statusText}`)
+                    const arrBuf = await res.arrayBuffer()
+                    await fs.promises.writeFile(trainedFile, Buffer.from(arrBuf))
+                }
+                const { gzipSync } = await import('zlib')
+                const raw = await fs.promises.readFile(trainedFile)
+                const gz = gzipSync(raw)
+                await fs.promises.writeFile(gzFile, gz)
+            }
+
+            // Crea worker e fa OCR
+            const worker = await createWorker({
+                langPath: tessdataLocalDir,
+                cacheMethod: 'none',
+            })
+
+            const langs = config.OCR_LANG || 'ita'
+            await worker.loadLanguage(langs)
+            await worker.initialize(langs)
+            await worker.setParameters({
+                tessedit_pageseg_mode: '6',
+                preserve_interword_spaces: '1',
+                user_defined_dpi: '300',
+            } as any)
+
+            const { data: { text, confidence, words } } = await worker.recognize(imageBuffer)
+            await worker.terminate()
+
+            // ✅ Estrai dimensioni immagine dal buffer per normalizzazione coordinate
+            // Prova con sharp, altrimenti usa fallback
+            let imageWidth = 0
+            let imageHeight = 0
+            try {
+                const sharp = await import('sharp')
+                const metadata = await sharp.default(imageBuffer).metadata()
+                imageWidth = metadata.width || 0
+                imageHeight = metadata.height || 0
+            } catch (err) {
+                // Fallback: calcola dimensioni dai bounding box delle parole
+                if (words && Array.isArray(words) && words.length > 0) {
+                    let maxX = 0
+                    let maxY = 0
+                    for (const word of words) {
+                        const x1 = word.bbox?.x1 ?? (word.bbox?.x != null && word.bbox?.w != null ? word.bbox.x + word.bbox.w : 0)
+                        const y1 = word.bbox?.y1 ?? (word.bbox?.y != null && word.bbox?.h != null ? word.bbox.y + word.bbox.h : 0)
+                        maxX = Math.max(maxX, x1)
+                        maxY = Math.max(maxY, y1)
+                    }
+                    imageWidth = maxX || 0
+                    imageHeight = maxY || 0
+                }
+                fastify.log.debug({ msg: 'Image dimensions from bbox fallback', imageWidth, imageHeight })
+            }
+
+            // ✅ Processa words per includere startIndex/endIndex
+            // Ordina le parole per posizione (top-to-bottom, left-to-right)
+            const sortedWords = (words || []).slice().sort((a: any, b: any) => {
+                const ay0 = a.bbox?.y0 ?? a.bbox?.y ?? 0
+                const by0 = b.bbox?.y0 ?? b.bbox?.y ?? 0
+                const ax0 = a.bbox?.x0 ?? a.bbox?.x ?? 0
+                const bx0 = b.bbox?.x0 ?? b.bbox?.x ?? 0
+                // Prima per Y (riga), poi per X (colonna)
+                if (Math.abs(ay0 - by0) > 5) return ay0 - by0 // Tolleranza 5px per stessa riga
+                return ax0 - bx0
+            })
+
+            const processedWords: Array<{
+                text: string
+                bbox: { x0: number; y0: number; x1: number; y1: number }
+                startIndex: number
+                endIndex: number
+            }> = []
+
+            let currentIndex = 0
+            const fullText = text.trim()
+
+            // ✅ Ricostruisci testo dalle parole ordinate e mappa indici
+            const reconstructedText: string[] = []
+            for (const word of sortedWords) {
+                const wordText = String(word.text || '').trim()
+                if (!wordText) continue
+
+                const x0 = word.bbox?.x0 ?? word.bbox?.x ?? 0
+                const y0 = word.bbox?.y0 ?? word.bbox?.y ?? 0
+                const x1 = word.bbox?.x1 ?? (word.bbox?.x != null && word.bbox?.w != null ? word.bbox.x + word.bbox.w : x0)
+                const y1 = word.bbox?.y1 ?? (word.bbox?.y != null && word.bbox?.h != null ? word.bbox.y + word.bbox.h : y0)
+
+                // Aggiungi spazio prima se non è la prima parola
+                if (reconstructedText.length > 0) {
+                    reconstructedText.push(' ')
+                    currentIndex++
+                }
+
+                const startIndex = currentIndex
+                reconstructedText.push(wordText)
+                currentIndex += wordText.length
+                const endIndex = currentIndex
+
+                processedWords.push({
+                    text: wordText,
+                    bbox: { x0, y0, x1, y1 },
+                    startIndex,
+                    endIndex,
+                })
+            }
+
+            fastify.log.info({
+                msg: 'OCR recognize-image completed',
+                textLength: fullText.length,
+                wordsCount: processedWords.length,
+                confidence,
+                imageWidth,
+                imageHeight
+            })
+
+            return reply.status(200).send({
+                text: fullText,
+                words: processedWords,
+                confidence: confidence || 0,
+                imageWidth,
+                imageHeight,
+            })
+        } catch (error: any) {
+            fastify.log.error({
+                msg: 'OCR recognize-image error',
+                error: error?.message || String(error),
+                stack: error?.stack,
+            })
+            return reply.status(500).send({
+                error: 'Errore durante OCR dell\'immagine',
+                details: error?.message || String(error)
+            })
+        }
+    })
 }
 
 async function processOcrInline(

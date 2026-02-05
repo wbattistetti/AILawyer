@@ -6,6 +6,11 @@ import { cropCanvasFromViewportBox } from '../utils/canvasCrop'
 import { ExtractBlock } from '../../../../features/defense-memory/components/table-editor/components/ExtractBlock'
 import { ExtractBlock as ExtractBlockType, ExtractData } from '../../../../features/defense-memory/components/table-editor/types/blocks.types'
 import { getSelectedTextInRect } from '../utils/textExtraction'
+import { analyzeTextForPerson, convertToPersonRecord, type PersonExtractionResult } from '../../../../features/entities/person-extract-manual'
+import { mapTextToBoundingBoxes, type OcrWord, type HighlightResult } from '../../../../features/entities/person-extract-mapping'
+import { upsertPersons } from '../../../../features/entities/entity-index'
+import { PersonImageHighlightOverlay } from './PersonImageHighlightOverlay'
+import { useToast } from '@/hooks/use-toast'
 
 interface ExtractBlockOverlayProps {
 	selection: PersistentSelection
@@ -17,6 +22,7 @@ interface ExtractBlockOverlayProps {
 	docName?: string
 	hasNativeText?: boolean
 	onExtractAdd?: (extract: ExtractData) => void  // ✅ Callback per aggiungere al cassetto
+	praticaId?: string  // ✅ ID pratica per estrazione anagrafica
 }
 
 export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
@@ -28,7 +34,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	setPersistentSelections,
 	docName,
 	hasNativeText,
-	onExtractAdd
+	onExtractAdd,
+	praticaId
 }) => {
 	const [extractBlock, setExtractBlock] = useState<ExtractBlockType | null>(null)
 	const [extractData, setExtractData] = useState<ExtractData | null>(null)
@@ -37,7 +44,16 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 	const [isExtractingText, setIsExtractingText] = useState(false)
 	const overlayRef = useRef<HTMLDivElement | null>(null)
 	const contentWrapperRef = useRef<HTMLDivElement | null>(null) // ✅ Ref per il wrapper del contenuto
+	const imageRef = useRef<HTMLImageElement | null>(null) // ✅ Ref per l'immagine ritagliata (per highlight)
 	const [actualHeaderHeight, setActualHeaderHeight] = useState<number>(60) // ✅ Altezza reale misurata
+
+	// ✅ Stati per estrazione anagrafica (NUOVO FLUSSO)
+	const [personAnalysisState, setPersonAnalysisState] = useState<'idle' | 'analyzing' | 'ready' | 'saving' | 'error'>('idle')
+	const [personExtractionResult, setPersonExtractionResult] = useState<PersonExtractionResult | null>(null)
+	const [highlightResult, setHighlightResult] = useState<HighlightResult | null>(null)
+	const [ocrWords, setOcrWords] = useState<OcrWord[]>([])
+	const [personError, setPersonError] = useState<string | null>(null)
+	const { toast } = useToast()
 
 	// ✅ Crea ExtractBlock e ExtractData dalla selezione
 	useEffect(() => {
@@ -50,11 +66,24 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		}
 
 		const pr = pageLayer.getBoundingClientRect()
-		const viewportBox = {
-			x: selection.x0Pct * pr.width,
-			y: selection.y0Pct * pr.height,
-			w: (selection.x1Pct - selection.x0Pct) * pr.width,
-			h: (selection.y1Pct - selection.y0Pct) * pr.height
+
+		// ✅ CRITICO: Usa SEMPRE viewportBox originale dalla selezione (immutabile)
+		// NON ricalcolare dalle percentuali - le dimensioni del pageLayer cambiano con zoom/scroll
+		// viewportBox è un dato "storico" salvato al momento della selezione
+		let viewportBox: { x: number; y: number; w: number; h: number }
+		if (selection.viewportBox) {
+			// ✅ Usa coordinate originali al momento della selezione (dato storico immutabile)
+			viewportBox = selection.viewportBox
+			console.log('[ExtractBlockOverlay] Usando viewportBox originale (immutabile):', viewportBox)
+		} else {
+			// ✅ Fallback solo per selezioni legacy senza viewportBox
+			console.warn('[ExtractBlockOverlay] viewportBox non disponibile, usando fallback percentuali')
+			viewportBox = {
+				x: selection.x0Pct * pr.width,
+				y: selection.y0Pct * pr.height,
+				w: (selection.x1Pct - selection.x0Pct) * pr.width,
+				h: (selection.y1Pct - selection.y0Pct) * pr.height
+			}
 		}
 
 		// Nome documento
@@ -93,48 +122,61 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		const initializeExtract = async () => {
 			setIsImageLoading(true) // ✅ Imposta loading quando inizia
 
-			// ✅ Usa imageDataUrl già presente nella selezione (per Word/OCR) o in lastSelection
-			let imageDataUrl: string | undefined = selection.imageDataUrl || lastSelection?.imageDataUrl
+			try {
+				// ✅ Usa imageDataUrl già presente nella selezione (per Word/OCR) o in lastSelection
+				let imageDataUrl: string | undefined = selection.imageDataUrl || lastSelection?.imageDataUrl
 
-			// ✅ Se non c'è già uno screenshot, prova a ritagliare dal canvas (solo per PDF)
-			if (!imageDataUrl && shouldCropImage && viewportBox) {
-				try {
-					const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
-					const canvas = (canvasLayer?.querySelector('canvas') || pageLayer.querySelector('canvas')) as HTMLCanvasElement | null
+				// ✅ Se non c'è già uno screenshot, prova a ritagliare dal canvas (solo per PDF)
+				if (!imageDataUrl && shouldCropImage && viewportBox) {
+					try {
+						const canvasLayer = pageLayer.querySelector('.rpv-core__canvas-layer') as HTMLElement | null
+						const canvas = (canvasLayer?.querySelector('canvas') || pageLayer.querySelector('canvas')) as HTMLCanvasElement | null
 
-					if (canvas) {
-						const croppedImage = await cropCanvasFromViewportBox(canvas, viewportBox, pageLayer)
-						if (croppedImage) {
-							imageDataUrl = croppedImage
+						if (canvas) {
+							// ✅ Verifica che il canvas abbia dimensioni valide prima di ritagliare
+							if (canvas.width > 0 && canvas.height > 0) {
+								const croppedImage = await cropCanvasFromViewportBox(canvas, viewportBox, pageLayer)
+								if (croppedImage) {
+									imageDataUrl = croppedImage
+								}
+							} else {
+								console.warn('[ExtractBlockOverlay] Canvas ha dimensioni 0, salto ritaglio')
+							}
 						}
+					} catch (error) {
+						console.error('[ExtractBlockOverlay] Errore durante il ritaglio immagine:', error)
+						// ✅ In caso di errore, continua senza immagine (il testo è già disponibile)
 					}
-				} catch (error) {
-					console.error('[ExtractBlockOverlay] Errore durante il ritaglio immagine:', error)
 				}
-			}
 
-			// Crea ExtractData finale
-			const data: ExtractData = {
-				...initialData,
-				imageDataUrl
-			}
+				// Crea ExtractData finale
+				const data: ExtractData = {
+					...initialData,
+					imageDataUrl
+				}
 
-			// Crea ExtractBlock
-			const block: ExtractBlockType = {
-				type: 'extract',
-				id: data.id,
-				order: 0,
-				extract: data,
-				title: data.title,
-				observation: data.observation,
-				hasObservation: data.hasObservation,
-				collapsed: data.collapsed
-			}
+				// Crea ExtractBlock
+				const block: ExtractBlockType = {
+					type: 'extract',
+					id: data.id,
+					order: 0,
+					extract: data,
+					title: data.title,
+					observation: data.observation,
+					hasObservation: data.hasObservation,
+					collapsed: data.collapsed
+				}
 
-			setExtractData(data)
-			setExtractBlock(block)
-			setIsLoading(false)
-			setIsImageLoading(false) // ✅ Imposta loading a false quando finisce
+				setExtractData(data)
+				setExtractBlock(block)
+				setIsLoading(false)
+			} catch (error) {
+				console.error('[ExtractBlockOverlay] Errore durante inizializzazione:', error)
+				setIsLoading(false)
+			} finally {
+				// ✅ IMPORTANTE: sempre impostare isImageLoading a false, anche in caso di errore
+				setIsImageLoading(false)
+			}
 		}
 
 		initializeExtract()
@@ -153,9 +195,10 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				} : prev)
 			}
 			setIsImageLoading(false)
-		} else if (!currentImageDataUrl && extractData && !extractData.imageDataUrl) {
-			// ✅ L'immagine non è ancora disponibile, mantieni loading
-			setIsImageLoading(true)
+		} else if (!currentImageDataUrl && extractData && !extractData.imageDataUrl && isImageLoading) {
+			// ✅ MODIFICATO: Solo se siamo già in loading, mantieni loading
+			// ✅ NON riattivare il loading se initializeExtract ha già finito (evita loop)
+			// Rimuoviamo setIsImageLoading(true) che causava il blocco dello spinner
 		} else if (currentImageDataUrl && isImageLoading) {
 			// ✅ L'immagine è disponibile e siamo in loading, aggiorna lo stato
 			setIsImageLoading(false)
@@ -399,12 +442,20 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		setIsExtractingText(true)
 
 		try {
+			// ✅ CRITICO: Usa SEMPRE viewportBox originale dalla selezione (immutabile)
 			const pr = pageLayer.getBoundingClientRect()
-			const viewportBox = {
-				x: selection.x0Pct * pr.width,
-				y: selection.y0Pct * pr.height,
-				w: (selection.x1Pct - selection.x0Pct) * pr.width,
-				h: (selection.y1Pct - selection.y0Pct) * pr.height
+			let viewportBox: { x: number; y: number; w: number; h: number }
+			if (selection.viewportBox) {
+				// ✅ Usa coordinate originali al momento della selezione
+				viewportBox = selection.viewportBox
+			} else {
+				// ✅ Fallback solo per selezioni legacy
+				viewportBox = {
+					x: selection.x0Pct * pr.width,
+					y: selection.y0Pct * pr.height,
+					w: (selection.x1Pct - selection.x0Pct) * pr.width,
+					h: (selection.y1Pct - selection.y0Pct) * pr.height
+				}
 			}
 
 			const { text } = await getSelectedTextInRect(textLayer, viewportBox)
@@ -434,6 +485,185 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 
 	// ✅ Verifica se il testo può essere estratto (haNativeText e testo non ancora estratto)
 	const canExtractText = hasNativeText === true && (!extractData?.content || extractData.content.trim().length === 0)
+
+	// ✅ Handler per estrazione anagrafica (NUOVO FLUSSO)
+	const handleExtractPerson = async () => {
+		if (!praticaId) {
+			setPersonError('Pratica non specificata')
+			setPersonAnalysisState('error')
+			return
+		}
+
+		setPersonAnalysisState('analyzing')
+		setPersonError(null)
+		setPersonExtractionResult(null)
+		setHighlightResult(null)
+		setOcrWords([])
+
+		try {
+			let textToAnalyze = extractData?.content?.trim()
+			let words: OcrWord[] = []
+			let imageWidth = 0
+			let imageHeight = 0
+
+			// ✅ Se non c'è testo ma c'è immagine, fai OCR automatico
+			if (!textToAnalyze && extractData?.imageDataUrl) {
+				try {
+					console.log('[PERSON-EXTRACT] Avvio OCR su immagine...', {
+						imageDataUrlLength: extractData.imageDataUrl?.length,
+						hasImageDataUrl: !!extractData.imageDataUrl
+					})
+
+					// Usa endpoint backend per OCR
+					const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+					const response = await fetch(`${API_BASE}/ocr/recognize-image`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							imageDataUrl: extractData.imageDataUrl
+						})
+					})
+
+					console.log('[PERSON-EXTRACT] Risposta OCR:', { status: response.status, ok: response.ok })
+
+					if (!response.ok) {
+						const errorData = await response.json().catch(() => ({ error: 'Errore sconosciuto' }))
+						console.error('[PERSON-EXTRACT] Errore HTTP OCR:', errorData)
+						throw new Error(errorData.error || errorData.details || `HTTP ${response.status}`)
+					}
+
+					const result = await response.json()
+					console.log('[PERSON-EXTRACT] Risultato OCR:', {
+						textLength: result.text?.length,
+						hasText: !!result.text,
+						wordsCount: result.words?.length,
+						imageWidth: result.imageWidth,
+						imageHeight: result.imageHeight
+					})
+
+					textToAnalyze = result.text?.trim() || ''
+					words = (result.words || []).map((w: any) => ({
+						text: w.text,
+						bbox: w.bbox,
+						startIndex: w.startIndex,
+						endIndex: w.endIndex,
+					}))
+					imageWidth = result.imageWidth || 0
+					imageHeight = result.imageHeight || 0
+
+					// ✅ Aggiorna extractData con il testo OCR
+					if (textToAnalyze) {
+						const updatedData = { ...extractData, content: textToAnalyze }
+						setExtractData(updatedData)
+						if (extractBlock) {
+							setExtractBlock({
+								...extractBlock,
+								extract: updatedData
+							})
+						}
+					}
+				} catch (ocrError: any) {
+					console.error('[PERSON-EXTRACT] Errore OCR:', ocrError)
+					const errorMessage = ocrError?.message || 'Errore sconosciuto durante OCR'
+					setPersonError(`Errore durante OCR: ${errorMessage}`)
+					setPersonAnalysisState('error')
+					return
+				}
+			}
+
+			if (!textToAnalyze) {
+				setPersonError('Nessun testo disponibile per l\'analisi')
+				setPersonAnalysisState('error')
+				return
+			}
+
+			// ✅ 1. Analizza testo (nuova versione con indici)
+			const extractionResult = await analyzeTextForPerson(textToAnalyze)
+
+			if (!extractionResult.persons || extractionResult.persons.length === 0) {
+				setPersonError('Nessun dato anagrafico trovato nel testo selezionato')
+				setPersonAnalysisState('error')
+				return
+			}
+
+			console.log('[PERSON-EXTRACT] Persone estratte:', extractionResult.persons.length)
+
+			// ✅ 2. Mappa testo a bounding boxes (solo se abbiamo words OCR)
+			if (words.length > 0 && imageWidth > 0 && imageHeight > 0) {
+				const highlights = mapTextToBoundingBoxes(
+					extractionResult.persons,
+					words,
+					imageWidth,
+					imageHeight
+				)
+				setHighlightResult(highlights)
+				setOcrWords(words)
+				console.log('[PERSON-EXTRACT] Highlight creati:', highlights.highlights.length)
+			}
+
+			// ✅ 3. Salva risultati e mostra highlight
+			setPersonExtractionResult(extractionResult)
+			setPersonAnalysisState('ready')
+		} catch (error: any) {
+			console.error('[PERSON-EXTRACT] Errore analisi anagrafica:', error)
+			const errorMessage = error?.message || 'Errore sconosciuto'
+			setPersonError(`Errore durante l'analisi: ${errorMessage}`)
+			setPersonAnalysisState('error')
+		}
+	}
+
+	// ✅ Handler per conferma salvataggio anagrafica (NUOVO FLUSSO)
+	const handleConfirmPersonExtraction = async () => {
+		if (!personExtractionResult || personAnalysisState === 'saving' || !praticaId) return
+
+		setPersonAnalysisState('saving')
+
+		try {
+			// ✅ 1. Converti ExtractedPersonWithIndices in PersonRecord
+			const personRecords = personExtractionResult.persons.map(p => convertToPersonRecord(p))
+
+			// ✅ 2. Calcola differenziale per sapere nuovi vs aggiornamenti
+			const { computeDifferential } = await import('../../../../features/entities/person-extract-manual')
+			const differential = await computeDifferential(personRecords, praticaId)
+
+			// ✅ 3. Prepara array finale
+			const toSave = [
+				...differential.newPersons.map(p => ({ ...p, praticaId })),
+				...differential.updatePersons.map(u => ({ ...u.merged, praticaId }))
+			]
+
+			// ✅ 4. Salva in IndexedDB
+			await upsertPersons(toSave)
+
+			// ✅ 5. Dispatch evento per aggiornare pannello
+			window.dispatchEvent(new CustomEvent('app:persons-updated', {
+				detail: {
+					newCount: differential.stats.totalNew,
+					updateCount: differential.stats.totalUpdates
+				}
+			}))
+
+			// ✅ 6. Toast successo
+			toast({
+				title: 'Schede anagrafiche create',
+				description: `${differential.stats.totalNew} nuove, ${differential.stats.totalUpdates} aggiornate`
+			})
+
+			// ✅ 7. Reset e chiudi overlay
+			setPersonAnalysisState('idle')
+			setPersonExtractionResult(null)
+			setHighlightResult(null)
+			setOcrWords([])
+			setPersistentSelections(prev => prev.filter(s => s.id !== selection.id))
+			onClose()
+		} catch (error) {
+			console.error('[PERSON-EXTRACT] Errore salvataggio:', error)
+			setPersonError('Errore durante il salvataggio')
+			setPersonAnalysisState('error')
+		}
+	}
 
 	if (isLoading || !extractBlock || !extractData) {
 		return null
@@ -541,7 +771,40 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 					overlayHeaderOffset={headerHeight} // ✅ Passa l'offset (non più usato per absolute, ma per calcoli)
 					overlayContentHeight={selectionHeight} // ✅ Passa altezza esatta del contenuto per mostrare tutto il rettangolo
 					isImageLoading={isImageLoading} // ✅ Passa lo stato di loading dell'immagine
+					imageRef={imageRef} // ✅ Passa il ref all'immagine per highlight
+					imageOverlay={highlightResult && highlightResult.highlights.length > 0 ? (
+						<PersonImageHighlightOverlay
+							highlights={highlightResult.highlights}
+							imageRef={imageRef}
+						/>
+					) : undefined}
 				/>
+
+				{/* ✅ Spinner UX durante OCR/Analisi */}
+				{personAnalysisState === 'analyzing' && (
+					<div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+						<div className="flex flex-col items-center gap-2">
+							<div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+							<p className="text-sm text-neutral-700 font-medium">Sto analizzando il testo...</p>
+						</div>
+					</div>
+				)}
+
+				{/* ✅ Messaggio errore (se presente) */}
+				{personAnalysisState === 'error' && personError && (
+					<div className="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+						{personError}
+						<button
+							onClick={() => {
+								setPersonAnalysisState('idle')
+								setPersonError(null)
+							}}
+							className="ml-2 underline"
+						>
+							Chiudi
+						</button>
+					</div>
+				)}
 
 				{/* ✅ Footer con pulsanti: "Estrai testo" / "Aggiungi osservazione" a sinistra, "Annulla" e "Salva estratto" a destra */}
 				{/* ✅ Mantieni mt-2 per spazio al contenuto (rettangolo selezionato), ma rimuovi border-t per evitare la "fascetta grigia" */}
@@ -562,6 +825,41 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 								className="px-2 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{isExtractingText ? 'Estrazione...' : 'Estrai testo'}
+							</button>
+						)}
+
+						{/* Pulsante "Estrai anagrafica" (visibile se c'è testo O immagine, e praticaId) */}
+						{(extractData?.content?.trim() || extractData?.imageDataUrl) && praticaId && (
+							<button
+								onClick={(e) => {
+									e.stopPropagation()
+									handleExtractPerson()
+								}}
+								onMouseDown={(e) => {
+									e.stopPropagation()
+								}}
+								disabled={personAnalysisState === 'analyzing' || personAnalysisState === 'saving'}
+								className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{personAnalysisState === 'analyzing' ? 'Analisi...' : 'Estrai anagrafica'}
+							</button>
+						)}
+
+						{/* ✅ Pulsante "Crea schede" (visibile solo dopo estrazione) */}
+						{personExtractionResult && personExtractionResult.persons.length > 0 && (
+							<button
+								onClick={(e) => {
+									e.stopPropagation()
+									handleConfirmPersonExtraction()
+								}}
+								onMouseDown={(e) => {
+									e.stopPropagation()
+								}}
+								disabled={personAnalysisState === 'saving'}
+								title={`Ho trovato ${personExtractionResult.persons.length} ${personExtractionResult.persons.length === 1 ? 'anagrafica' : 'anagrafiche'}. Le ho evidenziate nel documento. Vuoi creare le schede?`}
+								className="px-2 py-1 text-xs bg-green-600 text-white hover:bg-green-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{personAnalysisState === 'saving' ? 'Creazione...' : 'Crea schede'}
 							</button>
 						)}
 

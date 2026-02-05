@@ -11,23 +11,57 @@ export async function cropCanvasFromViewportBox(
 	pageLayer: HTMLElement
 ): Promise<string | null> {
 	try {
+		// ✅ Verifica che il canvas abbia dimensioni valide
+		if (canvas.width === 0 || canvas.height === 0) {
+			console.warn('[CANVAS_CROP] Canvas ha dimensioni 0:', { width: canvas.width, height: canvas.height })
+			return null
+		}
+
 		const canvasRect = canvas.getBoundingClientRect()
 		const pageRect = pageLayer.getBoundingClientRect()
 
-		// Calcola il rapporto di scala tra canvas display (DOM) e canvas interno (pixel)
+		// ✅ Verifica che le dimensioni del rect siano valide
+		if (canvasRect.width === 0 || canvasRect.height === 0) {
+			console.warn('[CANVAS_CROP] Canvas rect ha dimensioni 0:', { width: canvasRect.width, height: canvasRect.height })
+			return null
+		}
+
+		// ✅ CRITICO: viewportBox è relativo al pageLayer ORIGINALE al momento della selezione
+		// Converti viewportBox → percentuali rispetto al pageLayer originale
+		// Poi applica le percentuali al canvasRect attuale (che può avere dimensioni diverse dopo zoom)
+
+		// ✅ Converti viewportBox in percentuali rispetto al pageLayer
+		// Le percentuali sono invarianti rispetto allo zoom
+		const viewportBoxXPercent = viewportBox.x / pageRect.width
+		const viewportBoxYPercent = viewportBox.y / pageRect.height
+		const viewportBoxWPercent = viewportBox.w / pageRect.width
+		const viewportBoxHPercent = viewportBox.h / pageRect.height
+
+		// ✅ Applica le percentuali al canvas display attuale
+		// Il canvas può avere dimensioni diverse dal pageLayer (padding, margini)
+		const canvasDisplayX = viewportBoxXPercent * canvasRect.width
+		const canvasDisplayY = viewportBoxYPercent * canvasRect.height
+		const canvasDisplayW = viewportBoxWPercent * canvasRect.width
+		const canvasDisplayH = viewportBoxHPercent * canvasRect.height
+
+		// ✅ Calcola scale tra canvas display (DOM) e canvas interno (pixel)
 		const scaleX = canvas.width / canvasRect.width
 		const scaleY = canvas.height / canvasRect.height
 
-		// Il viewportBox è relativo al pageLayer, ma dobbiamo convertirlo in coordinate canvas
-		// Prima convertiamo viewportBox (relativo a pageLayer) in coordinate relative a canvas display
-		const canvasDisplayX = viewportBox.x - (canvasRect.left - pageRect.left)
-		const canvasDisplayY = viewportBox.y - (canvasRect.top - pageRect.top)
+		console.log('[CANVAS_CROP] Conversione viewportBox originale → canvas:', {
+			viewportBoxOriginale: viewportBox,
+			pageRect: { width: pageRect.width, height: pageRect.height },
+			percentuali: { x: viewportBoxXPercent, y: viewportBoxYPercent, w: viewportBoxWPercent, h: viewportBoxHPercent },
+			canvasRect: { width: canvasRect.width, height: canvasRect.height },
+			canvasDisplay: { x: canvasDisplayX, y: canvasDisplayY, w: canvasDisplayW, h: canvasDisplayH },
+			scale: { x: scaleX, y: scaleY }
+		})
 
-		// Ora convertiamo le coordinate display in coordinate canvas interne (pixel)
+		// ✅ Converti coordinate display → coordinate canvas interne (pixel)
 		const sourceX = canvasDisplayX * scaleX
 		const sourceY = canvasDisplayY * scaleY
-		const sourceW = viewportBox.w * scaleX
-		const sourceH = viewportBox.h * scaleY
+		const sourceW = canvasDisplayW * scaleX
+		const sourceH = canvasDisplayH * scaleY
 
 		// Assicurati che le coordinate siano dentro i bounds del canvas
 		const clampedX = Math.max(0, Math.min(sourceX, canvas.width))
