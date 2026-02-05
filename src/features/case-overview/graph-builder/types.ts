@@ -67,6 +67,7 @@ export type BuilderNodeData = {
   nodeId?: string
   centerAt?: { x: number; y: number }
   style?: NodeStyle
+  startEditing?: boolean
 }
 
 export type BuilderEdgeData = {

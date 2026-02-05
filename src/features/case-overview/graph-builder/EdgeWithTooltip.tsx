@@ -18,6 +18,15 @@ export default function EdgeWithTooltip(props: EdgeProps) {
   const [paletteScreen, setPaletteScreen] = React.useState<{ left:number; top:number } | null>(null)
   const [selected, setSelected] = React.useState(false)
   const toolbarTimer = React.useRef<number | null>(null)
+
+  // Listen for deselect events
+  React.useEffect(() => {
+    const onDeselect = () => {
+      setSelected(false)
+    }
+    window.addEventListener('gb:deselect-edges', onDeselect as any)
+    return () => window.removeEventListener('gb:deselect-edges', onDeselect as any)
+  }, [])
   const GRACE_MS = 350
   const cancelToolbarHide = () => { if (toolbarTimer.current) { window.clearTimeout(toolbarTimer.current); toolbarTimer.current = null } }
   const scheduleToolbarHide = () => { cancelToolbarHide(); toolbarTimer.current = window.setTimeout(()=> setHover(false), GRACE_MS) as unknown as number }
@@ -111,10 +120,10 @@ export default function EdgeWithTooltip(props: EdgeProps) {
     showDeleteAt(mx + nx * off, my + ny * off)
   }
   // Tangency at the icon circle border (node center is the circle center)
-  const R_SRC = 13.5
-  const R_TGT = 13.5
+  const R_SRC = 20 // Metà della dimensione del cerchio (40/2)
+  const R_TGT = 20 // Metà della dimensione del cerchio (40/2)
   // Prefer real node centers (icon circle centers)
-  const SIZE = 26
+  const SIZE = 40 // Aggiornato per corrispondere alla nuova dimensione del cerchio
   const getCenter = (nid: string | undefined) => {
     if (!nid) return null
     const n: any = rf.getNode(nid)
@@ -154,13 +163,13 @@ export default function EdgeWithTooltip(props: EdgeProps) {
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...edgeStyle, strokeDasharray }} />
       {/* Edge toolbar at source */}
       <g transform={`translate(${sx}, ${sy})`} onMouseEnter={()=>{ cancelToolbarHide(); setHover(true) }} onMouseLeave={()=>scheduleToolbarHide()}>
-        <rect x={-6} y={-12} width={80} height={24} fill="transparent" pointerEvents="all" onMouseEnter={()=>{ cancelToolbarHide(); setHover(true) }} onMouseLeave={()=>scheduleToolbarHide()} onMouseDown={(e)=>e.stopPropagation()} />
+        <rect x={-6} y={-12} width={90} height={24} fill="transparent" pointerEvents="all" onMouseEnter={()=>{ cancelToolbarHide(); setHover(true) }} onMouseLeave={()=>scheduleToolbarHide()} onMouseDown={(e)=>e.stopPropagation()} />
         <g transform="translate(0,0)" style={{ opacity: (hover || selected || showPalette) ? 1 : 0, cursor:'default' }}>
           {/* Per-icon hitboxes for stable hover/click */}
-          <rect x={0} y={-8} width={16} height={16} fill="transparent" pointerEvents="all"
+          <rect x={0} y={-8} width={20} height={20} fill="transparent" pointerEvents="all"
             onMouseEnter={()=>setIconHover('edit')} onMouseLeave={()=>setIconHover(null)} onMouseDown={(e)=>e.stopPropagation()}
             onClick={(e)=>{ e.stopPropagation(); const ev = new CustomEvent('gb:edit-edge', { detail: { edgeId: id, sourceId: (props as any).source, targetId: (props as any).target, x: sx, y: sy } }); window.dispatchEvent(ev) }} />
-          <rect x={18} y={-8} width={16} height={16} fill="transparent" pointerEvents="all"
+          <rect x={22} y={-8} width={20} height={20} fill="transparent" pointerEvents="all"
             onMouseEnter={()=>setIconHover('palette')} onMouseLeave={()=>setIconHover(null)} onMouseDown={(e)=>e.stopPropagation()}
             onClick={(e)=>{ e.stopPropagation();
               try {
@@ -173,16 +182,16 @@ export default function EdgeWithTooltip(props: EdgeProps) {
                 }
               } catch { setPaletteScreen({ left: Math.max(8, Math.min(window.innerWidth - 188, sx + 16)), top: Math.max(8, Math.min(window.innerHeight - 146, sy - 16)) }) }
               setShowPalette(true) }} />
-          <rect x={36} y={-8} width={16} height={16} fill="transparent" pointerEvents="all"
+          <rect x={44} y={-8} width={20} height={20} fill="transparent" pointerEvents="all"
             onMouseEnter={()=>setIconHover('trash')} onMouseLeave={()=>setIconHover(null)} onMouseDown={(e)=>e.stopPropagation()}
             onClick={(e)=>{ e.stopPropagation(); const ev = new CustomEvent('gb:delete-edge', { detail: { id } }); window.dispatchEvent(ev) }} />
           {/* Icons */}
-          <g transform="translate(0,0)"
+          <g transform="translate(2, -8)"
             onMouseEnter={()=>setIconHover('edit')} onMouseLeave={()=>setIconHover(null)}
             onClick={(e)=>{ e.stopPropagation(); const ev = new CustomEvent('gb:edit-edge', { detail: { edgeId: id, sourceId: (props as any).source, targetId: (props as any).target, x: sx, y: sy } }); window.dispatchEvent(ev) }}>
-            <Pencil width={12} height={12} color={iconHover==='edit' ? '#0284c7' : '#9ca3af'} />
+            <Pencil width={16} height={16} color={iconHover==='edit' ? '#0284c7' : '#9ca3af'} />
           </g>
-          <g transform="translate(18,0)"
+          <g transform="translate(24, -8)"
             onMouseEnter={()=>setIconHover('palette')} onMouseLeave={()=>setIconHover(null)}
             onClick={(e)=>{ e.stopPropagation();
               try {
@@ -192,12 +201,12 @@ export default function EdgeWithTooltip(props: EdgeProps) {
                 setPaletteScreen(pos)
               } catch { setPaletteScreen({ left: Math.max(8, Math.min(window.innerWidth - 188, tx + 16)), top: Math.max(8, Math.min(window.innerHeight - 146, ty + 16)) }) }
               setShowPalette(true) }}>
-            <Palette width={12} height={12} color={iconHover==='palette' ? '#0284c7' : '#9ca3af'} />
+            <Palette width={16} height={16} color={iconHover==='palette' ? '#0284c7' : '#9ca3af'} />
           </g>
-          <g transform="translate(36,0)"
+          <g transform="translate(46, -8)"
             onMouseEnter={()=>setIconHover('trash')} onMouseLeave={()=>setIconHover(null)}
             onClick={(e)=>{ e.stopPropagation(); const ev = new CustomEvent('gb:delete-edge', { detail: { id } }); window.dispatchEvent(ev) }}>
-            <Trash2 width={12} height={12} color={iconHover==='trash' ? '#dc2626' : '#9ca3af'} />
+            <Trash2 width={16} height={16} color={iconHover==='trash' ? '#dc2626' : '#9ca3af'} />
           </g>
         </g>
       </g>
@@ -206,7 +215,15 @@ export default function EdgeWithTooltip(props: EdgeProps) {
         onMouseEnter={() => { cancelToolbarHide(); setHover(true); if (rafRef.current) cancelAnimationFrame(rafRef.current); showDeleteAtMid() }}
         onMouseMove={() => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = requestAnimationFrame(() => showDeleteAtMid()) as unknown as number }}
         onMouseLeave={()=>{ if (!showPalette) scheduleToolbarHide(); if (hideTimer.current) window.clearTimeout(hideTimer.current); hideTimer.current = window.setTimeout(()=>{ if(btnRef.current) btnRef.current.style.display='none' },140) as unknown as number }}
-        onClick={(e)=>{ e.stopPropagation(); setSelected(true) }}>
+        onClick={(e)=>{
+          // Don't select if clicking on trash icon
+          if ((e.target as any)?.closest?.('[data-trash-icon]')) return
+          e.stopPropagation()
+          // Deselect all other edges first
+          window.dispatchEvent(new CustomEvent('gb:deselect-edges'))
+          // Then select this one
+          setSelected(true)
+        }}>
         {title ? <title>{title}</title> : null}
       </path>
       {/* Two parallel hover bands (+/- 10px) */}
@@ -236,6 +253,55 @@ export default function EdgeWithTooltip(props: EdgeProps) {
       {showPalette && paletteScreen && (
         <EdgeStylePortal id={id} left={paletteScreen.left} top={paletteScreen.top} data={data} onClose={()=>{ setShowPalette(false); setSelected(false); scheduleToolbarHide(); setPaletteScreen(null) }} />
       )}
+      {/* Trash icon when edge is selected */}
+      {selected && (() => {
+        const mx = (sx + tx) / 2
+        const my = (sy + ty) / 2
+        const vx = tx - sx, vy = ty - sy
+        const len = Math.hypot(vx, vy) || 1
+        const nx = -vy / len, ny = vx / len
+        const off = 20 // Offset from edge center
+        const trashX = mx + nx * off
+        const trashY = my + ny * off
+        return (
+          <g transform={`translate(${trashX}, ${trashY})`} style={{ pointerEvents: 'all' }} data-trash-icon="true">
+            {/* Larger invisible hit area */}
+            <rect
+              x={-16}
+              y={-16}
+              width={32}
+              height={32}
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onClick={(e)=>{
+                e.stopPropagation()
+                e.preventDefault()
+                console.log('Trash clicked, deleting edge:', id)
+                const ev = new CustomEvent('gb:delete-edge', { detail: { id } })
+                window.dispatchEvent(ev)
+                setSelected(false)
+              }}
+              onMouseDown={(e)=>{
+                e.stopPropagation()
+                e.preventDefault()
+              }}
+            />
+            <circle
+              cx={0}
+              cy={0}
+              r={12}
+              fill="white"
+              stroke="#dc2626"
+              strokeWidth={2}
+              opacity={0.95}
+              style={{ cursor: 'pointer', pointerEvents: 'none' }}
+            />
+            <g transform="translate(-8, -8)" style={{ pointerEvents: 'none' }}>
+              <Trash2 width={16} height={16} color="#dc2626" />
+            </g>
+          </g>
+        )
+      })()}
     </g>
   )
 }

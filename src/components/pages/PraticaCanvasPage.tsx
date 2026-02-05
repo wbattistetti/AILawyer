@@ -1521,6 +1521,12 @@ export function PraticaCanvasPage() {
             (dockV2Ref.current as any).openCliente()
           }
         }}
+        onOpenGraphBuilder={() => {
+          // ✅ Apri GraphBuilder tramite ref
+          if (dockV2Ref.current && 'openGraphBuilder' in dockV2Ref.current) {
+            (dockV2Ref.current as any).openGraphBuilder()
+          }
+        }}
       />
 
       {/* Spacer per l'header fisso */}

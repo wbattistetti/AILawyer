@@ -1,6 +1,6 @@
 import { Button } from '../../../../components/ui/button';
 import { Switch } from '../../../../components/ui/switch';
-import { ArrowLeft, Upload, RefreshCw, Loader2, FolderOpen, User } from 'lucide-react';
+import { ArrowLeft, Upload, RefreshCw, Loader2, FolderOpen, User, Network } from 'lucide-react';
 import { Pratica } from '../../../../types';
 import { SettingsButton } from '@/components/theme/SettingsDialog';
 
@@ -15,6 +15,7 @@ interface HeaderToolbarProps {
   isSaving?: boolean;
   onOpenExplorer?: () => void;
   onOpenCliente?: () => void;
+  onOpenGraphBuilder?: () => void;
 }
 
 export function HeaderToolbar({
@@ -27,7 +28,8 @@ export function HeaderToolbar({
   onSaveFilesToDbChange,
   isSaving = false,
   onOpenExplorer,
-  onOpenCliente
+  onOpenCliente,
+  onOpenGraphBuilder
 }: HeaderToolbarProps) {
   return (
     <div className="fixed top-0 left-0 right-0 z-[9999] bg-background/95 backdrop-blur border-b">
@@ -73,6 +75,18 @@ export function HeaderToolbar({
               >
                 <FolderOpen className="w-4 h-4 mr-2" />
                 Explorer
+              </Button>
+            )}
+
+            {onOpenGraphBuilder && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenGraphBuilder}
+                className="flex items-center"
+              >
+                <Network className="w-4 h-4 mr-2" />
+                Crea Grafo
               </Button>
             )}
           </div>

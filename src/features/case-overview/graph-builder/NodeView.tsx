@@ -1,5 +1,5 @@
 import React from 'react'
-import { Handle, Position, useViewport } from 'reactflow'
+import { Handle, Position, useViewport, useReactFlow } from 'reactflow'
 import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike, Trash2, Pencil, Palette, Menu, Droplet, X, Paintbrush, CaseSensitive, Bold, Italic, Check, Gavel } from 'lucide-react'
 import type { NodeStyle } from './types'
 import type { BuilderNodeData, NodeKind } from './types'
@@ -34,17 +34,53 @@ function colorFor(kind: NodeKind): string {
 export default function NodeView(props: any) {
   const data: BuilderNodeData = props.data
   const nodeId: string | undefined = (data as any).nodeId ?? props.id
-  const size = 26 // ~35% smaller than previous 40
+  const size = 40 // Aumentato per contenere icona 28x28
   const Icon = iconMap[data.kind]
+  // Colore del bordo del cerchio (mantiene i colori personalizzati)
   let col = colorFor(data.kind)
   if (data.kind === 'male') col = '#60a5fa' // azzurro
   if (data.kind === 'female') col = '#ec4899' // rosa
+  // Colore dell'icona (nero come nella palette)
+  const iconColor = '#000000'
   const ps = data.details?.hasPs ? 'Sì' : 'No'
   const dob = data.details?.dob || ''
   const ageStr = dob ? ` (${calcAgeFromDob(dob)})` : ''
   const ref = React.useRef<HTMLDivElement | null>(null)
   const { zoom } = useViewport()
+  const { getNode, screenToFlowPosition } = useReactFlow()
   const inv = 1 / Math.max(0.01, zoom)
+
+  // Function to center the label after editing
+  const centerLabelAfterEdit = React.useCallback(() => {
+    if (!ref.current || !nodeId) return
+    const node = getNode(nodeId)
+    if (!node) return
+
+    // Wait for DOM to update after editing closes - use setTimeout to ensure DOM is fully updated
+    setTimeout(() => {
+      if (!ref.current) return
+
+      // Measure the label dimensions in screen coordinates
+      const rect = ref.current.getBoundingClientRect()
+
+      // Convert screen dimensions to flow coordinates
+      // Convert top-left and bottom-right corners to flow coordinates
+      const topLeft = screenToFlowPosition({ x: rect.left, y: rect.top })
+      const bottomRight = screenToFlowPosition({ x: rect.right, y: rect.bottom })
+
+      // Calculate width and height in flow coordinates
+      const width = Math.abs(bottomRight.x - topLeft.x)
+      const height = Math.abs(bottomRight.y - topLeft.y)
+
+      // The center is the current node position (since nodeOrigin={[0.5, 0.5]})
+      const center = { x: node.position.x, y: node.position.y }
+
+      // Emit event to center the node
+      window.dispatchEvent(new CustomEvent('gb:center-node', {
+        detail: { id: nodeId, width, height, center }
+      }))
+    }, 50) // Small delay to ensure DOM is updated
+  }, [nodeId, getNode, screenToFlowPosition])
   React.useEffect(() => {
     if (data.centerAt && ref.current) {
       const r = ref.current.getBoundingClientRect()
@@ -59,6 +95,7 @@ export default function NodeView(props: any) {
   const [labelDraft, setLabelDraft] = React.useState<string>(data.label)
   const [multiDraft, setMultiDraft] = React.useState<string>('')
   const [editRect, setEditRect] = React.useState<{ w:number; h:number } | null>(null)
+  const [isFirstEdit, setIsFirstEdit] = React.useState(true)
   const textRef = React.useRef<HTMLTextAreaElement | null>(null)
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
   const [editorWidthPx, setEditorWidthPx] = React.useState<number | null>(null)
@@ -140,14 +177,14 @@ export default function NodeView(props: any) {
   }, [])
 
   React.useEffect(() => { if (editing) autoResize() }, [editing, autoResize])
-  const openInlineEdit = () => {
+  const openInlineEdit = React.useCallback(() => {
     setEditing(true)
     setShowResize(false)
     const full = [data.label, (dob ? `${dob}${ageStr}` : ''), ((data.kind==='male'||data.kind==='female') ? `Precedenti PS: ${ps}` : '')].filter(Boolean).join('\n')
     setMultiDraft(full)
     editSnapshotRef.current = full
     requestAnimationFrame(() => autoResize())
-  }
+  }, [data.label, dob, ageStr, data.kind, ps])
   const [hoverNode, setHoverNode] = React.useState(false)
   const [hoverCircle, setHoverCircle] = React.useState(false)
   const [isConnecting, setIsConnecting] = React.useState(false)
@@ -156,12 +193,32 @@ export default function NodeView(props: any) {
     window.addEventListener('gb:connecting', onConn as any)
     return () => window.removeEventListener('gb:connecting', onConn as any)
   }, [])
+
+  // Auto-start editing when node is created
+  React.useEffect(() => {
+    if (data.startEditing && !editing) {
+      openInlineEdit()
+      setIsFirstEdit(true) // Segna che è la prima volta
+      // Clear the flag by emitting an event
+      window.dispatchEvent(new CustomEvent('gb:start-editing-used', { detail: { id: nodeId } }))
+      // Select all text after opening edit - use double RAF to ensure textarea is rendered
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (textRef.current) {
+            textRef.current.focus()
+            textRef.current.select()
+          }
+        })
+      })
+    }
+  }, [data.startEditing, editing, nodeId, openInlineEdit])
+
   return (
-    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor, fontFamily: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif", WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale', textRendering: 'optimizeLegibility' }} className="select-none group drag-region" >
+    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor, fontFamily: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif", WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale', textRendering: 'optimizeLegibility' }} className={`select-none group ${editing ? '' : 'drag-region'}`} >
       <div className="mx-auto relative" style={{ width: size, height: size, borderRadius: '9999px', display:'grid', placeItems:'center', position:'relative', boxShadow:`0 0 0 ${Math.max(1, data.style?.ringWidth ?? 1)}px ${data.style?.ringColor ?? col}`, background: data.style?.ringFill ?? '#fff', cursor: (!isConnecting ? 'grab' : 'default') }} onMouseEnter={()=>setHoverCircle(true)} onMouseLeave={()=>setHoverCircle(false)}>
         {/* Target: full circle hit-area inside circle container */}
         <Handle id="target-circle" type="target" position={Position.Bottom} className="opacity-0" style={{ left:'50%', top: size/2, transform:'translate(-50%, -50%)', width: size, height: size, borderRadius: 9999, zIndex: 30, pointerEvents: (isConnecting ? 'all' : 'none') as any }} />
-        <Icon size={16} color={col} />
+        <Icon size={28} color={iconColor} />
         {((data.style?.bigXSizePx ?? 0) > 0 || data.style?.showBigX) && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents:'none' }}>
             <X size={data.style?.bigXSizePx ?? 24} color={data.style?.bigXColor ?? (data.style?.ringColor ?? '#ef4444')} strokeWidth={3} />
@@ -189,20 +246,70 @@ export default function NodeView(props: any) {
           <textarea
             autoFocus
             ref={textRef}
-            className="absolute left-0 top-0 w-full border border-slate-300 rounded-md px-1 py-0.5 text-[inherit] leading-tight resize-none overflow-hidden bg-white/95 shadow-sm"
+            className="absolute left-0 top-0 w-full border border-slate-300 rounded-md px-1 py-0.5 text-[inherit] leading-tight resize-none overflow-hidden bg-white/95 shadow-sm nodrag nopan"
             style={{ width: editorWidthPx ? `${editorWidthPx}px` : `${Math.max((editRect?.w || 0), 140)}px`, height: 'auto' }}
             value={multiDraft}
             onChange={(e)=>{ setMultiDraft(e.target.value); autoResize() }}
-            onClick={(e)=>e.stopPropagation()}
-            onKeyDown={(e)=>{ if (e.key==='Escape'){ e.preventDefault(); setEditing(false); setMultiDraft(editSnapshotRef.current) } }}
+            onClick={(e)=>{
+              e.stopPropagation()
+              // Permetti il click normale per posizionare il cursore
+              if (isFirstEdit && textRef.current) {
+                // Se è la prima volta, rimuovi la selezione quando l'utente clicca
+                const pos = textRef.current.selectionStart
+                textRef.current.setSelectionRange(pos, pos)
+                setIsFirstEdit(false)
+              }
+            }}
+            onMouseDown={(e)=>{
+              e.stopPropagation()
+              // RIMOSSO e.preventDefault() per permettere il click normale
+            }}
+            onDragStart={(e)=>{ e.stopPropagation(); e.preventDefault() }}
+            onKeyDown={(e)=>{
+              if (e.key==='Escape'){
+                e.preventDefault();
+                setEditing(false);
+                setMultiDraft(editSnapshotRef.current)
+                // Center label after closing edit
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    centerLabelAfterEdit()
+                  })
+                })
+              }
+            }}
           />
         )}
         {editing && (
           <div className="absolute flex items-center gap-1" style={{ left: (editorWidthPx ?? Math.max((editRect?.w || 0), 140)) + 4, bottom: 0, transform:`scale(${inv})`, transformOrigin:'bottom left' }} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>e.stopPropagation()}>
-            <button title="Applica" className="text-green-600 hover:text-green-700" onClick={()=>{ window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } })); setEditing(false) }}>
+            <button title="Applica" className="text-green-600 hover:text-green-700" onClick={()=>{
+              window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } }));
+              setEditing(false)
+              // Center label after closing edit
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  centerLabelAfterEdit()
+                })
+              })
+            }}>
               <Check size={14} />
             </button>
-            <button title="Annulla" className="text-red-600 hover:text-red-700" onClick={()=>{ setEditing(false); setMultiDraft(editSnapshotRef.current) }}>
+            <button title="Annulla" className="text-red-600 hover:text-red-700" onClick={()=>{
+              setEditing(false);
+              setMultiDraft(editSnapshotRef.current)
+              // Center label after closing edit
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  centerLabelAfterEdit()
+                })
+              })
+              // Center label after closing edit
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  centerLabelAfterEdit()
+                })
+              })
+            }}>
               <X size={14} />
             </button>
           </div>

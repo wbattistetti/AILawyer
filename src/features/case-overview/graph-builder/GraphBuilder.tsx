@@ -33,7 +33,7 @@ export default function GraphBuilder() {
     }
     const id = `n${Date.now()}${Math.floor(Math.random()*1000)}`
     const label = defaultLabelFor(kind)
-    const data: BuilderNodeData = { kind, label, nodeId: id }
+    const data: BuilderNodeData = { kind, label, nodeId: id, startEditing: true }
     // Con nodeOrigin={[0.5,0.5]} la position è il centro del nodo
     const node: BuilderNode = { id, type: 'builder', position: { x: pos.x, y: pos.y }, dragHandle: '.drag-region', data: { ...data, onDelete: () => setNodes(nds => nds.filter(n => n.id !== id)) } }
     setNodes(nds => nds.concat(node))
@@ -105,6 +105,8 @@ export default function GraphBuilder() {
     const onCenter = (e: any) => {
       const { id, width, height, center } = e?.detail || {}
       if (!id || !width || !height || !center) return
+      // With nodeOrigin={[0.5, 0.5]}, React Flow treats the position as the center
+      // So we calculate the top-left position, and React Flow will center the node on it
       setNodes(nds => nds.map(n => n.id === id ? ({ ...n, position: { x: center.x - width/2, y: center.y - height/2 }, data: { ...(n.data as any), centerAt: undefined } }) as any : n))
     }
     window.addEventListener('gb:center-node', onCenter as any)
@@ -176,6 +178,24 @@ export default function GraphBuilder() {
     }
   }, [])
 
+  // Clear startEditing flag after it's been used
+  React.useEffect(() => {
+    const onStartEditingUsed = (e: any) => {
+      const { id } = e?.detail || {}
+      if (!id) return
+      // Clear startEditing flag when editing is started
+      setNodes(nds => nds.map(n => {
+        if (n.id === id && (n.data as any).startEditing) {
+          const { startEditing, ...restData } = n.data as any
+          return { ...n, data: restData } as any
+        }
+        return n
+      }))
+    }
+    window.addEventListener('gb:start-editing-used', onStartEditingUsed as any)
+    return () => window.removeEventListener('gb:start-editing-used', onStartEditingUsed as any)
+  }, [])
+
   return (
     <div className="w-full h-full flex">
       <ToolPalette />
@@ -187,7 +207,12 @@ export default function GraphBuilder() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onConnectStart={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: true } })) } catch {} }}
-          onPaneClick={() => { try { window.dispatchEvent(new CustomEvent('gb:hide-resize')) } catch {}; setRelPicker(null) }}
+          onPaneClick={() => {
+            try { window.dispatchEvent(new CustomEvent('gb:hide-resize')) } catch {}
+            setRelPicker(null)
+            // Deselect all edges when clicking on pane
+            window.dispatchEvent(new CustomEvent('gb:deselect-edges'))
+          }}
           onConnectEnd={(e) => {
             try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {}
             const anyE: any = e
@@ -201,7 +226,7 @@ export default function GraphBuilder() {
           proOptions={{ hideAttribution: true }}
           onInit={(inst:any) => { (window as any).__rfInstance = inst }}
           nodeOrigin={[0.5, 0.5]}
-          onNodesDelete={(nds)=>{ 
+          onNodesDelete={(nds)=>{
             // chiudi eventuale relation picker se i nodi associati non esistono più
             if (relPicker) {
               const still = nodes.some(n => n.id === relPicker.source.id) && nodes.some(n => n.id === relPicker.target.id)

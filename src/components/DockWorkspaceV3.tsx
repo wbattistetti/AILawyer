@@ -2,6 +2,7 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo
 import { DockviewReact, DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps, DockviewDefaultTab } from 'dockview'
 import 'dockview/dist/styles/dockview.css'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
+import GraphBuilder from '../features/case-overview/graph-builder/GraphBuilder'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 import { colorFor, iconFor } from '../features/drawers/drawerPalette'
@@ -59,6 +60,11 @@ const TAB_CONFIGS: Record<string, TabConfig> = {
     colorBase: '#34d399', // emerald-300 spento
     colorActive: '#10b981' // emerald-500 vivace
   },
+  'graph-builder': {
+    icon: Network,
+    colorBase: '#34d399', // emerald-300 spento
+    colorActive: '#10b981' // emerald-500 vivace
+  },
   'cliente-memoria': {
     icon: Users,
     colorBase: '#94a3b8', // slate-400 spento
@@ -88,6 +94,7 @@ export type DockWorkspaceV3Handle = {
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
   openExplorer: () => void
   openCliente: (clienteId?: string) => void
+  openGraphBuilder: () => void
 }
 
 // Componente wrapper per pannelli con fullscreen toggle
@@ -470,6 +477,25 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             <PanelContentWrapper>
               <div className="w-full h-full overflow-hidden bg-background">
                 <CaseOverviewDiagram praticaId={praticaId || ''} />
+              </div>
+            </PanelContentWrapper>
+          </PanelWithFullscreenToggle>
+        )
+      },
+      'graph-builder': (props: IDockviewPanelProps) => {
+        return (
+          <PanelWithFullscreenToggle
+            component="graph-builder"
+            panelId={props.api.id}
+            panelApi={props.api}
+            registerToggle={registerToggle}
+            setFullscreenStates={setFullscreenStates}
+            forceRerender={forceRerender}
+            forceTabUpdate={forceTabUpdate}
+          >
+            <PanelContentWrapper>
+              <div className="w-full h-full overflow-hidden bg-background">
+                <GraphBuilder />
               </div>
             </PanelContentWrapper>
           </PanelWithFullscreenToggle>
@@ -1375,6 +1401,9 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         const title = cliente ? `${cliente.nome} ${cliente.cognome}` : undefined
         handleArchiveTabClick('cliente-memoria', `cliente-${clienteId}-tab`, title)
       }
+    },
+    openGraphBuilder: () => {
+      handleArchiveTabClick('graph-builder', 'graphBuilderTab', 'Crea Grafo')
     }
   }), [handleArchiveTabClick, clienti])
 
