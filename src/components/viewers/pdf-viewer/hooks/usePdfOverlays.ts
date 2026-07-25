@@ -113,12 +113,13 @@ function getPageNumber(element: HTMLElement): number | null {
 }
 
 function findPageLayer(host: HTMLElement, pageNum: number): HTMLElement | null {
-	const holders = Array.from(host.querySelectorAll('[data-page-number]')) as HTMLElement[]
-	for (const holder of holders) {
-		const pageNumAttr = parseInt(holder.getAttribute('data-page-number') || '', 10)
-		if (pageNumAttr !== pageNum) continue
-		const found = holder.querySelector('.rpv-core__page-layer') as HTMLElement | null
-		if (found && document.contains(found)) return found
+	// Struttura rpv: .rpv-core__page-layer > [data-page-number], non il contrario
+	const holder = host.querySelector(`[data-page-number="${pageNum}"]`) as HTMLElement | null
+	if (holder && document.contains(holder)) {
+		const layer = (holder.closest('.rpv-core__page-layer') as HTMLElement | null)
+			|| (holder.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+			|| holder
+		if (document.contains(layer)) return layer
 	}
 
 	const layers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
@@ -140,7 +141,6 @@ export function usePdfOverlays({
 	const pageElsRef = useRef<Map<number, HTMLElement>>(new Map())
 	const elToPageRef = useRef<Map<HTMLElement, number>>(new Map())
 	const [selectTick, setSelectTick] = useState<number>(0)
-	const lastLogTimeRef = useRef<Map<number, number>>(new Map())
 
 	useEffect(() => {
 		const host = hostRef.current
@@ -161,8 +161,11 @@ export function usePdfOverlays({
 
 				if (!pageNum || pageNum <= 0) continue
 
+				// rpv: page-layer è ANTENATO di [data-page-number], non discendente
 				const pageLayer = holders.length > 0
-					? holder.querySelector('.rpv-core__page-layer') as HTMLElement | null
+					? ((holder.closest('.rpv-core__page-layer') as HTMLElement | null)
+						|| (holder.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+						|| holder)
 					: holder
 
 				if (!pageLayer || !document.contains(pageLayer)) continue
@@ -241,6 +244,10 @@ export function usePdfOverlays({
 		}
 		if (!pageLayer) {
 			pageLayer = findPageLayer(host, pageNum)
+			if (!pageLayer) {
+				// Fallback: virtualizzatore può aver montato fuori dal sottoalbero cacheato
+				pageLayer = findPageLayer(document.body, pageNum)
+			}
 			if (pageLayer) pageElsRef.current.set(pageNum, pageLayer)
 		}
 
@@ -248,12 +255,7 @@ export function usePdfOverlays({
 			return createOverlayRootForPage(pageNum, pageLayer, overlayRootsRef)
 		}
 
-		const now = Date.now()
-		const lastLogTime = lastLogTimeRef.current.get(pageNum) || 0
-		if (now - lastLogTime > 2000) {
-			lastLogTimeRef.current.set(pageNum, now)
-			console.warn('[OVERLAYS] Page layer non trovato per pagina:', pageNum)
-		}
+		// Pagina non montata dal virtualizzatore: silenzioso (normale).
 		return false
 	}
 

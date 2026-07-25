@@ -1,13 +1,24 @@
-import { useCallback, useEffect } from 'react'
+/**
+ * Navigazione al match di ricerca su PDF virtualizzato (react-pdf-viewer).
+ *
+ * Flusso:
+ * 1. Un solo goto alla volta (generation id).
+ * 2. jumpToPage → aspetta page-layer montata + scroll stabile su `.rpv-core__inner-pages`.
+ * 3. Scroll fine diretto su inner-pages verso il box OCR (non solo scrollIntoView).
+ */
+
+import { useCallback, useEffect, useRef } from 'react'
 import type { MatchItem } from './usePdfSearch'
 import { matchBoxToUnit } from '../utils/matchCoords'
 
 type JumpArea = { id: string; pageIndex: number; left: number; top: number; width: number; height: number }
+type UnitBox = { x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }
 
 export interface UsePdfJumpToProps {
 	docId?: string
 	hostRef: React.MutableRefObject<HTMLDivElement | null>
-	viewerRef: React.RefObject<any> // PdfViewerHandle
+	scrollHostRef: React.MutableRefObject<HTMLElement | null>
+	viewerRef: React.RefObject<any>
 	overlayRootsRef: React.MutableRefObject<Map<number, HTMLElement>>
 	ensureOverlayRootForPage: (pageNum: number) => boolean
 	bumpOverlayTick: () => void
@@ -15,9 +26,118 @@ export interface UsePdfJumpToProps {
 	setAreas: React.Dispatch<React.SetStateAction<JumpArea[]>>
 }
 
+const INNER_PAGES_SEL = '.rpv-core__inner-pages, [data-testid="core__inner-pages"]'
+const log = (...args: unknown[]) => console.log('[GOTO]', ...args)
+
+const resolveInnerPages = (root: HTMLElement | null): HTMLElement | null => {
+	if (!root) return null
+	return (root.querySelector(INNER_PAGES_SEL) as HTMLElement | null)
+		|| (document.querySelector(INNER_PAGES_SEL) as HTMLElement | null)
+}
+
+const resolvePageLayer = (searchRoot: ParentNode, page: number): HTMLElement | null => {
+	// In rpv la struttura è: .rpv-core__page-layer > [data-page-number] (non il contrario)
+	const holder = searchRoot.querySelector(`[data-page-number="${page}"]`) as HTMLElement | null
+	if (!holder || !document.contains(holder)) return null
+
+	const layer = (holder.closest('.rpv-core__page-layer') as HTMLElement | null)
+		|| (holder.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+		|| holder
+
+	const rect = layer.getBoundingClientRect()
+	if (rect.width > 0 && rect.height > 0) return layer
+	return null
+}
+
+const listHolders = (root: ParentNode): string[] =>
+	Array.from(root.querySelectorAll('[data-page-number]')).map((el) => el.getAttribute('data-page-number') || '?')
+
+/**
+ * Aspetta page-layer montata + scroll stabile.
+ * Non dichiara idle prima che jumpToPage abbia avuto tempo di partire.
+ */
+const waitForPageAfterJump = async (
+	page: number,
+	getScroller: () => HTMLElement | null,
+	isCancelled: () => boolean,
+	timeoutMs = 15000
+): Promise<{ pageEl: HTMLElement | null; scroller: HTMLElement | null }> => {
+	const start = Date.now()
+	let sawScroll = false
+	let lastScrollAt = start
+
+	const scroller0 = getScroller()
+	const onScroll = () => {
+		sawScroll = true
+		lastScrollAt = Date.now()
+	}
+	scroller0?.addEventListener('scroll', onScroll, { passive: true })
+
+	try {
+		while (!isCancelled() && Date.now() - start < timeoutMs) {
+			const scroller = getScroller() || scroller0
+			const root: ParentNode = scroller || document
+			const pageEl = resolvePageLayer(root, page)
+			const idleMs = Date.now() - lastScrollAt
+			const elapsed = Date.now() - start
+			// Pronto se: layer esiste E (scroll visto+idle 200ms, oppure già in pagina dopo 450ms)
+			const ready = !!pageEl && idleMs >= 200 && (sawScroll || elapsed >= 450)
+
+			if (elapsed % 1000 < 20) {
+				log('waiting…', {
+					page,
+					elapsed,
+					sawScroll,
+					idleMs,
+					hasLayer: !!pageEl,
+					holders: listHolders(root),
+					scrollTop: scroller?.scrollTop
+				})
+			}
+
+			if (ready && pageEl) {
+				log('page ready', { page, elapsed, sawScroll, scrollTop: scroller?.scrollTop })
+				return { pageEl, scroller: scroller || null }
+			}
+
+			await new Promise<void>((r) => requestAnimationFrame(() => r()))
+		}
+
+		if (isCancelled()) {
+			log('cancelled while waiting', { page })
+			return { pageEl: null, scroller: getScroller() }
+		}
+
+		const scroller = getScroller()
+		const pageEl = resolvePageLayer(scroller || document, page)
+		log('timeout', { page, hasLayer: !!pageEl, holders: listHolders(scroller || document) })
+		return { pageEl, scroller }
+	} finally {
+		scroller0?.removeEventListener('scroll', onScroll)
+	}
+}
+
+/** Scroll fine sul box OCR dentro `.rpv-core__inner-pages`. */
+const scrollScrollerToMatch = (
+	scroller: HTMLElement,
+	pageEl: HTMLElement,
+	unitBox: UnitBox
+): { before: number; after: number; target: number } => {
+	const pr = pageEl.getBoundingClientRect()
+	const sr = scroller.getBoundingClientRect()
+	const matchTop = pr.top + unitBox.y0Pct * pr.height
+	const desired = scroller.scrollTop + (matchTop - sr.top) - Math.floor(scroller.clientHeight * 0.3)
+	const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+	const target = Math.max(0, Math.min(max, desired))
+	const before = scroller.scrollTop
+	scroller.scrollTo({ top: target, left: scroller.scrollLeft, behavior: 'smooth' })
+	return { before, after: scroller.scrollTop, target }
+}
+
 export const usePdfJumpTo = ({
 	docId,
 	hostRef,
+	scrollHostRef,
 	viewerRef,
 	overlayRootsRef,
 	ensureOverlayRootForPage,
@@ -25,101 +145,79 @@ export const usePdfJumpTo = ({
 	setActiveSearchMatchId,
 	setAreas
 }: UsePdfJumpToProps) => {
+	const generationRef = useRef(0)
 
 	const goToMatch = useCallback(async (m: MatchItem) => {
+		const generation = ++generationRef.current
+		const isCancelled = () => generationRef.current !== generation
+
+		log('▶ start', { id: m.id, page: m.page, generation, docId })
+
 		if (typeof m.page !== 'number' || m.page < 1) {
-			console.error('[GOTO] ❌ INVALID PAGE NUMBER:', { page: m.page, match: m })
+			console.error('[GOTO] pagina invalida', m.page)
 			return
 		}
 		if (!m.rects?.length) {
 			throw new Error(`Match "${m.id}" senza rettangoli OCR`)
 		}
-		console.log('[GOTO] ▶ Jumping to page:', m.page, { id: m.id, snippet: m.snippet?.substring(0, 30) })
 
 		setActiveSearchMatchId(m.id)
 
-		if (viewerRef.current?.jumpToPage) {
-			viewerRef.current.jumpToPage(m.page);
+		const getScroller = () =>
+			resolveInnerPages(hostRef.current)
+			|| resolveInnerPages(scrollHostRef.current)
+			|| resolveInnerPages(document.body)
+
+		const scrollerBefore = getScroller()
+		log('inner-pages', {
+			found: !!scrollerBefore,
+			scrollTop: scrollerBefore?.scrollTop,
+			clientHeight: scrollerBefore?.clientHeight,
+			scrollHeight: scrollerBefore?.scrollHeight,
+			canScrollY: scrollerBefore
+				? scrollerBefore.scrollHeight > scrollerBefore.clientHeight + 1
+				: false
+		})
+
+		if (typeof viewerRef.current?.jumpToPage === 'function') {
+			log('jumpToPage', m.page)
+			viewerRef.current.jumpToPage(m.page)
+		} else {
+			console.warn('[GOTO] jumpToPage missing')
 		}
 
-		// Helper per aspettare che una condizione sia vera
-		const waitFor = async (cond: () => HTMLElement | null, ms = 5000, desc = 'element') => {
-			const start = Date.now()
-			return new Promise<HTMLElement | null>((resolve) => {
-				const tick = () => {
-					const el = cond()
-					if (el) {
-						return resolve(el)
-					}
-					if (Date.now() - start > ms) {
-						return resolve(null)
-					}
-					requestAnimationFrame(tick)
-				}
-				tick()
-			})
-		}
-
-		const viewer = hostRef.current
-		if (!viewer) {
+		const { pageEl, scroller } = await waitForPageAfterJump(m.page, getScroller, isCancelled)
+		if (isCancelled()) {
+			log('cancelled after wait', { generation, page: m.page })
 			return
 		}
-
-		// Aspetta che viewer salti alla pagina
-		await new Promise(r => setTimeout(r, 300))
-
-		// Passo 2: Aspetta che la pagina sia renderizzata (timeout aumentato per documenti nativi)
-		const pageEl = await waitFor(
-			() => {
-				const layers = viewer.querySelectorAll('.rpv-core__page-layer')
-				const layer = layers[m.page - 1] as HTMLElement | undefined
-				// Verifica che la pagina abbia almeno una dimensione (sia renderizzata)
-				if (layer) {
-					const rect = layer.getBoundingClientRect()
-					if (rect.width > 0 && rect.height > 0) {
-						return layer
-					}
-				}
-				return null
-			},
-			6000, // Timeout aumentato a 6 secondi per documenti nativi
-			'page layer'
-		)
-
 		if (!pageEl) {
-			console.warn('[GOTO] page el missing after timeout');
+			console.warn('[GOTO] ❌ page-layer missing', {
+				page: m.page,
+				holders: listHolders(document)
+			})
 			return
 		}
+		log('✅ pageEl', {
+			pageAttr: pageEl.closest('[data-page-number]')?.getAttribute('data-page-number')
+		})
 
 		ensureOverlayRootForPage(m.page)
 		bumpOverlayTick()
 
-		// Per documenti nativi/OCR aspetta che il layer pagina sia stabile
-		await waitFor(
-			() => {
-				const root = overlayRootsRef.current.get(m.page)
-				return root && document.contains(root) ? root : null
-			},
-			4000,
-			'overlay root'
-		)
-
-		// one extra RAF to let layout settle
-		await new Promise(r => requestAnimationFrame(() => r(null as any)))
-		// Container scroll deterministico
-		const sc = viewer.querySelector('.rpv-core__viewer') as HTMLElement | null
-		if (!sc) {
-			console.warn('[GOTO] .rpv-core__viewer missing');
-			return
+		const overlayDeadline = Date.now() + 2500
+		while (Date.now() < overlayDeadline) {
+			if (isCancelled()) return
+			const root = overlayRootsRef.current.get(m.page)
+			if (root && document.contains(root)) break
+			ensureOverlayRootForPage(m.page)
+			await new Promise((r) => requestAnimationFrame(() => r(null)))
 		}
+		if (isCancelled()) return
 
-		const pr0 = pageEl.getBoundingClientRect();
-		const scr0 = sc.getBoundingClientRect()
-		const pageTop = sc.scrollTop + (pr0.top - scr0.top) - 20
-		sc.scrollTo({ top: Math.max(0, pageTop), behavior: 'auto' })
-
-		const pr = pageEl.getBoundingClientRect()
-		const scr = sc.getBoundingClientRect()
+		bumpOverlayTick()
+		await new Promise((r) => setTimeout(r, 40))
+		if (isCancelled()) return
 
 		const unitBox = matchBoxToUnit({
 			x0Pct: m.x0Pct ?? 0,
@@ -128,41 +226,55 @@ export const usePdfJumpTo = ({
 			y1Pct: m.y1Pct ?? 0
 		})
 
-		const yAbs = pr.top + unitBox.y0Pct * pr.height
-		const yAbsBottom = pr.top + unitBox.y1Pct * pr.height
-		const xAbs = pr.left + unitBox.x0Pct * pr.width
-		const xAbsRight = pr.left + unitBox.x1Pct * pr.width
+		const sc = scroller || getScroller()
+		if (!sc) {
+			console.warn('[GOTO] ❌ scroller missing at fine-scroll')
+			return
+		}
 
-		let newTop = sc.scrollTop
-		let newLeft = sc.scrollLeft
-		if (yAbs < scr.top + 24 || yAbsBottom > scr.bottom - 24) {
-			const desiredTop = sc.scrollTop + (yAbs - scr.top) - Math.floor(sc.clientHeight * 0.3)
-			newTop = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, desiredTop))
+		const scrollResult = scrollScrollerToMatch(sc, pageEl, unitBox)
+		log('fine-scroll', { ...scrollResult, unitBox })
+
+		// Fallback: marker + scrollIntoView se lo scroll diretto non ha mosso (es. smooth in corso)
+		const overlay = document.querySelector(
+			`[data-search-match-id="${CSS.escape(m.id)}"][data-search-match-active="true"]`
+		) as HTMLElement | null
+		if (overlay) {
+			overlay.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
+			log('scrollIntoView overlay')
 		}
-		if (xAbs < scr.left + 24 || xAbsRight > scr.right - 24) {
-			const desiredLeft = sc.scrollLeft + (xAbs - scr.left) - Math.floor(sc.clientWidth * 0.4)
-			newLeft = Math.max(0, Math.min(sc.scrollWidth - sc.clientWidth, desiredLeft))
-		}
-		sc.scrollTo({ top: newTop, left: newLeft, behavior: 'smooth' })
+
+		setTimeout(() => {
+			if (isCancelled()) return
+			log('▶ end', {
+				scrollTop: sc.scrollTop,
+				movedY: sc.scrollTop !== scrollResult.before,
+				target: scrollResult.target
+			})
+		}, 400)
+
 		bumpOverlayTick()
 	}, [
 		bumpOverlayTick,
+		docId,
 		ensureOverlayRootForPage,
 		hostRef,
 		overlayRootsRef,
+		scrollHostRef,
 		setActiveSearchMatchId,
 		viewerRef
 	])
 
-	// Jump-to handler from outside (drawer/tmpdoc)
 	useEffect(() => {
 		const handler = async (ev: Event) => {
 			const detail = (ev as CustomEvent).detail || {}
-			if (!detail || (detail.docId && detail.docId !== (docId || 'current'))) { return }
+			if (!detail || (detail.docId && detail.docId !== (docId || 'current'))) return
 			const match = detail.match
 			if (!match || typeof match.page !== 'number') {
 				throw new Error('Evento app:goto-match senza match valido')
 			}
+
+			log('event app:goto-match', { page: match.page, id: match.id })
 
 			const unitBox = matchBoxToUnit({
 				x0Pct: match.x0Pct ?? 0,
@@ -208,7 +320,5 @@ export const usePdfJumpTo = ({
 		return () => window.removeEventListener('app:goto-match', handler as EventListener)
 	}, [docId, goToMatch, setAreas])
 
-	return {
-		goToMatch
-	}
+	return { goToMatch }
 }

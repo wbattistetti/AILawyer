@@ -20,6 +20,8 @@ import { extractContentFromRect } from '../utils/extractContentFromRect'
 
 interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
+  /** Contenitore overflow-auto del shell (scroll reale verso i match). */
+  scrollHostRef: React.MutableRefObject<HTMLElement | null>
   fileUrl: string
   docId?: string
   onPageChange?: (page: number) => void
@@ -31,7 +33,7 @@ interface UsePdfShellStateProps {
   viewerReadyTick?: number
 }
 
-export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0, isExtractOverlayOpen = false }: UsePdfShellStateProps) {
+export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0, isExtractOverlayOpen = false }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = useDocumentSearchPanel()
@@ -97,6 +99,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   const { goToMatch } = usePdfJumpTo({
     docId,
     hostRef,
+    scrollHostRef,
     viewerRef,
     overlayRootsRef,
     ensureOverlayRootForPage,
@@ -341,6 +344,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     pdfDocRef,
     overlayRootsRef,
     overlayTick: selectTick,
+    bumpOverlayTick: () => setSelectTick((tick) => tick + 1),
     searchCacheRef,
     pageElsRef,
     elToPageRef,

@@ -75,6 +75,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   // Unified state management
   const shell = usePdfShellState({
     hostRef,
+    scrollHostRef,
     fileUrl,
     docId,
     onPageChange,
@@ -398,6 +399,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         activeMatchId={shell.activeSearchMatchId}
         overlayRootsRef={shell.overlayRootsRef}
         overlayTick={shell.overlayTick}
+        ensureOverlayRootForPage={shell.ensureOverlayRootForPage}
+        onOverlayRootsChanged={shell.bumpOverlayTick}
       />
       <AnnotationOverlays
         selectedAnnot={shell.selectedAnnot}

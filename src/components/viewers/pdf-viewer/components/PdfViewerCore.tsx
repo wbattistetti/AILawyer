@@ -282,6 +282,7 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 				defaultScale={SpecialZoomLevel.PageWidth}
 				plugins={[scrollMode, pageNav, searchPluginInstance, highlight, zoomPluginInstance]}
 				scrollMode={ScrollMode.Vertical}
+				enableSmoothScroll={false}
 				initialPage={Math.max(0, (page || 1) - 1)}
 				onPageChange={(e) => {
 					const cp = e.currentPage + 1;

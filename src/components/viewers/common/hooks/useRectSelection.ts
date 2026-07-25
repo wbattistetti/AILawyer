@@ -114,10 +114,11 @@ export function useRectSelection({
         return { pageEl: node, pageNumber: getPageNumberLoose(node) }
       }
       if (node.hasAttribute?.('data-page-number')) {
-        const innerLayer = node.querySelector('.rpv-core__page-layer') as HTMLElement | null
-        if (innerLayer) {
-          return { pageEl: innerLayer, pageNumber: getPageNumberLoose(innerLayer) }
-        }
+        // rpv: page-layer è antenato di [data-page-number]
+        const layer = (node.closest('.rpv-core__page-layer') as HTMLElement | null)
+          || (node.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+          || node
+        return { pageEl: layer, pageNumber: getPageNumberLoose(layer) }
       }
       if (node.hasAttribute?.('data-page')) {
         return { pageEl: node, pageNumber: getPageNumberLoose(node) }
@@ -165,13 +166,13 @@ export function useRectSelection({
         return { pageEl: current, pageNumber }
       }
 
-      // ✅ PDF: [data-page-number] → cerca .rpv-core__page-layer dentro
+      // ✅ PDF: [data-page-number] → page-layer è antenato (rpv), non figlio
       if (current.hasAttribute('data-page-number')) {
-        const pageLayer = current.querySelector('.rpv-core__page-layer') as HTMLElement
-        if (pageLayer) {
-          const pageNumber = getPageNumberFromElement(pageLayer, host)
-          return { pageEl: pageLayer, pageNumber }
-        }
+        const pageLayer = (current.closest('.rpv-core__page-layer') as HTMLElement | null)
+          || (current.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+          || current
+        const pageNumber = getPageNumberFromElement(pageLayer, host)
+        return { pageEl: pageLayer, pageNumber }
       }
 
       current = current.parentElement

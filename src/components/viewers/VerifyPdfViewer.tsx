@@ -257,6 +257,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const { goToMatch } = usePdfJumpTo({
 		docId,
 		hostRef,
+		scrollHostRef: hostRef,
 		viewerRef,
 		overlayRootsRef,
 		ensureOverlayRootForPage,
@@ -371,6 +372,8 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 						activeMatchId={activeSearchMatchId}
 						overlayRootsRef={overlayRootsRef}
 						overlayTick={selectTick}
+						ensureOverlayRootForPage={ensureOverlayRootForPage}
+						onOverlayRootsChanged={() => setSelectTick((tick) => tick + 1)}
 					/>
 					<AnnotationOverlays
 						selectedAnnot={selectedAnnot}
