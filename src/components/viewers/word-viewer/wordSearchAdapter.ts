@@ -75,6 +75,7 @@ export function findWordMatchesInPages(
         x1Pct: 0,
         y0Pct: 0,
         y1Pct: 0,
+        rects: [],
         charIdx: matchOffset,
         qLength: normalizedQuery.length,
         snippet: createSnippet(text, matchOffset, normalizedQuery.length),

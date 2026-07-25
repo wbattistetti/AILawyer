@@ -19,6 +19,7 @@ export type MatchItem = {
 	page: number
 	snippet: string
 	x0Pct: number; x1Pct: number; y0Pct: number; y1Pct: number
+	rects: Array<{ x0Pct: number; x1Pct: number; y0Pct: number; y1Pct: number }>
 	spanIdx?: number
 	charIdx?: number
 	qLen?: number

@@ -108,7 +108,7 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
         }}
       >
         <div className="document-search-header flex items-center justify-between px-3 py-2 border-b bg-muted flex-shrink-0">
-          <h3 className="font-semibold text-sm">Risultati ricerca</h3>
+          <h3 className="font-semibold text-sm">Ricerca documento</h3>
           <button
             className="p-1 hover:bg-muted rounded"
             title="Chiudi pannello"
@@ -118,29 +118,31 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
           </button>
         </div>
 
-        <SearchProvider
-          defaultScope="current"
-          initialQuery={query}
-          autoSearch={false}
-          onSearch={runSearch}
-          adapterFactory={adapterFactory}
-        >
-          <SearchPanelTree
-            ref={searchTreeRef}
-            rolePrefix={adapter.document.kind}
-            showInput
-            showScopeSelector={false}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SearchProvider
+            defaultScope="current"
             initialQuery={query}
-            searchQuery={query}
-            onSearchQueryChange={onQueryChange}
-            domUncontrolledSearch
-            resetSearchKey={adapter.document.id}
-            isVisible={isOpen}
-            enableExpandedContext={enableExpandedContext}
-            copyPageTextOnNavigate={copyPageTextOnNavigate}
-            currentScopeLabel={adapter.document.kind === 'pdf' ? 'Questo PDF' : 'Questo documento'}
-          />
-        </SearchProvider>
+            autoSearch={false}
+            onSearch={runSearch}
+            adapterFactory={adapterFactory}
+          >
+            <SearchPanelTree
+              ref={searchTreeRef}
+              rolePrefix={adapter.document.kind}
+              showInput
+              showScopeSelector={false}
+              initialQuery={query}
+              searchQuery={query}
+              onSearchQueryChange={onQueryChange}
+              domUncontrolledSearch
+              resetSearchKey={adapter.document.id}
+              isVisible={isOpen}
+              enableExpandedContext={enableExpandedContext}
+              copyPageTextOnNavigate={copyPageTextOnNavigate}
+              currentScopeLabel={adapter.document.kind === 'pdf' ? 'Questo PDF' : 'Questo documento'}
+            />
+          </SearchProvider>
+        </div>
       </div>
     </>
   )

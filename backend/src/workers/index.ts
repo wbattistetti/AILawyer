@@ -42,13 +42,18 @@ const ocrWorker = new Worker('ocr-processing', async (job) => {
     const isLowConfidence = ocrResult.avgConfidence < config.OCR_CONFIDENCE_THRESHOLD
     const ocrStatus = isLowConfidence ? 'low_confidence' : 'completed'
 
-    // Update document with OCR results
+    // Persist text and word-level layout with the same page separator used elsewhere.
+    const layout = Array.isArray((ocrResult as any).layout) ? (ocrResult as any).layout : []
+    if (!layout.length) {
+      throw new Error(`OCR completato senza layout per il documento ${documentId}`)
+    }
     await prisma.documento.update({
       where: { id: documentId },
       data: {
         ocrStatus,
-        ocrText: ocrResult.pages.map(p => p.text).join('\n'),
+        ocrText: ocrResult.pages.map(p => p.text).join('\n\f\n'),
         ocrConfidence: ocrResult.avgConfidence,
+        ocrLayout: JSON.stringify(layout),
       },
     })
 

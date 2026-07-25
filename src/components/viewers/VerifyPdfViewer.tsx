@@ -48,7 +48,8 @@ import { usePdfExtract } from './pdf-viewer/hooks/usePdfExtract'
 import { PdfToolbarAdvanced } from './pdf-viewer/components/PdfToolbarAdvanced'
 import { AnnotationOverlays } from './pdf-viewer/components/AnnotationOverlays'
 import { SearchPanel } from './pdf-viewer/components/SearchPanel'
-import { PdfViewerCore } from './pdf-viewer/components/PdfViewerCore'
+import { PdfViewerCore, type PdfViewerHandle } from './pdf-viewer/components/PdfViewerCore'
+import { SearchMatchOverlays } from './pdf-viewer/components/SearchMatchOverlays'
 import { searchViaOcrBackend } from './pdf-viewer/utils/searchViaOcrBackend'
 
 
@@ -76,6 +77,8 @@ export interface VerifyPdfViewerProps {
 
 export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page, lines: _lines, onPageChange, hideToolbar: _hideToolbar, docId }) => {
 	const hostRef = useRef<HTMLDivElement | null>(null)
+	const viewerRef = useRef<PdfViewerHandle>(null)
+	const [activeSearchMatchId, setActiveSearchMatchId] = useState<string | null>(null)
 	const lastOcrMatchesRef = useRef<Array<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }>>([])
 	const scrollMode = scrollModePlugin()
 	const pageNav = pageNavigationPlugin()
@@ -187,7 +190,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const selectionHandledRef = useRef<boolean>(false)
 
 	// ✅ Hook per gli overlay e la gestione delle pagine
-	const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, selectTick, setSelectTick } = usePdfOverlays({
+	const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, selectTick, setSelectTick, ensureOverlayRootForPage } = usePdfOverlays({
 		hostRef,
 		selectMode,
 		selectKind
@@ -254,14 +257,12 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	const { goToMatch } = usePdfJumpTo({
 		docId,
 		hostRef,
-		pageNav,
-		searchPluginInstance,
+		viewerRef,
 		overlayRootsRef,
-		setSelectedAnnot,
-		areas,
-		setAreas,
-		searchCacheRef,
-		fileUrl
+		ensureOverlayRootForPage,
+		bumpOverlayTick: () => setSelectTick((tick) => tick + 1),
+		setActiveSearchMatchId,
+		setAreas
 	})
 
 	// ✅ Hook per il search panel
@@ -337,6 +338,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 						['--scale-factor' as any]: String(scaleRef.current || 1)
 					}}>
 						<PdfViewerCore
+							ref={viewerRef}
 							fileUrl={fileUrl}
 							page={page}
 							onPageChange={onPageChange}
@@ -364,11 +366,21 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 					{/* OCR Inspector ora gestito dal componente OcrInspector */}
 
 					{/* Overlays */}
+					<SearchMatchOverlays
+						matches={matches}
+						activeMatchId={activeSearchMatchId}
+						overlayRootsRef={overlayRootsRef}
+						overlayTick={selectTick}
+					/>
 					<AnnotationOverlays
 						selectedAnnot={selectedAnnot}
 						annots={annots}
 						draft={draft}
+						persistentSelections={[]}
+						setPersistentSelections={() => {}}
 						overlayRootsRef={overlayRootsRef}
+						pageElsRef={pageElsRef}
+						lastSelection={lastSelection}
 					/>
 
 

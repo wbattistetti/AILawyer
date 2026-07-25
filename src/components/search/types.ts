@@ -24,6 +24,13 @@ export interface DocRef {
   kind: DocumentKind
 }
 
+export interface SearchMatchRect {
+  x0Pct: number
+  x1Pct: number
+  y0Pct: number
+  y1Pct: number
+}
+
 /**
  * Risultato canonico. Le coordinate sono percentuali nel range 0-100.
  */
@@ -38,6 +45,7 @@ export interface DocumentMatch {
   x1Pct: number
   y0Pct: number
   y1Pct: number
+  rects: SearchMatchRect[]
   charIdx?: number
   qLength?: number
   snippet: string

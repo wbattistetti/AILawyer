@@ -247,9 +247,9 @@ export const SearchPanelTree = React.memo(
 
   // ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET
   return (
-    <div className="flex flex-1 w-full flex-col text-sm">
+    <div className="flex flex-1 w-full min-h-0 flex-col text-sm">
       {showInput && (
-        <div className="p-2 border-b bg-background text-foreground flex items-center gap-2">
+        <div className="p-2 border-b bg-background text-foreground flex items-center gap-2 flex-shrink-0">
           <SearchIcon size={16} className="text-muted-foreground" />
           <input
             key={isDomUncontrolled ? String(resetSearchKey ?? 'search-input') : undefined}
@@ -299,7 +299,7 @@ export const SearchPanelTree = React.memo(
           <button className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted" onClick={() => void onSubmit()}>Cerca</button>
         </div>
       )}
-      {busy && <div className="p-2 text-muted-foreground">Indicizzazione/ricerca in corso…</div>}
+      {busy && <div className="p-2 text-muted-foreground flex-shrink-0">Indicizzazione/ricerca in corso…</div>}
       <div className="flex-1 overflow-auto min-h-0">
         {results.length===0 ? (
           <div className="p-3 text-muted-foreground">Nessun risultato</div>

@@ -21,6 +21,7 @@ export interface SearchPanelProps {
 	fileUrl: string
 	totalPages: number
 	setMatches: (matches: any[]) => void
+	setActiveSearchMatchId?: (matchId: string | null) => void
 	goToMatch: (match: any) => Promise<void>
 	searchCacheRef: React.MutableRefObject<Map<string, any[]>>
 	isActive?: boolean
@@ -44,6 +45,7 @@ export const SearchPanel = React.memo(function SearchPanel({
 	fileUrl,
 	totalPages,
 	setMatches,
+	setActiveSearchMatchId,
 	goToMatch,
 	searchCacheRef
 }: SearchPanelProps) {
@@ -78,10 +80,12 @@ export const SearchPanel = React.memo(function SearchPanel({
 				x1Pct: match.x1Pct,
 				y0Pct: match.y0Pct,
 				y1Pct: match.y1Pct,
+				rects: match.rects,
 				charIdx: match.charIdx ?? 0,
 				qLen: match.qLength ?? query.length
 			}))
 			setMatches(legacyMatches)
+			setActiveSearchMatchId?.(null)
 			searchCacheRef.current.set(`${fileUrl}::${query.toLowerCase()}::${docId}`, legacyMatches)
 			return found
 		},
@@ -94,6 +98,7 @@ export const SearchPanel = React.memo(function SearchPanel({
 				x1Pct: match.x1Pct,
 				y0Pct: match.y0Pct,
 				y1Pct: match.y1Pct,
+				rects: match.rects,
 				charIdx: match.charIdx ?? 0,
 				qLen: match.qLength ?? match.q.length
 			})
@@ -106,6 +111,7 @@ export const SearchPanel = React.memo(function SearchPanel({
 		fileUrl,
 		goToMatch,
 		searchCacheRef,
+		setActiveSearchMatchId,
 		setMatches,
 		storageKey,
 		totalPages

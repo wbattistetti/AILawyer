@@ -10,6 +10,7 @@ import { OcrInspector } from './components/OcrInspector'
 import { ExtractDialog } from './components/ExtractDialog'
 import { PdfUnifiedToolbar } from './components/PdfUnifiedToolbar'
 import { OcrLayoutDebug } from './components/OcrLayoutDebug'
+import { SearchMatchOverlays } from './components/SearchMatchOverlays'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 import { useViewerPanelLifecycle } from '../common/hooks/useViewerPanelLifecycle'
 import type { ViewerPanelApi } from '../common/types/viewer.types'
@@ -383,6 +384,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             fileUrl={fileUrl}
             totalPages={shell.totalPages}
             setMatches={shell.setMatches}
+            setActiveSearchMatchId={shell.setActiveSearchMatchId}
             goToMatch={shell.goToMatch}
             searchCacheRef={shell.searchCacheRef}
             isActive={isActive}
@@ -391,6 +393,12 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
       </div>
 
       {/* Overlays - fuori dal layout principale */}
+      <SearchMatchOverlays
+        matches={shell.matches}
+        activeMatchId={shell.activeSearchMatchId}
+        overlayRootsRef={shell.overlayRootsRef}
+        overlayTick={shell.overlayTick}
+      />
       <AnnotationOverlays
         selectedAnnot={shell.selectedAnnot}
         annots={shell.annots}

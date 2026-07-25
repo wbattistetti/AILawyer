@@ -66,8 +66,66 @@ describe('searchDocumentContent', () => {
       x0Pct: 21,
       y0Pct: 20,
       x1Pct: 30,
+      y1Pct: 22,
+      rects: [{
+        x0Pct: 21,
+        y0Pct: 20,
+        x1Pct: 30,
+        y1Pct: 22
+      }]
+    })
+  })
+
+  it('restituisce un rettangolo per ogni parola di una frase OCR', () => {
+    const matches = searchDocumentContent(
+      createContent(['testo non allineato al layout'], [{
+        page: 1,
+        width: 1000,
+        height: 2000,
+        words: [
+          { text: 'Mario', x0: 100, y0: 400, x1: 180, y1: 440 },
+          { text: 'Rossi', x0: 190, y0: 400, x1: 280, y1: 440 }
+        ]
+      }]),
+      'Mario Rossi'
+    )
+
+    expect(matches).toHaveLength(1)
+    expect(matches[0]?.rects).toHaveLength(2)
+    expect(matches[0]?.rects[0]).toMatchObject({
+      x0Pct: 10,
+      y0Pct: 20,
+      x1Pct: 18,
       y1Pct: 22
     })
+    expect(matches[0]?.rects[1]?.x0Pct).toBeCloseTo(19)
+    expect(matches[0]?.rects[1]?.y0Pct).toBeCloseTo(20)
+    expect(matches[0]?.rects[1]?.x1Pct).toBeCloseTo(28)
+    expect(matches[0]?.rects[1]?.y1Pct).toBeCloseTo(22)
+    expect(matches[0]?.snippet).toBe('Mario Rossi')
+  })
+
+  it('non inventa un rettangolo a tutta pagina senza layout OCR', () => {
+    const matches = searchDocumentContent(createContent(['Mario Rossi']), 'Rossi')
+
+    expect(matches[0]).toMatchObject({
+      x0Pct: 0,
+      y0Pct: 0,
+      x1Pct: 0,
+      y1Pct: 0,
+      rects: []
+    })
+  })
+
+  it('rifiuta coordinate OCR pixel senza dimensioni pagina', () => {
+    const content = createContent(['Mario'], [{
+      page: 1,
+      words: [{ text: 'Mario', x0: 100, y0: 200, x1: 180, y1: 240 }]
+    }])
+
+    expect(() => searchDocumentContent(content, 'Mario')).toThrow(
+      'Layout OCR non valido: dimensioni pagina mancanti'
+    )
   })
 })
 

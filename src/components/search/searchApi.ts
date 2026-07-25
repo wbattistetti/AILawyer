@@ -2,7 +2,12 @@
  * Client HTTP e validazione delle risposte della ricerca documentale.
  */
 
-import type { DocumentKind, DocumentLocator, DocumentMatch } from './types'
+import type {
+  DocumentKind,
+  DocumentLocator,
+  DocumentMatch,
+  SearchMatchRect
+} from './types'
 
 interface DocumentSearchResponse {
   matches?: unknown
@@ -39,6 +44,23 @@ const requirePercent = (value: unknown, field: string): number => {
   return number
 }
 
+const normalizeRect = (value: unknown, field: string): SearchMatchRect => {
+  if (!value || typeof value !== 'object') {
+    throw new Error(`Risposta ricerca non valida: "${field}" deve essere un rettangolo`)
+  }
+  const rect = value as Record<string, unknown>
+  const normalized = {
+    x0Pct: requirePercent(rect.x0Pct, `${field}.x0Pct`),
+    x1Pct: requirePercent(rect.x1Pct, `${field}.x1Pct`),
+    y0Pct: requirePercent(rect.y0Pct, `${field}.y0Pct`),
+    y1Pct: requirePercent(rect.y1Pct, `${field}.y1Pct`)
+  }
+  if (normalized.x1Pct < normalized.x0Pct || normalized.y1Pct < normalized.y0Pct) {
+    throw new Error(`Risposta ricerca non valida: "${field}" ha estremi invertiti`)
+  }
+  return normalized
+}
+
 const normalizeBackendMatch = (
   value: unknown,
   query: string,
@@ -54,6 +76,9 @@ const normalizeBackendMatch = (
   if (!Number.isInteger(page) || page < 1) {
     throw new Error(`Risposta ricerca non valida: pagina ${page}`)
   }
+  if (!Array.isArray(match.rects)) {
+    throw new Error(`Risposta ricerca non valida: "rects" del match ${index} deve essere un array`)
+  }
 
   return {
     id: typeof match.id === 'string' ? match.id : `${options.locator.id}-${page}-${index}`,
@@ -66,6 +91,9 @@ const normalizeBackendMatch = (
     x1Pct: requirePercent(match.x1Pct, 'x1Pct'),
     y0Pct: requirePercent(match.y0Pct, 'y0Pct'),
     y1Pct: requirePercent(match.y1Pct, 'y1Pct'),
+    rects: match.rects.map((rect, rectIndex) =>
+      normalizeRect(rect, `matches[${index}].rects[${rectIndex}]`)
+    ),
     charIdx: typeof match.charIdx === 'number' ? match.charIdx : undefined,
     qLength: typeof match.qLen === 'number' ? match.qLen : query.length,
     snippet: requireString(match.snippet, 'snippet'),

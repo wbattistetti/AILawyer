@@ -207,65 +207,11 @@ export function useRectSelection({
     const x1 = Math.max(startXPage, endXPage)
     const y1 = Math.max(startYPage, endYPage)
 
-    // ✅ 6. Trova textLayer per ottenere le dimensioni corrette per il rendering
-    let textLayerRect: DOMRect | null = null
-    if (startPageRef.current) {
-      const pageLayer = startPageRef.current.pageEl
-      let textLayer: HTMLElement | null = null
-
-      // Strategia 1: cerca dentro il pageLayer stesso
-      textLayer = pageLayer.querySelector('.rpv-core__text-layer') as HTMLElement | null
-
-      // Strategia 2: se non trovato, cerca nel parent container
-      if (!textLayer) {
-        const pageContainer = pageLayer.closest('[data-page-number]') as HTMLElement | null
-        if (pageContainer) {
-          textLayer = pageContainer.querySelector('.rpv-core__text-layer') as HTMLElement | null
-        }
-      }
-
-      // Strategia 3: se ancora non trovato, cerca nel parent del pageLayer
-      if (!textLayer) {
-        const parent = pageLayer.parentElement
-        if (parent) {
-          textLayer = parent.querySelector('.rpv-core__text-layer') as HTMLElement | null
-        }
-      }
-
-      if (textLayer) {
-        textLayerRect = textLayer.getBoundingClientRect()
-      }
-    }
-
-    // ✅ 7. Normalizza in percentuale usando textLayer se disponibile, altrimenti pageRect
-    // CRITICO: Le percentuali devono essere calcolate rispetto al textLayer perché è lì che viene renderizzato il rettangolo
-    let x0Pct: number, y0Pct: number, x1Pct: number, y1Pct: number
-
-    if (textLayerRect) {
-      // ✅ Converti coordinate da pageRect a textLayerRect
-      // Le coordinate x0, y0, x1, y1 sono relative a pageRect (top-left)
-      // Devo convertirle in coordinate relative a textLayerRect
-      const offsetX = textLayerRect.left - pageRect.left
-      const offsetY = textLayerRect.top - pageRect.top
-
-      // Coordinate relative a textLayerRect
-      const x0Text = x0 - offsetX
-      const y0Text = y0 - offsetY
-      const x1Text = x1 - offsetX
-      const y1Text = y1 - offsetY
-
-      // Calcola percentuali rispetto a textLayerRect (SENZA clamping per permettere estensione oltre i bordi)
-      x0Pct = x0Text / textLayerRect.width
-      y0Pct = y0Text / textLayerRect.height
-      x1Pct = x1Text / textLayerRect.width
-      y1Pct = y1Text / textLayerRect.height
-    } else {
-      // Fallback: usa pageRect (SENZA clamping)
-      x0Pct = x0 / pageRect.width
-      y0Pct = y0 / pageRect.height
-      x1Pct = x1 / pageRect.width
-      y1Pct = y1 / pageRect.height
-    }
+    // Percentuali relative al page-layer (stesso spazio dell'overlay OCR/selezione).
+    const x0Pct = x0 / pageRect.width
+    const y0Pct = y0 / pageRect.height
+    const x1Pct = x1 / pageRect.width
+    const y1Pct = y1 / pageRect.height
 
     const result = {
       page: pageNumber,

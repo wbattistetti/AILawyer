@@ -12,6 +12,12 @@ export interface MatchItem {
 	y1Pct: number
 	qLen: number
 	charIdx: number
+	rects: Array<{
+		x0Pct: number
+		x1Pct: number
+		y0Pct: number
+		y1Pct: number
+	}>
 }
 
 export const usePdfSearch = (docId?: string, fileUrl?: string, pdfDocRef?: React.MutableRefObject<any>) => {
@@ -57,13 +63,24 @@ export const usePdfSearch = (docId?: string, fileUrl?: string, pdfDocRef?: React
 					}
 					if (isFinite(l) && isFinite(t) && isFinite(r) && isFinite(b)) {
 						const vp = page.getViewport({ scale: 1 })
-						const x0Pct = l / vp.width
-						const x1Pct = r / vp.width
+						const x0Pct = (l / vp.width) * 100
+						const x1Pct = (r / vp.width) * 100
 						const yTop = vp.height - b
 						const yBottom = vp.height - t
-						const y0Pct = yTop / vp.height
-						const y1Pct = yBottom / vp.height
-						out.push({ id: cryptoRandom(), page: p, snippet: buffer.slice(Math.max(0, start-40), Math.min(buffer.length, end+40)).trim(), x0Pct, x1Pct, y0Pct, y1Pct, qLen: qRaw.length, charIdx: start })
+						const y0Pct = (yTop / vp.height) * 100
+						const y1Pct = (yBottom / vp.height) * 100
+						out.push({
+							id: cryptoRandom(),
+							page: p,
+							snippet: buffer.slice(Math.max(0, start-40), Math.min(buffer.length, end+40)).trim(),
+							x0Pct,
+							x1Pct,
+							y0Pct,
+							y1Pct,
+							qLen: qRaw.length,
+							charIdx: start,
+							rects: [{ x0Pct, x1Pct, y0Pct, y1Pct }]
+						})
 					}
 					pos = end
 				}

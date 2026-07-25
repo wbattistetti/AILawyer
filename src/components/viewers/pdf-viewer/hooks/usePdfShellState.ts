@@ -36,10 +36,11 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = useDocumentSearchPanel()
   const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef, matches, setMatches, runSearch } = usePdfSearch(docId, fileUrl)
+  const [activeSearchMatchId, setActiveSearchMatchId] = useState<string | null>(null)
   const lastOcrMatchesRef = useRef<Array<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }>>([])
 
   // Areas state for jump-to functionality
-  const [areas, setAreas] = useState<Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>>([])
+  const [, setAreas] = useState<Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>>([])
 
   // Feature hooks
   const { tool, setTool, annots, setAnnots, draft, setDraft } = usePdfAnnotations({ hostRef })
@@ -48,7 +49,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
 
   // Utility hooks
   const { pdfDocRef } = usePdfDocument({ fileUrl })
-  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, ensureOverlayRootForPage } = usePdfOverlays({
+  const { overlayRootsRef, selectRootsRef, pageElsRef, elToPageRef, ensureOverlayRootForPage, selectTick, setSelectTick } = usePdfOverlays({
     hostRef,
     selectMode: viewerState.selectMode,
     selectKind: 'NATIVE',
@@ -98,12 +99,10 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     hostRef,
     viewerRef,
     overlayRootsRef,
-    pageElsRef, // ✅ Aggiunto per creare overlay root nel posto giusto
-    setSelectedAnnot: viewerState.setSelectedAnnot,
-    areas,
-    setAreas,
-    searchCacheRef,
-    fileUrl
+    ensureOverlayRootForPage,
+    bumpOverlayTick: () => setSelectTick((tick) => tick + 1),
+    setActiveSearchMatchId,
+    setAreas
   })
 
   const selectionHandledRef = useRef(false)
@@ -329,6 +328,8 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     matches,
     setMatches,
     runSearch,
+    activeSearchMatchId,
+    setActiveSearchMatchId,
 
     // Zoom functions
     zoomTo,
@@ -339,6 +340,7 @@ export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewer
     hostRef,
     pdfDocRef,
     overlayRootsRef,
+    overlayTick: selectTick,
     searchCacheRef,
     pageElsRef,
     elToPageRef,
