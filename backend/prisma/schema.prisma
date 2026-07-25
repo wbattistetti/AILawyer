@@ -34,6 +34,7 @@ model Pratica {
   pmGiudice   String?
   status      String   @default("draft")
   explorerState String? // JSON: { selectedPath?: string, isOpen?: boolean }
+  graphsState  String? // JSON: Array di grafi salvati
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

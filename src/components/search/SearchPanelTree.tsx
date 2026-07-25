@@ -1,11 +1,14 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback, useId } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
-import { useSearch, SearchScope } from './SearchProvider'
+import { useSearch } from './SearchProvider'
+import type { SearchScope } from './types'
 import { useToast } from '@/hooks/use-toast'
 import { extractPageText } from '@/utils/extractPageText'
 
 export interface SearchPanelTreeHandle {
   focusInput: () => void
+  /** Espone l’input nativo per focus/retry scoped (niente querySelector globale). */
+  getInputElement: () => HTMLInputElement | null
 }
 
 interface SearchPanelTreeProps {
@@ -13,14 +16,57 @@ interface SearchPanelTreeProps {
   showScopeSelector?: boolean
   initialQuery?: string
   isVisible?: boolean
+  /** Prefisso per data-role dell'input (`${prefix}-search-input`) e per evitare collisioni tra viewer PDF e ricerca archivio */
+  rolePrefix?: string
+  /**
+   * Viewer PDF: `searchQuery` + `onSearchQueryChange` controllano l’input dallo shell (nessun reset da stato locale).
+   * Se `onSearchQueryChange` non è passato, si usa stato interno + `initialQuery`.
+   */
+  searchQuery?: string
+  onSearchQueryChange?: (value: string) => void
+  /** Solo modalità non controllata: dopo submit sincronizza il genitore. */
+  onSearchQChange?: (value: string) => void
+  /**
+   * PDF: input gestito dal browser (`defaultValue` + `onInput`), non `value=` React.
+   * Evita conflitti tra stato shell e DOM durante la digitazione.
+   */
+  domUncontrolledSearch?: boolean
+  /** Cambia con il documento per remount pulito dell’input (es. docId). */
+  resetSearchKey?: string
+  /** Abilita il recupero del contesto testuale dal backend. */
+  enableExpandedContext?: boolean
+  /** Copia il testo della pagina prima della navigazione. */
+  copyPageTextOnNavigate?: boolean
+  /** Etichetta dello scope corrente per il tipo di documento. */
+  currentScopeLabel?: string
 }
 
 export const SearchPanelTree = React.memo(
   forwardRef<SearchPanelTreeHandle, SearchPanelTreeProps>(
-    ({ showInput=true, showScopeSelector=true, initialQuery, isVisible }, ref) => {
+    ({
+      showInput = true,
+      showScopeSelector = true,
+      initialQuery,
+      isVisible: _isVisible,
+      rolePrefix = 'document',
+      searchQuery,
+      onSearchQueryChange,
+      onSearchQChange,
+      domUncontrolledSearch,
+      resetSearchKey,
+      enableExpandedContext = true,
+      copyPageTextOnNavigate = true,
+      currentScopeLabel = 'Questo documento'
+    }, ref) => {
+      const listId = useId()
+      const inputDataRole = `${rolePrefix}-search-input`
       const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
       const { toast } = useToast()
-      const [q, setQ] = useState(initialQuery || '')
+      const hasExternalSync = typeof onSearchQueryChange === 'function'
+      const isDomUncontrolled = domUncontrolledSearch === true && hasExternalSync
+      const [internalQ, setInternalQ] = useState(initialQuery || '')
+      const qForUi = hasExternalSync ? (searchQuery ?? '') : internalQ
+      const setQ = hasExternalSync ? onSearchQueryChange! : setInternalQ
       const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({})
       const [openDocs, setOpenDocs] = useState<Record<string, boolean>>({})
       const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -38,11 +84,9 @@ export const SearchPanelTree = React.memo(
       // Il pannello è sempre montato, quindi inputRef.current è sempre disponibile
       useImperativeHandle(ref, () => ({
         focusInput: () => {
-          if (inputRef.current) {
-            inputRef.current.focus()
-            inputRef.current.select()
-          }
-        }
+          inputRef.current?.focus({ preventScroll: true })
+        },
+        getInputElement: () => inputRef.current
       }), [])
 
       // ❌ RIMOSSO: useEffect con setTimeout per focus automatico
@@ -62,10 +106,21 @@ export const SearchPanelTree = React.memo(
         }
       }, [results.length, initialQuery])
 
-      const onSubmit = () => {
-        if (q.trim()) {
-          search(q.trim())
-          // Non svuotare più la query per mantenere l'evidenziazione
+      const onSubmit = async () => {
+        const raw = isDomUncontrolled ? (inputRef.current?.value ?? '') : qForUi
+        const trimmed = String(raw).trim()
+        if (!trimmed) return
+        try {
+          await search(trimmed)
+          if (!hasExternalSync) onSearchQChange?.(trimmed)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Errore imprevisto durante la ricerca'
+          console.error('[SEARCH] Ricerca fallita:', error)
+          toast({
+            title: 'Ricerca non riuscita',
+            description: message,
+            variant: 'destructive'
+          })
         }
       }
       const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
@@ -197,18 +252,26 @@ export const SearchPanelTree = React.memo(
         <div className="p-2 border-b bg-background text-foreground flex items-center gap-2">
           <SearchIcon size={16} className="text-muted-foreground" />
           <input
+            key={isDomUncontrolled ? String(resetSearchKey ?? 'search-input') : undefined}
             ref={inputRef}
-            data-role="pdf-search-input"
+            data-role={inputDataRole}
             type="text"
-            list="search-history"
-            value={q}
-            onChange={(e)=>setQ(e.target.value)}
-            onKeyDown={(e)=>{ if(e.key==='Enter') onSubmit() }}
-            onClick={(e) => {
-              // Quando l'utente clicca nell'input, assicurati che abbia il focus
+            list={listId}
+            {...(isDomUncontrolled
+              ? {
+                  defaultValue: searchQuery ?? '',
+                  onInput: (e: React.FormEvent<HTMLInputElement>) => {
+                    setQ(e.currentTarget.value)
+                  },
+                }
+              : {
+                  value: qForUi,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value),
+                })}
+            onKeyDown={(e)=>{ if(e.key==='Enter') void onSubmit() }}
+            onClick={() => {
               if (inputRef.current && document.activeElement !== inputRef.current) {
-                inputRef.current.focus()
-                inputRef.current.select()
+                inputRef.current.focus({ preventScroll: true })
               }
             }}
             autoFocus={false}
@@ -219,7 +282,7 @@ export const SearchPanelTree = React.memo(
             autoCapitalize="off"
             spellCheck={false}
           />
-          <datalist id="search-history">
+          <datalist id={listId}>
             {history.map(h => <option key={h} value={h} />)}
           </datalist>
           {showScopeSelector && (
@@ -228,12 +291,12 @@ export const SearchPanelTree = React.memo(
               onChange={(e)=>setScope(e.target.value as SearchScope)}
               className="border rounded px-1 py-1 bg-background text-foreground"
             >
-              <option value="current">Questo PDF</option>
+              <option value="current">{currentScopeLabel}</option>
               <option value="open">Documenti aperti</option>
               <option value="archive">Tutto archivio</option>
             </select>
           )}
-          <button className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted" onClick={onSubmit}>Cerca</button>
+          <button className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted" onClick={() => void onSubmit()}>Cerca</button>
         </div>
       )}
       {busy && <div className="p-2 text-muted-foreground">Indicizzazione/ricerca in corso…</div>}
@@ -268,21 +331,9 @@ export const SearchPanelTree = React.memo(
                               {g.matches.map((m, matchIdx) => {
                                 const matchId = m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`
                                 const isHovered = hoveredMatchId === matchId
-                                const hasExpanded = !!expandedTexts[matchId]
                                 const currentLines = contextLines[matchId] || 0
                                 const isLoading = loadingContext[matchId] || false
                                 const displayText = expandedTexts[matchId] || m.snippet
-
-                                // Debug log per verificare che il testo espanso venga mostrato
-                                if (hasExpanded) {
-                                  console.log('[SEARCH][CONTEXT] Rendering expanded text', {
-                                    matchId,
-                                    expandedLength: expandedTexts[matchId].length,
-                                    originalSnippetLength: m.snippet.length,
-                                    currentLines,
-                                    displayTextPreview: displayText.substring(0, 100)
-                                  })
-                                }
 
                                   return (
                                   <li
@@ -292,35 +343,36 @@ export const SearchPanelTree = React.memo(
                                     onMouseLeave={() => setHoveredMatchId(null)}
                                     onClick={async()=>{
                                       setSelectedId(m.id)
-                                      // Copia testo pagina nella clipboard
-                                      try {
-                                        const pageText = await extractPageText(m.docId, m.page || 1)
-                                        const pageNumber = m.page || 1
-                                        const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
-                                        await navigator.clipboard.writeText(textWithPageInfo)
-                                        toast({
-                                          title: 'Testo copiato',
-                                          description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
-                                        })
-                                      } catch (error) {
-                                        console.error('[SEARCH] Error copying page text:', error)
-                                        toast({
-                                          title: 'Errore',
-                                          description: 'Impossibile copiare il testo della pagina',
-                                          variant: 'destructive',
-                                        })
+                                      if (copyPageTextOnNavigate) {
+                                        try {
+                                          const pageText = await extractPageText(m.docId, m.page || 1)
+                                          const pageNumber = m.page || 1
+                                          const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
+                                          await navigator.clipboard.writeText(textWithPageInfo)
+                                          toast({
+                                            title: 'Testo copiato',
+                                            description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
+                                          })
+                                        } catch (error) {
+                                          console.error('[SEARCH] Error copying page text:', error)
+                                          toast({
+                                            title: 'Errore',
+                                            description: 'Impossibile copiare il testo della pagina',
+                                            variant: 'destructive',
+                                          })
+                                        }
                                       }
                                       await navigateTo(m)
                                     }}
                                   >
                                     <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
-                                      {renderSnippet(displayText, q)}
+                                      {renderSnippet(displayText, qForUi)}
                                       {isLoading && (
                                         <span className="text-xs text-muted-foreground italic ml-1">Caricamento...</span>
                                       )}
                                     </div>
-                                    {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
+                                    {enableExpandedContext && isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
                                       <div
                                         className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-popover/95 border border-border rounded-sm shadow-lg z-10"
                                         onMouseDown={(e) => e.stopPropagation()}
@@ -383,21 +435,9 @@ export const SearchPanelTree = React.memo(
                                 {g.matches.map((m, matchIdx) => {
                                   const matchId = m.id || `${g.doc.id}-${m.page || 0}-${matchIdx}`
                                   const isHovered = hoveredMatchId === matchId
-                                  const hasExpanded = !!expandedTexts[matchId]
                                   const currentLines = contextLines[matchId] || 0
                                   const isLoading = loadingContext[matchId] || false
                                   const displayText = expandedTexts[matchId] || m.snippet
-
-                                  // Debug log per verificare che il testo espanso venga mostrato
-                                  if (hasExpanded) {
-                                    console.log('[SEARCH][CONTEXT] Rendering expanded text', {
-                                      matchId,
-                                      expandedLength: expandedTexts[matchId].length,
-                                      originalSnippetLength: m.snippet.length,
-                                      currentLines,
-                                      displayTextPreview: displayText.substring(0, 100)
-                                    })
-                                  }
 
                                   return (
                                     <li
@@ -407,35 +447,36 @@ export const SearchPanelTree = React.memo(
                                       onMouseLeave={() => setHoveredMatchId(null)}
                                       onClick={async()=>{
                                       setSelectedId(m.id)
-                                      // Copia testo pagina nella clipboard
-                                      try {
-                                        const pageText = await extractPageText(m.docId, m.page || 1)
-                                        const pageNumber = m.page || 1
-                                        const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
-                                        await navigator.clipboard.writeText(textWithPageInfo)
-                                        toast({
-                                          title: 'Testo copiato',
-                                          description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
-                                        })
-                                      } catch (error) {
-                                        console.error('[SEARCH] Error copying page text:', error)
-                                        toast({
-                                          title: 'Errore',
-                                          description: 'Impossibile copiare il testo della pagina',
-                                          variant: 'destructive',
-                                        })
+                                      if (copyPageTextOnNavigate) {
+                                        try {
+                                          const pageText = await extractPageText(m.docId, m.page || 1)
+                                          const pageNumber = m.page || 1
+                                          const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
+                                          await navigator.clipboard.writeText(textWithPageInfo)
+                                          toast({
+                                            title: 'Testo copiato',
+                                            description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
+                                          })
+                                        } catch (error) {
+                                          console.error('[SEARCH] Error copying page text:', error)
+                                          toast({
+                                            title: 'Errore',
+                                            description: 'Impossibile copiare il testo della pagina',
+                                            variant: 'destructive',
+                                          })
+                                        }
                                       }
                                       await navigateTo(m)
                                     }}
                                     >
                                       <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 min-w-0">
-                                        {renderSnippet(displayText, q)}
+                                        {renderSnippet(displayText, qForUi)}
                                         {isLoading && (
                                           <span className="text-xs text-muted-foreground italic ml-1">Caricamento...</span>
                                         )}
                                       </div>
-                                      {isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
+                                      {enableExpandedContext && isHovered && m.charIdx !== undefined && m.charIdx >= 0 && (
                                         <div
                                           className="absolute right-0 top-0 bottom-0 w-8 flex flex-col items-center justify-center bg-popover/95 border border-border rounded-sm shadow-lg z-10"
                                           onMouseDown={(e) => e.stopPropagation()}
@@ -500,4 +541,5 @@ export const SearchPanelTree = React.memo(
   )
 )
 
+export default SearchPanelTree
 

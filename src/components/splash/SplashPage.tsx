@@ -11,6 +11,7 @@ export function SplashPage() {
   const [recent, setRecent] = useState<Pratica[]>([])
   const [all, setAll] = useState<Pratica[]>([])
   const [draftCount, setDraftCount] = useState(0)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     // Carica pratiche recenti da localStorage
@@ -21,10 +22,13 @@ export function SplashPage() {
 
     // Carica tutte le pratiche
     api.getPratiche().then(pratiche => {
+      setLoadError(null)
       setAll(pratiche)
       const drafts = pratiche.filter(p => p.status === 'draft')
       setDraftCount(drafts.length)
-    }).catch(() => { })
+    }).catch(() => {
+      setLoadError('Backend non raggiungibile su http://localhost:3001. Avvia npm run dev:all e ricarica.')
+    })
   }, [])
 
   return (
@@ -55,6 +59,12 @@ export function SplashPage() {
               Sistema di gestione documentale intelligente per studi legali penali
             </p>
           </div>
+
+          {loadError && (
+            <div className="max-w-xl mx-auto rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-100 text-sm">
+              {loadError}
+            </div>
+          )}
 
           {/* CTA / Open */}
           <div className={`flex gap-3 max-w-xl mx-auto justify-center ${all.length > 0 ? 'md:grid md:grid-cols-2' : ''}`}>

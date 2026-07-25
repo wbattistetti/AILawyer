@@ -89,7 +89,7 @@ export const usePdfEvents = ({
 
 			// ✅ GUARDIA: Non toccare eventi del pannello di ricerca
 			const el = ev.target as HTMLElement
-			if (el?.closest('[data-role="pdf-search-panel"]')) {
+			if (el?.closest('[data-role="document-search-panel"]')) {
 				console.log('[PDF-EVENTS][GUARD] mousedown ignorato - dentro pannello ricerca', {
 					target: el,
 					tagName: el?.tagName,
@@ -103,7 +103,7 @@ export const usePdfEvents = ({
 			const isSearchButton = el?.closest('button')?.textContent?.includes('Cerca') ||
 			                       el?.closest('button')?.querySelector('svg[class*="Search"]') !== null
 			const isSearchInput = el?.closest('[data-role="pdf-search-input"]') !== null ||
-			                      el?.closest('[data-role="pdf-search-panel"]')?.querySelector('input') === el
+			                      el?.closest('[data-role="document-search-panel"]')?.querySelector('input') === el
 
 			if (isSearchButton || isSearchInput) {
 				console.log('[PDF-EVENTS][INTERCEPT] ⚠️ mousedown intercettato su elemento ricerca!', {
@@ -123,7 +123,7 @@ export const usePdfEvents = ({
 
 			// ✅ GUARDIA: Non toccare eventi del pannello di ricerca
 			const el = ev.target as HTMLElement
-			if (el?.closest('[data-role="pdf-search-panel"]')) {
+			if (el?.closest('[data-role="document-search-panel"]')) {
 				console.log('[PDF-EVENTS][GUARD] mouseup ignorato - dentro pannello ricerca', {
 					target: el,
 					tagName: el?.tagName

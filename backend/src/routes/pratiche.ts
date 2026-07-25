@@ -263,7 +263,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   })
 
   // Update pratica
-  fastify.patch<{ Params: { id: string }; Body: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string } }>('/pratiche/:id', async (request, reply) => {
+  fastify.patch<{ Params: { id: string }; Body: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string; graphsState?: string } }>('/pratiche/:id', async (request, reply) => {
     const praticaId = request.params.id
     console.log('[SAVE][PRATICA][START]', {
       praticaId,
@@ -302,6 +302,9 @@ export async function praticheRoutes(fastify: FastifyInstance) {
       }
       if (request.body.explorerState !== undefined) {
         dataToUpdate.explorerState = request.body.explorerState
+      }
+      if (request.body.graphsState !== undefined) {
+        dataToUpdate.graphsState = request.body.graphsState
       }
 
       console.log('[SAVE][PRATICA][UPDATE-DATA]', { praticaId, dataToUpdate })

@@ -2,7 +2,8 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo
 import { DockviewReact, DockviewReadyEvent, IDockviewPanelProps, IDockviewPanelHeaderProps, DockviewDefaultTab } from 'dockview'
 import 'dockview/dist/styles/dockview.css'
 import { CaseOverviewDiagram } from '../features/case-overview/components/CaseOverviewDiagram'
-import GraphBuilder from '../features/case-overview/graph-builder/GraphBuilder'
+import GraphBuilder, { type GraphBuilderHandle } from '../features/case-overview/graph-builder/GraphBuilder'
+import type { SavedGraph } from '../features/case-overview/graph-builder/graphSerialization'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 import { colorFor, iconFor } from '../features/drawers/drawerPalette'
@@ -95,6 +96,8 @@ export type DockWorkspaceV3Handle = {
   openExplorer: () => void
   openCliente: (clienteId?: string) => void
   openGraphBuilder: () => void
+  saveAllGraphs: () => SavedGraph[]
+  loadGraphs: (graphs: SavedGraph[]) => void
 }
 
 // Componente wrapper per pannelli con fullscreen toggle
@@ -193,6 +196,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const [isDrawerStripPinned, setIsDrawerStripPinned] = useState(false) // ✅ PIN per fissare i cassetti
   const [drawerPanelsUpdateTrigger, setDrawerPanelsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i pannelli cambiano
   const [documentsUpdateTrigger, setDocumentsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i documenti cambiano
+
+  // State per tracciare i grafi aperti (graphId -> graphName)
+  const [graphNames, setGraphNames] = useState<Map<string, string>>(new Map())
+  const [graphCounter, setGraphCounter] = useState(1) // Contatore per nomi generici
+  const graphBuilderRefs = useRef<Map<string, GraphBuilderHandle>>(new Map())
+  const [savedGraphs, setSavedGraphs] = useState<Map<string, SavedGraph>>(new Map())
 
   // ✅ Listener per aggiornare drawerTabs quando cambiano i documenti
   useEffect(() => {
@@ -482,7 +491,11 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           </PanelWithFullscreenToggle>
         )
       },
-      'graph-builder': (props: IDockviewPanelProps) => {
+      'graph-builder': (props: IDockviewPanelProps<{ graphId?: string; graphName?: string }>) => {
+        const graphId = props.params?.graphId || props.api.id
+        const graphName = props.params?.graphName || graphNames.get(graphId) || 'Grafo'
+        const savedGraph = savedGraphs.get(graphId) || null
+        
         return (
           <PanelWithFullscreenToggle
             component="graph-builder"
@@ -495,7 +508,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           >
             <PanelContentWrapper>
               <div className="w-full h-full overflow-hidden bg-background">
-                <GraphBuilder />
+                <GraphBuilder
+                  ref={(handle) => {
+                    if (handle) {
+                      graphBuilderRefs.current.set(graphId, handle)
+                    } else {
+                      graphBuilderRefs.current.delete(graphId)
+                    }
+                  }}
+                  graphId={graphId}
+                  graphName={graphName}
+                  savedGraph={savedGraph}
+                />
               </div>
             </PanelContentWrapper>
           </PanelWithFullscreenToggle>
@@ -843,6 +867,139 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       )
     }
 
+    // ✅ Tab graph-builder con modifica nome
+    if (component === 'graph-builder') {
+      const graphId = panel?.params?.graphId || tabId
+      const currentName = graphNames.get(graphId) || props.api.title || 'Grafo'
+      const [isEditingName, setIsEditingName] = useState(false)
+      const [editedName, setEditedName] = useState(currentName)
+      
+      // Aggiorna editedName quando currentName cambia
+      React.useEffect(() => {
+        setEditedName(currentName)
+      }, [currentName])
+      
+      const config = TAB_CONFIGS[component]
+      const Icon = config?.icon || Network
+      const color = isActive ? (config?.colorActive || '#10b981') : (config?.colorBase || '#34d399')
+      const opacity = isActive ? 1 : 0.4
+      
+      if (isEditingName) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+            <Icon size={18} strokeWidth={2.5} fill="none" style={{ color, stroke: color, opacity }} />
+            <input
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value)}
+              onBlur={() => {
+                if (editedName.trim()) {
+                  const newName = editedName.trim()
+                  setGraphNames(prev => new Map(prev).set(graphId, newName))
+                  props.api.updateTitle(newName)
+                }
+                setIsEditingName(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (editedName.trim()) {
+                    const newName = editedName.trim()
+                    setGraphNames(prev => new Map(prev).set(graphId, newName))
+                    props.api.updateTitle(newName)
+                  }
+                  setIsEditingName(false)
+                } else if (e.key === 'Escape') {
+                  setEditedName(currentName)
+                  setIsEditingName(false)
+                }
+              }}
+              autoFocus
+              style={{
+                flex: 1,
+                padding: '2px 4px',
+                border: '1px solid var(--ui-border)',
+                borderRadius: '3px',
+                fontSize: 'inherit',
+                fontFamily: 'inherit',
+                background: 'var(--ui-bg)',
+                color: 'var(--ui-text)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+          </div>
+        )
+      }
+      
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          color: color,
+          opacity: opacity,
+          transition: 'opacity 0.3s ease, color 0.3s ease',
+          width: '100%'
+        }}>
+          <Icon
+            size={18}
+            strokeWidth={2.5}
+            fill="none"
+            style={{
+              color: color,
+              stroke: color,
+              opacity: opacity,
+              transition: 'opacity 0.3s ease, color 0.3s ease, stroke 0.3s ease'
+            }}
+          />
+          <span
+            style={{
+              fontWeight: isActive ? 700 : 400,
+              transition: 'font-weight 0.3s ease',
+              flex: 1,
+              cursor: 'pointer'
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsEditingName(true)
+            }}
+            title="Clicca per modificare il nome"
+          >
+            {currentName}
+          </span>
+          {isCloseable && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                props.api.close()
+              }}
+              style={{
+                marginLeft: '8px',
+                padding: '2px 6px',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                lineHeight: 1,
+                color: 'var(--ui-text-muted)',
+                borderRadius: '3px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--ui-bg-hover)'
+                e.currentTarget.style.color = 'var(--drawer-text)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = 'var(--ui-text-muted)'
+              }}
+              title="Chiudi"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )
+    }
+
     // ✅ Tab con configurazione (explorer, graph, persons, etc.)
     const config = TAB_CONFIGS[component]
     if (config) {
@@ -948,7 +1105,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         )}
       </div>
     )
-  }, [drawerTabs, comparti, dockviewApiRef])
+  }, [drawerTabs, comparti, dockviewApiRef, graphNames])
 
   // Handler per quando Dockview è pronto
   const onReady = useCallback((event: DockviewReadyEvent) => {
@@ -1403,9 +1560,95 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       }
     },
     openGraphBuilder: () => {
-      handleArchiveTabClick('graph-builder', 'graphBuilderTab', 'Crea Grafo')
+      if (!dockviewApiRef.current) return
+
+      // Conta quanti grafi sono già aperti
+      const openGraphs = Array.from(dockviewApiRef.current.panels).filter(
+        (p: any) => p.params?.component === 'graph-builder' || p.component === 'graph-builder'
+      )
+
+      // Genera ID univoco e nome
+      const graphId = `graph-${Date.now()}`
+      let graphName: string
+      if (openGraphs.length === 0) {
+        graphName = 'Grafo'
+      } else {
+        graphName = `Grafo ${openGraphs.length + 1}`
+      }
+
+      // Salva il nome nello stato
+      setGraphNames(prev => new Map(prev).set(graphId, graphName))
+
+      // Crea o attiva il pannello
+      const panelId = graphId
+      const existingPanel = dockviewApiRef.current.getPanel(panelId)
+
+      if (existingPanel) {
+        if (typeof dockviewApiRef.current.setActivePanel === 'function') {
+          dockviewApiRef.current.setActivePanel(existingPanel)
+        } else if (existingPanel.api) {
+          existingPanel.api.setActive()
+        }
+      } else {
+        const newPanel = dockviewApiRef.current.addPanel({
+          id: panelId,
+          component: 'graph-builder',
+          params: {
+            component: 'graph-builder',
+            graphId,
+            graphName
+          },
+          title: graphName,
+          closeable: true
+        })
+        if (newPanel?.group?.locked) {
+          newPanel.group.locked = false
+        }
+      }
+    },
+    saveAllGraphs: () => {
+      const graphs: SavedGraph[] = []
+      graphBuilderRefs.current.forEach((handle, graphId) => {
+        const saved = handle.save()
+        if (saved) {
+          graphs.push(saved)
+        }
+      })
+      return graphs
+    },
+    loadGraphs: (graphs: SavedGraph[]) => {
+      const graphsMap = new Map<string, SavedGraph>()
+      graphs.forEach(g => {
+        graphsMap.set(g.id, g)
+        setGraphNames(prev => new Map(prev).set(g.id, g.name))
+      })
+      setSavedGraphs(graphsMap)
+      
+      // Apri i grafi nei tab
+      graphs.forEach(graph => {
+        if (!dockviewApiRef.current) return
+        const panelId = graph.id
+        const existingPanel = dockviewApiRef.current.getPanel(panelId)
+        
+        if (!existingPanel) {
+          const newPanel = dockviewApiRef.current.addPanel({
+            id: panelId,
+            component: 'graph-builder',
+            params: {
+              component: 'graph-builder',
+              graphId: graph.id,
+              graphName: graph.name
+            },
+            title: graph.name,
+            closeable: true
+          })
+          if (newPanel?.group?.locked) {
+            newPanel.group.locked = false
+          }
+        }
+      })
     }
-  }), [handleArchiveTabClick, clienti])
+  }), [handleArchiveTabClick, clienti, graphNames])
 
   return (
     <div className={`dockv3-root w-full h-full relative ${isDragActiveRef.current ? 'drag-active' : ''}`}>

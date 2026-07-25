@@ -1,34 +1,8 @@
-import { useState, useRef } from 'react'
+/**
+ * Compatibilità temporanea: lo stato del pannello ora è condiviso tra i viewer.
+ */
 
-export interface UsePdfSearchPanelProps {
-	// Props necessarie per il search panel
-}
-
-export interface UsePdfSearchPanelReturn {
-	// Search panel state
-	panelW: number
-	setPanelW: (width: number | ((prev: number) => number)) => void
-	searchQ: string
-	setSearchQ: (query: string) => void
-	showAdvanced: boolean
-	setShowAdvanced: (show: boolean) => void
-	resizingRef: React.MutableRefObject<boolean>
-}
-
-export function usePdfSearchPanel(props: UsePdfSearchPanelProps = {}): UsePdfSearchPanelReturn {
-	// Search panel state
-	const [panelW, setPanelW] = useState<number>(320)
-	const [searchQ, setSearchQ] = useState<string>('')
-	const resizingRef = useRef<boolean>(false)
-	const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
-
-	return {
-		panelW,
-		setPanelW,
-		searchQ,
-		setSearchQ,
-		showAdvanced,
-		setShowAdvanced,
-		resizingRef
-	}
-}
+export {
+  useDocumentSearchPanel as usePdfSearchPanel,
+  type DocumentSearchPanelState as UsePdfSearchPanelReturn
+} from '../../../search/useDocumentSearchPanel'

@@ -134,6 +134,13 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
     if (!originalListener) return undefined
 
     return (e: MouseEvent | KeyboardEvent) => {
+      const target = e.target as HTMLElement
+
+      // 🔥 Escludi il pannello di ricerca PDF dai listener globali
+      if (target.closest('[data-role="document-search-panel"]')) {
+        return
+      }
+
       const isInHost = isEventInHost(e.target)
 
       // ✅ Per mousemove, verifica le coordinate del mouse invece di solo l'elemento target

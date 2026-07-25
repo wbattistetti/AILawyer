@@ -266,7 +266,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			const target = e.target as HTMLElement
 
 			// ✅ GUARDIA ESPLICITA: Non toccare eventi del pannello di ricerca
-			if (target?.closest('[data-role="pdf-search-panel"]')) {
+			if (target?.closest('[data-role="document-search-panel"]')) {
 				console.log('[EXTRACT-OVERLAY][GUARD] click ignorato - dentro pannello ricerca', {
 					target,
 					tagName: target?.tagName,
@@ -280,7 +280,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			const isSearchButton = target?.closest('button')?.textContent?.includes('Cerca') ||
 			                       target?.closest('button')?.querySelector('svg[class*="Search"]') !== null
 			const isSearchInput = target?.closest('[data-role="pdf-search-input"]') !== null ||
-			                      target?.closest('[data-role="pdf-search-panel"]')?.querySelector('input') === target
+			                      target?.closest('[data-role="document-search-panel"]')?.querySelector('input') === target
 
 			if (isSearchButton || isSearchInput) {
 				console.log('[EXTRACT-OVERLAY][INTERCEPT] ⚠️ click intercettato su elemento ricerca!', {
@@ -323,7 +323,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			const target = e.target as HTMLElement
 
 			// ✅ GUARDIA ESPLICITA: Non toccare eventi del pannello di ricerca
-			if (target?.closest('[data-role="pdf-search-panel"]')) {
+			if (target?.closest('[data-role="document-search-panel"]')) {
 				console.log('[EXTRACT-OVERLAY][GUARD] mousedown ignorato - dentro pannello ricerca', {
 					target,
 					tagName: target?.tagName,
@@ -337,7 +337,7 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 			const isSearchButton = target?.closest('button')?.textContent?.includes('Cerca') ||
 			                       target?.closest('button')?.querySelector('svg[class*="Search"]') !== null
 			const isSearchInput = target?.closest('[data-role="pdf-search-input"]') !== null ||
-			                      target?.closest('[data-role="pdf-search-panel"]')?.querySelector('input') === target
+			                      target?.closest('[data-role="document-search-panel"]')?.querySelector('input') === target
 
 			if (isSearchButton || isSearchInput) {
 				console.log('[EXTRACT-OVERLAY][INTERCEPT] ⚠️ mousedown intercettato su elemento ricerca!', {

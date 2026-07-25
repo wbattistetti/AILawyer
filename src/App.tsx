@@ -4,6 +4,7 @@ import { Layout } from '@/components/layout/Layout'
 import { SplashPage } from '@/components/splash/SplashPage'
 import { NuovaPraticaPage } from '@/components/pages/NuovaPraticaPage'
 import { PraticaCanvasPage } from '@/components/pages/PraticaCanvasPage'
+import { DebugPdfSearch } from '@/components/pages/DebugPdfSearch'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 // import { DefenseMemoryTestPage } from '@/components/pages/DefenseMemoryTestPage'
 
@@ -16,6 +17,7 @@ function App() {
             <Route index element={<SplashPage />} />
             <Route path="nuova-pratica" element={<NuovaPraticaPage />} />
             <Route path="pratica/:id" element={<PraticaCanvasPage />} />
+            <Route path="debug/pdf-search" element={<DebugPdfSearch />} />
             {/** Test Memoria Difensiva route removed */}
           </Route>
         </Routes>

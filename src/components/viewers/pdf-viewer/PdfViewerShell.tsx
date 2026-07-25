@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { usePdfShellState } from './hooks/usePdfShellState'
-import { usePdfPanelResizer } from './hooks/usePdfPanelResizer'
+import { useDocumentSearchPanelResizer } from '../../search/useDocumentSearchPanelResizer'
 import { usePdfPlugins } from './hooks/usePdfPlugins'
 import { PdfViewerCore } from './components/PdfViewerCore'
 import { AnnotationOverlays } from './components/AnnotationOverlays'
@@ -128,7 +128,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   })
 
   // ✅ Hook per il ridimensionamento del pannello di ricerca
-  usePdfPanelResizer({
+  useDocumentSearchPanelResizer({
     resizingRef: shell.resizingRef,
     setPanelW: shell.setPanelW
   })
@@ -231,7 +231,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         searchPanel.style.maxHeight = `${contentAreaHeight}px`
         searchPanel.style.overflow = 'hidden'
 
-      const searchHeader = searchPanel.querySelector('.pdf-search-header') as HTMLElement | null
+      const searchHeader = searchPanel.querySelector('.document-search-header') as HTMLElement | null
         const headerHeight = searchHeader?.offsetHeight || 45
         const resultsHeight = contentAreaHeight - headerHeight
 
@@ -324,7 +324,6 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
     return () => {}
   }, []) // ✅ Nessuna dipendenza - enforceStructure disattivata
 
-
   // ✅ Struttura MASSIMAMENTE semplificata: NO wrapper inutili, struttura piatta
   return (
     <React.Fragment>
@@ -409,6 +408,7 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             panelW={shell.panelW}
             resizingRef={shell.resizingRef}
             searchQ={shell.searchQ}
+            setSearchQ={shell.setSearchQ}
             docId={docId}
             fileUrl={fileUrl}
             totalPages={shell.totalPages}

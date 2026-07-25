@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
-import ReactFlow, { Background, Controls, MiniMap, useReactFlow, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge } from 'reactflow'
+import React, { useCallback, useMemo, useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react'
+import ReactFlow, { Background, Controls, MiniMap, useReactFlow, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge, Viewport } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { ToolPalette } from './ToolPalette'
 import { BuilderEdge, BuilderNode, BuilderNodeData, RelationKind } from './types'
@@ -7,13 +7,54 @@ import EdgeWithTooltip from './EdgeWithTooltip'
 import RelationPicker, { getRelationOptions, labelFor } from './RelationPicker'
 import { mockPeople, mockCompanies, mockPlaces, mockVehicles } from './mockData'
 import NodeView from './NodeView'
+import { serializeGraph, deserializeGraph, type SavedGraph } from './graphSerialization'
 
-export default function GraphBuilder() {
+export type GraphBuilderProps = {
+  graphId?: string
+  graphName?: string
+  savedGraph?: SavedGraph | null
+}
+
+export type GraphBuilderHandle = {
+  save: () => SavedGraph | null
+}
+
+const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ graphId, graphName = 'Grafo', savedGraph }, ref) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNodeData>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>([])
   const [relPicker, setRelPicker] = useState<{ x:number; y:number; source: Node; target: Node; edgeId?: string } | null>(null)
   const connectEndRef = useRef<{ x:number; y:number } | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const reactFlowInstanceRef = useRef<any>(null)
+  const createdAtRef = useRef<string>(new Date().toISOString())
+  
+  // Carica grafo salvato se presente
+  useEffect(() => {
+    if (savedGraph && graphId === savedGraph.id) {
+      const { nodes: loadedNodes, edges: loadedEdges, viewport } = deserializeGraph(savedGraph, (nodeId) => {
+        setNodes(nds => nds.filter(n => n.id !== nodeId))
+      })
+      setNodes(loadedNodes)
+      setEdges(loadedEdges)
+      createdAtRef.current = savedGraph.createdAt
+      
+      // Ripristina viewport se disponibile
+      if (viewport && reactFlowInstanceRef.current) {
+        setTimeout(() => {
+          reactFlowInstanceRef.current?.setViewport(viewport)
+        }, 100)
+      }
+    }
+  }, [savedGraph, graphId])
+  
+  // Esponi funzione per salvare
+  useImperativeHandle(ref, () => ({
+    save: () => {
+      if (!graphId) return null
+      const viewport = reactFlowInstanceRef.current?.getViewport()
+      return serializeGraph(graphId, graphName, nodes, edges, viewport, createdAtRef.current)
+    }
+  }), [graphId, graphName, nodes, edges])
 
   const nodeTypes = useMemo(() => ({ builder: NodeView as any }), [])
   const edgeTypes = useMemo(() => ({ tooltip: EdgeWithTooltip }), [])
@@ -224,7 +265,10 @@ export default function GraphBuilder() {
           edgeTypes={edgeTypes}
           fitView={false}
           proOptions={{ hideAttribution: true }}
-          onInit={(inst:any) => { (window as any).__rfInstance = inst }}
+          onInit={(inst:any) => {
+            (window as any).__rfInstance = inst
+            reactFlowInstanceRef.current = inst
+          }}
           nodeOrigin={[0.5, 0.5]}
           onNodesDelete={(nds)=>{
             // chiudi eventuale relation picker se i nodi associati non esistono più
@@ -270,7 +314,7 @@ export default function GraphBuilder() {
       </div>
     </div>
   )
-}
+})
 
 function defaultLabelFor(kind: BuilderNodeData['kind']): string {
   switch (kind) {
@@ -314,5 +358,7 @@ function buildTooltip(source: BuilderNode, rel: RelationKind, target: BuilderNod
   // Esempio: "Marco Padre di Antonio", "Marco Rappresentante legale di ENOTECA TELARO"
   return `${s} ${text} ${rel.includes('di') ? '' : 'di'} ${t}`.replace(/\s+/g,' ').trim()
 }
+
+export default GraphBuilderInner
 
 

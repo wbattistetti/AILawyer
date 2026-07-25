@@ -39,11 +39,11 @@ import { usePdfDeskew } from './pdf-viewer/hooks/usePdfDeskew'
 import { usePdfAudit } from './pdf-viewer/hooks/usePdfAudit'
 import { usePdfAnnotations, type Tool, type Annotation } from './pdf-viewer/hooks/usePdfAnnotations'
 import { usePdfJumpTo } from './pdf-viewer/hooks/usePdfJumpTo'
-import { usePdfSearchPanel } from './pdf-viewer/hooks/usePdfSearchPanel'
+import { useDocumentSearchPanel } from '../search/useDocumentSearchPanel'
 import { usePdfDocument } from './pdf-viewer/hooks/usePdfDocument'
 import { usePdfNativeStyles } from './pdf-viewer/hooks/usePdfNativeStyles'
 import { usePdfOverlays } from './pdf-viewer/hooks/usePdfOverlays'
-import { usePdfPanelResizer } from './pdf-viewer/hooks/usePdfPanelResizer'
+import { useDocumentSearchPanelResizer } from '../search/useDocumentSearchPanelResizer'
 import { usePdfExtract } from './pdf-viewer/hooks/usePdfExtract'
 import { PdfToolbarAdvanced } from './pdf-viewer/components/PdfToolbarAdvanced'
 import { AnnotationOverlays } from './pdf-viewer/components/AnnotationOverlays'
@@ -265,10 +265,10 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 	})
 
 	// ✅ Hook per il search panel
-	const { panelW, setPanelW, searchQ, setSearchQ, showAdvanced, setShowAdvanced, resizingRef } = usePdfSearchPanel()
+	const { panelW, setPanelW, searchQ, setSearchQ, showAdvanced, setShowAdvanced, resizingRef } = useDocumentSearchPanel()
 
 	// ✅ Panel resizer
-	usePdfPanelResizer({ resizingRef, setPanelW })
+	useDocumentSearchPanelResizer({ resizingRef, setPanelW })
 
 
 	return (
@@ -423,6 +423,7 @@ export const VerifyPdfViewer: React.FC<VerifyPdfViewerProps> = ({ fileUrl, page,
 					panelW={panelW}
 					resizingRef={resizingRef}
 					searchQ={searchQ}
+					setSearchQ={setSearchQ}
 					docId={docId}
 					fileUrl={fileUrl}
 					totalPages={totalPages}

@@ -2,24 +2,23 @@
  * Word Viewer Shell - Componente principale per visualizzare documenti Word
  */
 
-import React, { useRef, useState, useCallback, useEffect } from 'react'
+import React, { useRef, useState, useCallback, useMemo } from 'react'
 import { WordViewerCore, WordViewerHandle } from './components/WordViewerCore'
 import { useWordRectSelection } from './hooks/useWordRectSelection'
-import { ViewerShellProps, ViewerSelection } from '../common/types/viewer.types'
+import { ViewerShellProps } from '../common/types/viewer.types'
 import { PdfUnifiedToolbar } from '../pdf-viewer/components/PdfUnifiedToolbar'
-import { SearchPanel } from '../pdf-viewer/components/SearchPanel'
-import { usePdfSearchPanel } from '../pdf-viewer/hooks/usePdfSearchPanel'
-import { usePdfPanelResizer } from '../pdf-viewer/hooks/usePdfPanelResizer'
+import { DocumentSearchPanel } from '../../search/DocumentSearchPanel'
+import { useDocumentSearchPanel } from '../../search/useDocumentSearchPanel'
+import { useDocumentSearchPanelResizer } from '../../search/useDocumentSearchPanelResizer'
 import type { PersistentSelection } from '../pdf-viewer/types'
 import { ExtractBlockOverlay } from '../pdf-viewer/components/ExtractBlockOverlay'
-import { captureSelectionScreenshotWithFallback } from '../common/utils/screenshot'
-import { viewportBoxToPercent } from '../common/utils/coordinateUtils'
 import { useViewerOverlays } from '../common/hooks/useViewerOverlays'
 import { DraftOverlay } from './components/DraftOverlay'
 import type { DraftBox } from '../common/hooks/useRectSelection'
 import type { RectSelection, ExtractedContent, ExtractCard } from '../common/types/viewer.types'
 import { extractContentFromRect } from './utils/extractContentFromRect'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
+import { createWordSearchAdapter } from './wordSearchAdapter'
 
 export const WordViewerShell: React.FC<ViewerShellProps> = ({
   fileUrl,
@@ -27,46 +26,12 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   onPageChange,
   hideToolbar = false,
   docId,
-  praticaId,
   docName,
   hasNativeText = true,
-  panelApi,
-  isActive: isActiveProp
+  panelApi
 }) => {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<WordViewerHandle>(null)
-
-  const [isActive, setIsActive] = React.useState<boolean>(() => {
-    if (panelApi && typeof panelApi.isActive === 'boolean') {
-      return panelApi.isActive
-    }
-    return isActiveProp ?? false
-  })
-
-  React.useEffect(() => {
-    if (!panelApi) {
-      setIsActive(isActiveProp ?? false)
-      return
-    }
-
-    if (typeof panelApi.onDidActiveChange === 'function') {
-      const disposable = panelApi.onDidActiveChange((event: any) => {
-        setIsActive(event.isActive ?? false)
-      })
-
-      if (typeof panelApi.isActive === 'boolean') {
-        setIsActive(panelApi.isActive)
-      }
-
-      return () => {
-        disposable.dispose()
-      }
-    } else {
-      if (typeof panelApi.isActive === 'boolean') {
-        setIsActive(panelApi.isActive)
-      }
-    }
-  }, [panelApi, isActiveProp, docId])
 
   const [totalPages, setTotalPages] = useState(1)
   const [currentPage, setCurrentPage] = useState(page || 1)
@@ -75,9 +40,9 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   const scaleRef = useRef<number>(1)
   const zoomDebounceRef = useRef<number | null>(null)
 
-  const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
+  const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = useDocumentSearchPanel()
 
-  usePdfPanelResizer({
+  useDocumentSearchPanelResizer({
     resizingRef,
     setPanelW
   })
@@ -103,14 +68,6 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   const [lastSelection, setLastSelection] = useState<any | null>(null)
   const [selectKind, setSelectKind] = useState<'NATIVE' | 'OCR'>('OCR')
   const [draft, setDraft] = useState<DraftBox | null>(null)
-
-  const convertToPercent = useCallback((viewportBox: { x: number; y: number; w: number; h: number }) => {
-    const host = hostRef.current
-    if (!host) {
-      return { x0Pct: 0, y0Pct: 0, x1Pct: 0, y1Pct: 0 }
-    }
-    return viewportBoxToPercent(viewportBox, host)
-  }, [])
 
   const { pageElsRef, overlayRootsRef } = useViewerOverlays({
     hostRef,
@@ -231,6 +188,16 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   const [audit, setAudit] = useState(false)
   const [autoDeskew, setAutoDeskew] = useState(false)
   const [skewAngles, setSkewAngles] = useState<Record<number, number>>({})
+  const searchAdapter = useMemo(
+    () => createWordSearchAdapter({
+      docId: docId || `word:${fileUrl}`,
+      docName: docName || 'Documento Word',
+      totalPages,
+      hostRef,
+      viewerRef
+    }),
+    [docId, docName, fileUrl, totalPages]
+  )
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -266,6 +233,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
           applyImmediateToPage={() => {}}
           zoomTo={zoomTo}
           setShowAdvanced={setShowAdvanced}
+          panelApi={panelApi}
         />
       )}
 
@@ -321,20 +289,17 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
           )}
         </div>
 
-        {/* Search Panel */}
-        {showAdvanced && (
-          <SearchPanel
-            searchQ={searchQ}
-            onSearchQChange={setSearchQ}
-            onClose={() => setShowAdvanced(false)}
-            panelW={panelW}
-            setPanelW={setPanelW}
-            resizingRef={resizingRef}
-            onSearch={async (query) => {
-              // TODO: Implementare ricerca nel contenuto Word
-            }}
-          />
-        )}
+        <DocumentSearchPanel
+          adapter={searchAdapter}
+          isOpen={showAdvanced}
+          onOpenChange={setShowAdvanced}
+          width={panelW}
+          resizingRef={resizingRef}
+          query={searchQ}
+          onQueryChange={setSearchQ}
+          enableExpandedContext={false}
+          copyPageTextOnNavigate={false}
+        />
       </div>
 
     </div>

@@ -7,11 +7,10 @@ import { usePdfDeskew } from './usePdfDeskew'
 import { usePdfAudit } from './usePdfAudit'
 import { usePdfAnnotations } from './usePdfAnnotations'
 import { usePdfJumpTo } from './usePdfJumpTo'
-import { usePdfSearchPanel } from './usePdfSearchPanel'
+import { useDocumentSearchPanel } from '../../../search/useDocumentSearchPanel'
 import { usePdfDocument } from './usePdfDocument'
 import { usePdfNativeStyles } from './usePdfNativeStyles'
 import { usePdfOverlays } from './usePdfOverlays'
-import { usePdfPanelResizer } from './usePdfPanelResizer'
 import { usePdfExtract } from './usePdfExtract'
 import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
 import { captureSelectionScreenshotWithFallback } from '../../common/utils/screenshot'
@@ -35,7 +34,7 @@ interface UsePdfShellStateProps {
 export function usePdfShellState({ hostRef, fileUrl, docId, onPageChange, viewerRef, isActive = false, viewerReadyTick = 0, isExtractOverlayOpen = false }: UsePdfShellStateProps) {
   // Core state hooks
   const viewerState = usePdfViewerState()
-  const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = usePdfSearchPanel()
+  const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = useDocumentSearchPanel()
   const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef, matches, setMatches, runSearch } = usePdfSearch(docId, fileUrl)
   const lastOcrMatchesRef = useRef<Array<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }>>([])
 
