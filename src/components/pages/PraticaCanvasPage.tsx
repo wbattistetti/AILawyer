@@ -521,6 +521,8 @@ export function PraticaCanvasPage() {
         page={syncPage || 1}
         lines={null}
         docId={doc.id}
+        documentHash={doc.hash}
+        storageKey={doc.s3Key}
         praticaId={id || ''}
         onPageChange={(page) => {
           setSyncPage(page)

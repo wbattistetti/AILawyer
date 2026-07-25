@@ -4,7 +4,7 @@
 
 import React, { useMemo } from 'react'
 import { DocumentSearchPanel } from '../../../search/DocumentSearchPanel'
-import { searchArchiveDocument } from '../../../search/searchApi'
+import { searchDocument } from '../../../search/searchApi'
 import type { DocumentSearchAdapter } from '../../../search/types'
 
 export interface SearchPanelProps {
@@ -15,6 +15,9 @@ export interface SearchPanelProps {
 	searchQ: string
 	setSearchQ: (query: string) => void
 	docId?: string
+	documentHash?: string
+	storageKey?: string
+	documentTitle?: string
 	fileUrl: string
 	totalPages: number
 	setMatches: (matches: any[]) => void
@@ -35,6 +38,9 @@ export const SearchPanel = React.memo(function SearchPanel({
 	searchQ,
 	setSearchQ,
 	docId,
+	documentHash,
+	storageKey,
+	documentTitle,
 	fileUrl,
 	totalPages,
 	setMatches,
@@ -45,8 +51,8 @@ export const SearchPanel = React.memo(function SearchPanel({
 	const adapter = useMemo<DocumentSearchAdapter>(() => ({
 		document: {
 			id: actualDocId,
-			title: '',
-			hash: '',
+			title: documentTitle || '',
+			hash: documentHash || '',
 			pages: totalPages,
 			kind: 'pdf'
 		},
@@ -54,9 +60,15 @@ export const SearchPanel = React.memo(function SearchPanel({
 			if (!docId) {
 				throw new Error('Impossibile cercare nel PDF: identificativo documento mancante')
 			}
-			const found = await searchArchiveDocument(query, {
-				docId,
-				documentKind: 'pdf'
+			const found = await searchDocument(query, {
+				locator: {
+					id: docId,
+					...(documentHash ? { hash: documentHash } : {}),
+					...(storageKey ? { storageKey } : {}),
+					...(documentTitle ? { filename: documentTitle } : {})
+				},
+				documentKind: 'pdf',
+				documentTitle
 			})
 			const legacyMatches = found.map((match) => ({
 				id: match.id,
@@ -86,7 +98,18 @@ export const SearchPanel = React.memo(function SearchPanel({
 				qLen: match.qLength ?? match.q.length
 			})
 		}
-	}), [actualDocId, docId, fileUrl, goToMatch, searchCacheRef, setMatches, totalPages])
+	}), [
+		actualDocId,
+		docId,
+		documentHash,
+		documentTitle,
+		fileUrl,
+		goToMatch,
+		searchCacheRef,
+		setMatches,
+		storageKey,
+		totalPages
+	])
 
 	return (
 		<DocumentSearchPanel

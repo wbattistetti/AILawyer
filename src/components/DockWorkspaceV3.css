@@ -9,31 +9,42 @@
 
 /* Tema Dockview personalizzato - si adatta al tema dell'app */
 .dockv3-root .dockview-theme-light {
-  --dv-activegroup-visiblepanel-tab-background-color: hsl(var(--card));
+  --dv-activegroup-visiblepanel-tab-background-color: hsl(var(--background));
   --dv-activegroup-visiblepanel-tab-color: hsl(var(--foreground));
   --dv-group-view-background-color: hsl(var(--background));
   --dv-inactivegroup-visiblepanel-tab-background-color: hsl(var(--muted));
-  --dv-inactivegroup-visiblepanel-tab-color: hsl(var(--muted-foreground));
+  --dv-inactivegroup-visiblepanel-tab-color: hsl(var(--foreground));
+  --dv-activegroup-hiddenpanel-tab-background-color: hsl(var(--muted));
+  --dv-activegroup-hiddenpanel-tab-color: hsl(var(--foreground));
+  --dv-inactivegroup-hiddenpanel-tab-background-color: hsl(var(--muted));
+  --dv-inactivegroup-hiddenpanel-tab-color: hsl(var(--foreground));
   --dv-tabs-and-actions-container-background-color: hsl(var(--muted));
   --dv-tab-divider-color: hsl(var(--border));
 }
 
-/* ✅ Forza colori chiari sulle tab - previene interferenze da Dark Reader */
-.dockv3-root .dockview-theme-light .dv-tab,
-.dockv3-root .dockview-theme-light .dv-tab-active,
-.dockv3-root .dockview-theme-light [class*="dv-tab"] {
+/* Le tab inattive restano leggibili e non sembrano disabilitate. */
+.dockv3-root .dockview-theme-light .dv-tab {
   background-color: hsl(var(--muted)) !important;
-  color: hsl(var(--muted-foreground)) !important;
-  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
-  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
+  color: hsl(var(--foreground)) !important;
+  font-size: 1rem !important;
+  font-family: var(--font-family) !important;
+  border-top: 3px solid transparent;
+  transition: background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
-.dockv3-root .dockview-theme-light .dv-tab-active,
-.dockv3-root .dockview-theme-light [class*="dv-tab"][class*="active"] {
-  background-color: hsl(var(--card)) !important;
+/* Dockview usa dv-active-tab: evidenzia in modo netto il documento aperto. */
+.dockv3-root .dockview-theme-light .dv-tab.dv-active-tab {
+  background-color: hsl(var(--background)) !important;
   color: hsl(var(--foreground)) !important;
-  font-size: 1rem !important; /* ✅ Usa rem per scalare con font-size-base */
-  font-family: var(--font-family) !important; /* ✅ Usa font-family del tema */
+  border-top-color: hsl(var(--primary));
+  box-shadow: 0 -1px 0 hsl(var(--border)), 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}
+
+.dockv3-root .dockview-theme-light .dv-tab.dv-inactive-tab:hover {
+  background-color: hsl(var(--background) / 0.75) !important;
 }
 
 /* ✅ Font-size scalabile per tutte le tab Dockview */

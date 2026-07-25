@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/database'
 import { storageService } from '../lib/storage'
 import { extractNativeText } from '../lib/extractNativeText'
-import { getLocalOcrResult } from './ocr.js'
+import { getLocalOcrResultByPrefix } from '../services/local-ocr-store.js'
 import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js'
 import path from 'path'
@@ -303,7 +303,6 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
           // ✅ Cerca OCR usando il prefisso dell'hash (l's3Key completo inizia con questo prefisso)
           // Es: hashPrefix = 'e6447792c8231ab2', s3Key completo = 'e6447792c8231ab22ad3cefc822cb2564b505afa3a3ab98828e7778920c3d050.pdf'
-          const { getLocalOcrResultByPrefix } = await import('./ocr.js')
           const ocrResultData = getLocalOcrResultByPrefix(hashPrefix)
           const ocrResult = ocrResultData ? {
             texts: ocrResultData.texts,

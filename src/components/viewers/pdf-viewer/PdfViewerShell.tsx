@@ -19,6 +19,8 @@ interface PdfViewerShellProps {
   onPageChange?: (page: number) => void
   hideToolbar?: boolean
   docId?: string
+  documentHash?: string
+  storageKey?: string
   praticaId?: string
   docName?: string
   hasNativeText?: boolean
@@ -40,6 +42,8 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
   onPageChange,
   hideToolbar: _hideToolbar,
   docId,
+  documentHash,
+  storageKey,
   praticaId,
   docName,
   hasNativeText,
@@ -410,6 +414,9 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
             searchQ={shell.searchQ}
             setSearchQ={shell.setSearchQ}
             docId={docId}
+            documentHash={documentHash}
+            storageKey={storageKey}
+            documentTitle={docName}
             fileUrl={fileUrl}
             totalPages={shell.totalPages}
             setMatches={shell.setMatches}

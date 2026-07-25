@@ -386,7 +386,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
     const tabs = comparti.map(comparto => {
       const IconComponent = iconFor(comparto.nome)
-      const drawerColor = colorFor(comparto.chiave as DrawerType)
+      const drawerColor = colorFor(comparto.nome)
 
       // ✅ Conta i documenti per questo comparto CON deduplicazione
       const matchingDocs = documenti.filter(doc => (doc as any).compartoId === comparto.id)
@@ -681,15 +681,19 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       // ✅ Usa prima i dati salvati nei params (disponibili immediatamente anche se comparti non sono ancora caricati)
       let drawerNumber = panel?.params?.drawerNumber
       let drawerColor = panel?.params?.drawerColor || '#f59e0b'
-      let drawerIcon = panel?.params?.drawerIcon || '📁'
+      let drawerTitleForIcon = panel?.params?.drawerTitle as string | undefined
 
       // ✅ Se i comparti sono ora disponibili, aggiorna con i dati più recenti
       const comparto = comparti.find(c => c.id === drawerId)
       if (comparto) {
         drawerNumber = comparti.findIndex(c => c.id === drawerId) + 1
-        drawerColor = colorFor(comparto.chiave as DrawerType)
-        drawerIcon = comparto.icona || '📁'
+        drawerColor = colorFor(comparto.nome)
+        drawerTitleForIcon = comparto.nome
       }
+
+      // ✅ Stessa icona del cassetto Correlato (drawerPalette), mai emoji cartella
+      const IconComponent = iconFor(drawerTitleForIcon)
+      const drawerIcon = <IconComponent size={14} />
 
       // ✅ Layout orizzontale come in V2: numero e icona affiancati, poi testo
       const tabParts: React.ReactNode[] = []
@@ -708,32 +712,17 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         )
       }
 
-      // Icona
-      if (drawerIcon) {
-        if (React.isValidElement(drawerIcon)) {
-          tabParts.push(
-            <span key="icon" style={{
-              marginRight: '4px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              color: drawerColor
-            }}>
-              {React.cloneElement(drawerIcon as any, { size: 14 })}
-            </span>
-          )
-        } else if (typeof drawerIcon === 'string') {
-          tabParts.push(
-            <span key="icon" style={{
-              marginRight: '4px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              color: drawerColor
-            }}>
-              {drawerIcon}
-            </span>
-          )
-        }
-      }
+      // Icona (stesso componente Lucide del cassetto Correlato)
+      tabParts.push(
+        <span key="icon" style={{
+          marginRight: '4px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          color: drawerColor
+        }}>
+          {drawerIcon}
+        </span>
+      )
 
       // ✅ Renderizza con layout orizzontale (numero + icona + testo) come in V2
       return (
@@ -831,8 +820,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     if (component === 'doc') {
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
-          <FileText size={18} style={{ color: '#64748b', opacity: isActive ? 1 : 0.4 }} />
-          <span style={{ opacity: isActive ? 1 : 0.4, flex: 1 }}>{props.api.title}</span>
+          <FileText size={18} style={{ color: 'currentColor' }} />
+          <span style={{ flex: 1 }}>{props.api.title}</span>
           {isCloseable && (
             <button
               onClick={(e) => {
@@ -1413,8 +1402,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             drawerTitle: comparto?.nome || 'Drawer',
             // ✅ Salva i dati per il rendering immediato della tab (anche se comparti non sono ancora caricati)
             drawerNumber: drawerNumber,
-            drawerColor: comparto ? colorFor(comparto.chiave as DrawerType) : '#f59e0b',
-            drawerIcon: comparto?.icona || '📁'
+            drawerColor: comparto ? colorFor(comparto.nome) : '#f59e0b',
+            // Icona ricostruita in tabHeader da drawerTitle via iconFor (allineata al cassetto)
           },
           title: comparto?.nome || 'Drawer',
           closeable: true // ✅ Abilita pulsante close sulla tab

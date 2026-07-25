@@ -6,50 +6,10 @@ import { prisma } from '../lib/database.js'
 import { config } from '../config/index.js'
 import { getOcrQueue } from '../lib/queue.js'
 import { reconstructTextFromGeometry } from '../services/ocr-poppler.js'
-
-// Stato OCR in memoria per file locali (non persistito nel database)
-// Map: s3Key -> { progress, status, result?, error? }
-export const localOcrProgress = new Map<string, { progress: number; status: string; result?: any; error?: string }>()
-
-// Funzione per ottenere il risultato OCR di un file locale (per ricerca e altre operazioni)
-export function getLocalOcrResult(s3Key: string): { texts?: string[], layout?: any[], status: string, progress: number } | null {
-    const progress = localOcrProgress.get(s3Key)
-    if (!progress || progress.status !== 'completed' || !progress.result) {
-        return null
-    }
-
-    const result = progress.result
-    return {
-        texts: result.texts || [],
-        layout: result.layout || [],
-        status: progress.status,
-        progress: progress.progress
-    }
-}
-
-// ✅ Helper per cercare OCR usando prefisso hash (per documenti temp:)
-export function getLocalOcrResultByPrefix(hashPrefix: string): { texts?: string[], layout?: any[], status: string, progress: number, s3Key?: string } | null {
-    // Prima prova con il prefisso esatto
-    let result = getLocalOcrResult(hashPrefix)
-    if (result) {
-        return { ...result, s3Key: hashPrefix }
-    }
-
-    // Poi cerca tutte le chiavi che iniziano con il prefisso
-    const matchingKeys = Array.from(localOcrProgress.keys()).filter(key =>
-        key.startsWith(hashPrefix)
-    )
-
-    if (matchingKeys.length > 0) {
-        const foundKey = matchingKeys[0]
-        result = getLocalOcrResult(foundKey)
-        if (result) {
-            return { ...result, s3Key: foundKey }
-        }
-    }
-
-    return null
-}
+import {
+    getLocalOcrResultByPrefix,
+    localOcrProgress
+} from '../services/local-ocr-store.js'
 
 const ocrProcessLocalSchema = z.object({
     s3Key: z.string(),

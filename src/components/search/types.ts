@@ -6,6 +6,16 @@ export type SearchScope = 'current' | 'open' | 'archive'
 
 export type DocumentKind = 'pdf' | 'word'
 
+/**
+ * Riferimento stabile usato dal backend per risolvere documenti salvati o locali.
+ */
+export interface DocumentLocator {
+  id: string
+  hash?: string
+  storageKey?: string
+  filename?: string
+}
+
 export interface DocRef {
   id: string
   title: string

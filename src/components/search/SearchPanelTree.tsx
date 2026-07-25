@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback, useId } from 'react'
-import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw } from 'lucide-react'
+import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw, Trash2 } from 'lucide-react'
 import { useSearch } from './SearchProvider'
 import type { SearchScope } from './types'
 import { useToast } from '@/hooks/use-toast'
@@ -313,12 +313,20 @@ export const SearchPanelTree = React.memo(
                   className="py-1"
                   ref={(el) => { nodeRefs.current[node.query] = el }}
                 >
-                  <div className="flex items-center gap-2 px-2 hover:bg-muted/40">
+                  <div className="group flex items-center gap-2 px-2 hover:bg-muted/40">
                     <span className="text-muted-foreground cursor-pointer" onClick={()=>toggle(node.id)}>{open ? '▾' : '▸'}</span>
                     <SearchIcon size={14} className={node.total === 0 ? "text-destructive" : "text-foreground"} />
                     <span className={`font-semibold truncate ${node.total === 0 ? "text-destructive" : "text-foreground"}`}>{node.query}</span>
                     <span className={node.total === 0 ? "text-destructive" : "text-muted-foreground"}>({node.total})</span>
-                    <span className="ml-auto text-xs text-muted-foreground cursor-pointer hover:text-destructive" onClick={()=>clearNode(node.id)}>🗑</span>
+                    <button
+                      type="button"
+                      className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+                      title={`Elimina la ricerca "${node.query}"`}
+                      aria-label={`Elimina la ricerca "${node.query}"`}
+                      onClick={() => clearNode(node.id)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
                   </div>
                   {open && (
                     <ul className="pl-6 py-1">

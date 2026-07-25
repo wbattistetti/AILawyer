@@ -2,14 +2,14 @@
  * Client HTTP e validazione delle risposte della ricerca documentale.
  */
 
-import type { DocumentKind, DocumentMatch } from './types'
+import type { DocumentKind, DocumentLocator, DocumentMatch } from './types'
 
-interface ArchiveSearchResponse {
+interface DocumentSearchResponse {
   matches?: unknown
 }
 
-interface SearchArchiveOptions {
-  docId: string
+interface SearchDocumentOptions {
+  locator: DocumentLocator
   documentKind: DocumentKind
   documentTitle?: string
 }
@@ -31,10 +31,18 @@ const requireString = (value: unknown, field: string): string => {
   return value
 }
 
+const requirePercent = (value: unknown, field: string): number => {
+  const number = requireFiniteNumber(value, field)
+  if (number < 0 || number > 100) {
+    throw new Error(`Risposta ricerca non valida: "${field}" deve essere tra 0 e 100`)
+  }
+  return number
+}
+
 const normalizeBackendMatch = (
   value: unknown,
   query: string,
-  options: SearchArchiveOptions,
+  options: SearchDocumentOptions,
   index: number
 ): DocumentMatch => {
   if (!value || typeof value !== 'object') {
@@ -48,16 +56,16 @@ const normalizeBackendMatch = (
   }
 
   return {
-    id: typeof match.id === 'string' ? match.id : `${options.docId}-${page}-${index}`,
-    docId: options.docId,
+    id: typeof match.id === 'string' ? match.id : `${options.locator.id}-${page}-${index}`,
+    docId: options.locator.id,
     docTitle: options.documentTitle || '',
     kind: options.documentKind,
     page,
     q: query,
-    x0Pct: requireFiniteNumber(match.x0Pct, 'x0Pct'),
-    x1Pct: requireFiniteNumber(match.x1Pct, 'x1Pct'),
-    y0Pct: requireFiniteNumber(match.y0Pct, 'y0Pct'),
-    y1Pct: requireFiniteNumber(match.y1Pct, 'y1Pct'),
+    x0Pct: requirePercent(match.x0Pct, 'x0Pct'),
+    x1Pct: requirePercent(match.x1Pct, 'x1Pct'),
+    y0Pct: requirePercent(match.y0Pct, 'y0Pct'),
+    y1Pct: requirePercent(match.y1Pct, 'y1Pct'),
     charIdx: typeof match.charIdx === 'number' ? match.charIdx : undefined,
     qLength: typeof match.qLen === 'number' ? match.qLen : query.length,
     snippet: requireString(match.snippet, 'snippet'),
@@ -66,29 +74,37 @@ const normalizeBackendMatch = (
 }
 
 /**
- * Cerca un documento indicizzato dal backend e restituisce match canonici.
+ * Cerca un documento tramite il resolver unificato del backend.
  */
-export async function searchArchiveDocument(
+export async function searchDocument(
   query: string,
-  options: SearchArchiveOptions
+  options: SearchDocumentOptions
 ): Promise<DocumentMatch[]> {
   const normalizedQuery = query.trim()
   if (!normalizedQuery) {
     throw new Error('La query di ricerca non può essere vuota')
   }
-  if (!options.docId.trim()) {
+  if (!options.locator.id.trim()) {
     throw new Error('docId è obbligatorio per la ricerca documentale')
   }
 
-  const response = await fetch(
-    `${getApiBaseUrl()}/api/search/archive?q=${encodeURIComponent(normalizedQuery)}&docId=${encodeURIComponent(options.docId)}`
-  )
+  const params = new URLSearchParams({
+    q: normalizedQuery,
+    docId: options.locator.id
+  })
+  if (options.locator.hash) params.set('hash', options.locator.hash)
+  if (options.locator.storageKey) params.set('storageKey', options.locator.storageKey)
+  if (options.locator.filename) params.set('filename', options.locator.filename)
+
+  const response = await fetch(`${getApiBaseUrl()}/api/search/document?${params.toString()}`)
 
   if (!response.ok) {
-    throw new Error(`Ricerca non riuscita (${response.status} ${response.statusText})`)
+    const errorBody = await response.json().catch(() => null) as { error?: unknown } | null
+    const detail = typeof errorBody?.error === 'string' ? `: ${errorBody.error}` : ''
+    throw new Error(`Ricerca non riuscita (${response.status} ${response.statusText})${detail}`)
   }
 
-  const data = (await response.json()) as ArchiveSearchResponse
+  const data = (await response.json()) as DocumentSearchResponse
   if (!Array.isArray(data.matches)) {
     throw new Error('Risposta ricerca non valida: "matches" deve essere un array')
   }
