@@ -12,6 +12,10 @@ import type { Comparto } from '@/types'
 import { api } from '@/lib/api'
 import type { DrawerType } from '../features/drawers/types'
 import { deduplicateDocuments } from '@/utils/documentDeduplication'
+import {
+  getRestorableLayoutForPratica,
+  saveLastWorkspaceSession,
+} from '@/utils/lastWorkspaceSession'
 import './DockWorkspaceV3.css'
 
 // ✅ RIMOSSO: Context non più necessario - ogni viewer gestisce la propria attivazione via props.api.onDidActiveChange
@@ -1100,15 +1104,14 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   const onReady = useCallback((event: DockviewReadyEvent) => {
     dockviewApiRef.current = event.api
 
-    // Carica layout salvato
+    // Ripristina layout solo se è l'ultima pratica lasciata aperta; altrimenti riparte da zero
     try {
-      const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const layout = JSON.parse(saved)
+      const layout = getRestorableLayoutForPratica(praticaId)
+      if (layout) {
         event.api.fromJSON(layout)
       }
     } catch (err) {
-      console.error('[DOCK-V3] Errore caricamento layout:', err)
+      console.error('[DOCK-V3] Errore caricamento layout ultima sessione:', err)
     }
 
     // ✅ Funzione helper per sbloccare tutti i gruppi
@@ -1345,15 +1348,20 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       }
     })
 
-    // Salva layout quando cambia
+    // Salva solo l'ultima sessione (pratica corrente + layout)
     const disposableLayout = event.api.onDidLayoutChange(() => {
-      // ✅ RIMOSSO: updateActivePanel - ogni viewer gestisce la propria attivazione
-
       try {
+        if (!praticaId) return
         const layout = event.api.toJSON()
-        localStorage.setItem(storageKey, JSON.stringify(layout))
+        saveLastWorkspaceSession(praticaId, layout)
+        // Legacy per-pratica: non aggiornare più ws_dock_v3_* (evita restore non coordinato)
+        try {
+          localStorage.removeItem(storageKey)
+        } catch {
+          // ignore
+        }
       } catch (err) {
-        console.error('[DOCK-V3] Errore salvataggio layout:', err)
+        console.error('[DOCK-V3] Errore salvataggio layout ultima sessione:', err)
       }
     })
 
@@ -1370,7 +1378,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       disposableLayoutChange.dispose()
       disposableLayout.dispose()
     }
-  }, [storageKey, enableDragMode, disableDragMode])
+  }, [storageKey, praticaId, enableDragMode, disableDragMode])
 
   // Handler per click su drawer tab
   const handleDrawerTabClick = useCallback((drawerKey: string, drawerId: string) => {

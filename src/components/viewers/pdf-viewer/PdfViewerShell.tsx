@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useCallback, useRef, useEffect, useState } from 'react'
 import { usePdfShellState } from './hooks/usePdfShellState'
 import { useDocumentSearchPanelResizer } from '../../search/useDocumentSearchPanelResizer'
 import { usePdfPlugins } from './hooks/usePdfPlugins'
-import { PdfViewerCore } from './components/PdfViewerCore'
+import { PdfViewerCore, type PdfViewerHandle } from './components/PdfViewerCore'
 import { AnnotationOverlays } from './components/AnnotationOverlays'
 import { SearchPanel } from './components/SearchPanel'
 import { ContextMenu } from './components/ContextMenu'
@@ -11,6 +11,8 @@ import { ExtractDialog } from './components/ExtractDialog'
 import { PdfUnifiedToolbar } from './components/PdfUnifiedToolbar'
 import { OcrLayoutDebug } from './components/OcrLayoutDebug'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
+import { useViewerPanelLifecycle } from '../common/hooks/useViewerPanelLifecycle'
+import type { ViewerPanelApi } from '../common/types/viewer.types'
 
 interface PdfViewerShellProps {
   fileUrl: string
@@ -24,11 +26,8 @@ interface PdfViewerShellProps {
   praticaId?: string
   docName?: string
   hasNativeText?: boolean
-  /**
-   * ✅ API del pannello Dockview - usata per gestire l'attivazione via onDidActiveChange
-   * Se non fornita, il viewer non gestisce l'attivazione automaticamente
-   */
-  panelApi?: any
+  /** Panel lifecycle API used to synchronize activation and dimensions. */
+  panelApi?: ViewerPanelApi
   /**
    * @deprecated Usa panelApi invece. Mantenuto per retrocompatibilità.
    */
@@ -52,53 +51,17 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
-  const viewerRef = useRef<any>(null) // PdfViewerHandle ref
+  const viewerRef = useRef<PdfViewerHandle | null>(null)
 
-  // ✅ State interno per gestire l'attivazione via panelApi.onDidActiveChange
-  const [isActive, setIsActive] = React.useState<boolean>(() => {
-    // ✅ Inizializza con panelApi.isActive se disponibile, altrimenti usa prop legacy
-    if (panelApi && typeof panelApi.isActive === 'boolean') {
-      return panelApi.isActive
-    }
-    return isActiveProp ?? false
+  const refreshViewerLayout = useCallback(() => {
+    viewerRef.current?.refreshLayout()
+  }, [])
+
+  const isActive = useViewerPanelLifecycle({
+    panelApi,
+    fallbackIsActive: isActiveProp ?? false,
+    onLayoutChange: refreshViewerLayout
   })
-
-  // ✅ Registra listener per onDidActiveChange se panelApi è disponibile
-  React.useEffect(() => {
-    if (!panelApi) {
-      // ✅ Se non c'è panelApi, usa prop legacy
-      console.log('[PDF-VIEWER] panelApi non disponibile, uso prop legacy:', { docId, isActiveProp })
-      setIsActive(isActiveProp ?? false)
-      return
-    }
-
-    console.log('[PDF-VIEWER] panelApi disponibile:', { docId, hasOnDidActiveChange: typeof panelApi.onDidActiveChange === 'function', isActive: panelApi.isActive })
-
-    // ✅ Verifica se onDidActiveChange esiste
-    if (typeof panelApi.onDidActiveChange === 'function') {
-      const disposable = panelApi.onDidActiveChange((event: any) => {
-        // ✅ event.isActive è boolean che indica se il pannello è attivo
-        console.log('[PDF-VIEWER] onDidActiveChange chiamato:', { docId, isActive: event.isActive, event })
-        setIsActive(event.isActive ?? false)
-      })
-
-      // ✅ Controlla anche lo stato iniziale
-      if (typeof panelApi.isActive === 'boolean') {
-        console.log('[PDF-VIEWER] Stato iniziale da panelApi.isActive:', { docId, isActive: panelApi.isActive })
-        setIsActive(panelApi.isActive)
-      }
-
-      return () => {
-        disposable.dispose()
-      }
-    } else {
-      // ✅ Fallback: usa proprietà diretta se disponibile
-      console.warn('[PDF-VIEWER] onDidActiveChange non disponibile, uso fallback:', { docId, isActive: panelApi.isActive })
-      if (typeof panelApi.isActive === 'boolean') {
-        setIsActive(panelApi.isActive)
-      }
-    }
-  }, [panelApi, isActiveProp, docId])
 
   // Plugin management
   const plugins = usePdfPlugins()

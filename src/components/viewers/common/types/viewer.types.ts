@@ -150,6 +150,26 @@ export interface ExtractCard {
   createdAt: Date
 }
 
+export interface ViewerPanelDisposable {
+  dispose: () => void
+}
+
+/**
+ * Minimal panel contract required by document viewers.
+ * It keeps viewer code independent from Dockview's complete API surface.
+ */
+export interface ViewerPanelApi {
+  readonly isActive: boolean
+  readonly width: number
+  readonly height: number
+  onDidActiveChange: (
+    listener: (event: { isActive: boolean }) => void
+  ) => ViewerPanelDisposable
+  onDidDimensionsChange: (
+    listener: (event: { width: number; height: number }) => void
+  ) => ViewerPanelDisposable
+}
+
 export interface ViewerShellProps {
   fileUrl: string
   page?: number
@@ -159,11 +179,8 @@ export interface ViewerShellProps {
   praticaId?: string
   docName?: string
   hasNativeText?: boolean
-  /**
-   * ✅ API del pannello Dockview - usata per gestire l'attivazione via onDidActiveChange
-   * Se non fornita, il viewer non gestisce l'attivazione automaticamente
-   */
-  panelApi?: any
+  /** Panel lifecycle API used to synchronize activation and dimensions. */
+  panelApi?: ViewerPanelApi
   /**
    * @deprecated Usa panelApi invece. Mantenuto per retrocompatibilità.
    */

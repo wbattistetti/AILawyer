@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 export type PdfViewerHandle = {
 	jumpToPage: (page1Based: number) => void;
 	zoomTo: (scale: number) => void;
+	refreshLayout: () => void;
 	find: (keyword: string) => void;
 	isReady: () => boolean;
 };
@@ -253,6 +254,12 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		},
 		zoomTo: (scale: number) => {
 			execOrQueue(() => (zoomPluginInstance as any).zoomTo?.(scale));
+		},
+		refreshLayout: () => {
+			execOrQueue(() => {
+				const scale = scaleRef.current || 1
+				;(zoomPluginInstance as any).zoomTo?.(scale)
+			})
 		},
 		find: (keyword: string) => {
 			execOrQueue(() => (searchPluginInstance as any).jumpToNextMatch?.({

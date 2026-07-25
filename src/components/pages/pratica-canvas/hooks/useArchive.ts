@@ -69,10 +69,14 @@ export function useArchive(
   }, [documenti])
 
   const [openDocumentIds, setOpenDocumentIds] = useState<Set<string>>(new Set())
+  const [documentsLoaded, setDocumentsLoaded] = useState(false)
 
   // ✅ Load documenti on mount
   useEffect(() => {
     if (!praticaId) return
+
+    let cancelled = false
+    setDocumentsLoaded(false)
 
     const loadDocumenti = async () => {
       try {
@@ -86,6 +90,7 @@ export function useArchive(
 
         // ✅ Log rimosso per ridurre spam console
 
+        if (cancelled) return
         store.setDocuments(mergedDocs)
       } catch (error) {
         console.error('[ARCH][LOAD] Errore caricamento documenti:', error)
@@ -94,10 +99,15 @@ export function useArchive(
           description: 'Impossibile caricare i documenti',
           variant: 'destructive'
         })
+      } finally {
+        if (!cancelled) setDocumentsLoaded(true)
       }
     }
 
     loadDocumenti()
+    return () => {
+      cancelled = true
+    }
   }, [praticaId]) // ✅ Rimosso store dalla dependency array per evitare loop infiniti
 
   // ✅ handleFileDrop è ora gestito da useFileUpload hook (estratta per modularità)
@@ -299,6 +309,7 @@ export function useArchive(
 
   return {
     documenti,
+    documentsLoaded,
     uploads,
     clientThumbByS3,
     pendingMoveConfirmations,

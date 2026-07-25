@@ -1,13 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
+import { shouldRestoreLastWorkspace } from '../../../../utils/lastWorkspaceSession';
 
+/**
+ * Gestisce viewMode e ref dock.
+ * Ripristina viewMode solo se la pratica è l'ultima sessione lasciata aperta.
+ */
 export function useWorkspaceManager(id: string | undefined) {
     const [viewMode, setViewMode] = useState<'archivio' | 'tavolo'>('archivio');
     const dockV2Ref = useRef<DockWorkspaceV3Handle | null>(null);
 
-    // Restore viewMode from localStorage
     useEffect(() => {
         if (!id) return;
+
+        if (!shouldRestoreLastWorkspace(id)) {
+            setViewMode('archivio');
+            return;
+        }
 
         try {
             const raw = localStorage.getItem(`ws_${id}`);
@@ -15,9 +24,13 @@ export function useWorkspaceManager(id: string | undefined) {
                 const ws = JSON.parse(raw);
                 if (ws.viewMode === 'tavolo' || ws.viewMode === 'archivio') {
                     setViewMode(ws.viewMode);
+                    return;
                 }
             }
-        } catch { }
+        } catch {
+            // ignore parse errors
+        }
+        setViewMode('archivio');
     }, [id]);
 
     const persistViewMode = (mode: 'archivio' | 'tavolo') => {

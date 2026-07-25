@@ -37,6 +37,8 @@ import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
 import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
 import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemoriaRenderer';
+import { OrphanDocPanelCloser } from './pratica-canvas/components/OrphanDocPanelCloser'
+import { findDocumentByCriteria } from './pratica-canvas/hooks/useArchiveHelpers'
 import { useDocumentStore } from '../../stores/documentStore/store';
 
 // ✅ Helper: calcola hash SHA-256 del file (client-side)
@@ -181,6 +183,7 @@ export function PraticaCanvasPage() {
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
     documenti,
+    documentsLoaded,
     clientThumbByS3,
     uploads,
     handleFileDrop,
@@ -1536,9 +1539,11 @@ export function PraticaCanvasPage() {
       {/* Main Content: Archivio (sx) + Tavolo (dx) sempre insieme */}
       <div className="w-full overflow-hidden" style={{ height: `calc(100vh - ${headerH}px)` }}>
         <DockWorkspaceV3
+          key={id}
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v3_${id}`}
           headerHeight={headerH} // ✅ Passa altezza header per posizionare sidebar
+
           // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
           renderExplorer={() => (
             <Explorer
@@ -1571,9 +1576,18 @@ export function PraticaCanvasPage() {
             />
           )}
           renderDoc={(docId: string, panelApi?: any) => {
-            const doc = documenti.find(d => d.id === docId)
-            if (!doc) return <div className="p-4 text-sm">Documento non trovato.</div>
-            return renderDocViewer(doc, panelApi)
+            if (!documentsLoaded) {
+              return <div className="p-4 text-sm text-muted-foreground">Caricamento documento…</div>
+            }
+            const found = findDocumentByCriteria(documenti, {
+              id: docId,
+              hash: docId,
+              s3Key: docId,
+            })
+            if (!found) {
+              return <OrphanDocPanelCloser panelApi={panelApi} />
+            }
+            return renderDocViewer(found.doc, panelApi)
           }}
           renderEvents={() => <EventsTab />}
           renderContacts={() => <ThingCardsPanel kind="contact" />}
