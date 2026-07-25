@@ -4,7 +4,7 @@
  * Flusso:
  * 1. Un solo goto alla volta (generation id).
  * 2. jumpToPage → aspetta page-layer montata + scroll stabile su `.rpv-core__inner-pages`.
- * 3. Scroll fine diretto su inner-pages verso il box OCR (non solo scrollIntoView).
+ * 3. Scroll fine diretto su inner-pages verso il box OCR.
  */
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -27,7 +27,6 @@ export interface UsePdfJumpToProps {
 }
 
 const INNER_PAGES_SEL = '.rpv-core__inner-pages, [data-testid="core__inner-pages"]'
-const log = (...args: unknown[]) => console.log('[GOTO]', ...args)
 
 const resolveInnerPages = (root: HTMLElement | null): HTMLElement | null => {
 	if (!root) return null
@@ -36,7 +35,7 @@ const resolveInnerPages = (root: HTMLElement | null): HTMLElement | null => {
 }
 
 const resolvePageLayer = (searchRoot: ParentNode, page: number): HTMLElement | null => {
-	// In rpv la struttura è: .rpv-core__page-layer > [data-page-number] (non il contrario)
+	// In rpv: .rpv-core__page-layer > [data-page-number]
 	const holder = searchRoot.querySelector(`[data-page-number="${page}"]`) as HTMLElement | null
 	if (!holder || !document.contains(holder)) return null
 
@@ -48,9 +47,6 @@ const resolvePageLayer = (searchRoot: ParentNode, page: number): HTMLElement | n
 	if (rect.width > 0 && rect.height > 0) return layer
 	return null
 }
-
-const listHolders = (root: ParentNode): string[] =>
-	Array.from(root.querySelectorAll('[data-page-number]')).map((el) => el.getAttribute('data-page-number') || '?')
 
 /**
  * Aspetta page-layer montata + scroll stabile.
@@ -80,23 +76,9 @@ const waitForPageAfterJump = async (
 			const pageEl = resolvePageLayer(root, page)
 			const idleMs = Date.now() - lastScrollAt
 			const elapsed = Date.now() - start
-			// Pronto se: layer esiste E (scroll visto+idle 200ms, oppure già in pagina dopo 450ms)
 			const ready = !!pageEl && idleMs >= 200 && (sawScroll || elapsed >= 450)
 
-			if (elapsed % 1000 < 20) {
-				log('waiting…', {
-					page,
-					elapsed,
-					sawScroll,
-					idleMs,
-					hasLayer: !!pageEl,
-					holders: listHolders(root),
-					scrollTop: scroller?.scrollTop
-				})
-			}
-
 			if (ready && pageEl) {
-				log('page ready', { page, elapsed, sawScroll, scrollTop: scroller?.scrollTop })
 				return { pageEl, scroller: scroller || null }
 			}
 
@@ -104,14 +86,11 @@ const waitForPageAfterJump = async (
 		}
 
 		if (isCancelled()) {
-			log('cancelled while waiting', { page })
 			return { pageEl: null, scroller: getScroller() }
 		}
 
 		const scroller = getScroller()
-		const pageEl = resolvePageLayer(scroller || document, page)
-		log('timeout', { page, hasLayer: !!pageEl, holders: listHolders(scroller || document) })
-		return { pageEl, scroller }
+		return { pageEl: resolvePageLayer(scroller || document, page), scroller }
 	} finally {
 		scroller0?.removeEventListener('scroll', onScroll)
 	}
@@ -122,16 +101,14 @@ const scrollScrollerToMatch = (
 	scroller: HTMLElement,
 	pageEl: HTMLElement,
 	unitBox: UnitBox
-): { before: number; after: number; target: number } => {
+): void => {
 	const pr = pageEl.getBoundingClientRect()
 	const sr = scroller.getBoundingClientRect()
 	const matchTop = pr.top + unitBox.y0Pct * pr.height
 	const desired = scroller.scrollTop + (matchTop - sr.top) - Math.floor(scroller.clientHeight * 0.3)
 	const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
 	const target = Math.max(0, Math.min(max, desired))
-	const before = scroller.scrollTop
 	scroller.scrollTo({ top: target, left: scroller.scrollLeft, behavior: 'smooth' })
-	return { before, after: scroller.scrollTop, target }
 }
 
 export const usePdfJumpTo = ({
@@ -151,11 +128,8 @@ export const usePdfJumpTo = ({
 		const generation = ++generationRef.current
 		const isCancelled = () => generationRef.current !== generation
 
-		log('▶ start', { id: m.id, page: m.page, generation, docId })
-
 		if (typeof m.page !== 'number' || m.page < 1) {
-			console.error('[GOTO] pagina invalida', m.page)
-			return
+			throw new Error(`[GOTO] pagina invalida: ${m.page}`)
 		}
 		if (!m.rects?.length) {
 			throw new Error(`Match "${m.id}" senza rettangoli OCR`)
@@ -168,39 +142,16 @@ export const usePdfJumpTo = ({
 			|| resolveInnerPages(scrollHostRef.current)
 			|| resolveInnerPages(document.body)
 
-		const scrollerBefore = getScroller()
-		log('inner-pages', {
-			found: !!scrollerBefore,
-			scrollTop: scrollerBefore?.scrollTop,
-			clientHeight: scrollerBefore?.clientHeight,
-			scrollHeight: scrollerBefore?.scrollHeight,
-			canScrollY: scrollerBefore
-				? scrollerBefore.scrollHeight > scrollerBefore.clientHeight + 1
-				: false
-		})
-
-		if (typeof viewerRef.current?.jumpToPage === 'function') {
-			log('jumpToPage', m.page)
-			viewerRef.current.jumpToPage(m.page)
-		} else {
-			console.warn('[GOTO] jumpToPage missing')
+		if (typeof viewerRef.current?.jumpToPage !== 'function') {
+			throw new Error('[GOTO] jumpToPage non disponibile sul viewer')
 		}
+		viewerRef.current.jumpToPage(m.page)
 
 		const { pageEl, scroller } = await waitForPageAfterJump(m.page, getScroller, isCancelled)
-		if (isCancelled()) {
-			log('cancelled after wait', { generation, page: m.page })
-			return
-		}
+		if (isCancelled()) return
 		if (!pageEl) {
-			console.warn('[GOTO] ❌ page-layer missing', {
-				page: m.page,
-				holders: listHolders(document)
-			})
-			return
+			throw new Error(`[GOTO] page-layer non trovata per pagina ${m.page}`)
 		}
-		log('✅ pageEl', {
-			pageAttr: pageEl.closest('[data-page-number]')?.getAttribute('data-page-number')
-		})
 
 		ensureOverlayRootForPage(m.page)
 		bumpOverlayTick()
@@ -228,35 +179,21 @@ export const usePdfJumpTo = ({
 
 		const sc = scroller || getScroller()
 		if (!sc) {
-			console.warn('[GOTO] ❌ scroller missing at fine-scroll')
-			return
+			throw new Error('[GOTO] scroller .rpv-core__inner-pages non trovato')
 		}
 
-		const scrollResult = scrollScrollerToMatch(sc, pageEl, unitBox)
-		log('fine-scroll', { ...scrollResult, unitBox })
+		scrollScrollerToMatch(sc, pageEl, unitBox)
 
-		// Fallback: marker + scrollIntoView se lo scroll diretto non ha mosso (es. smooth in corso)
 		const overlay = document.querySelector(
 			`[data-search-match-id="${CSS.escape(m.id)}"][data-search-match-active="true"]`
 		) as HTMLElement | null
 		if (overlay) {
 			overlay.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
-			log('scrollIntoView overlay')
 		}
-
-		setTimeout(() => {
-			if (isCancelled()) return
-			log('▶ end', {
-				scrollTop: sc.scrollTop,
-				movedY: sc.scrollTop !== scrollResult.before,
-				target: scrollResult.target
-			})
-		}, 400)
 
 		bumpOverlayTick()
 	}, [
 		bumpOverlayTick,
-		docId,
 		ensureOverlayRootForPage,
 		hostRef,
 		overlayRootsRef,
@@ -273,8 +210,6 @@ export const usePdfJumpTo = ({
 			if (!match || typeof match.page !== 'number') {
 				throw new Error('Evento app:goto-match senza match valido')
 			}
-
-			log('event app:goto-match', { page: match.page, id: match.id })
 
 			const unitBox = matchBoxToUnit({
 				x0Pct: match.x0Pct ?? 0,

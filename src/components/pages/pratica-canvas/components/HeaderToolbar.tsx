@@ -1,3 +1,8 @@
+/**
+ * Barra fissa della pratica con navigazione e azioni principali.
+ */
+
+import { forwardRef } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Switch } from '../../../../components/ui/switch';
 import { ArrowLeft, Upload, RefreshCw, Loader2, FolderOpen, User, Network } from 'lucide-react';
@@ -18,7 +23,7 @@ interface HeaderToolbarProps {
   onOpenGraphBuilder?: () => void;
 }
 
-export function HeaderToolbar({
+export const HeaderToolbar = forwardRef<HTMLDivElement, HeaderToolbarProps>(function HeaderToolbar({
   pratica,
   onHomeClick,
   onOpenPratica,
@@ -30,9 +35,9 @@ export function HeaderToolbar({
   onOpenExplorer,
   onOpenCliente,
   onOpenGraphBuilder
-}: HeaderToolbarProps) {
+}: HeaderToolbarProps, ref) {
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-background/95 backdrop-blur border-b">
+    <div ref={ref} className="fixed top-0 left-0 right-0 z-[9999] bg-background/95 backdrop-blur border-b">
       <div className="w-full px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -136,4 +141,4 @@ export function HeaderToolbar({
       </div>
     </div>
   );
-}
+});

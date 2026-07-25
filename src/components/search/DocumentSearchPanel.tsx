@@ -7,6 +7,7 @@ import { GripVertical, X } from 'lucide-react'
 import { cryptoRandom } from '../../utils/misc'
 import { SearchProvider } from './SearchProvider'
 import { SearchPanelTree, type SearchPanelTreeHandle } from './SearchPanelTree'
+import { SearchSurface } from './SearchSurface'
 import type { DocumentSearchAdapter, SearchResultNode, SearchScope } from './types'
 
 interface DocumentSearchPanelProps {
@@ -91,10 +92,10 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
         </div>
       )}
 
-      <div
-        data-role="document-search-panel"
+      <SearchSurface
+        kind="document"
+        data-component="document-search-panel"
         data-document-kind={adapter.document.kind}
-        onMouseDown={(event) => event.stopPropagation()}
         className="relative z-50 isolate h-full border-l bg-background flex flex-col overflow-hidden min-w-0"
         style={{
           width: isOpen ? width : 0,
@@ -107,8 +108,13 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
           pointerEvents: isOpen ? 'auto' : 'none'
         }}
       >
-        <div className="document-search-header flex items-center justify-between px-3 py-2 border-b bg-muted flex-shrink-0">
-          <h3 className="font-semibold text-sm">Ricerca documento</h3>
+        <div className="document-search-header flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted flex-shrink-0">
+          <h3
+            className="min-w-0 truncate font-semibold text-sm"
+            title={`Cerca in ${adapter.document.title || 'questo documento'}`}
+          >
+            Cerca in {adapter.document.title || 'questo documento'}
+          </h3>
           <button
             className="p-1 hover:bg-muted rounded"
             title="Chiudi pannello"
@@ -143,7 +149,7 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
             />
           </SearchProvider>
         </div>
-      </div>
+      </SearchSurface>
     </>
   )
 })

@@ -1,147 +1,167 @@
-import React from 'react';
-import { Documento } from '../../../../types';
-import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
-import { SearchProvider } from '../../../search/SearchProvider';
-import { SearchPanelTree } from '../../../search/SearchPanelTree';
-import { api } from '../../../../lib/api';
-import * as pdfjsLib from 'pdfjs-dist';
+/**
+ * Ricerca globale della pratica: textbox in barra tab + pannello risultati a destra.
+ */
+
+import React, { useMemo, useState } from 'react'
+import { X } from 'lucide-react'
+import type { Documento } from '../../../../types'
+import type { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3'
+import { searchPracticeArchive, type PracticeSearchDocument } from '../../../search/archiveSearch'
+import { SearchInput } from '../../../search/SearchInput'
+import { SearchPanelTree } from '../../../search/SearchPanelTree'
+import { SearchProvider, useSearch } from '../../../search/SearchProvider'
+import { SearchSurface } from '../../../search/SearchSurface'
 
 interface SearchRendererProps {
-    documenti: Documento[];
-    dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
-    toast: any;
+  praticaId: string
+  documenti: Documento[]
+  dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>
+  toast: (options: { title: string; description?: string }) => void
 }
 
-export function SearchRenderer({ documenti, dockV2Ref, toast }: SearchRendererProps) {
-    return (
-        <SearchProvider
-            defaultScope={'archive'}
-            registry={{
-                getAllDocs: () => documenti.map(d => ({
-                    id: d.id,
-                    title: d.filename,
-                    hash: d.hash || '',
-                    pages: 0,
-                    kind: (d.mime?.includes('word') ? 'word' : 'pdf')
-                })),
-                getOpenDocs: () => [],
-                ensureDocOpen: async (docId: string) => {
-                    const d = documenti.find(x => x.id === docId);
-                    if (d) {
-                        dockV2Ref.current?.openDoc({ id: d.id, title: d.filename });
-                        toast({ title: 'Aperto nel Tavolo', description: d.filename });
-                    };
-                    return null;
-                },
-            }}
-            onSearch={async (q, _scope) => {
-                try {
-                    const anyPdf: any = pdfjsLib as any;
-                    if (anyPdf && anyPdf.GlobalWorkerOptions && !anyPdf.GlobalWorkerOptions.workerSrc) {
-                        anyPdf.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.7.107/build/pdf.worker.min.js';
-                    }
-                } catch { }
+const waitForViewer = (docId: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      window.removeEventListener('app:viewer-ready', handleReady)
+      reject(new Error(`Il viewer del documento "${docId}" non è diventato disponibile`))
+    }, 10_000)
+    const handleReady = (event: Event) => {
+      const readyDocId = (event as CustomEvent<{ docId?: string }>).detail?.docId
+      if (readyDocId !== docId) return
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('app:viewer-ready', handleReady)
+      resolve()
+    }
+    window.addEventListener('app:viewer-ready', handleReady)
+  })
 
-                const targets = documenti.filter(d => (d.mime?.includes('pdf') || d.filename.toLowerCase().endsWith('.pdf')));
-                const groups: any[] = [];
-                console.log('[ARCHIVE SEARCH] start', { q, targets: targets.length });
+/**
+ * Textbox sempre nella riga delle tab; i risultati aprono il pannello verticale condiviso.
+ */
+function PracticeSearchChrome({
+  panelOpen,
+  onPanelOpenChange,
+  onError
+}: {
+  panelOpen: boolean
+  onPanelOpenChange: (open: boolean) => void
+  onError: (message: string) => void
+}) {
+  const { results } = useSearch()
+  const [query, setQuery] = useState('')
 
-                for (const d of targets) {
-                    const fileUrl = (d as any).localUrl || api.getLocalFileUrl(d.ocrPdfKey || d.s3Key);
-                    try {
-                        // Fetch as ArrayBuffer to avoid CORS/URL issues
-                        const res = await fetch(fileUrl);
-                        const buf = await res.arrayBuffer();
-                        const doc = await (pdfjsLib as any).getDocument({ data: new Uint8Array(buf), disableWorker: false }).promise;
-                        const matches: any[] = [];
-                        let ord = 0;
-                        const total = doc.numPages || 0;
-                        console.log('[ARCHIVE SEARCH] doc', d.filename, { pages: total });
+  return (
+    <SearchSurface
+      kind="practice"
+      className="flex h-full flex-col items-end pointer-events-none"
+    >
+      <div className="pointer-events-auto">
+        <SearchInput
+          rolePrefix="archive"
+          searchQuery={query}
+          onSearchQueryChange={setQuery}
+          showScopeSelector={false}
+          placeholder="Cerca in tutti i documenti…"
+          variant="compact"
+          onSearchStart={() => onPanelOpenChange(true)}
+          onSearchError={(error) => onError(error.message)}
+        />
+      </div>
 
-                        for (let p = 1; p <= total; p++) {
-                            const page = await doc.getPage(p);
-                            const content = await page.getTextContent();
-                            const items = content.items as any[];
-                            let buffer = '';
-                            const boxes: { x: number; y: number; w: number; h: number }[] = [];
+      {panelOpen && (
+        <div className="pointer-events-auto flex min-h-0 w-80 flex-1 flex-col overflow-hidden border-l bg-background shadow-lg">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted px-3 py-2">
+            <h3 className="truncate text-sm font-semibold">
+              Risultati pratica{results[0] ? ` · ${results[0].total}` : ''}
+            </h3>
+            <button
+              type="button"
+              className="rounded p-1 hover:bg-background"
+              title="Chiudi risultati"
+              aria-label="Chiudi risultati"
+              onClick={() => onPanelOpenChange(false)}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <SearchPanelTree
+              rolePrefix="archive"
+              showInput={false}
+              showScopeSelector={false}
+              enableExpandedContext={false}
+              copyPageTextOnNavigate={false}
+            />
+          </div>
+        </div>
+      )}
+    </SearchSurface>
+  )
+}
 
-                            for (const it of items) {
-                                const s = (it.str || '') as string;
-                                const tx = it.transform;
-                                const h = (it.height as number) || Math.abs(tx[5] - (tx[5] - (it.height as number))) || 0;
-                                const cw = ((it.width as number) || 0) / Math.max(1, s.length);
+/**
+ * Collegamento ricerca globale ↔ apertura documenti della pratica.
+ */
+export function SearchRenderer({
+  praticaId,
+  documenti,
+  dockV2Ref,
+  toast
+}: SearchRendererProps) {
+  const [panelOpen, setPanelOpen] = useState(false)
 
-                                for (let i = 0; i < s.length; i++) {
-                                    const x = (tx[4] as number) + (cw * i);
-                                    const y = (tx[5] as number) - h;
-                                    boxes.push({ x, y, w: cw, h });
-                                }
-                                buffer += s + ' ';
-                            }
+  const searchableDocuments = useMemo<PracticeSearchDocument[]>(
+    () => documenti
+      .filter((document) => !praticaId || (document as Documento).praticaId === praticaId || !(document as Documento).praticaId)
+      .map((document) => ({
+        id: document.id,
+        title: document.filename,
+        hash: document.hash || '',
+        kind: document.mime?.includes('word') ? 'word' : 'pdf'
+      })),
+    [documenti, praticaId]
+  )
 
-                            const hay = buffer.toLowerCase();
-                            const needle = q.toLowerCase();
-                            let pos = 0;
+  const practiceDocuments = useMemo(
+    () => documenti.filter((document) =>
+      !document.praticaId || document.praticaId === praticaId
+    ),
+    [documenti, praticaId]
+  )
 
-                            while (true) {
-                                const idx = hay.indexOf(needle, pos);
-                                if (idx < 0) break;
-                                const start = idx, end = idx + needle.length;
-                                let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+  return (
+    <SearchProvider
+      defaultScope="archive"
+      registry={{
+        getAllDocs: () => searchableDocuments.map((document) => ({ ...document, pages: 0 })),
+        getOpenDocs: () => [],
+        ensureDocOpen: async (docId: string) => {
+          const document = practiceDocuments.find((candidate) => candidate.id === docId)
+          const title = document?.filename
+            || searchableDocuments.find((candidate) => candidate.id === docId)?.title
+            || docId
 
-                                for (let i = start; i < end && i < boxes.length; i++) {
-                                    const c = boxes[i];
-                                    l = Math.min(l, c.x);
-                                    t = Math.min(t, c.y);
-                                    r = Math.max(r, c.x + c.w);
-                                    b = Math.max(b, c.y + c.h);
-                                }
+          const workspace = dockV2Ref.current
+          if (!workspace) {
+            throw new Error('Impossibile aprire il documento: workspace non pronto')
+          }
 
-                                if (isFinite(l) && isFinite(t) && isFinite(r) && isFinite(b)) {
-                                    const vp = page.getViewport({ scale: 1 });
-                                    const x0Pct = l / vp.width, x1Pct = r / vp.width;
-                                    const y0Pct = (vp.height - b) / vp.height, y1Pct = (vp.height - t) / vp.height;
-
-                                    matches.push({
-                                        id: `${d.id}-${p}-${start}`,
-                                        docId: d.id,
-                                        docTitle: d.filename,
-                                        kind: 'pdf',
-                                        page: p,
-                                        q,
-                                        x0Pct,
-                                        x1Pct,
-                                        y0Pct,
-                                        y1Pct,
-                                        charIdx: start,
-                                        qLength: needle.length,
-                                        snippet: buffer.slice(Math.max(0, start - 40), Math.min(buffer.length, end + 40)).trim(),
-                                        score: 0,
-                                        ord: ord++
-                                    });
-                                }
-                                pos = end;
-                            }
-                        }
-
-                        console.log('[ARCHIVE SEARCH] doc done', d.filename, { matches: matches.length });
-                        groups.push({ doc: { id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: 'pdf' }, matches });
-                    } catch (err) {
-                        console.warn('[ARCHIVE SEARCH] doc error', d.filename, err);
-                        groups.push({ doc: { id: d.id, title: d.filename, hash: d.hash || '', pages: 0, kind: 'pdf' }, matches: [] });
-                    }
-                }
-
-                const total = groups.reduce((s, g) => s + g.matches.length, 0);
-                console.log('[ARCHIVE SEARCH] done', { total });
-                return { id: String(Date.now()), query: q, scope: 'archive' as any, total, groups } as any;
-            }}
-        >
-            {/* ✅ Solo risultati ricerca, senza layout split duplicato */}
-            {/* ✅ Usa flex-1 invece di h-full per comportamento "Fill" come VB.NET */}
-            <div className="flex flex-col flex-1 w-full min-h-0">
-                <SearchPanelTree rolePrefix="archive" showInput={true} />
-            </div>
-        </SearchProvider>
-    );
+          const viewerAlreadyMounted = workspace.openDoc({ id: docId, title })
+          if (!viewerAlreadyMounted && !document?.mime?.includes('word')) {
+            await waitForViewer(docId)
+          }
+          toast({ title: 'Documento aperto', description: title })
+        }
+      }}
+      onSearch={(query) => searchPracticeArchive(query, praticaId, searchableDocuments)}
+    >
+      <PracticeSearchChrome
+        panelOpen={panelOpen}
+        onPanelOpenChange={setPanelOpen}
+        onError={(message) => {
+          toast({ title: 'Ricerca non riuscita', description: message })
+        }}
+      />
+    </SearchProvider>
+  )
 }

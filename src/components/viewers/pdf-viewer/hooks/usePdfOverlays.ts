@@ -46,7 +46,7 @@ function createOverlayRootForPage(
 	const existing = overlayRootsRef.current.get(pageNum)
 	if (existing && document.contains(existing) && existing.parentElement === pageLayer) {
 		Object.assign(existing.style, OVERLAY_STYLE)
-		return false
+		return true
 	}
 	if (existing) {
 		existing.remove()
@@ -221,19 +221,17 @@ export function usePdfOverlays({
 		}
 	}, [selectMode, selectKind, hostRef, viewerReadyTick])
 
+	/** @returns true se il root overlay è disponibile e montato nel DOM */
 	const ensureOverlayRootForPage = (pageNum: number): boolean => {
 		const host = hostRef.current
-		if (!host) {
-			console.warn('[OVERLAYS] Host non disponibile per ensureOverlayRootForPage:', pageNum)
-			return false
-		}
+		if (!host) return false
 
 		if (overlayRootsRef.current.has(pageNum)) {
 			const existingRoot = overlayRootsRef.current.get(pageNum)!
 			if (!document.contains(existingRoot)) {
 				overlayRootsRef.current.delete(pageNum)
 			} else {
-				return false
+				return true
 			}
 		}
 

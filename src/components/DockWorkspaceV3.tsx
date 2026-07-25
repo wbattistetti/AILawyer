@@ -95,7 +95,8 @@ export type Props = {
 }
 
 export type DockWorkspaceV3Handle = {
-  openDoc: (doc: DocTab) => void
+  /** Attiva il documento e restituisce true se il viewer era già montato. */
+  openDoc: (doc: DocTab) => boolean
   openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => void
   openExplorer: () => void
   openCliente: (clienteId?: string) => void
@@ -178,6 +179,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     storageKey = 'ws_dock_v3',
     renderEvents,
     renderExplorer,
+    renderSearch,
     onLeftBorderTabChange,
     praticaId,
     clienti = [],
@@ -1483,8 +1485,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   useImperativeHandle(ref, () => ({
     openDoc: (doc: DocTab) => {
       if (!dockviewApiRef.current) {
-        console.warn('[DockWorkspaceV3] openDoc: dockviewApiRef.current è null')
-        return
+        throw new Error('Impossibile aprire il documento: workspace non ancora pronto')
       }
 
       const panelId = `doc-${doc.id}`
@@ -1498,8 +1499,9 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           // Fallback: usa l'API del pannello direttamente
           existingPanel.api.setActive()
         } else {
-          console.warn('[DockWorkspaceV3] openDoc: setActivePanel non disponibile, pannello:', existingPanel)
+          throw new Error(`Impossibile attivare il documento "${doc.title}"`)
         }
+        return true
       } else {
         const newPanel = dockviewApiRef.current.addPanel({
           id: panelId,
@@ -1515,6 +1517,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         if (newPanel?.group?.locked) {
           newPanel.group.locked = false
         }
+        return false
       }
     },
     openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
@@ -1655,10 +1658,9 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       <div
         className="w-full h-full relative transition-all duration-300"
         style={{
-          paddingTop: `${headerHeight}px`, // ✅ Aggiungi padding-top per compensare l'header
           ...(isDrawerStripPinned && isDrawerStripVisible
             ? DRAWER_STRIP_POSITION === 'top'
-              ? { paddingTop: `${headerHeight + 120}px` } // ✅ Somma headerHeight + padding cassetti
+              ? { paddingTop: '120px' }
               : DRAWER_STRIP_POSITION === 'bottom'
               ? { paddingBottom: '120px' }
               : DRAWER_STRIP_POSITION === 'left'
@@ -1675,6 +1677,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           className="dockview-theme-light" // ✅ Il CSS si adatta automaticamente al tema via variabili CSS
         />
       </div>
+
+      {renderSearch && (
+        <div className="pointer-events-none absolute inset-0 z-[60] flex justify-end">
+          {renderSearch()}
+        </div>
+      )}
 
       {/* ✅ Due linguette separate affiancate quando nascosti (Stato 1) */}
       {drawerTabs.length > 0 && !isDrawerStripVisible && (

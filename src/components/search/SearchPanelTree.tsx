@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback, useId } from 'react'
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw, Trash2 } from 'lucide-react'
 import { useSearch } from './SearchProvider'
-import type { SearchScope } from './types'
 import { useToast } from '@/hooks/use-toast'
 import { extractPageText } from '@/utils/extractPageText'
+import { SearchInput, type SearchInputHandle } from './SearchInput'
 
 export interface SearchPanelTreeHandle {
   focusInput: () => void
@@ -39,6 +39,8 @@ interface SearchPanelTreeProps {
   copyPageTextOnNavigate?: boolean
   /** Etichetta dello scope corrente per il tipo di documento. */
   currentScopeLabel?: string
+  /** Testo guida mostrato nell'input di ricerca. */
+  searchPlaceholder?: string
 }
 
 export const SearchPanelTree = React.memo(
@@ -56,11 +58,10 @@ export const SearchPanelTree = React.memo(
       resetSearchKey,
       enableExpandedContext = true,
       copyPageTextOnNavigate = true,
-      currentScopeLabel = 'Questo documento'
+      currentScopeLabel = 'Questo documento',
+      searchPlaceholder = 'Cerca...'
     }, ref) => {
-      const listId = useId()
-      const inputDataRole = `${rolePrefix}-search-input`
-      const { scope, setScope, history, results, busy, search, clearNode, navigateTo } = useSearch()
+      const { results, busy, clearNode, navigateTo } = useSearch()
       const { toast } = useToast()
       const hasExternalSync = typeof onSearchQueryChange === 'function'
       const isDomUncontrolled = domUncontrolledSearch === true && hasExternalSync
@@ -72,7 +73,7 @@ export const SearchPanelTree = React.memo(
       const [selectedId, setSelectedId] = useState<string | null>(null)
       const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
       const lastScrolledQuery = useRef<string | null>(null)
-      const inputRef = useRef<HTMLInputElement | null>(null)
+      const inputRef = useRef<SearchInputHandle | null>(null)
 
       // Stato per gestire contesti espansi e slider
       const [expandedTexts, setExpandedTexts] = useState<Record<string, string>>({})
@@ -84,9 +85,9 @@ export const SearchPanelTree = React.memo(
       // Il pannello è sempre montato, quindi inputRef.current è sempre disponibile
       useImperativeHandle(ref, () => ({
         focusInput: () => {
-          inputRef.current?.focus({ preventScroll: true })
+          inputRef.current?.focus()
         },
-        getInputElement: () => inputRef.current
+        getInputElement: () => inputRef.current?.getElement() ?? null
       }), [])
 
       // ❌ RIMOSSO: useEffect con setTimeout per focus automatico
@@ -106,23 +107,6 @@ export const SearchPanelTree = React.memo(
         }
       }, [results.length, initialQuery])
 
-      const onSubmit = async () => {
-        const raw = isDomUncontrolled ? (inputRef.current?.value ?? '') : qForUi
-        const trimmed = String(raw).trim()
-        if (!trimmed) return
-        try {
-          await search(trimmed)
-          if (!hasExternalSync) onSearchQChange?.(trimmed)
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Errore imprevisto durante la ricerca'
-          console.error('[SEARCH] Ricerca fallita:', error)
-          toast({
-            title: 'Ricerca non riuscita',
-            description: message,
-            variant: 'destructive'
-          })
-        }
-      }
       const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
       const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
 
@@ -249,55 +233,19 @@ export const SearchPanelTree = React.memo(
   return (
     <div className="flex flex-1 w-full min-h-0 flex-col text-sm">
       {showInput && (
-        <div className="p-2 border-b bg-background text-foreground flex items-center gap-2 flex-shrink-0">
-          <SearchIcon size={16} className="text-muted-foreground" />
-          <input
-            key={isDomUncontrolled ? String(resetSearchKey ?? 'search-input') : undefined}
-            ref={inputRef}
-            data-role={inputDataRole}
-            type="text"
-            list={listId}
-            {...(isDomUncontrolled
-              ? {
-                  defaultValue: searchQuery ?? '',
-                  onInput: (e: React.FormEvent<HTMLInputElement>) => {
-                    setQ(e.currentTarget.value)
-                  },
-                }
-              : {
-                  value: qForUi,
-                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value),
-                })}
-            onKeyDown={(e)=>{ if(e.key==='Enter') void onSubmit() }}
-            onClick={() => {
-              if (inputRef.current && document.activeElement !== inputRef.current) {
-                inputRef.current.focus({ preventScroll: true })
-              }
-            }}
-            autoFocus={false}
-            className="flex-1 border rounded px-2 py-1 bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            placeholder="Cerca..."
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-          <datalist id={listId}>
-            {history.map(h => <option key={h} value={h} />)}
-          </datalist>
-          {showScopeSelector && (
-            <select
-              value={scope}
-              onChange={(e)=>setScope(e.target.value as SearchScope)}
-              className="border rounded px-1 py-1 bg-background text-foreground"
-            >
-              <option value="current">{currentScopeLabel}</option>
-              <option value="open">Documenti aperti</option>
-              <option value="archive">Tutto archivio</option>
-            </select>
-          )}
-          <button className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted" onClick={() => void onSubmit()}>Cerca</button>
-        </div>
+        <SearchInput
+          ref={inputRef}
+          rolePrefix={rolePrefix}
+          initialQuery={initialQuery}
+          searchQuery={qForUi}
+          onSearchQueryChange={setQ}
+          onSearchQChange={onSearchQChange}
+          domUncontrolled={isDomUncontrolled}
+          resetKey={resetSearchKey}
+          showScopeSelector={showScopeSelector}
+          currentScopeLabel={currentScopeLabel}
+          placeholder={searchPlaceholder}
+        />
       )}
       {busy && <div className="p-2 text-muted-foreground flex-shrink-0">Indicizzazione/ricerca in corso…</div>}
       <div className="flex-1 overflow-auto min-h-0">

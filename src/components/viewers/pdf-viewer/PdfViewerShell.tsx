@@ -11,6 +11,7 @@ import { ExtractDialog } from './components/ExtractDialog'
 import { PdfUnifiedToolbar } from './components/PdfUnifiedToolbar'
 import { OcrLayoutDebug } from './components/OcrLayoutDebug'
 import { SearchMatchOverlays } from './components/SearchMatchOverlays'
+import { DraftOverlay } from '../word-viewer/components/DraftOverlay'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 import { useViewerPanelLifecycle } from '../common/hooks/useViewerPanelLifecycle'
 import type { ViewerPanelApi } from '../common/types/viewer.types'
@@ -418,6 +419,14 @@ export const PdfViewerShell: React.FC<PdfViewerShellProps> = ({
         ensureOverlayRootForPage={shell.ensureOverlayRootForPage}
         praticaId={praticaId}
       />
+      {shell.rectangleDraft && (
+        <DraftOverlay
+          draft={shell.rectangleDraft}
+          pageElsRef={shell.pageElsRef}
+          overlayRootsRef={shell.overlayRootsRef}
+          hostRef={scrollHostRef as React.RefObject<HTMLElement>}
+        />
+      )}
 
       {/* Debug: mostra prima parola di ogni pagina */}
       <OcrLayoutDebug

@@ -120,7 +120,7 @@ export const useOcrInspector = (docId?: string) => {
     // Usa SEMPRE il layer di pagina di react-pdf-viewer
     const pages = container.querySelectorAll('.rpv-core__page-layer') as NodeListOf<HTMLElement>
     const pageEl = (pages && pages.length >= pageNum) ? pages[pageNum - 1] : null
-    if (!pageEl) { console.warn('[GOTO] page layer not found'); return null }
+    if (!pageEl) return null
 
     let overlay = pageEl.querySelector('.ocr-overlay') as HTMLDivElement | null
     if (!overlay) {
@@ -149,14 +149,11 @@ export const useOcrInspector = (docId?: string) => {
     for (const [pageNum, hits] of byPage) {
       const overlay = hostRef ? ensureOverlayForPage(pageNum, hostRef) : null
       if (!overlay) {
-        // SKIP: pagina non ancora renderizzata (verrà disegnata dopo lo scroll)
-        try { console.log('[GOTO][draw] page not ready, will draw on scroll', { pageNum }) } catch { }
         continue
       }
       overlay.innerHTML = ''
       const w = overlay.clientWidth
       const h = overlay.clientHeight
-      try { console.log('[GOTO][draw] overlay size', { pageNum, w, h, hits: hits.length }) } catch { }
       for (const m of hits) {
         const x = Math.max(0, Math.min(w, m.x0Pct * w))
         const y = Math.max(0, Math.min(h, m.y0Pct * h))
@@ -174,7 +171,6 @@ export const useOcrInspector = (docId?: string) => {
         el.style.borderRadius = '2px'
         el.style.pointerEvents = 'none'
         overlay.appendChild(el)
-        try { console.log('[GOTO][draw] box', { page: pageNum, x0Pct: m.x0Pct, y0Pct: m.y0Pct, x1Pct: m.x1Pct, y1Pct: m.y1Pct, x, y, rw, rh }) } catch { }
       }
     }
   }

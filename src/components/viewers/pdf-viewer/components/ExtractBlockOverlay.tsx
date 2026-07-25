@@ -11,6 +11,7 @@ import { mapTextToBoundingBoxes, type OcrWord, type HighlightResult } from '../.
 import { upsertPersons } from '../../../../features/entities/entity-index'
 import { PersonImageHighlightOverlay } from './PersonImageHighlightOverlay'
 import { useToast } from '@/hooks/use-toast'
+import { isSearchSurfaceTarget } from '../../../search/searchSurfaceContract'
 
 interface ExtractBlockOverlayProps {
 	selection: PersistentSelection
@@ -265,31 +266,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		const handleCaptureClick = (e: MouseEvent) => {
 			const target = e.target as HTMLElement
 
-			// ✅ GUARDIA ESPLICITA: Non toccare eventi del pannello di ricerca
-			if (target?.closest('[data-role="document-search-panel"]')) {
-				console.log('[EXTRACT-OVERLAY][GUARD] click ignorato - dentro pannello ricerca', {
-					target,
-					tagName: target?.tagName,
-					isButton: target?.closest('button') !== null,
-					isInput: target?.closest('input') !== null
-				})
+			if (isSearchSurfaceTarget(target)) {
 				return
-			}
-
-			// ✅ LOGGING: Verifica se intercetta click su "Cerca" o input
-			const isSearchButton = target?.closest('button')?.textContent?.includes('Cerca') ||
-			                       target?.closest('button')?.querySelector('svg[class*="Search"]') !== null
-			const isSearchInput = target?.closest('[data-role="pdf-search-input"]') !== null ||
-			                      target?.closest('[data-role="document-search-panel"]')?.querySelector('input') === target
-
-			if (isSearchButton || isSearchInput) {
-				console.log('[EXTRACT-OVERLAY][INTERCEPT] ⚠️ click intercettato su elemento ricerca!', {
-					target,
-					isSearchButton,
-					isSearchInput,
-					tagName: target?.tagName,
-					currentTarget: e.currentTarget
-				})
 			}
 
 			// ✅ NON bloccare se il click è su un elemento interattivo (button, input, textarea, etc.)
@@ -322,31 +300,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 		const handleCaptureMouseDown = (e: MouseEvent) => {
 			const target = e.target as HTMLElement
 
-			// ✅ GUARDIA ESPLICITA: Non toccare eventi del pannello di ricerca
-			if (target?.closest('[data-role="document-search-panel"]')) {
-				console.log('[EXTRACT-OVERLAY][GUARD] mousedown ignorato - dentro pannello ricerca', {
-					target,
-					tagName: target?.tagName,
-					isButton: target?.closest('button') !== null,
-					isInput: target?.closest('input') !== null
-				})
+			if (isSearchSurfaceTarget(target)) {
 				return
-			}
-
-			// ✅ LOGGING: Verifica se intercetta click su "Cerca" o input
-			const isSearchButton = target?.closest('button')?.textContent?.includes('Cerca') ||
-			                       target?.closest('button')?.querySelector('svg[class*="Search"]') !== null
-			const isSearchInput = target?.closest('[data-role="pdf-search-input"]') !== null ||
-			                      target?.closest('[data-role="document-search-panel"]')?.querySelector('input') === target
-
-			if (isSearchButton || isSearchInput) {
-				console.log('[EXTRACT-OVERLAY][INTERCEPT] ⚠️ mousedown intercettato su elemento ricerca!', {
-					target,
-					isSearchButton,
-					isSearchInput,
-					tagName: target?.tagName,
-					currentTarget: e.currentTarget
-				})
 			}
 
 			// ✅ NON bloccare se il mousedown è su un elemento interattivo (button, input, textarea, etc.)

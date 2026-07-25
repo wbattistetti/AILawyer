@@ -239,24 +239,11 @@ export const useNativeSelection = ({
 
 		// console.log('[NATIVE-SEL][DOWN] Host found, checking overlay')
 
-		// ✅ CRITICO: Se esiste un overlay attivo, blocca l'inizio di un nuovo drag
-		const overlayExists = document.querySelector('[data-extract-overlay="true"]')
+		// Un estratto aperto resta persistente finché l'utente non preme Annulla.
+		// Blocca quindi nuovi drag senza cancellare la selezione esistente.
+		const overlayExists = host.querySelector('[data-extract-overlay="true"]')
 		if (overlayExists) {
-			// console.log('[NATIVE-SEL][DOWN] Overlay exists')
-			// ✅ Verifica se il click è dentro l'overlay
-			const isInsideOverlay = target && (
-				target.closest('[data-extract-overlay="true"]') ||
-				target.closest('.extract-block-overlay') ||
-				overlayExists.contains(target)
-			)
-
-			if (isInsideOverlay) {
-				// console.log('[NATIVE-SEL][DOWN] Click inside overlay, exiting')
-				return // ✅ NON iniziare un nuovo drag se l'overlay è attivo
-			}
-
-			// ✅ Se l'overlay esiste ma il click è fuori, chiudi l'overlay prima di iniziare un nuovo drag
-			setPersistentSelections([])
+			return
 		}
 
 		const x = ev.clientX
@@ -264,16 +251,7 @@ export const useNativeSelection = ({
 		const hostR = host.getBoundingClientRect()
 		// console.log('[NATIVE-SEL][DOWN] Mouse pos:', { x, y }, 'Host bounds:', hostR)
 
-		if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) {
-			// console.log('[NATIVE-SEL][DOWN] Click outside viewer bounds, exiting')
-			// Click fuori dal viewer: cancella tutto
-			if (persistentSelectionsRef.current.length > 0 || draftRef.current) {
-				setPersistentSelections([])
-				setDraft(null)
-				setContextMenu({ x: 0, y: 0, visible: false })
-			}
-			return
-		}
+		if (x < hostR.left || x > hostR.right || y < hostR.top || y > hostR.bottom) return
 
 		// ✅ SEMPLIFICAZIONE: useNativeSelection NON gestisce più le persistent selections create da useRectSelection
 		// Le persistent selections create da useRectSelection (drag rettangolo) sono gestite da useRectSelection stesso
@@ -449,44 +427,9 @@ export const useNativeSelection = ({
 			hostRef.current.classList.remove('is-dragging')
 		}
 
-		// ✅ Se NON stava selezionando, verifica se il click è fuori dai rettangoli persistenti
+		// La selezione persistente appartiene all'overlay estratto e si chiude
+		// esclusivamente tramite la sua azione Annulla, come nel Word viewer.
 		if (!isSelectingRef.current) {
-			// ✅ PRIMA verifica se il click è dentro l'overlay ExtractBlock (che si estende sopra e sotto il rettangolo)
-			const isInsideOverlay2 = target && (
-				target.closest('[data-extract-overlay="true"]') ||
-				target.closest('.extract-block-overlay')
-			)
-
-			if (isInsideOverlay2) {
-				return // ✅ NON rimuovere la selezione se il click è dentro l'overlay
-			}
-
-			// Verifica se il click è dentro un rettangolo persistente
-			let clickedOnSelection = false
-
-			for (const selection of persistentSelectionsRef.current) {
-				const pageLayer = pageElsRef.current.get(selection.page)
-				if (!pageLayer) continue
-
-				const pr = pageLayer.getBoundingClientRect()
-				const xPct = (ev.clientX - pr.left) / pr.width
-				const yPct = (ev.clientY - pr.top) / pr.height
-
-				// Verifica se il click è dentro il rettangolo
-				if (xPct >= selection.x0Pct && xPct <= selection.x1Pct &&
-					yPct >= selection.y0Pct && yPct <= selection.y1Pct) {
-					clickedOnSelection = true
-					break
-				}
-			}
-
-			// Se il click è fuori da tutti i rettangoli, cancella tutto
-			if (!clickedOnSelection && (persistentSelectionsRef.current.length > 0 || draftRef.current)) {
-				setPersistentSelections([])
-				setDraft(null)
-				setContextMenu({ x: 0, y: 0, visible: false })
-			}
-
 			return
 		}
 

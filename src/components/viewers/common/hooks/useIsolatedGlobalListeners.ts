@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react'
+import { isSearchSurfaceTarget } from '../../../search/searchSurfaceContract'
 
 export interface IsolatedGlobalListenersConfig<T extends HTMLElement> {
   /**
@@ -136,8 +137,8 @@ export function useIsolatedGlobalListeners<T extends HTMLElement>({
     return (e: MouseEvent | KeyboardEvent) => {
       const target = e.target as HTMLElement
 
-      // 🔥 Escludi il pannello di ricerca PDF dai listener globali
-      if (target.closest('[data-role="document-search-panel"]')) {
+      // Le superfici di ricerca sono UI esterne al viewer.
+      if (isSearchSurfaceTarget(target)) {
         return
       }
 

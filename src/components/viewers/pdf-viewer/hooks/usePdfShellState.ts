@@ -46,6 +46,8 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
 
   // Feature hooks
   const { tool, setTool, annots, setAnnots, draft, setDraft } = usePdfAnnotations({ hostRef })
+  /** Draft rettangolo: stato separato da annotazioni/native selection */
+  const [rectangleDraft, setRectangleDraft] = useState<DraftBox | null>(null)
   const { autoDeskew, setAutoDeskew, skewAngles, setSkewAngles, persistSkew, estimateSkewForPage, applyImmediateToPage } = usePdfDeskew({ docId, hostRef })
   const { audit, setAudit } = usePdfAudit({ hostRef })
 
@@ -110,58 +112,41 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
 
   const selectionHandledRef = useRef(false)
 
-  // ✅ SEMPLIFICAZIONE: Selezione rettangolo sempre attiva (indipendente da selectKind)
-  // Funziona per PDF, Word, immagini - sempre screenshot, testo opzionale
+  // Eventi sul scroll host (sempre montato), non su .rpv-core__viewer (pronto in ritardo).
+  // Stesso pattern di Word: il container overflow è l'host dei listener.
   const rectSelection = useRectSelection({
     viewerId: docId || 'pdf-viewer',
-    enabled: true, // ✅ Sempre abilitato (come Word) - elimina dipendenza da selectMode
-    hostRef: hostRef as React.RefObject<HTMLElement>,
+    enabled: true,
+    hostRef: scrollHostRef as React.RefObject<HTMLElement>,
     hostReadyTick: viewerReadyTick,
-    pageElsRef, // ✅ Usa pageElsRef per calcolare coordinate rispetto alla pagina
-    isOverlayOpen: isExtractOverlayOpen, // ✅ Passa stato React invece di controllare DOM
+    pageElsRef,
+    isOverlayOpen: isExtractOverlayOpen,
+    debug: true,
     onDraftChange: useCallback((draftBox: DraftBox | null) => {
-      // ✅ Converti DraftBox in Annotation per AnnotationOverlays
       if (draftBox) {
-        const hasOverlayRoot = overlayRootsRef.current.has(draftBox.page)
-        const allRoots = Array.from(overlayRootsRef.current.keys())
-        const overlayRootInDOM = hasOverlayRoot ? document.contains(overlayRootsRef.current.get(draftBox.page)!) : false
-
-        // ✅ Se il root non esiste o non è nel DOM, prova a ricrearlo
-        if (!hasOverlayRoot || !overlayRootInDOM) {
-          console.warn('[RECT-SEL] ⚠️ Draft creato SENZA overlayRoot:', {
-            page: draftBox.page,
-            hasOverlayRoot,
-            overlayRootInDOM,
-            allRoots
-          })
-
-          // ✅ Prova a ricreare il root
-          if (ensureOverlayRootForPage) {
-            const recreated = ensureOverlayRootForPage(draftBox.page)
-            if (recreated) {
-              console.log('[RECT-SEL] ✅ OverlayRoot ricreato per pagina:', draftBox.page)
-            } else {
-              console.warn('[RECT-SEL] ⚠️ Impossibile ricreare overlayRoot per pagina:', draftBox.page)
-            }
-          }
-        }
-
-        const annotation: any = {
-          id: 'draft',
+        const rootOk = ensureOverlayRootForPage?.(draftBox.page) ?? false
+        console.log('[RECT-SEL][PDF] onDraftChange', {
           page: draftBox.page,
-          type: 'highlight' as const,
-          color: 'rgba(59,130,246,0.3)',
           x0Pct: draftBox.x0Pct,
           y0Pct: draftBox.y0Pct,
           x1Pct: draftBox.x1Pct,
-          y1Pct: draftBox.y1Pct
-        }
-        setDraft(annotation)
+          y1Pct: draftBox.y1Pct,
+          rootOk,
+          pageEl: !!pageElsRef.current.get(draftBox.page),
+          roots: Array.from(overlayRootsRef.current.keys())
+        })
+        setRectangleDraft(draftBox)
       } else {
-        setDraft(null)
+        console.log('[RECT-SEL][PDF] onDraftChange null')
+        setRectangleDraft(null)
       }
-    }, [setDraft, overlayRootsRef]),
+    }, [ensureOverlayRootForPage, pageElsRef, overlayRootsRef]),
     onSelection: useCallback(async (rect: RectSelection) => {
+      console.log('[RECT-SEL][PDF] onSelection', {
+        pageIndex: rect.pageIndex,
+        rect: rect.rect,
+        bbox: rect.bbox
+      })
       try {
         // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
         const card: ExtractCard = {
@@ -297,6 +282,7 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
     setAnnots,
     draft,
     setDraft,
+    rectangleDraft,
     autoDeskew,
     setAutoDeskew,
     skewAngles,

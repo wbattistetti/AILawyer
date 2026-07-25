@@ -260,7 +260,7 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
 export async function searchRoutes(fastify: FastifyInstance) {
 
   // Ricerca globale in tutti i documenti dell'archivio
-  fastify.get<{ Querystring: { q?: string; limit?: string; docId?: string } }>(
+  fastify.get<{ Querystring: { q?: string; limit?: string; docId?: string; praticaId?: string } }>(
     '/search/archive',
     async (request, reply) => {
       try {
@@ -271,17 +271,24 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
         const limit = parseInt(request.query.limit || '50', 10)
         const docId = request.query.docId // Parametro opzionale per filtrare un documento specifico
+        const praticaId = request.query.praticaId?.trim()
+        if (!praticaId) {
+          return reply.status(400).send({
+            error: 'praticaId obbligatorio: la ricerca globale deve essere limitata a una pratica'
+          })
+        }
         const normalizedQ = normalize(query)
 
         console.log('🚀🚀🚀 [SEARCH][START] 🚀🚀🚀', {
           query,
           normalizedQ,
           limit,
+          praticaId,
           docId: docId || 'all',
           timestamp: new Date().toISOString()
         })
 
-        fastify.log.info({ msg: '[SEARCH][archive] start', query, normalizedQ, limit, docId })
+        fastify.log.info({ msg: '[SEARCH][archive] start', query, normalizedQ, limit, praticaId, docId })
 
         // APPROCCIO IBRIDO: ricerca in memoria + database
 
@@ -379,8 +386,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
           hasLayout: !!(localDocInfo?.layout && localDocInfo.layout.length > 0)
         })
 
-        // 2. Trova documenti DB (solo se non è specificato docId locale)
+        // 2. Trova documenti DB della sola pratica richiesta
         const whereClause: any = {
+          praticaId,
           OR: [
             // Documenti con OCR completato
             {
@@ -394,12 +402,13 @@ export async function searchRoutes(fastify: FastifyInstance) {
           ]
         }
 
-        // Se docId è specificato, filtra solo quel documento
+        // Se docId è specificato, filtra solo quel documento (sempre dentro la pratica)
         if (docId) {
           whereClause.id = docId
         }
 
         console.log('[SEARCH][archive][query]', {
+          praticaId,
           docId,
           isLocalFile,
           whereClause
@@ -1642,6 +1651,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
         return {
           query,
+          praticaId,
           total: allMatches.length,
           matches: allMatches
         }

@@ -104,62 +104,33 @@ export const AnnotationOverlays: React.FC<AnnotationOverlaysProps> = ({
 			{allAnnotations.map((a, idx) => {
 				let root = overlayRootsRef.current.get(a.page)
 
-				// ✅ Se il root non esiste o non è nel DOM, prova a ricrearlo
 				if (!root || !document.contains(root)) {
 					if (a.id === 'draft' || a.id === 'sel') {
-						// ✅ Prova a ricreare il root se la funzione è disponibile
-						if (ensureOverlayRootForPage) {
-							const recreated = ensureOverlayRootForPage(a.page)
-							if (recreated) {
-								root = overlayRootsRef.current.get(a.page)
-								if (root && document.contains(root)) {
-									// ✅ Root ricreato con successo, continua il rendering
-								} else {
-									// ✅ Root non ancora disponibile, salta questo render
-									return null
-								}
-							} else {
-								// ✅ Impossibile ricreare il root, salta questo render
-								return null
-							}
-						} else {
-							// ✅ Funzione non disponibile, log e salta
+						ensureOverlayRootForPage?.(a.page)
+						root = overlayRootsRef.current.get(a.page)
+
+						if ((!root || !document.contains(root))) {
 							const pageEl = pageElsRef.current.get(a.page)
-							let textLayerExists = false
-							let textLayerInDOM = false
-
-							if (pageEl) {
-								const textLayer = pageEl.querySelector('.rpv-core__text-layer') as HTMLElement | null
-								if (!textLayer) {
-									const pageContainer = pageEl.closest('[data-page-number]') as HTMLElement | null
-									if (pageContainer) {
-										const textLayer2 = pageContainer.querySelector('.rpv-core__text-layer') as HTMLElement | null
-										textLayerExists = !!textLayer2
-										textLayerInDOM = textLayer2 ? document.contains(textLayer2) : false
-									}
-								} else {
-									textLayerExists = true
-									textLayerInDOM = document.contains(textLayer)
-								}
+							if (pageEl && document.contains(pageEl)) {
+								const created = document.createElement('div')
+								created.className = 'ai-overlay-root'
+								Object.assign(created.style, {
+									position: 'absolute',
+									inset: '0',
+									width: '100%',
+									height: '100%',
+									pointerEvents: 'none',
+									zIndex: '100'
+								})
+								if (!pageEl.style.position) pageEl.style.position = 'relative'
+								pageEl.appendChild(created)
+								overlayRootsRef.current.set(a.page, created)
+								root = created
 							}
-
-							console.warn('[ANNOT-OVERLAYS] ⚠️ Root overlay NON TROVATO per pagina:', a.page, {
-								allRoots: Array.from(overlayRootsRef.current.keys()),
-								annotId: a.id,
-								annotPage: a.page,
-								pageElExists: !!pageEl,
-								textLayerExists,
-								textLayerInDOM,
-								ensureOverlayRootForPageAvailable: !!ensureOverlayRootForPage
-							})
-							return null
 						}
-					} else {
-						return null
 					}
 				}
 
-				// ✅ Verifica finale che il root sia ancora nel DOM (dopo eventuale ricreazione)
 				if (!root || !document.contains(root)) {
 					return null
 				}

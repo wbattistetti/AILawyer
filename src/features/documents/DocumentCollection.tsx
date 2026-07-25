@@ -544,7 +544,13 @@ export function DocumentCollection({
                     // ✅ SECONDO: Se nessun risultato client-side, prova backend per documenti salvati
 
                     const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001'
-                    const response = await fetch(`${apiUrl}/api/search/archive?q=${encodeURIComponent(q)}&limit=50`)
+                    const praticaId = (window as any).__archiveData?.praticaId
+                    if (!praticaId || typeof praticaId !== 'string') {
+                      throw new Error('praticaId mancante: impossibile cercare nell’archivio senza pratica')
+                    }
+                    const response = await fetch(
+                      `${apiUrl}/api/search/archive?q=${encodeURIComponent(q)}&praticaId=${encodeURIComponent(praticaId)}&limit=50`
+                    )
 
                     if (!response.ok) {
                       return clientResult || null

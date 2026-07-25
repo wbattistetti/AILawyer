@@ -579,6 +579,7 @@ export function PraticaCanvasPage() {
 
       {/* Header */}
       <HeaderToolbar
+        ref={headerRef}
         pratica={pratica}
         onHomeClick={() => navigate('/')}
         onOpenPratica={() => navigate('/')}
@@ -1563,6 +1564,7 @@ export function PraticaCanvasPage() {
           praticaId={id} // Aggiungi questa prop
           renderSearch={() => (
             <SearchRenderer
+              praticaId={id}
               documenti={documenti}
               dockV2Ref={dockV2Ref}
               toast={toast}

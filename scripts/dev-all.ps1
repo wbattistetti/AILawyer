@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = 'Continue'
 $ports = @(3001, 6500)
-$healthUrl = 'http://localhost:3001/health'
+$healthUrl = 'http://127.0.0.1:3001/health'
 $healthTimeoutSec = 60
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root

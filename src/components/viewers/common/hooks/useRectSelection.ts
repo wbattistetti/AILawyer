@@ -1,19 +1,19 @@
 /**
- * ✅ Hook comune per drag rettangolo (OCR-style)
- * Usato da PDF viewer e Word viewer
- * Listener LOCALI sul hostRef - ogni viewer gestisce la selezione internamente
+ * Hook comune per drag rettangolo (PDF, Word, futuri viewer).
  *
- * MODELLO SEMPLIFICATO:
- * 1. Rettangolo → coordinate schermo (sempre)
- * 2. Coordinate schermo → pagina sotto cursore (sempre via elementFromPoint)
- * 3. Pagina → bounding rect (sempre via getBoundingClientRect)
- * 4. Coordinate schermo → coordinate pagina (sempre via sottrazione + normalizzazione)
- * 5. Nessun altro layer di logica
+ * Modello:
+ * 1. Coordinate schermo assolute
+ * 2. Pagina sotto il punto iniziale (fissata per tutto il drag)
+ * 3. Percentuali relative alla pagina
+ * 4. Commit → RectSelection standardizzata
+ *
+ * Eventi: Pointer Events + listener su window durante il drag
+ * (mousemove/mouseup restano affidabili anche fuori dall'host).
  */
 
 import { useEffect, useLayoutEffect, useRef, useCallback } from 'react'
-import { ViewerSelection, ViewportBox, RectSelection } from '../types/viewer.types'
-import { calculateViewportBox, getPageNumberFromElement } from '../utils/coordinateUtils'
+import { RectSelection } from '../types/viewer.types'
+import { calculateViewportBox } from '../utils/coordinateUtils'
 
 export interface DraftBox {
   page: number
@@ -22,53 +22,26 @@ export interface DraftBox {
   x1Pct: number
   y1Pct: number
   /**
-   * ✅ Spazio di coordinate: 'page' = relative alla pagina, 'host' = relative al container
-   * Se non specificato, assume 'page' per retrocompatibilità
+   * 'page' = relative alla pagina (default).
+   * 'host' = legacy, convertito in overlay se necessario.
    */
   coordSpace?: 'page' | 'host'
 }
 
 export interface UseRectSelectionProps {
-  /**
-   * ID univoco del viewer (es. docId) - necessario per isolamento
-   */
   viewerId: string
-  /**
-   * Se il viewer è abilitato
-   */
   enabled: boolean
   hostRef: React.RefObject<HTMLElement>
-  /**
-   * Incrementa quando l'host reale è pronto (per riattaccare i listener)
-   */
+  /** Incrementa quando l'host reale è pronto (riattacca i listener). */
   hostReadyTick?: number
-  /**
-   * ✅ Callback chiamato quando la selezione è completata
-   * Riceve RectSelection standardizzata (formato unificato per tutti i viewer)
-   */
   onSelection: (selection: RectSelection) => void
-  /**
-   * Callback opzionale per aggiornare il rettangolo draft durante il drag
-   */
   onDraftChange?: (draft: DraftBox | null) => void
-  /**
-   * ✅ Ref alle pagine (opzionale, usato solo per debug/log, NON come fallback)
-   */
   pageElsRef?: React.MutableRefObject<Map<number, HTMLElement>>
-  /**
-   * Funzione opzionale per verificare se un click è dentro un overlay
-   * Se ritorna true, il drag non viene iniziato
-   */
   isClickInsideOverlay?: (target: HTMLElement) => boolean
-  /**
-   * ✅ Se un overlay di estrazione è attualmente aperto
-   * Quando true, blocca l'inizio di un nuovo drag (basato su stato React, non DOM)
-   */
   isOverlayOpen?: boolean
-  /**
-   * Dimensione minima del rettangolo (default: 10x10 pixel)
-   */
   minSize?: number
+  /** Log diagnostici in console (prefisso [RECT-SEL]). */
+  debug?: boolean
 }
 
 export function useRectSelection({
@@ -78,56 +51,104 @@ export function useRectSelection({
   hostReadyTick = 0,
   onSelection,
   onDraftChange,
-  pageElsRef, // ✅ Opzionale, solo per debug
+  pageElsRef: _pageElsRef,
   isClickInsideOverlay,
-  isOverlayOpen = false, // ✅ Nuovo parametro: stato React invece di controlli DOM
-  minSize = 10
+  isOverlayOpen = false,
+  minSize = 10,
+  debug = false
 }: UseRectSelectionProps) {
   const isSelectingRef = useRef(false)
   const startPosRef = useRef<{ x: number; y: number } | null>(null)
-  const startPageRef = useRef<{ pageEl: HTMLElement; pageNumber: number } | null>(null) // ✅ Salva la pagina iniziale
+  const startPageRef = useRef<{ pageEl: HTMLElement; pageNumber: number } | null>(null)
+  const activePointerIdRef = useRef<number | null>(null)
   const rafRef = useRef<number | null>(null)
+  const windowListenersAttachedRef = useRef(false)
+  const moveLogCountRef = useRef(0)
+
+  const log = useCallback((message: string, data?: Record<string, unknown>) => {
+    if (!debug) return
+    if (data) console.log(`[RECT-SEL][${viewerId}] ${message}`, data)
+    else console.log(`[RECT-SEL][${viewerId}] ${message}`)
+  }, [debug, viewerId])
 
   const getPageNumberLoose = (element: HTMLElement | null): number | null => {
-    let current = element
-    while (current) {
-      const pageNumberAttr = current.getAttribute('data-page-number')
-      if (pageNumberAttr) {
-        const parsed = parseInt(pageNumberAttr, 10)
-        if (Number.isFinite(parsed) && parsed > 0) return parsed
-      }
-      const pageAttr = current.getAttribute('data-page')
-      if (pageAttr) {
-        const parsed = parseInt(pageAttr, 10)
+    if (!element) return null
+
+    // 1) Attributo sul nodo o su un antenato
+    const holderUp = element.closest('[data-page-number], [data-page]') as HTMLElement | null
+    if (holderUp) {
+      const raw = holderUp.getAttribute('data-page-number') || holderUp.getAttribute('data-page')
+      const parsed = raw ? parseInt(raw, 10) : NaN
+      if (Number.isFinite(parsed) && parsed > 0) return parsed
+    }
+
+    // 2) In rpv il data-page-number è spesso FIGLIO di .rpv-core__page-layer
+    const holderDown = element.querySelector?.('[data-page-number], [data-page]') as HTMLElement | null
+    if (holderDown) {
+      const raw = holderDown.getAttribute('data-page-number') || holderDown.getAttribute('data-page')
+      const parsed = raw ? parseInt(raw, 10) : NaN
+      if (Number.isFinite(parsed) && parsed > 0) return parsed
+    }
+
+    // 3) Fallback aria-label "Page N" / "Pagina N" (come usePdfOverlays)
+    let current: HTMLElement | null = element
+    for (let i = 0; i < 8 && current; i++) {
+      const aria = current.getAttribute('aria-label') || ''
+      const match = aria.match(/\bP(?:age|agina)\s+(\d+)/i)
+      if (match) {
+        const parsed = parseInt(match[1], 10)
         if (Number.isFinite(parsed) && parsed > 0) return parsed
       }
       current = current.parentElement
     }
+
     return null
   }
 
-  const findPageFromEventPath = (e: MouseEvent): { pageEl: HTMLElement | null; pageNumber: number | null } => {
-    const path = (e.composedPath?.() || []) as HTMLElement[]
+  const resolvePageFromElement = (element: HTMLElement | null): {
+    pageEl: HTMLElement | null
+    pageNumber: number | null
+  } => {
+    if (!element) return { pageEl: null, pageNumber: null }
+
+    const pageLayer = (element.classList.contains('rpv-core__page-layer')
+      ? element
+      : element.closest('.rpv-core__page-layer') as HTMLElement | null)
+      || null
+
+    if (pageLayer) {
+      const pageNumber = getPageNumberLoose(pageLayer) ?? 1
+      return { pageEl: pageLayer, pageNumber }
+    }
+
+    const dataPage = element.closest('[data-page]') as HTMLElement | null
+    if (dataPage) {
+      const pageNumber = getPageNumberLoose(dataPage)
+      if (pageNumber) return { pageEl: dataPage, pageNumber }
+    }
+
+    const dataPageNumber = element.closest('[data-page-number]') as HTMLElement | null
+    if (dataPageNumber) {
+      const layer = (dataPageNumber.closest('.rpv-core__page-layer') as HTMLElement | null)
+        || (dataPageNumber.querySelector('.rpv-core__page-layer') as HTMLElement | null)
+        || dataPageNumber
+      const pageNumber = getPageNumberLoose(layer) ?? getPageNumberLoose(dataPageNumber) ?? 1
+      return { pageEl: layer, pageNumber }
+    }
+
+    return { pageEl: null, pageNumber: null }
+  }
+
+  const findPageFromEventPath = (e: Event): { pageEl: HTMLElement | null; pageNumber: number | null } => {
+    const path = ((e as PointerEvent).composedPath?.() || []) as EventTarget[]
     for (const node of path) {
       if (!(node instanceof HTMLElement)) continue
-      if (node.classList.contains('rpv-core__page-layer')) {
-        return { pageEl: node, pageNumber: getPageNumberLoose(node) }
-      }
-      if (node.hasAttribute?.('data-page-number')) {
-        // rpv: page-layer è antenato di [data-page-number]
-        const layer = (node.closest('.rpv-core__page-layer') as HTMLElement | null)
-          || (node.querySelector('.rpv-core__page-layer') as HTMLElement | null)
-          || node
-        return { pageEl: layer, pageNumber: getPageNumberLoose(layer) }
-      }
-      if (node.hasAttribute?.('data-page')) {
-        return { pageEl: node, pageNumber: getPageNumberLoose(node) }
-      }
+      const resolved = resolvePageFromElement(node)
+      if (resolved.pageEl && resolved.pageNumber) return resolved
     }
     return { pageEl: null, pageNumber: null }
   }
 
-  // ✅ Helper: trova pagina sotto coordinate schermo (sempre via elementFromPoint)
   const findPageAtPoint = useCallback((clientX: number, clientY: number): {
     pageEl: HTMLElement | null
     pageNumber: number | null
@@ -137,52 +158,35 @@ export function useRectSelection({
       return { pageEl: null, pageNumber: null }
     }
 
-    // ✅ SEMPRE usa elementFromPoint (non cache)
-    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement
+    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     if (!elementAtPoint) {
       return { pageEl: null, pageNumber: null }
     }
 
-    // ✅ Prima prova: trova direttamente il page-layer più vicino al punto
-    const closestPageLayer = elementAtPoint.closest?.('.rpv-core__page-layer') as HTMLElement | null
-    if (closestPageLayer) {
-      const pageNumber = getPageNumberLoose(closestPageLayer)
-      return { pageEl: closestPageLayer, pageNumber }
+    const resolved = resolvePageFromElement(elementAtPoint)
+    if (resolved.pageEl && resolved.pageNumber) return resolved
+
+    // Ultimo fallback: prima page-layer nel host sotto il punto
+    const layers = Array.from(host.querySelectorAll('.rpv-core__page-layer')) as HTMLElement[]
+    for (const layer of layers) {
+      const r = layer.getBoundingClientRect()
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        return { pageEl: layer, pageNumber: getPageNumberLoose(layer) ?? 1 }
+      }
     }
 
-    // ✅ Risali fino a trovare la pagina (PDF o Word)
-    let current: HTMLElement | null = elementAtPoint
-    let depth = 0
-    while (current && current !== host && depth < 20) {
-      // ✅ PDF: .rpv-core__page-layer
-      if (current.classList.contains('rpv-core__page-layer')) {
-        const pageNumber = getPageNumberFromElement(current, host)
-        return { pageEl: current, pageNumber }
+    const wordPages = Array.from(host.querySelectorAll('[data-page]')) as HTMLElement[]
+    for (const pageEl of wordPages) {
+      const r = pageEl.getBoundingClientRect()
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        const pageNumber = getPageNumberLoose(pageEl)
+        if (pageNumber) return { pageEl, pageNumber }
       }
-
-      // ✅ Word: [data-page]
-      if (current.hasAttribute('data-page')) {
-        const pageNumber = getPageNumberFromElement(current, host)
-        return { pageEl: current, pageNumber }
-      }
-
-      // ✅ PDF: [data-page-number] → page-layer è antenato (rpv), non figlio
-      if (current.hasAttribute('data-page-number')) {
-        const pageLayer = (current.closest('.rpv-core__page-layer') as HTMLElement | null)
-          || (current.querySelector('.rpv-core__page-layer') as HTMLElement | null)
-          || current
-        const pageNumber = getPageNumberFromElement(pageLayer, host)
-        return { pageEl: pageLayer, pageNumber }
-      }
-
-      current = current.parentElement
-      depth++
     }
 
     return { pageEl: null, pageNumber: null }
   }, [hostRef])
 
-  // ✅ Helper: calcola draft box da pagina trovata
   const calculateDraftBoxFromPage = useCallback((
     pageEl: HTMLElement,
     pageNumber: number,
@@ -190,270 +194,150 @@ export function useRectSelection({
     startY: number,
     endX: number,
     endY: number
-  ): DraftBox | null => {
-    // ✅ 2. Ottieni bounding rect (sempre aggiornato - chiamato ad ogni frame durante il drag)
+  ): DraftBox => {
     const pageRect = pageEl.getBoundingClientRect()
-
-    // ✅ 3. Converti coordinate schermo → coordinate pagina (senza limitare ai bordi)
-    // Non limitiamo più ai bordi: se il mouse esce dalla pagina, il rettangolo può estendersi oltre
-    // Questo permette al rettangolo di seguire correttamente il mouse
     const startXPage = startX - pageRect.left
     const startYPage = startY - pageRect.top
     const endXPage = endX - pageRect.left
     const endYPage = endY - pageRect.top
 
-    // ✅ 5. Calcola min/max per rettangolo
     const x0 = Math.min(startXPage, endXPage)
     const y0 = Math.min(startYPage, endYPage)
     const x1 = Math.max(startXPage, endXPage)
     const y1 = Math.max(startYPage, endYPage)
 
-    // Percentuali relative al page-layer (stesso spazio dell'overlay OCR/selezione).
-    const x0Pct = x0 / pageRect.width
-    const y0Pct = y0 / pageRect.height
-    const x1Pct = x1 / pageRect.width
-    const y1Pct = y1 / pageRect.height
-
-    const result = {
+    return {
       page: pageNumber,
-      x0Pct,
-      y0Pct,
-      x1Pct,
-      y1Pct,
-      coordSpace: 'page' as const
+      x0Pct: x0 / pageRect.width,
+      y0Pct: y0 / pageRect.height,
+      x1Pct: x1 / pageRect.width,
+      y1Pct: y1 / pageRect.height,
+      coordSpace: 'page'
     }
-
-    return result
   }, [])
 
-  // ✅ Helper: calcola draft box (sempre da coordinate schermo)
+  const resolveStartPage = useCallback((
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+  ): { pageEl: HTMLElement; pageNumber: number } | null => {
+    if (startPageRef.current) {
+      if (!document.contains(startPageRef.current.pageEl)) {
+        startPageRef.current = null
+      } else {
+        return startPageRef.current
+      }
+    }
+
+    const atStart = findPageAtPoint(startX, startY)
+    if (atStart.pageEl && atStart.pageNumber) {
+      startPageRef.current = { pageEl: atStart.pageEl, pageNumber: atStart.pageNumber }
+      return startPageRef.current
+    }
+
+    const atEnd = findPageAtPoint(endX, endY)
+    if (atEnd.pageEl && atEnd.pageNumber) {
+      startPageRef.current = { pageEl: atEnd.pageEl, pageNumber: atEnd.pageNumber }
+      return startPageRef.current
+    }
+
+    return null
+  }, [findPageAtPoint])
+
   const calculateDraftBox = useCallback((
     startX: number,
     startY: number,
     endX: number,
     endY: number
   ): DraftBox | null => {
-    const host = hostRef.current
-    if (!host) {
-      console.warn('[RECT-SEL] ⚠️ calculateDraftBox: host non trovato', { viewerId })
-      return null
+    if (!hostRef.current) return null
+    const page = resolveStartPage(startX, startY, endX, endY)
+    if (!page) return null
+    return calculateDraftBoxFromPage(page.pageEl, page.pageNumber, startX, startY, endX, endY)
+  }, [hostRef, resolveStartPage, calculateDraftBoxFromPage])
+
+  const resetState = useCallback(() => {
+    isSelectingRef.current = false
+    startPosRef.current = null
+    startPageRef.current = null
+    activePointerIdRef.current = null
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
     }
+    onDraftChange?.(null)
+    const selection = window.getSelection()
+    if (selection) selection.removeAllRanges()
+  }, [onDraftChange])
 
-    // ✅ CRITICO: Usa SEMPRE la pagina iniziale (salvata in handleMouseDown)
-    // Questo garantisce che le coordinate siano sempre relative alla stessa pagina
-    // Anche se scrolli o il mouse si sposta su un'altra pagina, usiamo sempre quella iniziale
-    if (!startPageRef.current) {
-      // ✅ Fallback: se non abbiamo la pagina iniziale, prova a trovarla
-      const { pageEl: startPageEl, pageNumber: startPageNumber } = findPageAtPoint(startX, startY)
-      if (startPageEl && startPageNumber) {
-        startPageRef.current = { pageEl: startPageEl, pageNumber: startPageNumber }
-      } else {
-        // ✅ Ultimo fallback: prova il punto corrente
-        const { pageEl: currentPageEl, pageNumber: currentPageNumber } = findPageAtPoint(endX, endY)
-        if (currentPageEl && currentPageNumber) {
-          startPageRef.current = { pageEl: currentPageEl, pageNumber: currentPageNumber }
-        } else {
-          console.warn('[RECT-SEL] ⚠️ Nessuna pagina trovata', { viewerId, startPoint: { x: startX, y: startY }, endPoint: { x: endX, y: endY } })
-          return null
-        }
-      }
-    }
-
-    // ✅ Usa sempre la pagina iniziale (dove inizia il drag)
-    // getBoundingClientRect() viene chiamato ad ogni frame, quindi è sempre aggiornato anche dopo lo scroll
-    const result = calculateDraftBoxFromPage(
-      startPageRef.current.pageEl,
-      startPageRef.current.pageNumber,
-      startX,
-      startY,
-      endX,
-      endY
-    )
-    return result
-  }, [hostRef, findPageAtPoint, calculateDraftBoxFromPage, viewerId, pageElsRef])
-
-  // ✅ Disabilita selezione testo nativa
   useEffect(() => {
     if (!enabled) return
-
     const host = hostRef.current
     if (!host) return
 
-    // ✅ Blocca selezione testo
     host.style.setProperty('user-select', 'none', 'important')
     host.style.setProperty('-webkit-user-select', 'none', 'important')
     host.style.setProperty('-moz-user-select', 'none', 'important')
     host.style.setProperty('-ms-user-select', 'none', 'important')
 
     return () => {
-      if (host) {
-        host.style.removeProperty('user-select')
-        host.style.removeProperty('-webkit-user-select')
-        host.style.removeProperty('-moz-user-select')
-        host.style.removeProperty('-ms-user-select')
-      }
+      host.style.removeProperty('user-select')
+      host.style.removeProperty('-webkit-user-select')
+      host.style.removeProperty('-moz-user-select')
+      host.style.removeProperty('-ms-user-select')
     }
   }, [enabled, hostRef])
 
-  // ✅ Reset completo quando enabled è false
   useEffect(() => {
     if (!enabled) {
-      isSelectingRef.current = false
-      startPosRef.current = null
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-      if (onDraftChange) {
-        onDraftChange(null)
-      }
+      resetState()
     }
-  }, [enabled, onDraftChange, viewerId])
+  }, [enabled, resetState])
 
-  // ✅ Helper: reset completo dello stato (usato quando mouse esce dal host)
-  const resetState = useCallback(() => {
-    isSelectingRef.current = false
-    startPosRef.current = null
-    startPageRef.current = null // ✅ Reset anche la pagina iniziale
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
-    if (onDraftChange) {
-      onDraftChange(null)
-    }
-    // ✅ Rimuovi selezione testo nativa (se creata durante il drag)
-    const selection = window.getSelection()
-    if (selection) {
-      selection.removeAllRanges()
-    }
-  }, [onDraftChange])
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (!isSelectingRef.current || !startPosRef.current) return
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
 
-      // ✅ Handler mouse down
-      const handleMouseDown = useCallback((e: MouseEvent) => {
-        // ✅ Rimosso controllo isActive: se l'evento arriva al listener locale, il viewer è attivo
-        if (!enabled) {
-          return
-        }
-    if (e.button !== 0) return // Solo click sinistro
-
-    const host = hostRef.current
-    if (!host) {
-      return
-    }
-
-    // ✅ CRITICO: Blocca drag se overlay è aperto (basato su stato React, non DOM)
-    // Questo elimina race condition, overlay "zombie", problemi di timing
-    if (isOverlayOpen) {
-      return
-    }
-
-    const target = e.target as HTMLElement
-
-    // ✅ Mantieni isClickInsideOverlay per altri overlay (es. toolbar, menu)
-    if (isClickInsideOverlay && isClickInsideOverlay(target)) {
-      return
-    }
-
-    // ✅ RIMOSSO: Controllo DOM-based su data-extract-overlay
-    // Non serve più perché usiamo isOverlayOpen (stato React)
-    // if (target.closest('[data-extract-overlay="true"]') || target.closest('.extract-block-overlay')) {
-    //   return
-    // }
-
-    // ✅ Ferma la propagazione per evitare interferenze con listener globali
-    e.stopPropagation()
-    isSelectingRef.current = true
-
-    // ✅ Salva coordinate schermo (sempre assolute)
-    startPosRef.current = {
-      x: e.clientX,
-      y: e.clientY
-    }
-
-    // ✅ CRITICO: Salva la pagina iniziale (dove inizia il drag)
-    const { pageEl: startPageEl, pageNumber: startPageNumber } = findPageFromEventPath(e)
-    console.log('[RECT-SEL] ✅ Drag START:', { viewerId, page: startPageNumber })
-    if (startPageEl && startPageNumber) {
-      startPageRef.current = { pageEl: startPageEl, pageNumber: startPageNumber }
-    } else {
-      startPageRef.current = null
-      console.warn('[RECT-SEL] ⚠️ Pagina iniziale non trovata:', { viewerId, point: { x: e.clientX, y: e.clientY } })
-    }
-
-    // ✅ Crea draft iniziale zero-area
-    if (onDraftChange && startPageRef.current) {
-      onDraftChange({
-        page: startPageRef.current.pageNumber,
-        x0Pct: 0,
-        y0Pct: 0,
-        x1Pct: 0,
-        y1Pct: 0,
-        coordSpace: 'page'
-      })
-    }
-
-    // ✅ Rimuovi selezione testo se presente
-    const selection = window.getSelection()
-    if (selection) {
-      selection.removeAllRanges()
-    }
-  }, [enabled, hostRef, isClickInsideOverlay, isOverlayOpen, onDraftChange, findPageAtPoint, viewerId, findPageFromEventPath])
-
-  // ✅ Handler mouse move
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isSelectingRef.current || !startPosRef.current) {
-      return
-    }
-
-    // ✅ Ferma la propagazione per evitare interferenze con listener globali
-    e.stopPropagation()
-
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current)
-    }
-
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = requestAnimationFrame(() => {
       if (!isSelectingRef.current || !startPosRef.current) return
-
       const draftBox = calculateDraftBox(
         startPosRef.current.x,
         startPosRef.current.y,
         e.clientX,
         e.clientY
       )
-
-      if (draftBox && onDraftChange) {
-        onDraftChange(draftBox)
+      if (moveLogCountRef.current < 3) {
+        moveLogCountRef.current += 1
+        log('pointermove', {
+          n: moveLogCountRef.current,
+          hasDraft: !!draftBox,
+          page: draftBox?.page ?? null
+        })
       }
+      if (draftBox) onDraftChange?.(draftBox)
     })
-  }, [calculateDraftBox, onDraftChange, viewerId])
+  }, [calculateDraftBox, onDraftChange, log])
 
-  // ✅ Handler mouse up
-  const handleMouseUp = useCallback((e: MouseEvent) => {
-    if (!isSelectingRef.current || !startPosRef.current) {
-      return
-    }
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    if (!isSelectingRef.current || !startPosRef.current) return
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
 
     const host = hostRef.current
+    log('pointerup', {
+      hasHost: !!host,
+      startPage: startPageRef.current?.pageNumber ?? null
+    })
     if (!host) {
-      console.warn('[RECT-SEL] ⚠️ Host non trovato in handleMouseUp')
       resetState()
       return
     }
 
-    console.log('[RECT-SEL] ✅ Drag END:', { viewerId, page: startPageRef.current?.pageNumber })
-    // ✅ Ferma la propagazione per evitare interferenze con listener globali
-    e.stopPropagation()
     isSelectingRef.current = false
-
-    // ✅ Rimuovi selezione testo nativa (se creata durante il drag)
     const selection = window.getSelection()
-    if (selection) {
-      selection.removeAllRanges()
-    }
+    if (selection) selection.removeAllRanges()
 
-    // ✅ Calcola draft box finale
     const draftBox = calculateDraftBox(
       startPosRef.current.x,
       startPosRef.current.y,
@@ -462,11 +346,11 @@ export function useRectSelection({
     )
 
     if (!draftBox) {
+      log('pointerup: draft assente → reset')
       resetState()
       return
     }
 
-    // ✅ Calcola viewport box per screenshot
     const viewportBox = calculateViewportBox(
       startPosRef.current.x,
       startPosRef.current.y,
@@ -476,11 +360,11 @@ export function useRectSelection({
     )
 
     if (viewportBox.w < minSize || viewportBox.h < minSize) {
+      log('pointerup: troppo piccolo', { w: viewportBox.w, h: viewportBox.h })
       resetState()
       return
     }
 
-    // ✅ Crea selezione standardizzata (formato unificato)
     const rectSelection: RectSelection = {
       rect: {
         x: viewportBox.x,
@@ -488,7 +372,7 @@ export function useRectSelection({
         width: viewportBox.w,
         height: viewportBox.h
       },
-      pageIndex: draftBox.page - 1, // ✅ Converti a 0-based
+      pageIndex: draftBox.page - 1,
       viewerId,
       bbox: {
         x0Pct: draftBox.x0Pct,
@@ -498,61 +382,151 @@ export function useRectSelection({
       }
     }
 
+    startPosRef.current = null
+    activePointerIdRef.current = null
+    log('pointerup: commit', { pageIndex: rectSelection.pageIndex, bbox: rectSelection.bbox })
 
-    // ✅ Emetti selezione standardizzata
     Promise.resolve(onSelection(rectSelection)).then(() => {
       resetState()
     }).catch((error) => {
       console.error('[RECT-SEL] Errore in onSelection:', error)
       resetState()
     })
+  }, [hostRef, calculateDraftBox, onSelection, resetState, minSize, viewerId, log])
 
-    startPosRef.current = null
-  }, [hostRef, calculateDraftBox, onSelection, resetState, minSize])
+  const detachWindowListenersRef = useRef<() => void>(() => {})
 
-  // ✅ Ref per gli handler (evita re-render quando cambiano)
-  const handleMouseDownRef = useRef(handleMouseDown)
-  const handleMouseMoveRef = useRef(handleMouseMove)
-  const handleMouseUpRef = useRef(handleMouseUp)
+  const attachWindowListeners = useCallback(() => {
+    if (windowListenersAttachedRef.current) return
+    const onMove = (e: PointerEvent) => handlePointerMove(e)
+    const onUp = (e: PointerEvent) => {
+      handlePointerUp(e)
+      detachWindowListenersRef.current()
+    }
+    window.addEventListener('pointermove', onMove, true)
+    window.addEventListener('pointerup', onUp, true)
+    window.addEventListener('pointercancel', onUp, true)
+    windowListenersAttachedRef.current = true
+    detachWindowListenersRef.current = () => {
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onUp, true)
+      windowListenersAttachedRef.current = false
+    }
+  }, [handlePointerMove, handlePointerUp])
 
-  // ✅ Aggiorna ref quando cambiano (senza causare re-render)
-  useEffect(() => {
-    handleMouseDownRef.current = handleMouseDown
-    handleMouseMoveRef.current = handleMouseMove
-    handleMouseUpRef.current = handleMouseUp
-  }, [handleMouseDown, handleMouseMove, handleMouseUp])
-
-  // ✅ Listener LOCALI sul host (non globali) - ogni viewer gestisce la selezione internamente
-  // ✅ Attaccati quando hostRef.current diventa disponibile, rimossi solo all'unmount
-  // ✅ Gli handler controllano enabled internamente (isActive non serve: se l'evento arriva, il viewer è attivo)
-  // ✅ Usa useLayoutEffect per assicurarsi che hostRef.current sia disponibile (eseguito dopo DOM update, prima del paint)
-  useLayoutEffect(() => {
-    const host = hostRef.current
-
-    if (!host) {
+  const handlePointerDown = useCallback((e: PointerEvent) => {
+    if (!enabled) {
+      log('pointerdown ignorato: disabled')
+      return
+    }
+    if (e.button !== 0) return
+    if (isOverlayOpen) {
+      log('pointerdown ignorato: overlay aperto')
       return
     }
 
-    // ✅ Wrapper per usare ref invece di dipendenze dirette
-    const wrappedMouseDown = (e: MouseEvent) => handleMouseDownRef.current(e)
-    const wrappedMouseMove = (e: MouseEvent) => handleMouseMoveRef.current(e)
-    const wrappedMouseUp = (e: MouseEvent) => handleMouseUpRef.current(e)
+    const host = hostRef.current
+    if (!host) {
+      log('pointerdown ignorato: host null')
+      return
+    }
 
-    // ✅ Attacca TUTTI i listener LOCALI sul host (una sola volta)
-    // ✅ Usa capture: true per avere priorità sui listener globali di useIsolatedGlobalListeners
-    host.addEventListener('mousedown', wrappedMouseDown, true) // capture: true
-    host.addEventListener('mousemove', wrappedMouseMove, { passive: true, capture: true })
-    host.addEventListener('mouseup', wrappedMouseUp, true) // capture: true
+    const target = e.target as HTMLElement
+    if (isClickInsideOverlay?.(target)) {
+      log('pointerdown ignorato: click su overlay')
+      return
+    }
 
-    // ✅ Cleanup: rimuovi listener SOLO quando il componente viene smontato
-    return () => {
-      if (host) {
-        host.removeEventListener('mousedown', wrappedMouseDown, true) // capture: true
-        host.removeEventListener('mousemove', wrappedMouseMove, true) // capture: true
-        host.removeEventListener('mouseup', wrappedMouseUp, true) // capture: true
+    e.stopPropagation()
+    isSelectingRef.current = true
+    activePointerIdRef.current = e.pointerId
+    startPosRef.current = { x: e.clientX, y: e.clientY }
+    moveLogCountRef.current = 0
+
+    const { pageEl: startPageEl, pageNumber: startPageNumber } = findPageFromEventPath(e)
+    if (startPageEl && startPageNumber) {
+      startPageRef.current = { pageEl: startPageEl, pageNumber: startPageNumber }
+    } else {
+      const fallback = findPageAtPoint(e.clientX, e.clientY)
+      if (fallback.pageEl && fallback.pageNumber) {
+        startPageRef.current = { pageEl: fallback.pageEl, pageNumber: fallback.pageNumber }
+      } else {
+        startPageRef.current = null
       }
     }
-  }, [viewerId, hostReadyTick]) // ✅ Riattacca quando l'host reale diventa disponibile
+
+    log('pointerdown', {
+      target: target?.className || target?.tagName,
+      page: startPageRef.current?.pageNumber ?? null,
+      pageElTag: startPageRef.current?.pageEl?.className || startPageRef.current?.pageEl?.tagName || null,
+      hostTag: host.className || host.tagName
+    })
+
+    if (onDraftChange && startPageRef.current) {
+      const draftBox = calculateDraftBoxFromPage(
+        startPageRef.current.pageEl,
+        startPageRef.current.pageNumber,
+        e.clientX,
+        e.clientY,
+        e.clientX,
+        e.clientY
+      )
+      onDraftChange(draftBox)
+    } else if (!startPageRef.current) {
+      log('pointerdown: pagina non trovata → nessun draft')
+    }
+
+    try {
+      target.setPointerCapture?.(e.pointerId)
+    } catch {
+      // setPointerCapture può fallire su alcuni target; i listener window coprono il caso
+    }
+    attachWindowListeners()
+
+    const selection = window.getSelection()
+    if (selection) selection.removeAllRanges()
+  }, [
+    enabled,
+    hostRef,
+    isClickInsideOverlay,
+    isOverlayOpen,
+    onDraftChange,
+    findPageAtPoint,
+    calculateDraftBoxFromPage,
+    attachWindowListeners,
+    log
+  ])
+
+  const handlePointerDownRef = useRef(handlePointerDown)
+  useEffect(() => {
+    handlePointerDownRef.current = handlePointerDown
+  }, [handlePointerDown])
+
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!host) {
+      if (debug) {
+        console.log(`[RECT-SEL][${viewerId}] listeners NON attaccati: host null`, { hostReadyTick })
+      }
+      return
+    }
+
+    const onDown = (e: PointerEvent) => handlePointerDownRef.current(e)
+    host.addEventListener('pointerdown', onDown, true)
+    if (debug) {
+      console.log(`[RECT-SEL][${viewerId}] listeners attaccati su host`, {
+        hostReadyTick,
+        hostClass: host.className,
+        tag: host.tagName
+      })
+    }
+
+    return () => {
+      host.removeEventListener('pointerdown', onDown, true)
+      detachWindowListenersRef.current()
+    }
+  }, [viewerId, hostReadyTick, hostRef, debug])
 
   return {
     isSelectingRef
