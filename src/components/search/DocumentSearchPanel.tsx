@@ -1,13 +1,13 @@
 /**
- * Pannello di ricerca condiviso: gestisce soltanto UI e stato del provider.
+ * Pannello di ricerca documento: compose chrome + provider + albero.
  */
 
 import React, { useCallback, useLayoutEffect, useRef } from 'react'
-import { GripVertical, X } from 'lucide-react'
+import { GripVertical } from 'lucide-react'
 import { cryptoRandom } from '../../utils/misc'
 import { SearchProvider } from './SearchProvider'
 import { SearchPanelTree, type SearchPanelTreeHandle } from './SearchPanelTree'
-import { SearchSurface } from './SearchSurface'
+import { SearchPanelChrome } from './SearchPanelChrome'
 import type { DocumentSearchAdapter, SearchResultNode, SearchScope } from './types'
 
 interface DocumentSearchPanelProps {
@@ -92,11 +92,12 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
         </div>
       )}
 
-      <SearchSurface
+      <SearchPanelChrome
         kind="document"
         data-component="document-search-panel"
         data-document-kind={adapter.document.kind}
-        className="relative z-50 isolate h-full border-l bg-background flex flex-col overflow-hidden min-w-0"
+        title={`Cerca in ${adapter.document.title || 'questo documento'}`}
+        onClose={() => onOpenChange(false)}
         style={{
           width: isOpen ? width : 0,
           minWidth: 0,
@@ -108,48 +109,30 @@ export const DocumentSearchPanel = React.memo(function DocumentSearchPanel({
           pointerEvents: isOpen ? 'auto' : 'none'
         }}
       >
-        <div className="document-search-header flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted flex-shrink-0">
-          <h3
-            className="min-w-0 truncate font-semibold text-sm"
-            title={`Cerca in ${adapter.document.title || 'questo documento'}`}
-          >
-            Cerca in {adapter.document.title || 'questo documento'}
-          </h3>
-          <button
-            className="p-1 hover:bg-muted rounded"
-            title="Chiudi pannello"
-            onClick={() => onOpenChange(false)}
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SearchProvider
-            defaultScope="current"
+        <SearchProvider
+          defaultScope="current"
+          initialQuery={query}
+          autoSearch={false}
+          onSearch={runSearch}
+          adapterFactory={adapterFactory}
+        >
+          <SearchPanelTree
+            ref={searchTreeRef}
+            rolePrefix={adapter.document.kind}
+            showInput
+            showScopeSelector={false}
             initialQuery={query}
-            autoSearch={false}
-            onSearch={runSearch}
-            adapterFactory={adapterFactory}
-          >
-            <SearchPanelTree
-              ref={searchTreeRef}
-              rolePrefix={adapter.document.kind}
-              showInput
-              showScopeSelector={false}
-              initialQuery={query}
-              searchQuery={query}
-              onSearchQueryChange={onQueryChange}
-              domUncontrolledSearch
-              resetSearchKey={adapter.document.id}
-              isVisible={isOpen}
-              enableExpandedContext={enableExpandedContext}
-              copyPageTextOnNavigate={copyPageTextOnNavigate}
-              currentScopeLabel={adapter.document.kind === 'pdf' ? 'Questo PDF' : 'Questo documento'}
-            />
-          </SearchProvider>
-        </div>
-      </SearchSurface>
+            searchQuery={query}
+            onSearchQueryChange={onQueryChange}
+            domUncontrolledSearch
+            resetSearchKey={adapter.document.id}
+            isVisible={isOpen}
+            enableExpandedContext={enableExpandedContext}
+            copyPageTextOnNavigate={copyPageTextOnNavigate}
+            currentScopeLabel={adapter.document.kind === 'pdf' ? 'Questo PDF' : 'Questo documento'}
+          />
+        </SearchProvider>
+      </SearchPanelChrome>
     </>
   )
 })

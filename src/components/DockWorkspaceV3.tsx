@@ -1491,34 +1491,37 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       const panelId = `doc-${doc.id}`
       const existingPanel = dockviewApiRef.current.getPanel(panelId)
 
-      if (existingPanel) {
-        // ✅ Verifica che setActivePanel esista prima di chiamarlo
-        if (typeof dockviewApiRef.current.setActivePanel === 'function') {
-          dockviewApiRef.current.setActivePanel(existingPanel)
-        } else if (existingPanel.api) {
-          // Fallback: usa l'API del pannello direttamente
-          existingPanel.api.setActive()
-        } else {
-          throw new Error(`Impossibile attivare il documento "${doc.title}"`)
+      const activatePanel = (panel: NonNullable<typeof existingPanel>) => {
+        if (typeof dockviewApiRef.current?.setActivePanel === 'function') {
+          dockviewApiRef.current.setActivePanel(panel)
         }
-        return true
-      } else {
-        const newPanel = dockviewApiRef.current.addPanel({
-          id: panelId,
-          component: 'doc',
-          params: {
-            component: 'doc', // ✅ Aggiungi component nei params
-            docId: doc.id
-          },
-          title: doc.title,
-          closeable: true // ✅ Abilita pulsante close sulla tab
-        })
-        // ✅ Assicura che il gruppo del pannello non sia bloccato per permettere drag and drop
-        if (newPanel?.group?.locked) {
-          newPanel.group.locked = false
+        if (panel.api && typeof panel.api.setActive === 'function') {
+          panel.api.setActive()
         }
-        return false
       }
+
+      if (existingPanel) {
+        activatePanel(existingPanel)
+        return true
+      }
+
+      const newPanel = dockviewApiRef.current.addPanel({
+        id: panelId,
+        component: 'doc',
+        params: {
+          component: 'doc',
+          docId: doc.id
+        },
+        title: doc.title,
+        closeable: true
+      })
+      if (newPanel?.group?.locked) {
+        newPanel.group.locked = false
+      }
+      if (newPanel) {
+        activatePanel(newPanel)
+      }
+      return false
     },
     openTmpDoc: (meta: { id: string; title: string; content?: string; text?: string; source?: any }) => {
       if (!dockviewApiRef.current) return
@@ -1651,12 +1654,10 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   }), [handleArchiveTabClick, clienti, graphNames])
 
   return (
-    <div className={`dockv3-root w-full h-full relative ${isDragActiveRef.current ? 'drag-active' : ''}`}>
-      {/* ✅ RIMOSSO: Sidebar Archivi (left) - ora si usa DrawerTabStrip se necessario */}
-
-      {/* Main Dockview Area */}
+    <div className={`dockv3-root w-full h-full relative flex ${isDragActiveRef.current ? 'drag-active' : ''}`}>
+      {/* Area documenti: si restringe quando il pannello cerca globale è aperto */}
       <div
-        className="w-full h-full relative transition-all duration-300"
+        className="relative min-h-0 min-w-0 flex-1 transition-all duration-300"
         style={{
           ...(isDrawerStripPinned && isDrawerStripVisible
             ? DRAWER_STRIP_POSITION === 'top'
@@ -1674,15 +1675,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           components={components}
           defaultTabComponent={defaultTabComponent}
           onReady={onReady}
-          className="dockview-theme-light" // ✅ Il CSS si adatta automaticamente al tema via variabili CSS
+          className="dockview-theme-light h-full w-full"
         />
       </div>
 
-      {renderSearch && (
-        <div className="pointer-events-none absolute inset-0 z-[60] flex justify-end">
-          {renderSearch()}
-        </div>
-      )}
+      {/* Sibling flex: non overlay — stesso pattern del pannello ricerca documento */}
+      {renderSearch?.()}
 
       {/* ✅ Due linguette separate affiancate quando nascosti (Stato 1) */}
       {drawerTabs.length > 0 && !isDrawerStripVisible && (

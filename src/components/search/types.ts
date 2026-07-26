@@ -69,3 +69,13 @@ export interface DocumentSearchAdapter {
   search(query: string, scope: SearchScope): Promise<DocumentMatch[]>
   goToMatch(match: DocumentMatch): Promise<void>
 }
+
+/**
+ * Navigatore registrato dal viewer aperto: evidenzia e salta al match canonico.
+ * Un solo percorso per ricerca documento e ricerca globale.
+ */
+export interface ViewerSearchNavigator {
+  readonly documentId: string
+  readonly kind: DocumentKind
+  goToMatch(match: DocumentMatch): Promise<void>
+}

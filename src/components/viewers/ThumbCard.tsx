@@ -123,7 +123,7 @@ export function ThumbCard({
     >
       <div className={`relative w-48 h-64 border rounded-sm bg-background overflow-hidden ${selected ? 'ring-2 ring-blue-500' : ''}`}>
         {/* Header bar - altezza dinamica in base al contenuto */}
-        <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-center gap-2 px-2 py-1.5 min-h-[2rem] ${headerColorClass || 'bg-amber-500'}`}>
+        <div className={`absolute left-2 right-2 top-2 rounded text-white flex items-center gap-2 px-2 py-1.5 min-h-[2rem] ${headerColorClass || 'bg-slate-500'}`}>
           {headerIcon ?? <FileText className="w-4 h-4 flex-shrink-0" />}
           <div className="text-xs font-semibold break-words leading-[1.5] flex-1 min-w-0" title={title}>{title}</div>
         </div>

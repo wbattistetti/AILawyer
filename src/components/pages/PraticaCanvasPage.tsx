@@ -40,6 +40,7 @@ import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemor
 import { OrphanDocPanelCloser } from './pratica-canvas/components/OrphanDocPanelCloser'
 import { findDocumentByCriteria } from './pratica-canvas/hooks/useArchiveHelpers'
 import { useDocumentStore } from '../../stores/documentStore/store';
+import { ViewerSearchNavigatorProvider } from '../search/ViewerSearchNavigatorProvider'
 
 // ✅ Helper: calcola hash SHA-256 del file (client-side)
 async function calculateFileHash(file: File): Promise<string> {
@@ -1539,6 +1540,7 @@ export function PraticaCanvasPage() {
       <div style={{ height: headerH }} />
       {/* Main Content: Archivio (sx) + Tavolo (dx) sempre insieme */}
       <div className="w-full overflow-hidden" style={{ height: `calc(100vh - ${headerH}px)` }}>
+        <ViewerSearchNavigatorProvider>
         <DockWorkspaceV3
           key={id}
           ref={dockV2Ref as any}
@@ -1609,6 +1611,7 @@ export function PraticaCanvasPage() {
             )
           }}
         />
+        </ViewerSearchNavigatorProvider>
 
         {/* Divider resizer removed - preview panel disabled */}
 

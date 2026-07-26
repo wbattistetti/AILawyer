@@ -1,5 +1,10 @@
-import React, { createContext, useContext, useMemo, useRef, useState } from 'react'
+/**
+ * Stato e navigazione condivisi della ricerca documentale.
+ */
+
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { DocRef, DocumentMatch, SearchResultNode, SearchScope } from './types'
+import { useOptionalViewerSearchNavigatorRegistry } from './ViewerSearchNavigatorProvider'
 
 export type { DocRef, DocumentMatch as Match, SearchResultNode, SearchScope } from './types'
 
@@ -31,7 +36,10 @@ interface SearchProviderProps {
     getCurrent?: () => DocRef
     getOpenDocs?: () => DocRef[]
     getAllDocs?: () => DocRef[]
-    ensureDocOpen?: (docId: string) => unknown | Promise<unknown>
+    /**
+     * Apre/attiva il documento. Se restituisce una stringa, è l’id canonico del viewer.
+     */
+    ensureDocOpen?: (docId: string, match?: DocumentMatch) => unknown | Promise<unknown>
   }
   adapterFactory?: (docId: string) => { goToMatch: (match: DocumentMatch) => Promise<void> } | undefined
   onSearch?: (query: string, scope: SearchScope) => Promise<SearchResultNode | null>
@@ -45,20 +53,32 @@ export const SearchProvider: React.FC<SearchProviderProps>
   const [busy, setBusy] = useState(false)
   const idRef = useRef(0)
   const lastAutoSearchQuery = useRef<string | null>(null)
+  const registryRef = useRef(registry)
+  const adapterFactoryRef = useRef(adapterFactory)
+  const onSearchRef = useRef(onSearch)
+  const viewerNavigatorRegistry = useOptionalViewerSearchNavigatorRegistry()
+
+  useEffect(() => {
+    registryRef.current = registry
+    adapterFactoryRef.current = adapterFactory
+    onSearchRef.current = onSearch
+  }, [registry, adapterFactory, onSearch])
 
   const indexStore = useMemo(() => ({
     async ensure(_doc: DocRef) { /* TODO: hook to worker/IDB */ },
     async search(_doc: DocRef, _query: string): Promise<DocumentMatch[]> { return [] },
   }), [])
 
-  const search = React.useCallback(async (query: string) => {
+  const search = useCallback(async (query: string) => {
     const q = (query || '').trim()
     if (!q) return
     setBusy(true)
     setHistory((h)=> [q, ...h.filter(x=>x!==q)].slice(0,20))
     try {
-      if (onSearch) {
-        const node = await onSearch(q, scope)
+      const currentOnSearch = onSearchRef.current
+      const currentRegistry = registryRef.current
+      if (currentOnSearch) {
+        const node = await currentOnSearch(q, scope)
         if (node) {
           setResults(r => {
             const filtered = r.filter(n => n.query !== q)
@@ -67,8 +87,8 @@ export const SearchProvider: React.FC<SearchProviderProps>
           })
         }
       } else {
-        const targets: DocRef[] = scope === 'current' ? (registry?.getCurrent ? [registry.getCurrent()] : [])
-          : scope === 'open' ? (registry?.getOpenDocs?.() || []) : (registry?.getAllDocs?.() || [])
+        const targets: DocRef[] = scope === 'current' ? (currentRegistry?.getCurrent ? [currentRegistry.getCurrent()] : [])
+          : scope === 'open' ? (currentRegistry?.getOpenDocs?.() || []) : (currentRegistry?.getAllDocs?.() || [])
         await Promise.all(targets.map(d => indexStore.ensure(d)))
         const groups = await Promise.all(targets.map(async (d) => ({ doc: d, matches: await indexStore.search(d, q) })))
         const total = groups.reduce((sum, group) => sum + group.matches.length, 0)
@@ -82,36 +102,57 @@ export const SearchProvider: React.FC<SearchProviderProps>
     } finally {
       setBusy(false)
     }
-  }, [scope, onSearch, registry, indexStore])
+  }, [scope, indexStore])
 
-  const clearNode = (id: string) => setResults(r => r.filter(n => n.id !== id))
+  const clearNode = useCallback((id: string) => {
+    setResults(r => r.filter(n => n.id !== id))
+  }, [])
 
-  const navigateTo = async (m: DocumentMatch) => {
-    await (registry?.ensureDocOpen?.(m.docId))
-    const adapter = adapterFactory?.(m.docId)
-    if (adapter?.goToMatch) {
-      await adapter.goToMatch(m)
-    } else {
-      window.dispatchEvent(new CustomEvent('app:goto-match', {
-        detail: { docId: m.docId, q: m.q, match: m }
-      }))
+  const navigateTo = useCallback(async (m: DocumentMatch) => {
+    if (!m?.docId?.trim()) {
+      throw new Error('Match senza docId: impossibile aprire il documento')
     }
-  }
 
-  // ✅ Auto-search quando initialQuery cambia (solo UNA volta per query)
-  React.useEffect(() => {
+    const opened = await registryRef.current?.ensureDocOpen?.(m.docId, m)
+    const canonicalId = typeof opened === 'string' && opened.trim()
+      ? opened.trim()
+      : m.docId
+    const normalizedMatch = canonicalId === m.docId
+      ? m
+      : { ...m, docId: canonicalId }
+
+    const adapter = adapterFactoryRef.current?.(canonicalId)
+    if (adapter?.goToMatch) {
+      await adapter.goToMatch(normalizedMatch)
+      return
+    }
+
+    if (viewerNavigatorRegistry) {
+      const navigator = await viewerNavigatorRegistry.waitFor(canonicalId)
+      await navigator.goToMatch(normalizedMatch)
+      return
+    }
+
+    throw new Error(
+      `Nessun navigatore ricerca per il documento "${canonicalId}": apri il documento e riprova`
+    )
+  }, [viewerNavigatorRegistry])
+
+  useEffect(() => {
     if (autoSearch && initialQuery && initialQuery !== lastAutoSearchQuery.current) {
       lastAutoSearchQuery.current = initialQuery
-      search(initialQuery)
+      void search(initialQuery)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSearch, initialQuery])  // NON includere search nelle dipendenze per evitare loop!
+  }, [autoSearch, initialQuery, search])
+
+  const value = useMemo(
+    () => ({ scope, setScope, history, results, busy, search, clearNode, navigateTo }),
+    [scope, history, results, busy, search, clearNode, navigateTo]
+  )
 
   return (
-    <SearchContext.Provider value={{ scope, setScope, history, results, busy, search, clearNode, navigateTo }}>
+    <SearchContext.Provider value={value}>
       {children}
     </SearchContext.Provider>
   )
 }
-
-

@@ -259,9 +259,9 @@ function extractLineBasedSnippet(text: string, charPosition: number, maxLength: 
 
 export async function searchRoutes(fastify: FastifyInstance) {
 
-  // Ricerca globale in tutti i documenti dell'archivio
+  // Legacy: sostituito da POST /api/search/archive (motore unificato in document-search).
   fastify.get<{ Querystring: { q?: string; limit?: string; docId?: string; praticaId?: string } }>(
-    '/search/archive',
+    '/search/archive-legacy',
     async (request, reply) => {
       try {
         const query = (request.query.q || '').trim()

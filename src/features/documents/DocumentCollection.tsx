@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
-import { FileText, ScanText, Search, X, Loader2 } from 'lucide-react'
+import { Search, X, Loader2 } from 'lucide-react'
 import { SearchProvider } from '../../components/search/SearchProvider'
 import { SearchPanelTree } from '../../components/search/SearchPanelTree'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -9,6 +9,7 @@ import { api } from '../../lib/api'
 import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
 import { DragAndDropService } from '../../services/DragAndDropService'
 import { useDocumentStore } from '../../stores/documentStore/store'
+import { resolveDocumentHeaderStyle } from '../../components/viewers/common/utils/documentHeaderStyle'
 
 type DocItem = {
   id: string
@@ -697,7 +698,21 @@ export function DocumentCollection({
               // ✅ Documento normale
               const meta = (doc as any).meta || {}
               const isExtract = !!(meta && (meta.kind === 'EXTRACT' || meta.source))
-              const headerIcon = isExtract ? <ScanText className="w-4 h-4" /> : <FileText className="w-4 h-4" />
+              const headerStyle = resolveDocumentHeaderStyle({
+                filename: doc.filename || '',
+                mime: doc.mime,
+                isExtract,
+              })
+              const headerIcon = (
+                <span className="inline-flex w-6 h-6 items-center justify-center rounded-sm bg-white shadow-sm flex-shrink-0">
+                  <img
+                    src={headerStyle.iconSrc}
+                    alt=""
+                    aria-hidden="true"
+                    className="w-5 h-5 object-contain"
+                  />
+                </span>
+              )
               const titleText = meta.title || (doc.filename || '').replace(/\.json$/, '')
               const excerpt = (meta.text || meta.content || '').toString().slice(0, 220)
               const src = meta.source || {}
@@ -732,6 +747,7 @@ export function DocumentCollection({
                   excerpt={excerpt}
                   src={src}
                   headerIcon={headerIcon}
+                  headerColorClass={headerStyle.headerColorClass}
                   finalImgSrc={finalImgSrc}
                   computedFileUrl={computedFileUrl}
                   shouldAutoGenerate={shouldAutoGenerate}
@@ -816,6 +832,7 @@ function ThumbCardWithLazyThumbnail({
   excerpt,
   src,
   headerIcon,
+  headerColorClass,
   finalImgSrc,
   computedFileUrl,
   shouldAutoGenerate,
@@ -887,8 +904,8 @@ function ThumbCardWithLazyThumbnail({
                     fileUrl={computedFileUrl}
                     autoGenerateThumbnail={finalShouldAutoGenerate}
                     isPdf={isPdf}
-                    headerIcon={isExtract ? headerIcon : undefined}
-                    headerColorClass={isExtract ? 'bg-emerald-400' : 'bg-amber-500'}
+                    headerIcon={headerIcon}
+                    headerColorClass={headerColorClass}
                     excerpt={isExtract ? excerpt : undefined}
                     metaDocLabel={isExtract ? (src.title || src.docId || '') : undefined}
                     metaPage={isExtract ? (src.page || undefined) : undefined}

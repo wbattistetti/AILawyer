@@ -1,16 +1,19 @@
 /**
- * Ricerca globale della pratica: textbox in barra tab + pannello risultati a destra.
+ * Ricerca globale della pratica: colonna flex a destra (non overlay), chrome Cerca/Chiudi.
  */
 
-import React, { useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import React, { useCallback, useMemo, useState } from 'react'
 import type { Documento } from '../../../../types'
 import type { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3'
 import { searchPracticeArchive, type PracticeSearchDocument } from '../../../search/archiveSearch'
 import { SearchInput } from '../../../search/SearchInput'
+import { SearchPanelChrome } from '../../../search/SearchPanelChrome'
+import { SearchPanelToggle } from '../../../search/SearchPanelToggle'
 import { SearchPanelTree } from '../../../search/SearchPanelTree'
-import { SearchProvider, useSearch } from '../../../search/SearchProvider'
+import { SearchProvider } from '../../../search/SearchProvider'
 import { SearchSurface } from '../../../search/SearchSurface'
+import type { DocumentMatch } from '../../../search/types'
+import { resolvePracticeSearchDocument } from './resolvePracticeSearchDocument'
 
 interface SearchRendererProps {
   praticaId: string
@@ -19,43 +22,38 @@ interface SearchRendererProps {
   toast: (options: { title: string; description?: string }) => void
 }
 
-const waitForViewer = (docId: string): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      window.removeEventListener('app:viewer-ready', handleReady)
-      reject(new Error(`Il viewer del documento "${docId}" non è diventato disponibile`))
-    }, 10_000)
-    const handleReady = (event: Event) => {
-      const readyDocId = (event as CustomEvent<{ docId?: string }>).detail?.docId
-      if (readyDocId !== docId) return
-      window.clearTimeout(timeoutId)
-      window.removeEventListener('app:viewer-ready', handleReady)
-      resolve()
-    }
-    window.addEventListener('app:viewer-ready', handleReady)
-  })
-
 /**
- * Textbox sempre nella riga delle tab; i risultati aprono il pannello verticale condiviso.
+ * Stato chiuso: solo pulsante sulla tab bar. Stato aperto: colonna che spinge il dock.
  */
 function PracticeSearchChrome({
   panelOpen,
-  onPanelOpenChange,
-  onError
+  onPanelOpenChange
 }: {
   panelOpen: boolean
   onPanelOpenChange: (open: boolean) => void
-  onError: (message: string) => void
 }) {
-  const { results } = useSearch()
   const [query, setQuery] = useState('')
 
+  if (!panelOpen) {
+    return (
+      <SearchSurface
+        kind="practice"
+        className="absolute right-0 top-0 z-[60] flex h-9 items-center bg-background px-1"
+      >
+        <SearchPanelToggle
+          open={false}
+          onOpenChange={onPanelOpenChange}
+          openLabel="Cerca"
+        />
+      </SearchSurface>
+    )
+  }
+
   return (
-    <SearchSurface
+    <SearchPanelChrome
       kind="practice"
-      className="flex h-full flex-col items-end pointer-events-none"
-    >
-      <div className="pointer-events-auto">
+      title="Cerca globale"
+      headerContent={(
         <SearchInput
           rolePrefix="archive"
           searchQuery={query}
@@ -63,39 +61,20 @@ function PracticeSearchChrome({
           showScopeSelector={false}
           placeholder="Cerca in tutti i documenti…"
           variant="compact"
-          onSearchStart={() => onPanelOpenChange(true)}
-          onSearchError={(error) => onError(error.message)}
         />
-      </div>
-
-      {panelOpen && (
-        <div className="pointer-events-auto flex min-h-0 w-80 flex-1 flex-col overflow-hidden border-l bg-background shadow-lg">
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted px-3 py-2">
-            <h3 className="truncate text-sm font-semibold">
-              Risultati pratica{results[0] ? ` · ${results[0].total}` : ''}
-            </h3>
-            <button
-              type="button"
-              className="rounded p-1 hover:bg-background"
-              title="Chiudi risultati"
-              aria-label="Chiudi risultati"
-              onClick={() => onPanelOpenChange(false)}
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <SearchPanelTree
-              rolePrefix="archive"
-              showInput={false}
-              showScopeSelector={false}
-              enableExpandedContext={false}
-              copyPageTextOnNavigate={false}
-            />
-          </div>
-        </div>
       )}
-    </SearchSurface>
+      headerClassName="flex h-9 shrink-0 items-center border-b bg-background p-0"
+      onClose={() => onPanelOpenChange(false)}
+      className="w-80 shrink-0 border-l shadow-none"
+    >
+      <SearchPanelTree
+        rolePrefix="archive"
+        showInput={false}
+        showScopeSelector={false}
+        enableExpandedContext={false}
+        copyPageTextOnNavigate={false}
+      />
+    </SearchPanelChrome>
   )
 }
 
@@ -110,18 +89,6 @@ export function SearchRenderer({
 }: SearchRendererProps) {
   const [panelOpen, setPanelOpen] = useState(false)
 
-  const searchableDocuments = useMemo<PracticeSearchDocument[]>(
-    () => documenti
-      .filter((document) => !praticaId || (document as Documento).praticaId === praticaId || !(document as Documento).praticaId)
-      .map((document) => ({
-        id: document.id,
-        title: document.filename,
-        hash: document.hash || '',
-        kind: document.mime?.includes('word') ? 'word' : 'pdf'
-      })),
-    [documenti, praticaId]
-  )
-
   const practiceDocuments = useMemo(
     () => documenti.filter((document) =>
       !document.praticaId || document.praticaId === praticaId
@@ -129,38 +96,62 @@ export function SearchRenderer({
     [documenti, praticaId]
   )
 
+  const searchableDocuments = useMemo<PracticeSearchDocument[]>(
+    () => practiceDocuments.map((document) => ({
+      id: document.id,
+      title: document.filename,
+      hash: document.hash || '',
+      kind: document.mime?.includes('word') ? 'word' : 'pdf',
+      ...(document.s3Key ? { storageKey: document.s3Key } : {})
+    })),
+    [practiceDocuments]
+  )
+
+  const ensureDocOpen = useCallback(async (docId: string, match?: DocumentMatch): Promise<string> => {
+    const document = resolvePracticeSearchDocument(
+      practiceDocuments,
+      docId,
+      match?.docTitle
+    )
+    if (!document) {
+      throw new Error(
+        `Documento non disponibile nel tavolo: ${match?.docTitle || docId}`
+      )
+    }
+
+    const workspace = dockV2Ref.current
+    if (!workspace) {
+      throw new Error('Impossibile aprire il documento: workspace non pronto')
+    }
+
+    const viewerAlreadyMounted = workspace.openDoc({
+      id: document.id,
+      title: document.filename
+    })
+
+    if (!viewerAlreadyMounted) {
+      toast({ title: 'Documento aperto', description: document.filename })
+    }
+
+    return document.id
+  }, [dockV2Ref, practiceDocuments, toast])
+
   return (
     <SearchProvider
       defaultScope="archive"
       registry={{
         getAllDocs: () => searchableDocuments.map((document) => ({ ...document, pages: 0 })),
         getOpenDocs: () => [],
-        ensureDocOpen: async (docId: string) => {
-          const document = practiceDocuments.find((candidate) => candidate.id === docId)
-          const title = document?.filename
-            || searchableDocuments.find((candidate) => candidate.id === docId)?.title
-            || docId
-
-          const workspace = dockV2Ref.current
-          if (!workspace) {
-            throw new Error('Impossibile aprire il documento: workspace non pronto')
-          }
-
-          const viewerAlreadyMounted = workspace.openDoc({ id: docId, title })
-          if (!viewerAlreadyMounted && !document?.mime?.includes('word')) {
-            await waitForViewer(docId)
-          }
-          toast({ title: 'Documento aperto', description: title })
-        }
+        ensureDocOpen
       }}
-      onSearch={(query) => searchPracticeArchive(query, praticaId, searchableDocuments)}
+      onSearch={async (query) => {
+        setPanelOpen(true)
+        return searchPracticeArchive(query, praticaId, searchableDocuments)
+      }}
     >
       <PracticeSearchChrome
         panelOpen={panelOpen}
         onPanelOpenChange={setPanelOpen}
-        onError={(message) => {
-          toast({ title: 'Ricerca non riuscita', description: message })
-        }}
       />
     </SearchProvider>
   )

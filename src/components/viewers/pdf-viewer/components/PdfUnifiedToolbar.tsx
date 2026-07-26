@@ -1,5 +1,6 @@
 import React from 'react'
-import { Search, Highlighter, Underline as UnderlineIcon, Strikethrough as StrikethroughIcon, MessageSquare, PanelRightOpen } from 'lucide-react'
+import { Highlighter, Underline as UnderlineIcon, Strikethrough as StrikethroughIcon, MessageSquare } from 'lucide-react'
+import { SearchPanelToggle } from '../../../search/SearchPanelToggle'
 import { Tool } from '../hooks/usePdfAnnotations'
 
 interface PdfUnifiedToolbarProps {
@@ -164,38 +165,21 @@ export const PdfUnifiedToolbar: React.FC<PdfUnifiedToolbarProps> = ({
 
       {/* DESTRA: Ricerca + Controlli */}
       <div className="flex items-center gap-2 flex-wrap ml-auto">
-        {/* Pulsante Ricerca */}
-        {showAdvanced ? (
-          <button
-            className="px-2 py-1 border rounded bg-accent text-accent-foreground hover:bg-accent/80 text-sm"
-            title="Chiudi pannello ricerca"
-            onClick={() => {
-              setShowAdvanced(false)
-              onCloseSearchPanel()
-            }}
-          >
-            <PanelRightOpen size={16} className="inline-block mr-1 rotate-180" />
-            Chiudi ricerca
-          </button>
-        ) : (
-          <button
-            className="px-2 py-1 border rounded bg-background text-foreground hover:bg-muted text-sm"
-            title="Apri pannello ricerca"
-            onClick={(e) => {
-              e.stopPropagation()  // ✅ Previeni che Dockview disattivi il pannello
-              setShowAdvanced(true)
+        <SearchPanelToggle
+          open={showAdvanced}
+          onOpenChange={(open) => {
+            setShowAdvanced(open)
+            if (open) {
               onOpenSearchPanel()
-
-              // ✅ Mantieni il pannello attivo
               if (panelApi && typeof panelApi.setActive === 'function') {
                 panelApi.setActive()
               }
-            }}
-          >
-            <Search size={16} className="inline-block mr-1" />
-            Cerca
-          </button>
-        )}
+              return
+            }
+            onCloseSearchPanel()
+          }}
+          stopPropagation
+        />
 
         {/* Separatore */}
         <div className="h-6 w-px bg-border" />

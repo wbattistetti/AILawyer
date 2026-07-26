@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import type { ExtractCard } from '../../common/types/viewer.types'
 import { usePdfViewerState } from './usePdfViewerState'
 import { usePdfSearch } from './usePdfSearch'
@@ -8,6 +8,7 @@ import { usePdfAudit } from './usePdfAudit'
 import { usePdfAnnotations } from './usePdfAnnotations'
 import { usePdfJumpTo } from './usePdfJumpTo'
 import { useDocumentSearchPanel } from '../../../search/useDocumentSearchPanel'
+import { useOptionalViewerSearchNavigatorRegistry } from '../../../search/ViewerSearchNavigatorProvider'
 import { usePdfDocument } from './usePdfDocument'
 import { usePdfNativeStyles } from './usePdfNativeStyles'
 import { usePdfOverlays } from './usePdfOverlays'
@@ -15,8 +16,9 @@ import { usePdfExtract } from './usePdfExtract'
 import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
 import { captureSelectionScreenshotWithFallback } from '../../common/utils/screenshot'
 import type { PersistentSelection } from '../types'
-import type { RectSelection, ExtractedContent, ExtractCard } from '../../common/types/viewer.types'
+import type { RectSelection, ExtractedContent } from '../../common/types/viewer.types'
 import { extractContentFromRect } from '../utils/extractContentFromRect'
+import { toPdfMatchItem } from '../utils/toPdfMatchItem'
 
 interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
@@ -109,6 +111,25 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
     setActiveSearchMatchId,
     setAreas
   })
+
+  const viewerNavigatorRegistry = useOptionalViewerSearchNavigatorRegistry()
+  useEffect(() => {
+    if (!viewerNavigatorRegistry || !docId?.trim()) return
+
+    return viewerNavigatorRegistry.register({
+      documentId: docId,
+      kind: 'pdf',
+      goToMatch: async (match) => {
+        const item = toPdfMatchItem(match)
+        setMatches((previous) => (
+          previous.some((candidate) => candidate.id === item.id)
+            ? previous
+            : [...previous, item]
+        ))
+        await goToMatch(item)
+      }
+    })
+  }, [viewerNavigatorRegistry, docId, goToMatch, setMatches])
 
   const selectionHandledRef = useRef(false)
 

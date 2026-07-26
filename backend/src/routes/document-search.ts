@@ -11,6 +11,7 @@ import {
   type DocumentLocator
 } from '../services/document-content-resolver.js'
 import { searchDocumentContent } from '../services/document-search-service.js'
+import { searchPracticeArchive } from '../services/practice-archive-search.js'
 
 const locatorSchema = z.object({
   docId: z.string().trim().min(1),
@@ -25,6 +26,19 @@ const searchQuerySchema = locatorSchema.extend({
 
 const pageQuerySchema = locatorSchema.extend({
   page: z.coerce.number().int().positive()
+})
+
+const archiveLocatorSchema = z.object({
+  id: z.string().trim().min(1),
+  hash: z.string().trim().min(1).optional(),
+  storageKey: z.string().trim().min(1).optional(),
+  filename: z.string().trim().min(1).optional()
+})
+
+const archiveBodySchema = z.object({
+  q: z.string().trim().min(1),
+  praticaId: z.string().trim().min(1),
+  docs: z.array(archiveLocatorSchema).optional()
 })
 
 const toLocator = (input: z.infer<typeof locatorSchema>): DocumentLocator => ({
@@ -67,6 +81,31 @@ export async function documentSearchRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Parametri di ricerca non validi', details: error.errors })
       }
       return sendResolutionError(reply, error)
+    }
+  })
+
+  /**
+   * Ricerca globale pratica: stesso motore di /search/document (OCR locale + DB + nativo).
+   */
+  fastify.post('/search/archive', async (request, reply) => {
+    try {
+      const input = archiveBodySchema.parse(request.body ?? {})
+      const matches = await searchPracticeArchive({
+        praticaId: input.praticaId,
+        query: input.q,
+        locators: input.docs
+      })
+      return reply.send({
+        query: input.q,
+        praticaId: input.praticaId,
+        total: matches.length,
+        matches
+      })
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({ error: 'Parametri ricerca globale non validi', details: error.errors })
+      }
+      throw error
     }
   })
 

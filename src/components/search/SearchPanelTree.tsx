@@ -4,6 +4,7 @@ import { useSearch } from './SearchProvider'
 import { useToast } from '@/hooks/use-toast'
 import { extractPageText } from '@/utils/extractPageText'
 import { SearchInput, type SearchInputHandle } from './SearchInput'
+import { nextTreeNodeOpen } from './treeNodeOpen'
 
 export interface SearchPanelTreeHandle {
   focusInput: () => void
@@ -107,8 +108,49 @@ export const SearchPanelTree = React.memo(
         }
       }, [results.length, initialQuery])
 
-      const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: !s[id] }))
-      const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: !s[id] }))
+      // Default UI = espanso (`?? true`). Il primo click deve collassare, non riscrivere `true`.
+      const toggle = (id: string) => setOpenNodes(s => ({ ...s, [id]: nextTreeNodeOpen(s[id]) }))
+      const toggleDoc = (id: string) => setOpenDocs(s => ({ ...s, [id]: nextTreeNodeOpen(s[id]) }))
+
+      /**
+       * Apre/attiva il documento del match e naviga all’occorrenza; errori in toast.
+       */
+      const openMatch = useCallback(async (m: Parameters<typeof navigateTo>[0]) => {
+        setSelectedId(m.id)
+        if (copyPageTextOnNavigate) {
+          try {
+            const pageText = await extractPageText(m.docId, m.page || 1)
+            const pageNumber = m.page || 1
+            const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
+            await navigator.clipboard.writeText(textWithPageInfo)
+            toast({
+              title: 'Testo copiato',
+              description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
+            })
+          } catch (error) {
+            console.error('[SEARCH] Error copying page text:', error)
+            toast({
+              title: 'Errore',
+              description: 'Impossibile copiare il testo della pagina',
+              variant: 'destructive',
+            })
+          }
+        }
+
+        try {
+          await navigateTo(m)
+        } catch (cause) {
+          const error = cause instanceof Error
+            ? cause
+            : new Error('Impossibile aprire il documento dal risultato di ricerca')
+          console.error('[SEARCH] Navigazione match fallita:', error)
+          toast({
+            title: 'Apertura documento non riuscita',
+            description: error.message,
+            variant: 'destructive',
+          })
+        }
+      }, [copyPageTextOnNavigate, navigateTo, toast])
 
       // Funzione per recuperare contesto espanso dal backend
       const fetchExpandedContext = useCallback(async (
@@ -297,29 +339,7 @@ export const SearchPanelTree = React.memo(
                                     className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-muted' : 'hover:bg-muted/40'}`}
                                     onMouseEnter={() => setHoveredMatchId(matchId)}
                                     onMouseLeave={() => setHoveredMatchId(null)}
-                                    onClick={async()=>{
-                                      setSelectedId(m.id)
-                                      if (copyPageTextOnNavigate) {
-                                        try {
-                                          const pageText = await extractPageText(m.docId, m.page || 1)
-                                          const pageNumber = m.page || 1
-                                          const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
-                                          await navigator.clipboard.writeText(textWithPageInfo)
-                                          toast({
-                                            title: 'Testo copiato',
-                                            description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
-                                          })
-                                        } catch (error) {
-                                          console.error('[SEARCH] Error copying page text:', error)
-                                          toast({
-                                            title: 'Errore',
-                                            description: 'Impossibile copiare il testo della pagina',
-                                            variant: 'destructive',
-                                          })
-                                        }
-                                      }
-                                      await navigateTo(m)
-                                    }}
+                                    onClick={() => { void openMatch(m) }}
                                   >
                                     <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
@@ -381,10 +401,33 @@ export const SearchPanelTree = React.memo(
                         return (
                           <li key={g.doc.id} className="mb-1">
                             <div className="px-2 py-0.5 text-foreground font-medium flex items-center gap-2">
-                              <span className="text-muted-foreground cursor-pointer" onClick={()=>toggleDoc(g.doc.id)}>{o ? '▾' : '▸'}</span>
-                              <FileText size={14} className="text-muted-foreground" />
-                              <span>{g.doc.title}</span>
-                              <span className="text-muted-foreground">({g.matches.length})</span>
+                              <span
+                                className="text-muted-foreground cursor-pointer"
+                                onClick={() => toggleDoc(g.doc.id)}
+                              >
+                                {o ? '▾' : '▸'}
+                              </span>
+                              <button
+                                type="button"
+                                className="min-w-0 flex flex-1 items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-muted/40"
+                                title={`Apri ${g.doc.title}`}
+                                onClick={() => {
+                                  const firstMatch = g.matches[0]
+                                  if (!firstMatch) {
+                                    toast({
+                                      title: 'Nessuna occorrenza',
+                                      description: `Il documento "${g.doc.title}" non ha match da aprire`,
+                                      variant: 'destructive',
+                                    })
+                                    return
+                                  }
+                                  void openMatch(firstMatch)
+                                }}
+                              >
+                                <FileText size={14} className="text-muted-foreground shrink-0" />
+                                <span className="truncate">{g.doc.title}</span>
+                                <span className="text-muted-foreground shrink-0">({g.matches.length})</span>
+                              </button>
                             </div>
                             {o && (
                               <ul className="pl-4">
@@ -401,29 +444,7 @@ export const SearchPanelTree = React.memo(
                                       className={`px-2 py-1 cursor-pointer flex items-start gap-2 relative group ${selectedId===m.id ? 'bg-muted' : 'hover:bg-muted/40'}`}
                                       onMouseEnter={() => setHoveredMatchId(matchId)}
                                       onMouseLeave={() => setHoveredMatchId(null)}
-                                      onClick={async()=>{
-                                      setSelectedId(m.id)
-                                      if (copyPageTextOnNavigate) {
-                                        try {
-                                          const pageText = await extractPageText(m.docId, m.page || 1)
-                                          const pageNumber = m.page || 1
-                                          const textWithPageInfo = `${pageText}\n\n---\nPagina ${pageNumber}`
-                                          await navigator.clipboard.writeText(textWithPageInfo)
-                                          toast({
-                                            title: 'Testo copiato',
-                                            description: `Testo della pagina ${pageNumber} copiato nella clipboard`,
-                                          })
-                                        } catch (error) {
-                                          console.error('[SEARCH] Error copying page text:', error)
-                                          toast({
-                                            title: 'Errore',
-                                            description: 'Impossibile copiare il testo della pagina',
-                                            variant: 'destructive',
-                                          })
-                                        }
-                                      }
-                                      await navigateTo(m)
-                                    }}
+                                      onClick={() => { void openMatch(m) }}
                                     >
                                       <TypeIcon size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 min-w-0">

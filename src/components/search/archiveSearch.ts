@@ -10,6 +10,7 @@ export interface PracticeSearchDocument {
   title: string
   hash: string
   kind: DocumentKind
+  storageKey?: string
 }
 
 interface ArchiveSearchResponse {
@@ -117,7 +118,20 @@ export function normalizeArchiveSearchResults(
       x1Pct,
       y0Pct,
       y1Pct,
-      rects: [{ x0Pct, x1Pct, y0Pct, y1Pct }],
+      rects: Array.isArray(match.rects) && match.rects.length > 0
+        ? match.rects.map((rect, rectIndex) => {
+          if (!rect || typeof rect !== 'object') {
+            throw new Error(`Risposta ricerca globale non valida: rect ${rectIndex} nel match ${index}`)
+          }
+          const item = rect as Record<string, unknown>
+          return {
+            x0Pct: requirePercent(item.x0Pct, `matches[${index}].rects[${rectIndex}].x0Pct`),
+            x1Pct: requirePercent(item.x1Pct, `matches[${index}].rects[${rectIndex}].x1Pct`),
+            y0Pct: requirePercent(item.y0Pct, `matches[${index}].rects[${rectIndex}].y0Pct`),
+            y1Pct: requirePercent(item.y1Pct, `matches[${index}].rects[${rectIndex}].y1Pct`)
+          }
+        })
+        : [{ x0Pct, x1Pct, y0Pct, y1Pct }],
       charIdx: typeof match.charIdx === 'number' ? match.charIdx : undefined,
       qLength: typeof match.qLen === 'number' ? match.qLen : query.length,
       snippet: requireString(match.snippet, `matches[${index}].snippet`),
@@ -150,7 +164,7 @@ export function normalizeArchiveSearchResults(
 }
 
 /**
- * Cerca una stringa in tutti i documenti indicizzati della pratica.
+ * Cerca una stringa in tutti i documenti della pratica (motore unificato lato backend).
  */
 export async function searchPracticeArchive(
   query: string,
@@ -161,8 +175,20 @@ export async function searchPracticeArchive(
   if (!normalizedQuery) throw new Error('La query di ricerca non può essere vuota')
   if (!praticaId.trim()) throw new Error('Identificativo pratica mancante')
 
-  const params = new URLSearchParams({ q: normalizedQuery, praticaId })
-  const response = await fetch(`${getApiBaseUrl()}/api/search/archive?${params.toString()}`)
+  const response = await fetch(`${getApiBaseUrl()}/api/search/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      q: normalizedQuery,
+      praticaId,
+      docs: documents.map((document) => ({
+        id: document.id,
+        ...(document.hash ? { hash: document.hash } : {}),
+        ...(document.storageKey ? { storageKey: document.storageKey } : {}),
+        filename: document.title
+      }))
+    })
+  })
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: unknown } | null
     const detail = typeof body?.error === 'string' ? `: ${body.error}` : ''
