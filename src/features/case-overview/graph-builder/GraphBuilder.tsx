@@ -1,15 +1,28 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react'
-import ReactFlow, { Background, Controls, MiniMap, useReactFlow, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge, Viewport } from 'reactflow'
+import ReactFlow, { Background, Controls, MiniMap, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { getEntityDraft, subscribeEntityDraft } from '../../generic-entities/entity-draft-store'
+import { getPersonDraft, subscribePersonDraft } from '../../entities/person-draft-store'
+import { getEntityLabel } from '../../entity-visual-catalog'
+import { api } from '../../../lib/api'
 import { ToolPalette } from './ToolPalette'
-import { BuilderEdge, BuilderNode, BuilderNodeData, RelationKind } from './types'
+import { BuilderEdge, BuilderNode, BuilderNodeData, NodeKind, RelationKind } from './types'
 import EdgeWithTooltip from './EdgeWithTooltip'
-import RelationPicker, { getRelationOptions, labelFor } from './RelationPicker'
-import { mockPeople, mockCompanies, mockPlaces, mockVehicles } from './mockData'
+import RelationPicker, { getRelationOptions, type RelationPick } from './RelationPicker'
+import EntityPicker from './EntityPicker'
+import DestinationCategoryPicker, { type DestinationCategoryPick } from './DestinationCategoryPicker'
+import {
+  buildGraphEntityCatalog,
+  filterCatalogByPaletteKind,
+  requiresEntitySelection,
+  type GraphEntityOption,
+} from './graph-entity-catalog'
+import { formatRelationPhrase } from './relation-phrase'
 import NodeView from './NodeView'
 import { serializeGraph, deserializeGraph, type SavedGraph } from './graphSerialization'
 
 export type GraphBuilderProps = {
+  praticaId?: string
   graphId?: string
   graphName?: string
   savedGraph?: SavedGraph | null
@@ -19,14 +32,68 @@ export type GraphBuilderHandle = {
   save: () => SavedGraph | null
 }
 
-const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ graphId, graphName = 'Grafo', savedGraph }, ref) => {
+const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ praticaId, graphId, graphName = 'Grafo', savedGraph }, ref) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNodeData>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>([])
   const [relPicker, setRelPicker] = useState<{ x:number; y:number; source: Node; target: Node; edgeId?: string } | null>(null)
+  const [entityPicker, setEntityPicker] = useState<{
+    x: number
+    y: number
+    pendingNodeId: string
+    paletteKind: NodeKind
+    options: GraphEntityOption[]
+  } | null>(null)
+  const [destinationPicker, setDestinationPicker] = useState<{
+    x: number
+    y: number
+    sourceId: string
+    pendingNodeId: string
+    edgeId: string
+  } | null>(null)
+  const destinationPickerRef = useRef(destinationPicker)
+  destinationPickerRef.current = destinationPicker
+  const [entityCatalog, setEntityCatalog] = useState<GraphEntityOption[]>([])
   const connectEndRef = useRef<{ x:number; y:number } | null>(null)
+  const connectSourceRef = useRef<string | null>(null)
+  const connectionSucceededRef = useRef(false)
+  /** Skip the pane click that follows mouseup after dropping a link on empty canvas. */
+  const suppressPaneClickRef = useRef(false)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const reactFlowInstanceRef = useRef<any>(null)
   const createdAtRef = useRef<string>(new Date().toISOString())
+
+  const refreshEntityCatalog = useCallback(async () => {
+    if (!praticaId) {
+      setEntityCatalog([])
+      return
+    }
+    let persons = getPersonDraft(praticaId)?.persons ?? []
+    let entities = getEntityDraft(praticaId)?.entities ?? []
+    if (persons.length === 0 || entities.length === 0) {
+      const [remotePersons, remoteEntities] = await Promise.all([
+        persons.length === 0 ? api.getPracticePersons(praticaId).catch(() => ({ persons: [] })) : Promise.resolve(null),
+        entities.length === 0 ? api.getPracticeEntities(praticaId).catch(() => ({ entities: [] })) : Promise.resolve(null),
+      ])
+      if (remotePersons) persons = remotePersons.persons
+      if (remoteEntities) entities = remoteEntities.entities
+    }
+    setEntityCatalog(buildGraphEntityCatalog(persons, entities))
+  }, [praticaId])
+
+  useEffect(() => {
+    void refreshEntityCatalog()
+  }, [refreshEntityCatalog])
+
+  useEffect(() => {
+    if (!praticaId) return
+    const sync = () => { void refreshEntityCatalog() }
+    const unsubPersons = subscribePersonDraft(sync)
+    const unsubEntities = subscribeEntityDraft(sync)
+    return () => {
+      unsubPersons()
+      unsubEntities()
+    }
+  }, [praticaId, refreshEntityCatalog])
   
   // Carica grafo salvato se presente
   useEffect(() => {
@@ -58,29 +125,159 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
 
   const nodeTypes = useMemo(() => ({ builder: NodeView as any }), [])
   const edgeTypes = useMemo(() => ({ tooltip: EdgeWithTooltip }), [])
+  const existingEntityRefIds = useMemo(
+    () => new Set(nodes.flatMap(node => node.data.refId ? [node.data.refId] : [])),
+    [nodes],
+  )
+
+  const associateNodeWithOption = useCallback((
+    nodeId: string,
+    option: GraphEntityOption,
+  ) => {
+    const labelBlock = buildLabelBlock(option)
+    setNodes(currentNodes => currentNodes.map(node => node.id === nodeId ? {
+      ...node,
+      data: {
+        ...node.data,
+        kind: option.kind,
+        label: option.label,
+        labelBlock,
+        refId: option.id,
+        details: option.details,
+      },
+    } : node))
+  }, [setNodes])
+
+  const createBlankNode = useCallback((
+    kind: NodeKind,
+    flowPos: { x: number; y: number },
+    startEditing = true,
+    labelOverride?: string,
+  ): string => {
+    const id = `n${Date.now()}${Math.floor(Math.random()*1000)}`
+    const data: BuilderNodeData = {
+      kind,
+      label: labelOverride ?? defaultLabelFor(kind),
+      nodeId: id,
+      startEditing,
+    }
+    const node: BuilderNode = {
+      id,
+      type: 'builder',
+      position: { x: flowPos.x, y: flowPos.y },
+      dragHandle: '.drag-region',
+      data: {
+        ...data,
+        onDelete: () => setNodes(nds => nds.filter(n => n.id !== id)),
+      },
+    }
+    setNodes(nds => nds.concat(node))
+    return id
+  }, [setNodes])
+
+  const cancelDestinationPicker = useCallback(() => {
+    const current = destinationPickerRef.current
+    setDestinationPicker(null)
+    if (!current) return
+    setNodes(nds => nds.filter(n => n.id !== current.pendingNodeId))
+    setEdges(eds => eds.filter(e => e.id !== current.edgeId) as any)
+  }, [setNodes, setEdges])
+
+  const openRelationPickerForEdge = useCallback((
+    sourceId: string,
+    targetId: string,
+    edgeId: string,
+    pickerX: number,
+    pickerY: number,
+    targetOverride?: Partial<BuilderNodeData>,
+  ) => {
+    const source = nodes.find(n => n.id === sourceId)
+    const target = nodes.find(n => n.id === targetId)
+    if (!source || !target) return
+    const nextTarget = targetOverride
+      ? { ...target, data: { ...target.data, ...targetOverride } }
+      : target
+    setRelPicker({
+      x: pickerX,
+      y: pickerY,
+      source: source as any,
+      target: nextTarget as any,
+      edgeId,
+    })
+  }, [nodes])
+
+  const applyDestinationPick = useCallback((pick: DestinationCategoryPick) => {
+    if (!destinationPicker) return
+    const { pendingNodeId, sourceId, edgeId, x, y } = destinationPicker
+
+    if (pick.type === 'blank') {
+      const label = defaultLabelFor(pick.kind)
+      setNodes(nds => nds.map(n => n.id === pendingNodeId ? {
+        ...n,
+        data: {
+          ...n.data,
+          kind: pick.kind,
+          label,
+          startEditing: true,
+          refId: undefined,
+          labelBlock: undefined,
+          details: undefined,
+        },
+      } : n))
+      setDestinationPicker(null)
+      openRelationPickerForEdge(sourceId, pendingNodeId, edgeId, x, y, {
+        kind: pick.kind,
+        label,
+        startEditing: true,
+      })
+      return
+    }
+
+    const labelBlock = buildLabelBlock(pick.option)
+    associateNodeWithOption(pendingNodeId, pick.option)
+    setDestinationPicker(null)
+    openRelationPickerForEdge(sourceId, pendingNodeId, edgeId, x, y, {
+      kind: pick.option.kind,
+      label: pick.option.label,
+      labelBlock: labelBlock ?? undefined,
+      refId: pick.option.id,
+      details: pick.option.details,
+    })
+  }, [destinationPicker, associateNodeWithOption, openRelationPickerForEdge, setNodes])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    const kind = e.dataTransfer.getData('application/x-node-kind') as BuilderNodeData['kind']
+    const kind = e.dataTransfer.getData('application/x-node-kind') as NodeKind
     if (!kind) return
     const rf = (window as any).__rfInstance as any
-    let pos = { x: e.clientX, y: e.clientY }
+    let flowPos = { x: e.clientX, y: e.clientY }
     if (rf?.screenToFlowPosition) {
       const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      pos = { x: p.x, y: p.y }
+      flowPos = { x: p.x, y: p.y }
     } else {
       const bounds = hostRef.current?.getBoundingClientRect()
-      pos = { x: e.clientX - (bounds?.left||0), y: e.clientY - (bounds?.top||0) }
+      flowPos = { x: e.clientX - (bounds?.left||0), y: e.clientY - (bounds?.top||0) }
     }
-    const id = `n${Date.now()}${Math.floor(Math.random()*1000)}`
-    const label = defaultLabelFor(kind)
-    const data: BuilderNodeData = { kind, label, nodeId: id, startEditing: true }
-    // Con nodeOrigin={[0.5,0.5]} la position è il centro del nodo
-    const node: BuilderNode = { id, type: 'builder', position: { x: pos.x, y: pos.y }, dragHandle: '.drag-region', data: { ...data, onDelete: () => setNodes(nds => nds.filter(n => n.id !== id)) } }
-    setNodes(nds => nds.concat(node))
-    // Mock prompt to assign entity
-    assignMockRefFor(node)
-  }, [])
+    const pane = hostRef.current?.querySelector('.react-flow__pane') as HTMLElement | null
+    const pr = pane?.getBoundingClientRect()
+    const pickerX = pr ? e.clientX - pr.left : flowPos.x
+    const pickerY = pr ? e.clientY - pr.top : flowPos.y
+
+    if (!requiresEntitySelection(kind)) {
+      createBlankNode(kind, flowPos)
+      return
+    }
+
+    setRelPicker(null)
+    const pendingNodeId = createBlankNode(kind, flowPos, false)
+    setEntityPicker({
+      x: pickerX,
+      y: pickerY,
+      pendingNodeId,
+      paletteKind: kind,
+      options: filterCatalogByPaletteKind(entityCatalog, kind),
+    })
+  }, [createBlankNode, entityCatalog])
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }, [])
 
@@ -90,6 +287,7 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
     if (!source || !target || source.id === target.id) return
     const exists = edges.some(e => (e.source === source.id && e.target === target.id) || (e.source === target.id && e.target === source.id))
     if (exists) return
+    connectionSucceededRef.current = true
     // 1) create edge immediately
     const newId = `e${source.id}-${target.id}-${Date.now()}`
     setEdges(eds => addEdge({ ...params, id: newId, type: 'tooltip', markerEnd: { type: MarkerType.ArrowClosed, color: '#0f172a' } }, eds as any) as any)
@@ -99,20 +297,95 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
     const end = connectEndRef.current
     const px = end && pr ? (end.x - pr.left) : (source.position.x + target.position.x)/2
     const py = end && pr ? (end.y - pr.top) : (source.position.y + target.position.y)/2
+    setDestinationPicker(null)
+    setEntityPicker(null)
     setRelPicker({ x: px, y: py, source: source as any, target: target as any, edgeId: newId })
   }, [nodes, edges])
 
-  const handlePick = (rel: RelationKind) => {
+  const handleConnectEnd = useCallback((e: MouseEvent | TouchEvent) => {
+    try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {}
+    const anyE: any = e
+    const cx = anyE?.clientX ?? anyE?.changedTouches?.[0]?.clientX
+    const cy = anyE?.clientY ?? anyE?.changedTouches?.[0]?.clientY
+    if (typeof cx === 'number' && typeof cy === 'number') connectEndRef.current = { x: cx, y: cy }
+
+    const sourceId = connectSourceRef.current
+    const eventTarget = e.target as Element | null
+    const droppedOnNode = Boolean(eventTarget?.closest?.('.react-flow__node'))
+    const likelyEmptyDrop = Boolean(sourceId) && !droppedOnNode
+    // Arm before the trailing pane click; disarm below if we do not create a destination.
+    if (likelyEmptyDrop) suppressPaneClickRef.current = true
+
+    // Defer so onConnect can mark success before we decide to spawn a blank target.
+    queueMicrotask(() => {
+      const succeeded = connectionSucceededRef.current
+      connectionSucceededRef.current = false
+      connectSourceRef.current = null
+      if (succeeded || !sourceId || droppedOnNode) {
+        if (likelyEmptyDrop) suppressPaneClickRef.current = false
+        return
+      }
+      if (typeof cx !== 'number' || typeof cy !== 'number') {
+        suppressPaneClickRef.current = false
+        return
+      }
+
+      const rf = reactFlowInstanceRef.current ?? (window as any).__rfInstance
+      let flowPos = { x: cx, y: cy }
+      if (rf?.screenToFlowPosition) {
+        const p = rf.screenToFlowPosition({ x: cx, y: cy })
+        flowPos = { x: p.x, y: p.y }
+      } else {
+        const bounds = hostRef.current?.getBoundingClientRect()
+        flowPos = { x: cx - (bounds?.left || 0), y: cy - (bounds?.top || 0) }
+      }
+
+      const pane = hostRef.current?.querySelector('.react-flow__pane') as HTMLElement | null
+      const pr = pane?.getBoundingClientRect()
+      const pickerX = pr ? cx - pr.left : flowPos.x
+      const pickerY = pr ? cy - pr.top : flowPos.y
+
+      setRelPicker(null)
+      setEntityPicker(null)
+      const pendingNodeId = createBlankNode('person', flowPos, false, '…')
+      const edgeId = `e${sourceId}-${pendingNodeId}-${Date.now()}`
+      setEdges(eds => addEdge({
+        id: edgeId,
+        source: sourceId,
+        target: pendingNodeId,
+        type: 'tooltip',
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#0f172a' },
+      }, eds as any) as any)
+      setDestinationPicker({
+        x: pickerX,
+        y: pickerY,
+        sourceId,
+        pendingNodeId,
+        edgeId,
+      })
+    })
+  }, [createBlankNode, setEdges])
+
+  const handlePick = (pick: RelationPick) => {
     if (!relPicker) return
     const source = relPicker.source as BuilderNode
     const target = relPicker.target as BuilderNode
-    const tooltip = buildTooltip(source, rel, target)
-    const dashed = rel === 'socio_occulto' || rel === 'interessi'
+    const relation = pick.type === 'catalog' ? pick.relation : 'custom'
+    const customMiddle = pick.type === 'custom' ? pick.middle : undefined
+    const customCaption = pick.type === 'custom' ? pick.caption : undefined
+    const tooltip = buildTooltip(source, relation, target, customMiddle)
+    const dashed = relation === 'socio_occulto' || relation === 'interessi' || relation === 'stessa_entita'
+    const edgeData = {
+      relation,
+      tooltip,
+      dashed,
+      customMiddle,
+      customCaption,
+    }
     if (relPicker.edgeId) {
-      // update existing temporary edge only
       setEdges(eds => eds.map(e => e.id === relPicker.edgeId ? ({
         ...e,
-        data: { ...(e.data as any), relation: rel, tooltip, dashed },
+        data: { ...(e.data as any), ...edgeData },
       }) as any : e))
     } else {
       const edge: BuilderEdge = {
@@ -121,25 +394,65 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
         target: target.id,
         type: 'tooltip',
         markerEnd: { type: MarkerType.ArrowClosed, color: '#0f172a' },
-        data: { relation: rel, tooltip, dashed },
+        data: edgeData,
       }
       setEdges(eds => eds.concat(edge))
     }
     setRelPicker(null)
   }
 
-  // Open relation picker when clicking the pencil on an edge caption
+  // Open relation picker when clicking the gear on an edge
   React.useEffect(() => {
     const onEdit = (e: any) => {
       const d = e?.detail || {}
       const source = nodes.find(n => n.id === d.sourceId) as BuilderNode | undefined
       const target = nodes.find(n => n.id === d.targetId) as BuilderNode | undefined
       if (!source || !target) return
-      setRelPicker({ x: d.x, y: d.y, source: source as any, target: target as any, edgeId: d.edgeId })
+      const pane = hostRef.current?.querySelector('.react-flow__pane') as HTMLElement | null
+      const pr = pane?.getBoundingClientRect()
+      const px = d.screen && pr && typeof d.clientX === 'number'
+        ? d.clientX - pr.left
+        : (typeof d.x === 'number' ? d.x : 0)
+      const py = d.screen && pr && typeof d.clientY === 'number'
+        ? d.clientY - pr.top
+        : (typeof d.y === 'number' ? d.y : 0)
+      setRelPicker({ x: px, y: py, source: source as any, target: target as any, edgeId: d.edgeId })
     }
     window.addEventListener('gb:edit-edge', onEdit as any)
     return () => window.removeEventListener('gb:edit-edge', onEdit as any)
   }, [nodes])
+
+  // Apply caption edit from edge pencil (custom relation)
+  React.useEffect(() => {
+    const onCaption = (e: any) => {
+      const d = e?.detail || {}
+      if (!d?.id || d.relation !== 'custom') return
+      const middle = typeof d.customMiddle === 'string' ? d.customMiddle.trim() : ''
+      const caption = typeof d.customCaption === 'string' ? d.customCaption.trim() : middle
+      if (!middle) return
+      setEdges(eds => eds.map(edge => {
+        if (edge.id !== d.id) return edge as any
+        const source = nodes.find(n => n.id === edge.source) as BuilderNode | undefined
+        const target = nodes.find(n => n.id === edge.target) as BuilderNode | undefined
+        const tooltip = source && target
+          ? buildTooltip(source, 'custom', target, middle)
+          : `${middle}`
+        return {
+          ...edge,
+          data: {
+            ...(edge.data as any),
+            relation: 'custom',
+            customMiddle: middle,
+            customCaption: caption,
+            tooltip,
+            dashed: false,
+          },
+        } as any
+      }))
+    }
+    window.addEventListener('gb:edge-caption', onCaption as any)
+    return () => window.removeEventListener('gb:edge-caption', onCaption as any)
+  }, [nodes, setEdges])
 
   // Center nodes after first render with measured size
   React.useEffect(() => {
@@ -247,20 +560,29 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onConnectStart={() => { try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: true } })) } catch {} }}
+          onConnectStart={(e, params) => {
+            connectionSucceededRef.current = false
+            let nodeId = params?.nodeId ?? null
+            if (!nodeId) {
+              const el = (e.target as Element | null)?.closest?.('.react-flow__node')
+              nodeId = el?.getAttribute('data-id') ?? null
+            }
+            connectSourceRef.current = nodeId
+            try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: true } })) } catch {}
+          }}
           onPaneClick={() => {
+            if (suppressPaneClickRef.current) {
+              suppressPaneClickRef.current = false
+              return
+            }
             try { window.dispatchEvent(new CustomEvent('gb:hide-resize')) } catch {}
             setRelPicker(null)
+            setEntityPicker(null)
+            cancelDestinationPicker()
             // Deselect all edges when clicking on pane
             window.dispatchEvent(new CustomEvent('gb:deselect-edges'))
           }}
-          onConnectEnd={(e) => {
-            try { window.dispatchEvent(new CustomEvent('gb:connecting', { detail: { on: false } })) } catch {}
-            const anyE: any = e
-            const cx = anyE?.clientX ?? anyE?.changedTouches?.[0]?.clientX
-            const cy = anyE?.clientY ?? anyE?.changedTouches?.[0]?.clientY
-            if (typeof cx === 'number' && typeof cy === 'number') connectEndRef.current = { x: cx, y: cy }
-          }}
+          onConnectEnd={handleConnectEnd}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={false}
@@ -302,12 +624,43 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
               targetName={(relPicker.target.data as any)?.label || relPicker.target.id}
               sourceKind={(relPicker.source.data as any).kind}
               targetKind={(relPicker.target.data as any).kind}
-              options={getRelationOptions((relPicker.source.data as any).kind, (relPicker.target.data as any).kind)}
-              onPick={(rel)=>{
-                handlePick(rel)
-                // update temp edge data
-                if (relPicker.edgeId) setEdges(eds => eds.map(e => e.id === relPicker.edgeId ? ({ ...e, data: { ...(e.data||{}), relation: rel, tooltip: buildTooltip(relPicker.source as any, rel, relPicker.target as any) } as any }) : e))
+              options={getRelationOptions(
+                (relPicker.source.data as any).kind,
+                (relPicker.target.data as any).kind,
+                {
+                  sameEntity: Boolean(
+                    (relPicker.source.data as any).refId
+                    && (relPicker.source.data as any).refId === (relPicker.target.data as any).refId
+                  ),
+                },
+              )}
+              onPick={(pick)=>{
+                handlePick(pick)
               }}
+            />
+          </div>
+        )}
+        {entityPicker && (
+          <div style={{ position:'absolute', left: entityPicker.x, top: entityPicker.y, zIndex: 50 }}>
+            <EntityPicker
+              categoryLabel={paletteCategoryLabel(entityPicker.paletteKind)}
+              options={entityPicker.options}
+              existingEntityRefIds={existingEntityRefIds}
+              onCancel={() => setEntityPicker(null)}
+              onPick={(option) => {
+                associateNodeWithOption(entityPicker.pendingNodeId, option)
+                setEntityPicker(null)
+              }}
+            />
+          </div>
+        )}
+        {destinationPicker && (
+          <div style={{ position:'absolute', left: destinationPicker.x, top: destinationPicker.y, zIndex: 50 }}>
+            <DestinationCategoryPicker
+              catalog={entityCatalog}
+              existingEntityRefIds={existingEntityRefIds}
+              onCancel={cancelDestinationPicker}
+              onPick={applyDestinationPick}
             />
           </div>
         )}
@@ -317,46 +670,74 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ g
 })
 
 function defaultLabelFor(kind: BuilderNodeData['kind']): string {
+  const label = getEntityLabel(kind)
+  return kind === 'other_investigation' ? `${label}\nDel:` : label
+}
+
+function paletteCategoryLabel(kind: NodeKind): string {
   switch (kind) {
-    case 'male': return 'Uomo'
-    case 'female': return 'Donna'
-    case 'company': return 'Impresa'
-    case 'meeting': return 'Incontro'
-    case 'bar': return 'Bar'
-    case 'restaurant': return 'Ristorante'
-    case 'vehicle': return 'Veicolo'
-    case 'motorcycle': return 'Moto'
-    case 'other_investigation': return 'Altra indagine\nDel:'
-    default: return 'Nodo'
+    case 'person':
+    case 'male':
+    case 'female':
+      return getEntityLabel('person').toLocaleLowerCase('it-IT')
+    case 'company':
+      return getEntityLabel('company').toLocaleLowerCase('it-IT')
+    case 'place':
+    case 'bar':
+    case 'restaurant':
+      return getEntityLabel('place').toLocaleLowerCase('it-IT')
+    case 'vehicle':
+    case 'motorcycle':
+      return getEntityLabel('vehicle').toLocaleLowerCase('it-IT')
+    default:
+      return 'entità'
   }
 }
 
-function assignMockRefFor(node: BuilderNode) {
-  const kind = node.data.kind
-  if (kind === 'male' || kind === 'female') {
-    const pool = mockPeople.filter(p => (kind === 'male' ? p.sex === 'M' : p.sex === 'F'))
-    const pick = pool[Math.floor(Math.random()*pool.length)]
-    node.data.refId = pick?.id; node.data.label = pick?.name || node.data.label; node.data.details = { dob: pick?.dob, hasPs: !!pick?.hasPs }
-  } else if (kind === 'company') {
-    const pick = mockCompanies[Math.floor(Math.random()*mockCompanies.length)]
-    node.data.refId = pick?.id; node.data.label = pick?.name || node.data.label
-  } else if (kind === 'bar' || kind === 'restaurant') {
-    const pool = kind === 'bar' ? mockPlaces.bar : mockPlaces.restaurant
-    const pick = pool[Math.floor(Math.random()*pool.length)]
-    node.data.refId = pick?.id; node.data.label = pick?.name || node.data.label
-  } else if (kind === 'vehicle' || kind === 'motorcycle') {
-    const pick = mockVehicles[Math.floor(Math.random()*mockVehicles.length)]
-    node.data.refId = pick?.id; node.data.label = pick?.name || node.data.label
-  }
+function formatDobForNode(value: string): string {
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`
+  return value
 }
 
-function buildTooltip(source: BuilderNode, rel: RelationKind, target: BuilderNode): string {
-  const s = (source.data.label || source.id)
-  const t = (target.data.label || target.id)
-  const text = labelFor(rel)
-  // Map directional for readability
-  // Esempio: "Marco Padre di Antonio", "Marco Rappresentante legale di ENOTECA TELARO"
-  return `${s} ${text} ${rel.includes('di') ? '' : 'di'} ${t}`.replace(/\s+/g,' ').trim()
+function buildLabelBlock(option: GraphEntityOption): string | null {
+  if (!(option.kind === 'person' || option.kind === 'male' || option.kind === 'female')) {
+    return option.subtitle && option.subtitle !== 'Persona' ? option.subtitle : null
+  }
+  const lines: string[] = []
+  if (option.details?.dob) {
+    const dob = formatDobForNode(option.details.dob)
+    const age = calcAgeFromDob(dob)
+    lines.push(age === '' ? dob : `${dob} (${age})`)
+  }
+  lines.push(`Precedenti PS: ${option.details?.hasPs ? 'Sì' : 'No'}`)
+  return lines.join('\n')
+}
+
+function calcAgeFromDob(dob: string): number | '' {
+  const m = dob.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+  if (!m) return ''
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
+  const now = new Date()
+  let age = now.getFullYear() - d.getFullYear()
+  const hasHadBirthday = (now.getMonth() > d.getMonth()) || (now.getMonth() === d.getMonth() && now.getDate() >= d.getDate())
+  if (!hasHadBirthday) age--
+  return age
+}
+
+function buildTooltip(
+  source: BuilderNode,
+  rel: RelationKind,
+  target: BuilderNode,
+  customMiddle?: string,
+): string {
+  return formatRelationPhrase({
+    sourceName: source.data.label || source.id,
+    targetName: target.data.label || target.id,
+    sourceKind: source.data.kind,
+    relation: rel,
+    customMiddle,
+  })
 }
 
 export default GraphBuilderInner

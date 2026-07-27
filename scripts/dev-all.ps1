@@ -1,9 +1,10 @@
-# Free app ports, start API first (wait until healthy), then worker + frontend.
-# Ports: 3001 (backend API), 6500 (Vite frontend).
+# Free app ports, start NLP and API (wait until healthy), then worker + frontend.
+# Ports: 3001 (backend API), 6500 (Vite frontend), 8098 (local NLP).
 
 $ErrorActionPreference = 'Continue'
-$ports = @(3001, 6500)
+$ports = @(3001, 6500, 8098)
 $healthUrl = 'http://127.0.0.1:3001/health'
+$nlpHealthUrl = 'http://127.0.0.1:8098/health'
 $healthTimeoutSec = 60
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -39,8 +40,9 @@ function Wait-ApiHealthy {
   while ((Get-Date) -lt $deadline) {
     try {
       $res = Invoke-RestMethod -Uri $Url -Method GET -TimeoutSec 2
-      if ($res.status -eq 'ok') {
-        Write-Host "[dev:all] API healthy at $Url"
+      $healthy = ($res.status -eq 'ok') -or ($res.ok -eq $true)
+      if ($healthy) {
+        Write-Host "[dev:all] Service healthy at $Url"
         return $true
       }
     } catch {
@@ -65,6 +67,19 @@ Write-Host "[dev:all] Freeing ports $($ports -join ', ')..."
 Stop-PortListeners -Ports $ports
 Start-Sleep -Milliseconds 500
 
+Write-Host "[dev:all] Starting local NLP service..."
+$nlp = Start-Process -FilePath "python" `
+  -ArgumentList @('-m', 'uvicorn', 'nlpsvc.app:app', '--host', '127.0.0.1', '--port', '8098', '--workers', '1') `
+  -WorkingDirectory $root `
+  -PassThru `
+  -NoNewWindow
+
+if (-not (Wait-ApiHealthy -Url $nlpHealthUrl -TimeoutSec $healthTimeoutSec)) {
+  Write-Host "[dev:all] ERROR: NLP service did not become healthy within ${healthTimeoutSec}s ($nlpHealthUrl)"
+  if ($nlp) { Stop-ProcessTree -ProcessId $nlp.Id }
+  exit 1
+}
+
 Write-Host "[dev:all] Starting API..."
 $api = Start-Process -FilePath "npm.cmd" `
   -ArgumentList @('--prefix', 'backend', 'run', 'dev') `
@@ -75,6 +90,7 @@ $api = Start-Process -FilePath "npm.cmd" `
 if (-not (Wait-ApiHealthy -Url $healthUrl -TimeoutSec $healthTimeoutSec)) {
   Write-Host "[dev:all] ERROR: API did not become healthy within ${healthTimeoutSec}s ($healthUrl)"
   if ($api) { Stop-ProcessTree -ProcessId $api.Id }
+  if ($nlp) { Stop-ProcessTree -ProcessId $nlp.Id }
   exit 1
 }
 
@@ -86,5 +102,6 @@ try {
 } finally {
   Write-Host "[dev:all] Shutting down API..."
   if ($api) { Stop-ProcessTree -ProcessId $api.Id }
+  if ($nlp) { Stop-ProcessTree -ProcessId $nlp.Id }
   Stop-PortListeners -Ports $ports
 }

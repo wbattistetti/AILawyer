@@ -20,12 +20,9 @@ export interface CaseOverviewDiagramProps {
 }
 
 export function CaseOverviewDiagram(props: CaseOverviewDiagramProps) {
-  const h = props.height ?? '100%'
-  // State initialization removed - no longer needed since viewMode is handled by sidebar tabs
-
   return (
-    <div className="w-full h-full bg-white relative">
-      <GraphBuilder />
+    <div className="w-full h-full bg-white relative" style={{ height: props.height ?? '100%' }}>
+      <GraphBuilder praticaId={props.praticaId} />
     </div>
   )
 }

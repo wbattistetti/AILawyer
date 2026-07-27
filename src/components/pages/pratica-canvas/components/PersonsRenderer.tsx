@@ -1,60 +1,61 @@
-import React from 'react';
-import { Documento } from '../../../../types';
-import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3';
-import { PersonCardsPanel } from '../../../../features/entities/PersonCardsPanel';
-import { buildPdfJsAdaptersFromDocs } from '../../../../features/entities/adapters/PdfJsDocAdapter';
+/**
+ * Pannello dock delle schede anagrafiche: collega store documenti e apertura occorrenze.
+ */
+
+import React from 'react'
+import { DockWorkspaceV3Handle } from '../../../DockWorkspaceV3'
+import { PersonCardsPanel } from '../../../../features/entities/PersonCardsPanel'
+import { openOccurrenceInViewer } from '../../../../features/entities/open-occurrence-in-viewer'
+import { findPracticeDocument } from '../../../../features/entities/practice-document-source'
+import { useViewerSearchNavigatorRegistry } from '../../../search/ViewerSearchNavigatorProvider'
 
 interface PersonsRendererProps {
-  documenti: Documento[];
-  dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>;
-  toast: any;
+  praticaId: string
+  dockV2Ref: React.RefObject<DockWorkspaceV3Handle | null>
+  toast: any
 }
 
-export function PersonsRenderer({ documenti, dockV2Ref, toast }: PersonsRendererProps) {
+export function PersonsRenderer({ praticaId, dockV2Ref, toast }: PersonsRendererProps) {
+  const registry = useViewerSearchNavigatorRegistry()
+
   return (
     <PersonCardsPanel
-      getAllDocsMeta={async () => documenti.map(d => ({
-        praticaId: d.praticaId,
-        hash: d.hash,
-        docId: d.id,
-        title: d.filename,
-        pages: 0
-      }))}
-      buildAdapters={async (docs) => {
-        const map = new Map(docs.map(m => [m.docId, m]));
-        const selected = documenti.filter(d => map.has(d.id));
-        return buildPdfJsAdaptersFromDocs(selected);
-      }}
-      onOpenOccurrence={(o) => {
-        // Open doc tab, then dispatch navigation event used by VerifyPdfViewer
-        const d = documenti.find(x => x.id === o.docId);
-        if (d) {
-          dockV2Ref.current?.openDoc({ id: d.id, title: d.filename });
-          toast({ title: 'Aperto nel Tavolo', description: d.filename });
-        }
-        try {
-          window.dispatchEvent(new CustomEvent('app:goto-match', {
-            detail: {
-              docId: o.docId,
-              q: '',
-              match: {
-                id: o.id,
-                docId: o.docId,
-                docTitle: o.docTitle,
-                kind: 'pdf',
-                page: o.page,
-                q: '',
-                x0Pct: o.box.x0Pct,
-                x1Pct: o.box.x1Pct,
-                y0Pct: o.box.y0Pct,
-                y1Pct: o.box.y1Pct,
-                snippet: o.snippet,
-                score: 1
-              }
-            }
-          }));
-        } catch { }
+      praticaId={praticaId}
+      onOpenOccurrence={(occurrence, context) => {
+        void (async () => {
+          const document = findPracticeDocument(praticaId, occurrence.docId)
+          if (!document) {
+            throw new Error(`Documento non trovato per la fonte ${occurrence.docId}`)
+          }
+          const isWord = document.mime?.includes('word')
+            || document.filename.toLowerCase().endsWith('.docx')
+            || document.filename.toLowerCase().endsWith('.doc')
+          try {
+            await openOccurrenceInViewer({
+              registry,
+              openDoc: (doc) => {
+                dockV2Ref.current?.openDoc(doc)
+              },
+              target: {
+                docId: document.id,
+                title: document.filename,
+                page: occurrence.page,
+                box: occurrence.box,
+                snippet: occurrence.snippet,
+                occurrenceId: occurrence.id,
+                highlightQuery: context?.highlightQuery || occurrence.snippet?.slice(0, 80),
+                highlightTerms: context?.highlightTerms,
+                kind: isWord ? 'word' : 'pdf',
+              },
+            })
+            toast({ title: 'Aperto nel Tavolo', description: `${document.filename} · p. ${occurrence.page}` })
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : 'Apertura fonte fallita'
+            toast({ title: 'Impossibile aprire la fonte', description: message, variant: 'destructive' })
+            throw cause instanceof Error ? cause : new Error(message)
+          }
+        })()
       }}
     />
-  );
+  )
 }

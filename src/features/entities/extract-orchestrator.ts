@@ -6,38 +6,72 @@ import { addBatch as addEventsToIndex } from '../events/event-index'
 import { PARSERS } from '../parsers'
 import { PARSERS_UNIFIED } from '../parsers/registry'
 import type { PageInput } from '../parsers/types'
+import type { DocAdapter, SkippedDocument } from './adapters/types'
+import {
+  createExtractionDiagnostic,
+  createFailedDiagnostic,
+  type DocumentExtractionDiagnostic,
+} from './extraction-diagnostics'
+import { findBestPersonMatch } from './person-identity-matcher'
 
-export interface DocAdapter {
-  getDocMeta(): Promise<{ praticaId?: string; docId: string; title: string; pages: number; hash: string }>;
-  streamPageTokens(): AsyncGenerator<{ page: number; tokens: Array<{ text: string; x0Pct: number; x1Pct: number; y0Pct: number; y1Pct: number }> }, void>;
-}
+export type { DocAdapter } from './adapters/types'
 
 export type ProgressCb = (p: { docId: string; page: number }) => void;
+
+export type ExtractPersonsOptions = {
+  persist?: boolean
+  onStartDoc?: (info: { docId: string; title: string; pages: number }) => void
+  onDoneDoc?: (info: { docId: string }) => void
+  onOccurrence?: (
+    items: any[],
+    meta: { docId: string; title: string; pages: number; praticaId?: string }
+  ) => void
+  onDocFailure?: (failure: SkippedDocument) => void
+  onDocDiagnostic?: (diagnostic: DocumentExtractionDiagnostic) => void
+  signal?: AbortSignal
+}
+
+export type ExtractPersonsResult = {
+  persons: PersonRecord[]
+  occurrences: OccurrenceRecord[]
+  snapshots: DocSnapshot[]
+  failures: SkippedDocument[]
+  diagnostics: DocumentExtractionDiagnostic[]
+}
 
 // Worker module (Vite style)
 const worker = new Worker(new URL('./extract.worker.ts', import.meta.url), { type: 'module' });
 const log = (...args: any[]) => { try { console.log('[ENTITY][orchestrator]', ...args) } catch {} }
 
+/**
+ * Estrae anagrafiche da una lista di adapter. Un fallimento per documento non interrompe il batch.
+ */
 export async function extractPersonsFromDocs(
   adapters: DocAdapter[],
   onProgress?: ProgressCb,
-  options?: { persist?: boolean; onStartDoc?: (info: { docId: string; title: string; pages: number }) => void; onDoneDoc?: (info: { docId: string }) => void; onOccurrence?: (items: any[], meta: { docId: string; title: string; pages: number; praticaId?: string }) => void; signal?: AbortSignal }
-) {
+  options?: ExtractPersonsOptions
+): Promise<ExtractPersonsResult> {
   const allPersons = new Map<string, PersonRecord>();
-  const byName = new Map<string, Set<string>>(); // normalized name -> person ids
   const allOccurrences: OccurrenceRecord[] = [];
   const snapshots: DocSnapshot[] = [];
+  const failures: SkippedDocument[] = [];
+  const diagnostics: DocumentExtractionDiagnostic[] = [];
 
   const runDoc = async (ad: DocAdapter) => {
     if (options?.signal?.aborted) return;
+    const identity = ad.getIdentity()
+    let begun = false
+    try {
     const meta = await ad.getDocMeta();
+    let tokenCount = 0
+    let textCharacters = 0
     log('start', { docId: meta.docId, title: meta.title, pages: meta.pages })
     if (typeof options?.onStartDoc === 'function') {
       try { options.onStartDoc({ docId: meta.docId, title: meta.title, pages: meta.pages }) } catch {}
     }
     // Disable lenient mode to avoid false positives like brand/model strings
     worker.postMessage({ type: 'beginDoc', docId: meta.docId, docTitle: meta.title, lenient: false });
-
+    begun = true
     const occForDoc: any[] = [];
     const handler = (e: MessageEvent<any>) => {
       const msg = e.data;
@@ -54,6 +88,8 @@ export async function extractPersonsFromDocs(
 
     for await (const { page, tokens } of ad.streamPageTokens()) {
       if (options?.signal?.aborted) break;
+      tokenCount += tokens.length
+      textCharacters += tokens.reduce((sum, token) => sum + token.text.length, 0)
       // Optional debug page 3
       if (page === 3) {
         try {
@@ -121,23 +157,27 @@ export async function extractPersonsFromDocs(
       try { options.onDoneDoc({ docId: meta.docId }) } catch {}
     }
     log('done', { docId: meta.docId, occ: occForDoc.length })
+    const diagnostic = createExtractionDiagnostic({
+      docId: meta.docId,
+      title: meta.title,
+      source: meta.source,
+      pages: meta.pages,
+      tokenCount,
+      textCharacters,
+      candidateCount: occForDoc.length,
+    })
+    diagnostics.push(diagnostic)
+    try { options?.onDocDiagnostic?.(diagnostic) } catch {}
 
     // Merge occurrences into persons and occurrence list
     for (const it of occForDoc) {
-      const normalizedName = normalizeName(it.full_name)
-      // Try to find an existing person with same normalized name and compatible fields; choose most complete
-      const candidateIds = Array.from(byName.get(normalizedName) ?? [])
       let pid = it.personKey as string
-      let bestId: string | null = null
-      let bestScore = -1
-      for (const id of candidateIds) {
-        const p = allPersons.get(id)
-        if (!p) continue
-        if (!areFieldsCompatible(p, it.fields || {})) continue
-        const s = completenessScore(p)
-        if (s > bestScore) { bestScore = s; bestId = id }
-      }
-      if (bestId) pid = bestId
+      const matchedId = findBestPersonMatch(
+        allPersons.values(),
+        it.full_name,
+        it.fields || {}
+      )
+      if (matchedId) pid = matchedId
 
       const now = Date.now();
       const prev = allPersons.get(pid);
@@ -158,6 +198,7 @@ export async function extractPersonsFromDocs(
         province: it.fields?.province,
         phone: it.fields?.phone,
         email: it.fields?.email,
+        profession: it.fields?.profession,
         confidence: it.confidence,
         occCount: 0,
         updatedAt: now,
@@ -236,10 +277,6 @@ export async function extractPersonsFromDocs(
             }).catch(()=>{});
         }
       } catch {}
-      const set = byName.get(normalizedName) ?? new Set<string>()
-      set.add(pid)
-      byName.set(normalizedName, set)
-
       allOccurrences.push({
         id: cryptoRandom(),
         praticaId: meta.praticaId,
@@ -264,10 +301,38 @@ export async function extractPersonsFromDocs(
       personCount: allPersons.size,
       occCount: allOccurrences.length,
     })
+    } catch (cause) {
+      if (begun) {
+        try { worker.postMessage({ type: 'endDoc', docId: identity.docId }) } catch {}
+      }
+      throw cause
+    }
   };
 
   for (const ad of adapters) {
-    await runDoc(ad);
+    const identity = ad.getIdentity()
+    try {
+      await runDoc(ad);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      const failure: SkippedDocument = {
+        docId: identity.docId,
+        title: identity.title,
+        reason: 'unreadable',
+        detail,
+      }
+      log('fail', failure)
+      failures.push(failure)
+      const diagnostic = createFailedDiagnostic({
+        docId: identity.docId,
+        title: identity.title,
+        message: detail,
+      })
+      diagnostics.push(diagnostic)
+      try { options?.onDocDiagnostic?.(diagnostic) } catch {}
+      try { options?.onDocFailure?.(failure) } catch {}
+      try { options?.onDoneDoc?.({ docId: identity.docId }) } catch {}
+    }
   }
 
   if (options?.persist) {
@@ -276,7 +341,13 @@ export async function extractPersonsFromDocs(
     for (const s of snapshots) await setDocSnapshot(s);
   }
 
-  return { persons: Array.from(allPersons.values()), occurrences: allOccurrences, snapshots };
+  return {
+    persons: Array.from(allPersons.values()),
+    occurrences: allOccurrences,
+    snapshots,
+    failures,
+    diagnostics,
+  };
 }
 
 function cryptoRandom() {
@@ -286,36 +357,6 @@ function cryptoRandom() {
   } catch {
     return String(Math.random()).slice(2);
   }
-}
-
-// --- Helpers for realtime dedup/merge ---
-function normalizeName(s: string): string {
-  return (s || '').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim()
-}
-
-function completenessScore(p: Partial<PersonRecord>): number {
-  let s = 0
-  if (p.date_of_birth) s += 3
-  if (p.place_of_birth) s += 2
-  if (p.tax_code) s += 3
-  if (p.address) s += 2
-  if (p.city) s += 1
-  if (p.province) s += 1
-  if (p.email) s += 1
-  if (p.phone) s += 1
-  return s
-}
-
-function areFieldsCompatible(p: Partial<PersonRecord>, f: any): boolean {
-  // If both have a value for the same key and they differ, treat as incompatible homonyms
-  const keys: Array<keyof PersonRecord> = ['date_of_birth','place_of_birth','tax_code','city','province']
-  for (const k of keys) {
-    let a: any = (p as any)[k]
-    let b: any = (f as any)[k]
-    if (k === 'date_of_birth') { a = normDob(a); b = normDob(b) }
-    if (a && b && String(a).trim() !== String(b).trim()) return false
-  }
-  return true
 }
 
 function mergePersonFields(p: PersonRecord, f: any) {
@@ -329,6 +370,7 @@ function mergePersonFields(p: PersonRecord, f: any) {
   setIfEmpty('province', f?.province)
   setIfEmpty('phone', f?.phone)
   setIfEmpty('email', f?.email)
+  setIfEmpty('profession', f?.profession)
 }
 
 function normDob(raw?: string): string | undefined {

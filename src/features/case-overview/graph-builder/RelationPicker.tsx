@@ -1,66 +1,120 @@
-import React from 'react'
+/**
+ * Relation picker with catalog phrases plus reusable custom relations.
+ */
+import React, { useEffect, useState } from 'react'
+import { formatRelationPhraseParts } from './relation-phrase'
+import { getRelationOptions, labelFor } from './relation-catalog'
+import {
+  addCustomRelation,
+  listCustomRelations,
+  subscribeCustomRelations,
+  type SavedCustomRelation,
+} from './custom-relation-store'
 import type { NodeKind, RelationKind } from './types'
 
-function sortOptions(opts: RelationKind[]): RelationKind[] {
-  return [...opts].sort((a, b) => labelFor(a).localeCompare(labelFor(b)))
+export { getRelationOptions, labelFor } from './relation-catalog'
+
+export type RelationPick =
+  | { type: 'catalog'; relation: RelationKind }
+  | { type: 'custom'; middle: string; caption: string }
+
+type RelationPickerProps = {
+  sourceName: string
+  targetName: string
+  sourceKind: NodeKind
+  targetKind: NodeKind
+  options: RelationKind[]
+  onPick: (pick: RelationPick) => void
 }
 
-export function getRelationOptions(source: NodeKind, target: NodeKind): RelationKind[] {
-  const isPerson = (k: NodeKind) => k === 'male' || k === 'female'
-  if (isPerson(source) && isPerson(target)) {
-    const base: RelationKind[] = ['padre','madre','figlio','figlia','marito','moglie','convivente','ex_coniuge','fidanzato','fidanzata','fratello','sorella','frequentazione','amicizia_affari']
-    // Filtra opzioni gender-specific basate sul sesso della sorgente
-    return sortOptions(base.filter((r) => {
-      if (source === 'male' && (r === 'madre' || r === 'moglie' || r === 'fidanzata' || r === 'sorella' || r === 'figlia')) return false
-      if (source === 'female' && (r === 'padre' || r === 'marito' || r === 'fidanzato' || r === 'fratello' || r === 'figlio')) return false
-      return true
-    }))
-  }
-  if (isPerson(source) && target === 'company') {
-    return sortOptions(['dipendente','amministratore_unico','amministratore','consigliere','rappresentante_legale','titolare_firmatario','socio','socio_occulto','accomandatario','accomandante','gestore','appaltatore','fornitore','cliente','proprietario','interessi'])
-  }
-  if (source === 'company' && isPerson(target)) {
-    return sortOptions(['datore','amministratore','consigliere','rappresentante_legale','titolare_firmatario','socio','socio_occulto','accomandatario','accomandante','gestore','appaltatore','fornitore','cliente'])
-  }
-  if (isPerson(source) && (target === 'bar' || target === 'restaurant')) {
-    return sortOptions(['proprietario','gestore','dipendente','frequentatore','incontro_presso'])
-  }
-  if (isPerson(source) && (target === 'vehicle' || target === 'motorcycle')) {
-    return sortOptions(['proprietario','intestatario','conducente_abituale','utilizzatore'])
-  }
-  if (source === 'company' && target === 'company') {
-    return sortOptions(['controllante','controllata','collegata','joint_venture','acquisizione','cessione'])
-  }
-  return sortOptions(['frequentazione'])
-}
+/** Renders filtered relation phrases and a custom-relation composer at the top. */
+export default function RelationPicker({
+  sourceName,
+  targetName,
+  sourceKind,
+  options,
+  onPick,
+}: RelationPickerProps) {
+  const [customText, setCustomText] = useState('')
+  const [customs, setCustoms] = useState<SavedCustomRelation[]>(() => listCustomRelations())
+  const [error, setError] = useState<string | null>(null)
 
-export default function RelationPicker({ sourceName, targetName, sourceKind, targetKind, options, onPick }: { sourceName: string; targetName: string; sourceKind: NodeKind; targetKind: NodeKind; options: RelationKind[]; onPick: (rel: RelationKind) => void }) {
+  useEffect(() => subscribeCustomRelations(() => setCustoms(listCustomRelations())), [])
+
+  const submitCustom = () => {
+    try {
+      const saved = addCustomRelation(customText)
+      setError(null)
+      setCustomText('')
+      onPick({ type: 'custom', middle: saved.middle, caption: saved.caption })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Relazione non valida')
+    }
+  }
+
   return (
-    <div className="bg-white border rounded shadow-md p-2 text-sm min-w-[220px]">
-      <div className="text-xs text-slate-500 mb-1">{sourceName} è…</div>
-      <div className="grid grid-cols-1 gap-1 max-h-64 overflow-auto">
-        {options.map(opt => (
-          <button key={opt} className="text-left px-2 py-1 rounded hover:bg-slate-100" onClick={() => onPick(opt)}>
-            {labelFor(opt)}
+    <div className="bg-white border rounded shadow-md p-2 text-sm min-w-[320px] max-w-[420px]">
+      <div className="mb-2 border-b border-slate-100 pb-2">
+        <div className="mb-1 text-[11px] font-medium text-slate-500">Nuova relazione</div>
+        <div className="flex gap-1">
+          <input
+            type="text"
+            className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+            placeholder="es. conosce / abita vicino a"
+            value={customText}
+            onChange={e => { setCustomText(e.target.value); setError(null) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                submitCustom()
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="shrink-0 rounded bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-700"
+            onClick={submitCustom}
+          >
+            Aggiungi
+          </button>
+        </div>
+        {error && <div className="mt-1 text-[11px] text-red-600">{error}</div>}
+        <div className="mt-1 text-[10px] text-slate-400">
+          <b>{sourceName}</b> {customText.trim() || '…'} <b>{targetName}</b>
+        </div>
+      </div>
+
+      <div className="grid max-h-64 grid-cols-1 gap-1 overflow-auto">
+        {customs.map(custom => (
+          <button
+            key={custom.id}
+            type="button"
+            className="rounded px-2 py-1 text-left hover:bg-slate-100"
+            onClick={() => onPick({ type: 'custom', middle: custom.middle, caption: custom.caption })}
+          >
+            <b>{sourceName}</b> {custom.middle} <b>{targetName}</b>
+            <span className="ml-2 text-[10px] text-slate-400">custom</span>
           </button>
         ))}
+        {options.filter(opt => opt !== 'custom').map(opt => {
+          const parts = formatRelationPhraseParts({
+            sourceName,
+            targetName,
+            sourceKind,
+            relation: opt,
+          })
+          return (
+            <button
+              key={opt}
+              type="button"
+              className="rounded px-2 py-1 text-left hover:bg-slate-100"
+              onClick={() => onPick({ type: 'catalog', relation: opt })}
+            >
+              <b>{parts.sourceName}</b> {parts.middle} <b>{parts.targetName}</b>
+            </button>
+          )
+        })}
       </div>
-      <div className="text-xs text-slate-500 mt-2">…di <b>{targetName}</b></div>
     </div>
   )
 }
-
-export function labelFor(rel: RelationKind): string {
-  const map: Record<RelationKind, string> = {
-    padre:'Padre', madre:'Madre', figlio:'Figlio', figlia:'Figlia',
-    marito:'Marito', moglie:'Moglie', convivente:'Convivente/Partner', ex_coniuge:'Ex coniuge', fidanzato:'Fidanzato', fidanzata:'Fidanzata', fratello:'Fratello', sorella:'Sorella', amicizia_affari:'Amicizia–Affari', frequentazione:'Frequentazione abituale',
-    collega:'Collega', superiore:'Superiore', subordinato:'Subordinato',
-    dipendente:'Dipendente di', datore:'Datore di lavoro di', amministratore_unico:'Amministratore unico di', amministratore:'Amministratore di', consigliere:'Consigliere di', rappresentante_legale:'Rappresentante legale di', titolare_firmatario:'Titolare firmatario di', socio:'Socio di', socio_occulto:'Socio occulto di', accomandatario:'Accomandatario di', accomandante:'Accomandante di', gestore:'Gestore di', appaltatore:'Appaltatore di', fornitore:'Fornitore di', cliente:'Cliente di', proprietario:'Proprietario di', interessi:'Interessi in',
-    frequentatore:'Frequentatore abituale di', incontro_presso:'Incontro presso',
-    intestatario:'Intestatario di', conducente_abituale:'Conducente abituale di', utilizzatore:'Utilizzatore di',
-    controllante:'Controllante di', controllata:'Controllata da', collegata:'Collegata', joint_venture:'Joint venture', acquisizione:'Acquisizione', cessione:'Cessione',
-  }
-  return map[rel] || rel
-}
-
-

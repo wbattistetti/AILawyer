@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal, Tuple
 import os, time, re, hashlib
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
@@ -32,6 +32,26 @@ class EventsReq(BaseModel):
 class EventsBatchReq(BaseModel):
     items: List[EventsReq]
 
+
+class NerReviewItem(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    snippet: str = Field(min_length=1, max_length=500)
+    expectedType: Literal["institution", "company", "venue"]
+    candidateSpan: Tuple[int, int]
+    candidateLabel: str = Field(min_length=1, max_length=300)
+
+
+class NerReviewBatchReq(BaseModel):
+    items: List[NerReviewItem] = Field(min_items=1, max_items=500)
+
+
+class NerReviewResult(BaseModel):
+    id: str
+    decision: Literal["confirmed", "corrected", "rejected", "uncertain"]
+    correctedSpan: Optional[Tuple[int, int]] = None
+    detectedLabel: Optional[str] = None
+    modelId: str
+
 _NLP = None
 _MATCHER = None
 _DEPMATCH = None
@@ -60,15 +80,39 @@ def make_event_id(kind: str, participants: List[str], time_iso: Optional[str], p
     ])
     return "evt_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
-def _lazy_init():
-    global _NLP, _MATCHER, _DEPMATCH
-    if _NLP is not None:
-        return
+def _load_italian_ner():
+    """Preferisce lg; se assente usa md. Fallisce subito se nessun modello è installato."""
     import spacy
+    last_error: Optional[Exception] = None
+    for model_id in ("it_core_news_lg", "it_core_news_md"):
+        try:
+            return spacy.load(model_id)
+        except OSError as error:
+            last_error = error
+    raise RuntimeError(
+        "Modello spaCy italiano mancante. Installa uno tra: "
+        "python -m spacy download it_core_news_md "
+        "oppure python -m spacy download it_core_news_lg"
+    ) from last_error
+
+
+def _ensure_nlp():
+    """Carica solo il modello NER; indipendente dai matcher eventi."""
+    global _NLP
+    if _NLP is None:
+        _NLP = _load_italian_ner()
+    return _NLP
+
+
+def _lazy_init():
+    """Inizializza modello + matcher usati dall’estrattore eventi."""
+    global _MATCHER, _DEPMATCH
+    nlp = _ensure_nlp()
+    if _MATCHER is not None and _DEPMATCH is not None:
+        return
     from spacy.matcher import Matcher, DependencyMatcher
-    _NLP = spacy.load("it_core_news_lg")
-    _MATCHER = Matcher(_NLP.vocab)
-    _DEPMATCH = DependencyMatcher(_NLP.vocab)
+    _MATCHER = Matcher(nlp.vocab)
+    _DEPMATCH = DependencyMatcher(nlp.vocab)
 
     _MATCHER.add("TRG_INCONTRO", [[{"LEMMA":{"IN":["incontrare","vedere"]}}],
                                    [{"LOWER":"in"},{"LOWER":"compagnia"},{"LOWER":"di"}],
@@ -78,20 +122,44 @@ def _lazy_init():
     _MATCHER.add("TRG_CONSEGNA", [[{"LEMMA":{"IN":["consegnare","cedere","passare","ricevere","ritirare"]}}]])
 
     pattern_incontro = [
-        {"SPEC": {"NODE_NAME": "V"}, "PATTERN": {"POS": "VERB", "LEMMA": {"IN": ["incontrare", "vedere", "riunire"]}}},
-        {"SPEC": {"NODE_NAME": "A", "NBOR_NAME": "V"}, "PATTERN": {"DEP": "nsubj"}},
+        {
+            "RIGHT_ID": "V",
+            "RIGHT_ATTRS": {"POS": "VERB", "LEMMA": {"IN": ["incontrare", "vedere", "riunire"]}},
+        },
+        {
+            "LEFT_ID": "V",
+            "REL_OP": ">",
+            "RIGHT_ID": "A",
+            "RIGHT_ATTRS": {"DEP": "nsubj"},
+        },
     ]
     _DEPMATCH.add("DEP_INCONTRO", [pattern_incontro])
 
     pattern_tel = [
-        {"SPEC": {"NODE_NAME": "V"}, "PATTERN": {"POS": "VERB", "LEMMA": {"IN": ["telefonare", "chiamare", "contattare"]}}},
-        {"SPEC": {"NODE_NAME": "CALLER", "NBOR_NAME": "V"}, "PATTERN": {"DEP": "nsubj"}},
+        {
+            "RIGHT_ID": "V",
+            "RIGHT_ATTRS": {"POS": "VERB", "LEMMA": {"IN": ["telefonare", "chiamare", "contattare"]}},
+        },
+        {
+            "LEFT_ID": "V",
+            "REL_OP": ">",
+            "RIGHT_ID": "CALLER",
+            "RIGHT_ATTRS": {"DEP": "nsubj"},
+        },
     ]
     _DEPMATCH.add("DEP_TELEFONATA", [pattern_tel])
 
     pattern_cons = [
-        {"SPEC": {"NODE_NAME": "V"}, "PATTERN": {"POS": "VERB", "LEMMA": {"IN": ["consegnare", "cedere", "passare", "ricevere", "ritirare"]}}},
-        {"SPEC": {"NODE_NAME": "GIVER", "NBOR_NAME": "V"}, "PATTERN": {"DEP": "nsubj"}},
+        {
+            "RIGHT_ID": "V",
+            "RIGHT_ATTRS": {"POS": "VERB", "LEMMA": {"IN": ["consegnare", "cedere", "passare", "ricevere", "ritirare"]}},
+        },
+        {
+            "LEFT_ID": "V",
+            "REL_OP": ">",
+            "RIGHT_ID": "GIVER",
+            "RIGHT_ATTRS": {"DEP": "nsubj"},
+        },
     ]
     _DEPMATCH.add("DEP_CONSEGNA", [pattern_cons])
 
@@ -166,14 +234,57 @@ def _extract(text: str) -> List[Event]:
             uniq[key] = e
     return list(uniq.values())
 
+
+def _review_ner_item(item: NerReviewItem) -> NerReviewResult:
+    """Conferma/corregge confini conservativamente; l'assenza NER resta uncertain."""
+    assert _NLP is not None
+    start, end = item.candidateSpan
+    if start < 0 or end <= start or end > len(item.snippet):
+        raise ValueError(f"{item.id}: candidateSpan fuori dallo snippet")
+    if item.snippet[start:end] != item.candidateLabel:
+        raise ValueError(f"{item.id}: candidateLabel non coincide con candidateSpan")
+
+    doc = _NLP(item.snippet)
+    compatible = (
+        {"ORG"}
+        if item.expectedType in {"institution", "company"}
+        else {"ORG", "LOC", "MISC", "FAC"}
+    )
+    candidates = [
+        ent for ent in doc.ents
+        if ent.label_ in compatible and ent.end_char > start and ent.start_char < end
+    ]
+    if not candidates:
+        return NerReviewResult(
+            id=item.id,
+            decision="uncertain",
+            correctedSpan=None,
+            detectedLabel=None,
+            modelId=_NLP.meta.get("name", "it_core_news_lg"),
+        )
+
+    best = max(
+        candidates,
+        key=lambda ent: min(end, ent.end_char) - max(start, ent.start_char),
+    )
+    corrected = (best.start_char, best.end_char)
+    decision = "confirmed" if corrected == (start, end) else "corrected"
+    return NerReviewResult(
+        id=item.id,
+        decision=decision,
+        correctedSpan=corrected,
+        detectedLabel=best.label_,
+        modelId=_NLP.meta.get("name", "it_core_news_lg"),
+    )
+
 @app.get("/health")
 def health():
     try:
-        _lazy_init()
-        _ = _NLP("Ping di prova.")
-        return {"ok": True, "model": "it_core_news_lg"}
+        nlp = _ensure_nlp()
+        _ = nlp("Ping di prova.")
+        return {"ok": True, "model": nlp.meta.get("name", "unknown")}
     except Exception as e:
-        return {"ok": False, "error": type(e).__name__}
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 @app.post("/events")
 def events(req: EventsReq):
@@ -199,3 +310,20 @@ def events_batch(req: EventsBatchReq):
                 e.id = make_event_id(e.type, e.participants, e.time, e.place_raw, e.source)
         out.append({"ok": True, "events": [e.dict() for e in evs], "meta": it.meta or {}})
     return {"ok": True, "results": out, "latency_ms": int((time.perf_counter()-t0)*1000)}
+
+
+@app.post("/ner/review-snippets")
+def review_ner_snippets(req: NerReviewBatchReq):
+    """Rivede in batch candidati canonici; non scarta su semplice assenza di match."""
+    nlp = _ensure_nlp()
+    t0 = time.perf_counter()
+    try:
+        results = [_review_ner_item(item) for item in req.items]
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "ok": True,
+        "results": [result.dict() for result in results],
+        "latency_ms": int((time.perf_counter() - t0) * 1000),
+        "model": nlp.meta.get("name", "unknown"),
+    }

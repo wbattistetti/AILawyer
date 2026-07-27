@@ -5,6 +5,7 @@
 
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/database.js'
+import { extractDocxText } from '../lib/extractDocxText.js'
 import { extractNativeText } from '../lib/extractNativeText.js'
 import { storageService } from '../lib/storage.js'
 import { getLocalOcrResultByPrefix } from './local-ocr-store.js'
@@ -35,7 +36,7 @@ export interface SearchableDocumentContent {
   requestedId: string
   canonicalId: string
   filename: string
-  source: 'local-ocr' | 'database-ocr' | 'native-pdf'
+  source: 'local-ocr' | 'database-ocr' | 'native-pdf' | 'docx'
   pages: string[]
   layout: OcrPageLayout[]
 }
@@ -45,6 +46,7 @@ export class DocumentTextUnavailableError extends Error {}
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i
 const LEGACY_LOCAL_PREFIX = /^(?:temp|pending):/
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 const requireLocator = (locator: DocumentLocator): DocumentLocator => {
   const id = locator.id.trim()
@@ -159,6 +161,7 @@ export async function resolveSearchableDocument(
     select: {
       id: true,
       filename: true,
+      mime: true,
       s3Key: true,
       ocrText: true,
       ocrLayout: true,
@@ -168,6 +171,26 @@ export async function resolveSearchableDocument(
 
   if (!document) {
     throw new DocumentContentNotFoundError(`Documento "${locator.id}" non trovato`)
+  }
+
+  const isDocx =
+    document.mime.toLowerCase() === DOCX_MIME
+    || document.filename.toLowerCase().endsWith('.docx')
+  if (isDocx) {
+    const text = await extractDocxText(storageService.getLocalPath(document.s3Key))
+    if (!text) {
+      throw new DocumentTextUnavailableError(
+        `Il documento Word "${document.filename}" non contiene testo ricercabile`
+      )
+    }
+    return {
+      requestedId: locator.id,
+      canonicalId: document.id,
+      filename: document.filename,
+      source: 'docx',
+      pages: [text],
+      layout: []
+    }
   }
 
   const ocrText = document.ocrText?.trim() ? document.ocrText : null

@@ -3,7 +3,12 @@
  */
 
 import { cryptoRandom } from '../../utils/misc'
-import type { DocumentKind, DocumentMatch, SearchResultNode } from './types'
+import type {
+  DocumentKind,
+  DocumentMatch,
+  SearchDiagnostic,
+  SearchResultNode
+} from './types'
 
 export interface PracticeSearchDocument {
   id: string
@@ -15,6 +20,7 @@ export interface PracticeSearchDocument {
 
 interface ArchiveSearchResponse {
   matches?: unknown
+  diagnostics?: unknown
   praticaId?: unknown
 }
 
@@ -69,10 +75,14 @@ const resolveDocumentMeta = (
 export function normalizeArchiveSearchResults(
   query: string,
   documents: PracticeSearchDocument[],
-  rawMatches: unknown
+  rawMatches: unknown,
+  rawDiagnostics: unknown = []
 ): SearchResultNode {
   if (!Array.isArray(rawMatches)) {
     throw new Error('Risposta ricerca globale non valida: "matches" deve essere un array')
+  }
+  if (!Array.isArray(rawDiagnostics)) {
+    throw new Error('Risposta ricerca globale non valida: "diagnostics" deve essere un array')
   }
 
   const documentsById = new Map(documents.map((document) => [document.id, document]))
@@ -107,6 +117,7 @@ export function normalizeArchiveSearchResults(
       throw new Error(`Risposta ricerca globale non valida: coordinate invertite nel match ${index}`)
     }
 
+    const documentMatches = matchesByDocument.get(docId) || []
     const normalized: DocumentMatch = {
       id: typeof match.id === 'string' ? match.id : `${docId}-${page}-${index}`,
       docId,
@@ -135,10 +146,10 @@ export function normalizeArchiveSearchResults(
       charIdx: typeof match.charIdx === 'number' ? match.charIdx : undefined,
       qLength: typeof match.qLen === 'number' ? match.qLen : query.length,
       snippet: requireString(match.snippet, `matches[${index}].snippet`),
-      score: 1
+      score: 1,
+      ord: documentMatches.length
     }
 
-    const documentMatches = matchesByDocument.get(docId) || []
     documentMatches.push(normalized)
     matchesByDocument.set(docId, documentMatches)
   })
@@ -153,13 +164,34 @@ export function normalizeArchiveSearchResults(
     doc: { ...document, pages: 0 },
     matches: matchesByDocument.get(document.id) || []
   }))
+  const diagnostics: SearchDiagnostic[] = rawDiagnostics.map((rawDiagnostic, index) => {
+    if (!rawDiagnostic || typeof rawDiagnostic !== 'object') {
+      throw new Error(`Risposta ricerca globale non valida: diagnostica ${index} non è un oggetto`)
+    }
+    const diagnostic = rawDiagnostic as Record<string, unknown>
+    const code = requireString(diagnostic.code, `diagnostics[${index}].code`)
+    if (code !== 'ocr-required') {
+      throw new Error(`Risposta ricerca globale non valida: codice diagnostica "${code}"`)
+    }
+    const docId = requireString(diagnostic.docId, `diagnostics[${index}].docId`)
+    const knownDocument = documentsById.get(docId)
+    return {
+      docId,
+      docTitle: knownDocument?.title
+        ?? requireString(diagnostic.filename, `diagnostics[${index}].filename`),
+      code,
+      message: requireString(diagnostic.message, `diagnostics[${index}].message`),
+      ocrStatus: requireString(diagnostic.ocrStatus, `diagnostics[${index}].ocrStatus`)
+    }
+  })
 
   return {
     id: cryptoRandom(),
     query,
     scope: 'archive',
     total: rawMatches.length,
-    groups
+    groups,
+    ...(diagnostics.length > 0 ? { diagnostics } : {})
   }
 }
 
@@ -196,5 +228,10 @@ export async function searchPracticeArchive(
   }
 
   const data = await response.json() as ArchiveSearchResponse
-  return normalizeArchiveSearchResults(normalizedQuery, documents, data.matches)
+  return normalizeArchiveSearchResults(
+    normalizedQuery,
+    documents,
+    data.matches,
+    data.diagnostics
+  )
 }

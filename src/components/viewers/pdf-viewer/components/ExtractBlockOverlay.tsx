@@ -8,7 +8,7 @@ import { ExtractBlock as ExtractBlockType, ExtractData } from '../../../../featu
 import { getSelectedTextInRect } from '../utils/textExtraction'
 import { analyzeTextForPerson, convertToPersonRecord, type PersonExtractionResult } from '../../../../features/entities/person-extract-manual'
 import { mapTextToBoundingBoxes, type OcrWord, type HighlightResult } from '../../../../features/entities/person-extract-mapping'
-import { upsertPersons } from '../../../../features/entities/entity-index'
+import { getPersonDraft, mergePersonsIntoDraft } from '../../../../features/entities/person-draft-store'
 import { PersonImageHighlightOverlay } from './PersonImageHighlightOverlay'
 import { useToast } from '@/hooks/use-toast'
 import { isSearchSurfaceTarget } from '../../../search/searchSurfaceContract'
@@ -581,7 +581,15 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 
 			// ✅ 2. Calcola differenziale per sapere nuovi vs aggiornamenti
 			const { computeDifferential } = await import('../../../../features/entities/person-extract-manual')
-			const differential = await computeDifferential(personRecords, praticaId)
+			const currentDraft = getPersonDraft(praticaId)
+			if (!currentDraft) {
+				throw new Error('Schede anagrafiche della pratica non inizializzate')
+			}
+			const differential = await computeDifferential(
+				personRecords,
+				praticaId,
+				currentDraft.persons
+			)
 
 			// ✅ 3. Prepara array finale
 			const toSave = [
@@ -589,8 +597,8 @@ export const ExtractBlockOverlay: React.FC<ExtractBlockOverlayProps> = ({
 				...differential.updatePersons.map(u => ({ ...u.merged, praticaId }))
 			]
 
-			// ✅ 4. Salva in IndexedDB
-			await upsertPersons(toSave)
+			// ✅ 4. Aggiorna soltanto la bozza in memoria; il backend viene scritto da "Salva pratica"
+			mergePersonsIntoDraft(praticaId, toSave)
 
 			// ✅ 5. Dispatch evento per aggiornare pannello
 			window.dispatchEvent(new CustomEvent('app:persons-updated', {

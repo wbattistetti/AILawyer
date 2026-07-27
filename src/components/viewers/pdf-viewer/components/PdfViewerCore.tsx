@@ -258,7 +258,15 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 		refreshLayout: () => {
 			execOrQueue(() => {
 				const scale = scaleRef.current || 1
-				;(zoomPluginInstance as any).zoomTo?.(scale)
+				const zoomTo = (zoomPluginInstance as any).zoomTo
+				if (typeof zoomTo !== 'function') return
+				// Nudge obbligatorio: dopo uno split Dockview il container cambia size
+				// e zoomTo(stesso scale) spesso non ripinta (pane bianco).
+				zoomTo(scale * 1.001)
+				requestAnimationFrame(() => {
+					zoomTo(scale)
+					window.dispatchEvent(new Event('resize'))
+				})
 			})
 		},
 		find: (keyword: string) => {
@@ -293,7 +301,11 @@ function PdfViewerCoreInner(props: PdfViewerCoreProps, ref: React.Ref<PdfViewerH
 					const doc = (e as any).doc || (e as any).document
 					const total = doc?.numPages || 0
 					if (doc) pdfDocRef.current = doc  // ✅ Salva reference per hook
-					if (total) { setTotalPages(total); setPageInput('1') }
+					if (total) {
+						setTotalPages(total)
+						// Non forzare pagina 1: dopo uno split/remount va mantenuta la pagina corrente.
+						setPageInput(String(Math.max(1, page || 1)))
+					}
 					syncViewerRef()
 
 					// ✅ Imposta --scale-factor su tutti i container necessari

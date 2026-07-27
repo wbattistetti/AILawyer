@@ -1,42 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import type { OccurrenceRecord, PersonRecord } from '../../types/person';
 
-export type BoxPct = { x0Pct: number; x1Pct: number; y0Pct: number; y1Pct: number };
-
-export type OccurrenceRecord = {
-  id: string;
-  praticaId?: string;
-  personKey: string;
-  docId: string;
-  docTitle: string;
-  page: number;
-  snippet: string;
-  box: BoxPct;
-  createdAt: number;
-};
-
-export type PersonRecord = {
-  id: string; // personKey
-  praticaId?: string;
-  full_name: string;
-  first_name?: string;
-  last_name?: string;
-  date_of_birth?: string;
-  place_of_birth?: string;
-  tax_code?: string;
-  address?: string;
-  residence_address?: string;
-  domicile_address?: string;
-  postal_code?: string;
-  city?: string;
-  province?: string;
-  phone?: string;
-  email?: string;
-  /** Titles (normalized), e.g., "Avvocato", "Dottoressa" */
-  titles?: string[];
-  confidence: number; // 0..1
-  occCount: number;
-  updatedAt: number;
-};
+export type { BoxPct, OccurrenceRecord, PersonRecord } from '../../types/person';
 
 export type DocSnapshot = {
   key: string; // praticaId|hash
@@ -165,6 +130,7 @@ export async function searchPersons(f: PersonSearchFilters = {}) {
       (p.residence_address?.toLowerCase().includes(q) ?? false) ||
       (p.domicile_address?.toLowerCase().includes(q) ?? false) ||
       (p.city?.toLowerCase().includes(q) ?? false) ||
+      (p.profession?.toLowerCase().includes(q) ?? false) ||
       (p.email?.toLowerCase().includes(q) ?? false) ||
       (p.phone?.toLowerCase().includes(q) ?? false)
     );

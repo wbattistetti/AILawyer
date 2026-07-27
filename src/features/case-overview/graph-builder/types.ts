@@ -1,14 +1,19 @@
 import type { Node as RFNode, Edge as RFEdge } from 'reactflow'
 
 export type NodeKind =
+  | 'person'
   | 'male'
   | 'female'
   | 'company'
+  | 'place'
   | 'meeting'
   | 'bar'
   | 'restaurant'
   | 'vehicle'
   | 'motorcycle'
+  | 'contact'
+  | 'identifier'
+  | 'object'
   | 'other_investigation'
 
 export type RelationKind =
@@ -19,6 +24,7 @@ export type RelationKind =
   | 'fidanzato' | 'fidanzata'
   | 'fratello' | 'sorella'
   | 'amicizia_affari' | 'frequentazione'
+  | 'stessa_entita'
   | 'collega' | 'superiore' | 'subordinato'
   // person → company / company → person
   | 'dipendente' | 'datore'
@@ -30,12 +36,20 @@ export type RelationKind =
   | 'gestore'
   | 'appaltatore' | 'fornitore' | 'cliente'
   | 'proprietario' | 'interessi'
-  // person ↔ place (bar/restaurant)
+  // person ↔ place (address vs commercial)
   | 'frequentatore' | 'incontro_presso'
+  | 'vive_presso' | 'residenza' | 'domicilio'
+  | 'recatosi' | 'visto_presso'
+  | 'sede'
+  // person ↔ meeting / object / contact
+  | 'partecipante' | 'organizzatore'
+  | 'detiene' | 'utilizza_contatto'
   // person ↔ vehicle/motorcycle
   | 'intestatario' | 'conducente_abituale' | 'utilizzatore'
   // company ↔ company
   | 'controllante' | 'controllata' | 'collegata' | 'joint_venture' | 'acquisizione' | 'cessione'
+  // free-text relation
+  | 'custom'
 
 export type NodeStyle = {
   ringColor?: string
@@ -72,6 +86,10 @@ export type BuilderNodeData = {
 
 export type BuilderEdgeData = {
   relation: RelationKind
+  /** Discursive middle text when relation is `custom` (e.g. "vive a"). */
+  customMiddle?: string
+  /** Short caption on the edge when relation is `custom`. */
+  customCaption?: string
   percent?: number
   dashed?: boolean
   tooltip?: string

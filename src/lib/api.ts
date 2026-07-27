@@ -1,6 +1,88 @@
 import { Pratica, Comparto, Documento, Job, Cliente, Estratto } from '@/types'
+import type {
+  GenericEntity,
+  GenericOccurrence,
+  GenericRelation,
+} from '@/features/generic-entities/types'
+import type { PracticePersonsPayload } from '@/types/person'
+
+/** Snapshot persistito delle entità generiche di una pratica (senza diagnostics). */
+export type PracticeEntitiesPayload = {
+  entities: GenericEntity[]
+  occurrences: GenericOccurrence[]
+  relations: GenericRelation[]
+}
+
+export type LlmModelCatalogItem = {
+  id: string
+  ownedBy: string
+  contextWindow: number | null
+  pricing: {
+    inputUsdPer1M: number
+    outputUsdPer1M: number
+    source: string
+    asOf: string
+  } | null
+}
+
+export type PracticeAiCall = {
+  id: string
+  praticaId: string
+  operationId: string
+  purpose: string
+  providerId: string
+  modelId: string
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  costUsd: number | null
+  costEur: number | null
+  pricingFound: boolean
+  durationMs: number
+  error: string | null
+  createdAt: string
+}
+
+export type PracticeAiCostsPayload = {
+  calls: PracticeAiCall[]
+  summary: {
+    callCount: number
+    errorCount: number
+    inputTokens: number
+    outputTokens: number
+    durationMs: number
+    costUsd: number
+    costEur: number
+    unpricedCallCount: number
+  }
+  updatedAt: string
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+
+export type DocumentContentSource = 'local-ocr' | 'database-ocr' | 'native-pdf'
+
+export type DocumentContentWord = {
+  text: string
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+export type ResolvedDocumentContent = {
+  requestedId: string
+  canonicalId: string
+  filename: string
+  source: DocumentContentSource
+  pages: string[]
+  layout: Array<{
+    page?: number
+    width?: number
+    height?: number
+    words: DocumentContentWord[]
+  }>
+}
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -56,7 +138,7 @@ export const api = {
     return fetchApi('/pratiche')
   },
 
-  async updatePratica(id: string, data: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string }): Promise<Pratica> {
+  async updatePratica(id: string, data: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string; graphsState?: string }): Promise<Pratica> {
     return fetchApi(`/pratiche/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data)
@@ -255,6 +337,20 @@ export const api = {
     return `${API_BASE}/files/${encodeURIComponent(key)}`
   },
 
+  /** Recupera testo/layout dalla sorgente canonica scelta dal backend. */
+  async getDocumentContent(locator: {
+    docId: string
+    hash?: string
+    storageKey?: string
+    filename?: string
+  }): Promise<ResolvedDocumentContent> {
+    const query = new URLSearchParams({ docId: locator.docId })
+    if (locator.hash) query.set('hash', locator.hash)
+    if (locator.storageKey) query.set('storageKey', locator.storageKey)
+    if (locator.filename) query.set('filename', locator.filename)
+    return fetchApi(`/document-content?${query.toString()}`)
+  },
+
   // Preview first page (PDF -> PNG)
   getPreviewUrl(s3Key: string) {
     return `${API_BASE}/preview/${encodeURIComponent(s3Key)}.png`
@@ -281,6 +377,75 @@ export const api = {
 
   async getClientiByPratica(praticaId: string): Promise<{ clienti: Cliente[] }> {
     return fetchApi(`/pratiche/${praticaId}/clienti`)
+  },
+
+  // Anagrafiche estratte
+  async getPracticePersons(praticaId: string): Promise<PracticePersonsPayload> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/persons`)
+  },
+
+  async savePracticePersons(
+    praticaId: string,
+    payload: PracticePersonsPayload
+  ): Promise<Pick<PracticePersonsPayload, 'persons'>> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/persons`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  async clearPracticePersons(praticaId: string): Promise<{ ok: boolean; count: number }> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/persons`, {
+      method: 'DELETE',
+    })
+  },
+
+  // Entità generiche estratte
+  async getPracticeEntities(praticaId: string): Promise<PracticeEntitiesPayload> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/entities`)
+  },
+
+  async savePracticeEntities(
+    praticaId: string,
+    payload: PracticeEntitiesPayload
+  ): Promise<PracticeEntitiesPayload> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/entities`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  async clearPracticeEntities(praticaId: string): Promise<{ ok: boolean; count: number }> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/entities`, {
+      method: 'DELETE',
+    })
+  },
+
+  // Gateway Groq e costi LLM practice-scoped
+  async getLlmModels(): Promise<{
+    provider: 'groq'
+    models: LlmModelCatalogItem[]
+  }> {
+    return fetchApi('/llm/models')
+  },
+
+  async getLlmExchangeRate(): Promise<{
+    usdToEur: number
+    source: 'ecb' | 'fallback'
+  }> {
+    return fetchApi('/llm/exchange-rate')
+  },
+
+  async getPracticeAiCosts(praticaId: string): Promise<PracticeAiCostsPayload> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/ai-costs`)
+  },
+
+  async clearPracticeAiCosts(
+    praticaId: string
+  ): Promise<{ ok: boolean; count: number }> {
+    return fetchApi(`/pratiche/${encodeURIComponent(praticaId)}/ai-costs`, {
+      method: 'DELETE',
+    })
   },
 
   // Estratti

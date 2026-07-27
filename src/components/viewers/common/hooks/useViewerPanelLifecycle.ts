@@ -13,7 +13,8 @@ interface UseViewerPanelLifecycleOptions {
 }
 
 /**
- * Tracks panel activation and schedules one layout refresh after dock resizing settles.
+ * Tracks panel activation and schedules layout refreshes after dock resizing settles.
+ * Dopo uno split, ripete il refresh a breve distanza: il primo frame spesso vede ancora 0×0.
  */
 export function useViewerPanelLifecycle({
   panelApi,
@@ -46,8 +47,14 @@ export function useViewerPanelLifecycle({
 
     let lastWidth = panelApi.width
     let lastHeight = panelApi.height
+    let delayedTimer: ReturnType<typeof setTimeout> | undefined
     const refreshScheduler = createPanelLayoutRefreshScheduler(() => {
       onLayoutChangeRef.current?.()
+      // Secondo passaggio: react-pdf-viewer a volte ripinta solo dopo che il pane ha size stabile.
+      if (delayedTimer) clearTimeout(delayedTimer)
+      delayedTimer = setTimeout(() => {
+        onLayoutChangeRef.current?.()
+      }, 120)
     })
 
     setIsActive(panelApi.isActive)
@@ -78,6 +85,7 @@ export function useViewerPanelLifecycle({
 
     return () => {
       refreshScheduler.cancel()
+      if (delayedTimer) clearTimeout(delayedTimer)
       activeDisposable.dispose()
       dimensionsDisposable.dispose()
     }

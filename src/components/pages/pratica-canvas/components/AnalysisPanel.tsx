@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { FileText, Play, Pause, Square, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { Documento } from '../../../../types';
-import { buildPdfJsAdaptersFromDocs } from '../../../features/entities/adapters/PdfJsDocAdapter';
-import { extractPersonsFromDocs } from '../../../features/entities/personExtractor';
-import { detectContacts } from '../../../features/parsers/contactDetector';
-import { detectVehicles } from '../../../features/parsers/vehicleDetector';
-import { nlpExtractEvents } from '../../../../services/nlp/nlpClient';
-import { jobSystem } from '../../../analysis/jobSystem';
+import { createDocAdapters } from '../../../../features/entities/adapters/create-doc-adapters';
+import { extractPersonsFromDocs } from '../../../../features/entities/extract-orchestrator';
+import { detectContacts } from '../../../../features/parsers/contacts';
+import { detectVehicles } from '../../../../features/parsers/vehicles';
+import { extractEvents as nlpExtractEvents } from '../../../../services/nlp/client';
+import { jobSystem } from '../../../../analysis/jobSystem';
 
 interface AnalysisPanelProps {
     documenti: Documento[];
@@ -144,7 +144,11 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
             return adapterCacheRef.current.get(doc.id) as any[]
         }
         dbg('adapters:build', { docId: doc.id, title: doc.filename });
-        const adapters = await buildPdfJsAdaptersFromDocs([doc]);
+        const { adapters, skipped } = createDocAdapters([doc]);
+        if (adapters.length === 0) {
+            const detail = skipped[0]?.detail || `Documento non supportato: ${doc.filename}`
+            throw new Error(detail)
+        }
         adapterCacheRef.current.set(doc.id, adapters);
         return adapters;
     };

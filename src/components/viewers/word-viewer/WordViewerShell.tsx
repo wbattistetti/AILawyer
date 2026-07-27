@@ -2,7 +2,7 @@
  * Word Viewer Shell - Componente principale per visualizzare documenti Word
  */
 
-import React, { useRef, useState, useCallback, useMemo } from 'react'
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { WordViewerCore, WordViewerHandle } from './components/WordViewerCore'
 import { useWordRectSelection } from './hooks/useWordRectSelection'
 import { ViewerShellProps } from '../common/types/viewer.types'
@@ -19,6 +19,7 @@ import type { RectSelection, ExtractedContent, ExtractCard } from '../common/typ
 import { extractContentFromRect } from './utils/extractContentFromRect'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 import { createWordSearchAdapter } from './wordSearchAdapter'
+import { useOptionalViewerSearchNavigatorRegistry } from '../../search/ViewerSearchNavigatorProvider'
 
 export const WordViewerShell: React.FC<ViewerShellProps> = ({
   fileUrl,
@@ -26,6 +27,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
   onPageChange,
   hideToolbar = false,
   docId,
+  praticaId,
   docName,
   hasNativeText = true,
   panelApi
@@ -198,6 +200,26 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
     }),
     [docId, docName, fileUrl, totalPages]
   )
+  const viewerNavigatorRegistry = useOptionalViewerSearchNavigatorRegistry()
+
+  useEffect(() => {
+    if (!viewerNavigatorRegistry || !docId?.trim()) return
+    return viewerNavigatorRegistry.register({
+      documentId: docId,
+      kind: 'word',
+      goToMatch: async (match) => {
+        const localMatches = await searchAdapter.search(match.q, 'current')
+        const ordinal = match.ord ?? 0
+        const localMatch = localMatches[ordinal]
+        if (!localMatch) {
+          throw new Error(
+            `Occorrenza Word ${ordinal + 1} non disponibile per "${match.q}"`
+          )
+        }
+        await searchAdapter.goToMatch(localMatch)
+      }
+    })
+  }, [viewerNavigatorRegistry, docId, searchAdapter])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -285,6 +307,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
               setPersistentSelections={setPersistentSelections}
               docName={docName}
               hasNativeText={false}
+              praticaId={praticaId}
             />
           )}
         </div>

@@ -47,6 +47,13 @@
   background-color: hsl(var(--background) / 0.75) !important;
 }
 
+/* La tab grafo segue la larghezza dell'input durante la rinomina. */
+.dockv3-root .dockview-theme-light .dv-tab:has([data-graph-tab-editing="true"]) {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  max-width: none !important;
+}
+
 /* ✅ Font-size scalabile per tutte le tab Dockview */
 .dockv3-root .dv-tab,
 .dockv3-root .dv-tab-active,

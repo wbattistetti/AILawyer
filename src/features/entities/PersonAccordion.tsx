@@ -1,41 +1,133 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { type PersonRecord, type OccurrenceRecord } from './entity-index';
-import { Baby, Home, Mail, Phone, Hash, Building2 } from 'lucide-react';
+import { Baby, Home, Mail, Phone, Hash, Building2, Briefcase, Trash2 } from 'lucide-react';
+import { EntityTypeIcon } from '../EntityTypeIcon'
+import { inferPersonKind } from '../person-icon-kind'
 import { getPersonSummary } from '../events/event-index'
+import { OccurrenceEvidenceSection } from './OccurrenceEvidenceSection'
 
-export function PersonAccordion({ persons }: { persons: PersonRecord[]; onOpenOccurrence?: (o: OccurrenceRecord) => void }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+type PersonAccordionProps = {
+  persons: PersonRecord[]
+  occurrences: OccurrenceRecord[]
+  onOpenOccurrence?: (
+    occurrence: OccurrenceRecord,
+    context?: { highlightQuery?: string; highlightTerms?: string[] }
+  ) => void
+  getOccurrencePdfUrl?: (occurrence: OccurrenceRecord) => string | undefined
+  isOccurrenceScanned?: (occurrence: OccurrenceRecord) => boolean
+  onDeletePerson?: (personId: string) => void
+}
+
+/** Restituisce un nuovo insieme alternando l'apertura della persona indicata. */
+export function togglePersonExpansion(
+  current: ReadonlySet<string>,
+  personId: string
+): Set<string> {
+  const next = new Set(current)
+  if (next.has(personId)) next.delete(personId)
+  else next.add(personId)
+  return next
+}
+
+/** Mostra le schede anagrafiche espandibili e le relative azioni. */
+export function PersonAccordion({
+  persons,
+  occurrences,
+  onOpenOccurrence,
+  getOccurrencePdfUrl,
+  isOccurrenceScanned,
+  onDeletePerson,
+}: PersonAccordionProps) {
+  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set())
+  const occurrencesByPerson = useMemo(() => {
+    const grouped = new Map<string, OccurrenceRecord[]>()
+    occurrences.forEach(occurrence => {
+      const current = grouped.get(occurrence.personKey) ?? []
+      current.push(occurrence)
+      grouped.set(occurrence.personKey, current)
+    })
+    return grouped
+  }, [occurrences])
+
+  const togglePerson = (personId: string) => {
+    setOpenIds(current => togglePersonExpansion(current, personId))
+  }
 
   return (
     <div className="divide-y">
-      {persons.map(p => (
+      {persons.map(p => {
+        const isOpen = openIds.has(p.id)
+        return (
         <div key={p.id} className="py-2">
-          <button
-            className="w-full flex items-center gap-3 text-left"
-            onClick={() => setOpenId(openId === p.id ? null : p.id)}
-            aria-expanded={openId === p.id}
-          >
-            <Avatar name={p.full_name} />
-            <div className="flex-1">
-              <div className="font-medium">
-                {p.titles?.length ? (
-                  <span className="mr-2 inline-block text-[11px] px-2 py-0.5 rounded-full bg-neutral-200 align-middle">{p.titles[0]}</span>
-                ) : null}
-                <span className="align-middle">{properCaseName(p.full_name)}{typeof p.occCount === 'number' ? ` (${p.occCount})` : ''}</span>
-                <EventBadge name={p.full_name} />
+          <div className="flex items-center gap-2">
+            <button
+              className="flex-1 flex items-center gap-3 text-left"
+              onClick={() => togglePerson(p.id)}
+              aria-expanded={isOpen}
+            >
+              <Avatar person={p} />
+              <div className="flex-1">
+                <div className="font-medium">
+                  {p.titles?.length ? (
+                    <span className="mr-2 inline-block text-[11px] px-2 py-0.5 rounded-full bg-neutral-200 align-middle">{p.titles[0]}</span>
+                  ) : null}
+                  <span className="align-middle">{properCaseName(p.full_name)}{typeof p.occCount === 'number' ? ` (${p.occCount})` : ''}</span>
+                  <EventBadge name={p.full_name} />
+                </div>
               </div>
-              {/* dettagli mostrati sotto */}
-            </div>
-            <span className="text-neutral-500">{openId === p.id ? '▾' : '▸'}</span>
-          </button>
+              <span className="text-neutral-500">{isOpen ? '▾' : '▸'}</span>
+            </button>
+            {onDeletePerson && (
+              <button
+                type="button"
+                className="p-2 rounded text-neutral-400 hover:text-red-600 hover:bg-red-50"
+                title={`Elimina la scheda di ${properCaseName(p.full_name)}`}
+                aria-label={`Elimina la scheda di ${properCaseName(p.full_name)}`}
+                onClick={() => {
+                  if (window.confirm(`Eliminare la scheda anagrafica di ${properCaseName(p.full_name)}?`)) {
+                    onDeletePerson(p.id)
+                  }
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
-          {openId === p.id && (
+          {isOpen && (
             <div className="mt-2 bg-neutral-50 rounded-xl p-3">
               <FieldList person={p} />
+              <OccurrenceEvidenceSection
+                occurrences={occurrencesByPerson.get(p.id) ?? []}
+                onOpenOccurrence={
+                  onOpenOccurrence
+                    ? (occurrence) => {
+                        const highlightTerms = [
+                          p.full_name,
+                          p.first_name ?? '',
+                          p.last_name ?? '',
+                          p.tax_code ?? '',
+                        ].filter(term => term.trim().length >= 2)
+                        onOpenOccurrence(occurrence, {
+                          highlightQuery: properCaseName(p.full_name),
+                          highlightTerms,
+                        })
+                      }
+                    : undefined
+                }
+                getPdfUrl={getOccurrencePdfUrl}
+                isScanned={isOccurrenceScanned}
+                highlightTerms={[
+                  p.full_name,
+                  p.first_name ?? '',
+                  p.last_name ?? '',
+                  p.tax_code ?? '',
+                ]}
+              />
             </div>
           )}
         </div>
-      ))}
+      )})}
     </div>
   );
 }
@@ -47,41 +139,21 @@ function EventBadge({ name }: { name: string }) {
   return <span className="ml-2 text-xs text-neutral-600 align-middle">Eventi {s.total} ({kinds})</span>
 }
 
-function Avatar({ name }: { name: string }) {
-  const isFemale = guessFemale(name)
-  const base = 'w-9 h-9 rounded-full flex items-center justify-center'
-  const cls = isFemale ? `${base} border-2 border-pink-400 bg-pink-50 text-pink-600` : `${base} border-2 border-blue-400 bg-blue-50 text-blue-600`
-  return (
-    <div className={cls} aria-label={isFemale ? 'Donna' : 'Uomo'}>
-      {isFemale ? <FemaleIcon className="w-5 h-5" /> : <MaleIcon className="w-5 h-5" />}
-    </div>
-  )
-}
-
-function MaleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="8" r="3" />
-      <path d="M4 20c0-3.314 3.582-6 8-6s8 2.686 8 6v1H4v-1z" />
-    </svg>
-  )
-}
-
-function FemaleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="7.5" r="3" />
-      <path d="M7 21v-1.5c0-2.9 2.985-5 5-5s5 2.1 5 5V21H7z" />
-    </svg>
-  )
+function Avatar({ person }: { person: PersonRecord }) {
+  const kind = inferPersonKind(person.titles?.[0], person.tax_code)
+  const label = kind === 'female' ? 'Donna' : kind === 'male' ? 'Uomo' : 'Persona'
+  return <EntityTypeIcon kind={kind} iconSize={20} label={label} />
 }
 
 function FieldList({ person }: { person: PersonRecord }) {
   const loc = (() => {
     const parts: string[] = []
     if (person.postal_code) parts.push(person.postal_code)
-    if (person.city || person.place_of_birth) parts.push((person.city || person.place_of_birth) as string)
-    if (person.province) parts[parts.length - 1] = `${parts[parts.length - 1]} (${person.province})`
+    if (person.city) {
+      parts.push(person.province ? `${person.city} (${person.province})` : person.city)
+    } else if (person.province) {
+      parts.push(`(${person.province})`)
+    }
     return parts.length ? parts.join(' ') : ''
   })()
   const withCity = (addr?: string) => {
@@ -96,6 +168,7 @@ function FieldList({ person }: { person: PersonRecord }) {
     { key: 'city', label: 'Città', value: person.city, Icon: Building2 },
     { key: 'prov', label: 'Provincia', value: person.province, Icon: Building2 },
     { key: 'cap', label: 'CAP', value: person.postal_code, Icon: Hash },
+    { key: 'profession', label: 'Professione', value: person.profession, Icon: Briefcase },
     { key: 'phone', label: 'Telefono', value: person.phone, Icon: Phone },
     { key: 'email', label: 'Email', value: person.email, Icon: Mail },
     { key: 'cf', label: 'Codice fiscale', value: person.tax_code, Icon: Hash },
@@ -105,9 +178,10 @@ function FieldList({ person }: { person: PersonRecord }) {
   return (
     <div className="space-y-2">
       {present.map(({ key, label, value, Icon }) => (
-        <div key={key} className="flex items-baseline gap-2 text-sm">
+        <div key={key} className="grid grid-cols-[1em_8rem_1fr] items-baseline gap-2 text-sm">
           <Icon className="text-neutral-500 w-[1em] h-[1em]" title={label} aria-label={label} />
-          <span className="font-medium">{value}</span>
+          <span className="text-neutral-500">{label}</span>
+          <span className="font-medium break-words">{value}</span>
         </div>
       ))}
     </div>
@@ -121,15 +195,6 @@ function properCaseName(name: string) {
     .trim()
     .toLowerCase()
     .replace(/\b([a-zà-ü])([a-zà-ü']*)/g, (_m, a: string, b: string) => a.toUpperCase() + b)
-}
-
-function guessFemale(name: string): boolean {
-  const first = (name.trim().split(/\s+/)[0] || '').toLowerCase()
-  // very lightweight heuristic; extend with a proper list if needed
-  const femaleSuffix = first.endsWith('a') || first.endsWith('ia') || first.endsWith('isa')
-  const knownFem = new Set(['maria','giulia','anna','chiara','silvia','francesca','valentina','federica','alessia','roberta','luisa','sara','martina'])
-  if (knownFem.has(first)) return true
-  return femaleSuffix
 }
 
 

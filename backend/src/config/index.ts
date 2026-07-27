@@ -44,6 +44,15 @@ const configSchema = z.object({
   THUMB_QUALITY: z.coerce.number().default(0.8),
   // Worker settings
   OCR_WORKER_CONCURRENCY: z.coerce.number().default(8),
+  // Gateway LLM Groq (chiave solo server-side; mai restituita dalle API).
+  GROQ_API_KEY: z.string().min(1).optional(),
+  GROQ_API_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+  GROQ_LEGAL_REVIEW_MODEL: z.string().min(1).default('llama-3.3-70b-versatile'),
+  GROQ_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  USD_TO_EUR_FALLBACK: z.coerce.number().positive().default(0.86),
+  // Microservizio NLP locale (FastAPI/spaCy).
+  NLP_SERVICE_URL: z.string().url().default('http://127.0.0.1:8098'),
+  NLP_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 })
 
 export const config = configSchema.parse(process.env)

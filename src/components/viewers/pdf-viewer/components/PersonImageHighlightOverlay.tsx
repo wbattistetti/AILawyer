@@ -18,6 +18,7 @@ const FIELD_COLORS: Record<string, { bg: string; border: string }> = {
   'Luogo nascita': { bg: 'rgba(78, 205, 196, 0.35)', border: 'rgba(60, 180, 170, 0.8)' }, // Turchese
   'Residenza': { bg: 'rgba(149, 225, 211, 0.35)', border: 'rgba(120, 200, 185, 0.8)' }, // Verde acqua
   'Domicilio': { bg: 'rgba(243, 129, 129, 0.35)', border: 'rgba(220, 100, 100, 0.8)' }, // Rosa
+  'Professione': { bg: 'rgba(133, 193, 233, 0.35)', border: 'rgba(70, 150, 205, 0.8)' }, // Azzurro
   'CF': { bg: 'rgba(255, 160, 122, 0.35)', border: 'rgba(255, 140, 100, 0.8)' }, // Salmone
   'Telefono': { bg: 'rgba(152, 216, 200, 0.35)', border: 'rgba(120, 190, 170, 0.8)' }, // Verde menta
   'Email': { bg: 'rgba(247, 220, 111, 0.35)', border: 'rgba(240, 200, 80, 0.8)' }, // Giallo chiaro

@@ -8,6 +8,7 @@ export interface Pratica {
   numeroRuolo?: string
   status: 'draft' | 'committed'
   explorerState?: string // JSON: { selectedPath?: string, isOpen?: boolean }
+  graphsState?: string // JSON: Array di SavedGraph
   createdAt: string
   memorieDifensive?: MemoriaDifensiva[]
 }

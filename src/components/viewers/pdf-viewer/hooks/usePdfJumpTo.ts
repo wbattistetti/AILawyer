@@ -24,6 +24,8 @@ export interface UsePdfJumpToProps {
 	bumpOverlayTick: () => void
 	setActiveSearchMatchId: (matchId: string | null) => void
 	setAreas: React.Dispatch<React.SetStateAction<JumpArea[]>>
+	/** Propaga la pagina al parent / session store (evita reset a p.1 al remount). */
+	onPageChange?: (page: number) => void
 }
 
 const INNER_PAGES_SEL = '.rpv-core__inner-pages, [data-testid="core__inner-pages"]'
@@ -76,7 +78,8 @@ const waitForPageAfterJump = async (
 			const pageEl = resolvePageLayer(root, page)
 			const idleMs = Date.now() - lastScrollAt
 			const elapsed = Date.now() - start
-			const ready = !!pageEl && idleMs >= 200 && (sawScroll || elapsed >= 450)
+			// Soglie basse: pagina già in DOM (doc aperto) o dopo breve jumpToPage.
+			const ready = !!pageEl && idleMs >= 50 && (sawScroll || elapsed >= 120)
 
 			if (ready && pageEl) {
 				return { pageEl, scroller: scroller || null }
@@ -108,7 +111,8 @@ const scrollScrollerToMatch = (
 	const desired = scroller.scrollTop + (matchTop - sr.top) - Math.floor(scroller.clientHeight * 0.3)
 	const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
 	const target = Math.max(0, Math.min(max, desired))
-	scroller.scrollTo({ top: target, left: scroller.scrollLeft, behavior: 'smooth' })
+	// Instant: lo smooth (~1s) ritardava l'apertura delle fonti entità.
+	scroller.scrollTo({ top: target, left: scroller.scrollLeft, behavior: 'auto' })
 }
 
 export const usePdfJumpTo = ({
@@ -120,7 +124,8 @@ export const usePdfJumpTo = ({
 	ensureOverlayRootForPage,
 	bumpOverlayTick,
 	setActiveSearchMatchId,
-	setAreas
+	setAreas,
+	onPageChange
 }: UsePdfJumpToProps) => {
 	const generationRef = useRef(0)
 
@@ -131,11 +136,6 @@ export const usePdfJumpTo = ({
 		if (typeof m.page !== 'number' || m.page < 1) {
 			throw new Error(`[GOTO] pagina invalida: ${m.page}`)
 		}
-		if (!m.rects?.length) {
-			throw new Error(`Match "${m.id}" senza rettangoli OCR`)
-		}
-
-		setActiveSearchMatchId(m.id)
 
 		const getScroller = () =>
 			resolveInnerPages(hostRef.current)
@@ -146,6 +146,7 @@ export const usePdfJumpTo = ({
 			throw new Error('[GOTO] jumpToPage non disponibile sul viewer')
 		}
 		viewerRef.current.jumpToPage(m.page)
+		onPageChange?.(m.page)
 
 		const { pageEl, scroller } = await waitForPageAfterJump(m.page, getScroller, isCancelled)
 		if (isCancelled()) return
@@ -153,6 +154,18 @@ export const usePdfJumpTo = ({
 			throw new Error(`[GOTO] page-layer non trovata per pagina ${m.page}`)
 		}
 
+		// Solo salto pagina: niente rettangolo finto se mancano coordinate affidabili.
+		if (!m.rects?.length) {
+			setActiveSearchMatchId(null)
+			const sc = scroller || getScroller()
+			if (sc) {
+				scrollScrollerToMatch(sc, pageEl, { x0Pct: 0, y0Pct: 0.15, x1Pct: 1, y1Pct: 0.25 })
+			}
+			bumpOverlayTick()
+			return
+		}
+
+		setActiveSearchMatchId(m.id)
 		ensureOverlayRootForPage(m.page)
 		bumpOverlayTick()
 
@@ -183,19 +196,12 @@ export const usePdfJumpTo = ({
 		}
 
 		scrollScrollerToMatch(sc, pageEl, unitBox)
-
-		const overlay = document.querySelector(
-			`[data-search-match-id="${CSS.escape(m.id)}"][data-search-match-active="true"]`
-		) as HTMLElement | null
-		if (overlay) {
-			overlay.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
-		}
-
 		bumpOverlayTick()
 	}, [
 		bumpOverlayTick,
 		ensureOverlayRootForPage,
 		hostRef,
+		onPageChange,
 		overlayRootsRef,
 		scrollHostRef,
 		setActiveSearchMatchId,

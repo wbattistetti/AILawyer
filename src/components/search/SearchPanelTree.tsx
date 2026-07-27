@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
-import { Search as SearchIcon, FileText, Type as TypeIcon, RotateCcw, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Search as SearchIcon,
+  FileText,
+  Type as TypeIcon,
+  RotateCcw,
+  Trash2
+} from 'lucide-react'
 import { useSearch } from './SearchProvider'
 import { useToast } from '@/hooks/use-toast'
 import { extractPageText } from '@/utils/extractPageText'
@@ -504,6 +511,25 @@ export const SearchPanelTree = React.memo(
                           </li>
                         )
                       })}
+                      {node.diagnostics && node.diagnostics.length > 0 && (
+                        <li className="px-2 py-1">
+                          <details className="rounded border border-amber-200 bg-amber-50/60 px-2 py-1 text-amber-950">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 font-medium">
+                              <AlertTriangle size={14} className="shrink-0 text-amber-600" />
+                              <span>Documenti non ricercabili: OCR richiesto</span>
+                              <span className="text-amber-700">({node.diagnostics.length})</span>
+                            </summary>
+                            <ul className="mt-1 space-y-1 pl-5">
+                              {node.diagnostics.map(diagnostic => (
+                                <li key={`${node.id}:${diagnostic.docId}`} className="text-xs">
+                                  <span className="font-medium">{diagnostic.docTitle}</span>
+                                  <span className="text-amber-800"> — {diagnostic.message}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        </li>
+                      )}
                     </ul>
                   )}
                 </li>

@@ -221,7 +221,7 @@ export function createWordSearchAdapter({
       clearHighlights(host)
       const range = createMatchRange(pageElement, match.charIdx, match.qLength ?? match.q.length)
       const highlight = paintRange(pageElement, range)
-      highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+      highlight.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
     }
   }
 }

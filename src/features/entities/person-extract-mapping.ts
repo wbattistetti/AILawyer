@@ -116,6 +116,7 @@ export function mapTextToBoundingBoxes(
       'Telefono': '#98D8C8', // Verde menta
       'Email': '#F7DC6F', // Giallo chiaro
       'CAP': '#BB8FCE', // Viola chiaro
+      'Professione': '#85C1E9', // Azzurro
     };
 
     // Nome
@@ -213,6 +214,16 @@ export function mapTextToBoundingBoxes(
         box.fieldLabel = 'CAP';
       });
       highlights.push(...capBoxes);
+    }
+
+    // Professione
+    if (person.profession) {
+      const professionBoxes = mapFieldToBoundingBoxes(person.profession, words, imageWidth, imageHeight);
+      professionBoxes.forEach(box => {
+        box.personIndex = i;
+        box.fieldLabel = 'Professione';
+      });
+      highlights.push(...professionBoxes);
     }
 
     // Altri campi generici

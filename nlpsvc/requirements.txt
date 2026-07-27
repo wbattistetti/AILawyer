@@ -1,0 +1,5 @@
+# Dipendenze del microservizio NLP locale (eventi + review NER).
+fastapi>=0.110,<1
+uvicorn[standard]>=0.27,<1
+spacy>=3.7,<4
+dateparser>=1.2,<2

@@ -41,7 +41,7 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
         // Scroll alla pagina
         const pageElement = contentRef.current?.querySelector(`[data-page="${page}"]`)
         if (pageElement) {
-          pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          pageElement.scrollIntoView({ behavior: 'auto', block: 'start' })
         }
       },
       getCurrentPage: () => currentPage,
@@ -103,7 +103,7 @@ const WordViewerCoreInner = forwardRef<WordViewerHandle, WordViewerCoreProps>(
         setCurrentPage(page)
         const pageElement = contentRef.current?.querySelector(`[data-page="${page}"]`)
         if (pageElement) {
-          pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          pageElement.scrollIntoView({ behavior: 'auto', block: 'start' })
         }
       }
     }, [page, currentPage])

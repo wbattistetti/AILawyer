@@ -16,14 +16,20 @@ export function toPdfMatchItem(match: DocumentMatch): MatchItem {
     throw new Error(`Match con pagina non valida: ${match.page}`)
   }
 
-  const rects = (match.rects?.length
+  const sourceRects = match.rects?.length
     ? match.rects
-    : [{
-      x0Pct: match.x0Pct,
-      x1Pct: match.x1Pct,
-      y0Pct: match.y0Pct,
-      y1Pct: match.y1Pct
-    }]).map((rect) => ({
+    : (
+      match.x1Pct > match.x0Pct && match.y1Pct > match.y0Pct
+        ? [{
+          x0Pct: match.x0Pct,
+          x1Pct: match.x1Pct,
+          y0Pct: match.y0Pct,
+          y1Pct: match.y1Pct
+        }]
+        : []
+    )
+
+  const rects = sourceRects.map((rect) => ({
     x0Pct: rect.x0Pct,
     x1Pct: rect.x1Pct > rect.x0Pct ? rect.x1Pct : Math.min(100, rect.x0Pct + 1),
     y0Pct: rect.y0Pct,

@@ -1,47 +1,21 @@
 import React from 'react'
 import { Handle, Position, useViewport, useReactFlow } from 'reactflow'
-import { User, UserRound, Building2, Users, Coffee, UtensilsCrossed, Car, Bike, Trash2, Pencil, Palette, Menu, Droplet, X, Paintbrush, CaseSensitive, Bold, Italic, Check, Gavel } from 'lucide-react'
+import { Trash2, Pencil, Palette, Menu, Droplet, X, CaseSensitive, Bold, Italic, Check } from 'lucide-react'
+import { getEntityVisual } from '../../entity-visual-catalog'
 import type { NodeStyle } from './types'
 import type { BuilderNodeData, NodeKind } from './types'
 
-const iconMap: Record<NodeKind, any> = {
-  male: User,
-  female: UserRound,
-  company: Building2,
-  meeting: Users,
-  bar: Coffee,
-  restaurant: UtensilsCrossed,
-  vehicle: Car,
-  motorcycle: Bike,
-  other_investigation: Gavel,
-}
-
-function colorFor(kind: NodeKind): string {
-  switch (kind) {
-    case 'male': return '#3b82f6' // blue
-    case 'female': return '#f59e0b' // amber
-    case 'company': return '#64748b' // slate
-    case 'meeting': return '#8b5cf6' // violet
-    case 'bar': return '#92400e' // amber-900
-    case 'restaurant': return '#ef4444' // red
-    case 'vehicle': return '#475569' // slate-600
-    case 'motorcycle': return '#0ea5e9' // sky
-    case 'other_investigation': return '#111827' // near-black judiciary feel
-    default: return '#64748b'
-  }
+function isPersonKind(kind: NodeKind): boolean {
+  return kind === 'person' || kind === 'male' || kind === 'female'
 }
 
 export default function NodeView(props: any) {
   const data: BuilderNodeData = props.data
   const nodeId: string | undefined = (data as any).nodeId ?? props.id
   const size = 40 // Aumentato per contenere icona 28x28
-  const Icon = iconMap[data.kind]
-  // Colore del bordo del cerchio (mantiene i colori personalizzati)
-  let col = colorFor(data.kind)
-  if (data.kind === 'male') col = '#60a5fa' // azzurro
-  if (data.kind === 'female') col = '#ec4899' // rosa
-  // Colore dell'icona (nero come nella palette)
-  const iconColor = '#000000'
+  const visual = getEntityVisual(data.kind)
+  const Icon = visual.icon
+  const nodeColor = data.style?.ringColor ?? visual.color
   const ps = data.details?.hasPs ? 'Sì' : 'No'
   const dob = data.details?.dob || ''
   const ageStr = dob ? ` (${calcAgeFromDob(dob)})` : ''
@@ -100,7 +74,7 @@ export default function NodeView(props: any) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
   const [editorWidthPx, setEditorWidthPx] = React.useState<number | null>(null)
   const editSnapshotRef = React.useRef<string>('')
-  const baseFontSize = data.style?.textFontSizePx ?? 10
+  const baseFontSize = data.style?.textFontSizePx ?? 14
   const baseFontWeight: React.CSSProperties['fontWeight'] = data.style?.textBold ? 700 : 400
   const baseFontStyle: React.CSSProperties['fontStyle'] = data.style?.textItalic ? 'italic' : 'normal'
   const baseTextColor = data.style?.textColor ?? '#000000'
@@ -108,6 +82,7 @@ export default function NodeView(props: any) {
   const labelRef = React.useRef<HTMLDivElement | null>(null)
   const [showResize, setShowResize] = React.useState(false)
   const startRef = React.useRef<{ startX: number; startW: number; side: 'left'|'right' } | null>(null)
+  const inlineEditorWidth = editorWidthPx ?? Math.max((editRect?.w || 0), 140)
   const onResizeStart = (e: React.MouseEvent, side: 'left'|'right') => {
     e.stopPropagation(); e.preventDefault()
     const rectW = labelRef.current?.getBoundingClientRect().width ?? labelWidth
@@ -180,7 +155,7 @@ export default function NodeView(props: any) {
   const openInlineEdit = React.useCallback(() => {
     setEditing(true)
     setShowResize(false)
-    const full = [data.label, (dob ? `${dob}${ageStr}` : ''), ((data.kind==='male'||data.kind==='female') ? `Precedenti PS: ${ps}` : '')].filter(Boolean).join('\n')
+    const full = [data.label, (dob ? `${dob}${ageStr}` : ''), (isPersonKind(data.kind) ? `Precedenti PS: ${ps}` : '')].filter(Boolean).join('\n')
     setMultiDraft(full)
     editSnapshotRef.current = full
     requestAnimationFrame(() => autoResize())
@@ -214,11 +189,11 @@ export default function NodeView(props: any) {
   }, [data.startEditing, editing, nodeId, openInlineEdit])
 
   return (
-    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor, fontFamily: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif", WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale', textRendering: 'optimizeLegibility' }} className={`select-none group ${editing ? '' : 'drag-region'}`} >
-      <div className="mx-auto relative" style={{ width: size, height: size, borderRadius: '9999px', display:'grid', placeItems:'center', position:'relative', boxShadow:`0 0 0 ${Math.max(1, data.style?.ringWidth ?? 1)}px ${data.style?.ringColor ?? col}`, background: data.style?.ringFill ?? '#fff', cursor: (!isConnecting ? 'grab' : 'default') }} onMouseEnter={()=>setHoverCircle(true)} onMouseLeave={()=>setHoverCircle(false)}>
+    <div ref={ref} onMouseEnter={()=>setHoverNode(true)} onMouseLeave={()=>setHoverNode(false)} style={{ width: labelWidth, pointerEvents: 'auto', position:'relative', fontWeight: baseFontWeight, fontStyle: baseFontStyle, color: baseTextColor, fontFamily: 'var(--font-family)', WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale', textRendering: 'optimizeLegibility' }} className={`select-none group ${editing ? '' : 'drag-region'}`} >
+      <div className="mx-auto relative" style={{ width: size, height: size, borderRadius: '9999px', display:'grid', placeItems:'center', position:'relative', boxShadow:`0 0 0 ${Math.max(1, data.style?.ringWidth ?? 1)}px ${nodeColor}`, background: data.style?.ringFill ?? visual.softColor, cursor: (!isConnecting ? 'grab' : 'default') }} onMouseEnter={()=>setHoverCircle(true)} onMouseLeave={()=>setHoverCircle(false)}>
         {/* Target: full circle hit-area inside circle container */}
         <Handle id="target-circle" type="target" position={Position.Bottom} className="opacity-0" style={{ left:'50%', top: size/2, transform:'translate(-50%, -50%)', width: size, height: size, borderRadius: 9999, zIndex: 30, pointerEvents: (isConnecting ? 'all' : 'none') as any }} />
-        <Icon size={28} color={iconColor} />
+        <Icon size={28} color={nodeColor} />
         {((data.style?.bigXSizePx ?? 0) > 0 || data.style?.showBigX) && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents:'none' }}>
             <X size={data.style?.bigXSizePx ?? 24} color={data.style?.bigXColor ?? (data.style?.ringColor ?? '#ef4444')} strokeWidth={3} />
@@ -243,31 +218,60 @@ export default function NodeView(props: any) {
       </div>
       <div ref={labelRef} className="mt-1 text-center leading-tight px-1 whitespace-pre-line relative" style={{ fontSize: baseFontSize }} title={data.label} onMouseEnter={()=>setHoverLabel(true)} onMouseLeave={()=>setHoverLabel(false)} onClick={(e)=>{ e.stopPropagation(); setShowResize(v=>!v) }}>
         {editing && (
-          <textarea
-            autoFocus
-            ref={textRef}
-            className="absolute left-0 top-0 w-full border border-slate-300 rounded-md px-1 py-0.5 text-[inherit] leading-tight resize-none overflow-hidden bg-white/95 shadow-sm nodrag nopan"
-            style={{ width: editorWidthPx ? `${editorWidthPx}px` : `${Math.max((editRect?.w || 0), 140)}px`, height: 'auto' }}
-            value={multiDraft}
-            onChange={(e)=>{ setMultiDraft(e.target.value); autoResize() }}
-            onClick={(e)=>{
-              e.stopPropagation()
-              // Permetti il click normale per posizionare il cursore
-              if (isFirstEdit && textRef.current) {
-                // Se è la prima volta, rimuovi la selezione quando l'utente clicca
-                const pos = textRef.current.selectionStart
-                textRef.current.setSelectionRange(pos, pos)
-                setIsFirstEdit(false)
-              }
-            }}
-            onMouseDown={(e)=>{
-              e.stopPropagation()
-              // RIMOSSO e.preventDefault() per permettere il click normale
-            }}
-            onDragStart={(e)=>{ e.stopPropagation(); e.preventDefault() }}
-            onKeyDown={(e)=>{
-              if (e.key==='Escape'){
-                e.preventDefault();
+          <div
+            className="absolute top-0 nodrag nopan"
+            style={{ left: '50%', width: inlineEditorWidth, transform: 'translateX(-50%)' }}
+          >
+            <textarea
+              autoFocus
+              ref={textRef}
+              className="w-full border border-slate-300 rounded-md px-1 py-0.5 text-[inherit] leading-tight resize-none overflow-hidden bg-white/95 shadow-sm nodrag nopan"
+              style={{ height: 'auto' }}
+              value={multiDraft}
+              onChange={(e)=>{ setMultiDraft(e.target.value); autoResize() }}
+              onClick={(e)=>{
+                e.stopPropagation()
+                // Permetti il click normale per posizionare il cursore
+                if (isFirstEdit && textRef.current) {
+                  // Se è la prima volta, rimuovi la selezione quando l'utente clicca
+                  const pos = textRef.current.selectionStart
+                  textRef.current.setSelectionRange(pos, pos)
+                  setIsFirstEdit(false)
+                }
+              }}
+              onMouseDown={(e)=>{
+                e.stopPropagation()
+                // RIMOSSO e.preventDefault() per permettere il click normale
+              }}
+              onDragStart={(e)=>{ e.stopPropagation(); e.preventDefault() }}
+              onKeyDown={(e)=>{
+                if (e.key==='Escape'){
+                  e.preventDefault();
+                  setEditing(false);
+                  setMultiDraft(editSnapshotRef.current)
+                  // Center label after closing edit
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      centerLabelAfterEdit()
+                    })
+                  })
+                }
+              }}
+            />
+            <div className="absolute left-full bottom-0 ml-1 flex items-center gap-1" style={{ transform:`scale(${inv})`, transformOrigin:'bottom left' }} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>e.stopPropagation()}>
+              <button title="Applica" className="text-green-600 hover:text-green-700" onClick={()=>{
+                window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } }));
+                setEditing(false)
+                // Center label after closing edit
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    centerLabelAfterEdit()
+                  })
+                })
+              }}>
+                <Check size={14} />
+              </button>
+              <button title="Annulla" className="text-red-600 hover:text-red-700" onClick={()=>{
                 setEditing(false);
                 setMultiDraft(editSnapshotRef.current)
                 // Center label after closing edit
@@ -276,42 +280,10 @@ export default function NodeView(props: any) {
                     centerLabelAfterEdit()
                   })
                 })
-              }
-            }}
-          />
-        )}
-        {editing && (
-          <div className="absolute flex items-center gap-1" style={{ left: (editorWidthPx ?? Math.max((editRect?.w || 0), 140)) + 4, bottom: 0, transform:`scale(${inv})`, transformOrigin:'bottom left' }} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>e.stopPropagation()}>
-            <button title="Applica" className="text-green-600 hover:text-green-700" onClick={()=>{
-              window.dispatchEvent(new CustomEvent('gb:rename-node', { detail:{ id: nodeId, fullText: multiDraft } }));
-              setEditing(false)
-              // Center label after closing edit
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  centerLabelAfterEdit()
-                })
-              })
-            }}>
-              <Check size={14} />
-            </button>
-            <button title="Annulla" className="text-red-600 hover:text-red-700" onClick={()=>{
-              setEditing(false);
-              setMultiDraft(editSnapshotRef.current)
-              // Center label after closing edit
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  centerLabelAfterEdit()
-                })
-              })
-              // Center label after closing edit
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  centerLabelAfterEdit()
-                })
-              })
-            }}>
-              <X size={14} />
-            </button>
+              }}>
+                <X size={14} />
+              </button>
+            </div>
           </div>
         )}
         <div className={`relative ${editing ? 'opacity-0 pointer-events-none' : ''}`}>
@@ -321,7 +293,7 @@ export default function NodeView(props: any) {
           ) : (
             <>
               {dob && <div>{dob}{ageStr}</div>}
-              {(data.kind==='male' || data.kind==='female') && (
+              {isPersonKind(data.kind) && (
                 <div className="" style={{ color: baseTextColor }}>Precedenti PS: {ps}</div>
               )}
             </>
@@ -345,19 +317,19 @@ export default function NodeView(props: any) {
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
               <Menu className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={0} max={12} defaultValue={String(data.style?.ringWidth ?? 1)} onChange={(e)=>{ const ns = { ...(data.style||{}), ringWidth: Number(e.target.value) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
-              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.ringColor ?? '#64748b'} title="Colore bordo" onChange={(e)=>{ const ns = { ...(data.style||{}), ringColor: e.target.value } as NodeStyle; if (ns.ringFill) { const base = ns.ringFillColor ?? e.target.value; ns.ringFill = toSoftGradient(base, ns.ringFillAlpha ?? 0.12) } window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
+              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={nodeColor} title="Colore bordo" onChange={(e)=>{ const ns = { ...(data.style||{}), ringColor: e.target.value } as NodeStyle; if (ns.ringFill) { const base = ns.ringFillColor ?? e.target.value; ns.ringFill = toSoftGradient(base, ns.ringFillAlpha ?? 0.12) } window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
             </div>
             {/* Trasparenza + Colore riempimento */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
               <Droplet className="w-4 h-4 text-slate-600" />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={0} max={100} defaultValue={String(data.style?.ringFill ? Math.round((data.style?.ringFillAlpha ?? 1)*100) : 0)}
-                onChange={(e)=>{ const v = Number(e.target.value); const a = v/100; const base = data.style?.ringFillColor ?? data.style?.ringColor ?? '#64748b'; const ns = { ...(data.style||{}), ringFillAlpha: a, ringFill: v===0 ? null : toSoftGradient(base, a) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
-              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.ringFillColor ?? (data.style?.ringColor ?? '#64748b')} title="Colore riempimento" onChange={(e)=>{ const base = e.target.value; const ns = { ...(data.style||{}), ringFillColor: base } as NodeStyle; const alpha = ns.ringFillAlpha ?? 0.12; ns.ringFill = (ns.ringFill || (data.style?.ringFillAlpha ?? 0) > 0) ? toSoftGradient(base, alpha) : null; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
+                onChange={(e)=>{ const v = Number(e.target.value); const a = v/100; const base = data.style?.ringFillColor ?? nodeColor; const ns = { ...(data.style||{}), ringFillAlpha: a, ringFill: v===0 ? null : toSoftGradient(base, a) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
+              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.ringFillColor ?? nodeColor} title="Colore riempimento" onChange={(e)=>{ const base = e.target.value; const ns = { ...(data.style||{}), ringFillColor: base } as NodeStyle; const alpha = ns.ringFillAlpha ?? 0.12; ns.ringFill = (ns.ringFill || (data.style?.ringFillAlpha ?? 0) > 0) ? toSoftGradient(base, alpha) : null; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
             </div>
             {/* Font size + colore */}
             <div className="grid grid-cols-[16px,1fr,24px] items-center gap-1.5">
               <CaseSensitive className="w-4 h-4 text-slate-600" />
-              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={6} max={14} defaultValue={String(data.style?.textFontSizePx ?? 6)}
+              <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="w-full h-1 nodrag" type="range" min={6} max={20} defaultValue={String(data.style?.textFontSizePx ?? 14)}
                 onChange={(e)=>{ const ns = { ...(data.style||{}), textFontSizePx: Number(e.target.value) } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
               <input onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} className="h-5 w-5 nodrag" type="color" defaultValue={data.style?.textColor ?? '#0f172a'} title="Colore testo" onChange={(e)=>{ const ns = { ...(data.style||{}), textColor: e.target.value } as NodeStyle; window.dispatchEvent(new CustomEvent('gb:style-preview', { detail:{ id: data.nodeId, style: ns } })) }} />
             </div>

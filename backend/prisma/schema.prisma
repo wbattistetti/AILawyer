@@ -11,40 +11,68 @@ datasource db {
 }
 
 model Cliente {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   nome          String
   cognome       String
-  codiceFiscale String?  @unique
+  codiceFiscale String?   @unique
   dataNascita   DateTime?
   indirizzo     String?
-  metadati      String   // JSON string di array di {type, label, value}
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  metadati      String // JSON string di array di {type, label, value}
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  pratiche      PraticaCliente[]
-  estratti      Estratto[] @relation("EstrattoCliente")
+  pratiche PraticaCliente[]
+  estratti Estratto[]       @relation("EstrattoCliente")
 
   @@map("clienti")
 }
 
 model Pratica {
-  id          String   @id @default(cuid())
-  numeroRuolo String
-  foro        String
-  pmGiudice   String?
-  status      String   @default("draft")
+  id            String   @id @default(cuid())
+  numeroRuolo   String
+  foro          String
+  pmGiudice     String?
+  status        String   @default("draft")
   explorerState String? // JSON: { selectedPath?: string, isOpen?: boolean }
-  graphsState  String? // JSON: Array di grafi salvati
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  graphsState   String? // JSON: Array di grafi salvati
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  clienti     PraticaCliente[] // Relazione molti-a-molti con clienti
-  comparti    Comparto[]
-  documenti   Documento[]
-  estratti    Estratto[]
+  clienti          PraticaCliente[] // Relazione molti-a-molti con clienti
+  comparti         Comparto[]
+  documenti        Documento[]
+  estratti         Estratto[]
   memorieDifensive MemoriaDifensiva[]
+  persone          Persona[]
+  entitaGeneriche  EntitaGenerica[]
+  relazioniEntita  RelazioneEntitaGenerica[]
+  chiamateIa       ChiamataIa[]
 
   @@map("pratiche")
+}
+
+/// Chiamata LLM attribuita a una pratica, con uso token e costo calcolato.
+model ChiamataIa {
+  id             String   @id @default(cuid())
+  praticaId      String
+  operationId    String
+  purpose        String
+  providerId     String
+  modelId        String
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  costUsd        Float?
+  costEur        Float?
+  pricingFound   Boolean  @default(false)
+  durationMs     Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  pratica Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+
+  @@index([praticaId, createdAt])
+  @@index([praticaId, operationId])
+  @@map("chiamate_ia")
 }
 
 model PraticaCliente {
@@ -52,8 +80,8 @@ model PraticaCliente {
   praticaId String
   clienteId String
 
-  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
-  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  pratica Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 
   @@unique([praticaId, clienteId])
   @@map("pratica_clienti")
@@ -91,28 +119,161 @@ model Documento {
   classConfidence  Float?
   classWhy         String?
   tags             String   @default("[]")
-  thumbnailDataUrl String?  // Base64 JPEG data URL per miniatura (generata client-side, salvata per performance)
-  filePath         String?  // Path originale del file locale (solo se disponibile, es. File System Access API)
+  thumbnailDataUrl String? // Base64 JPEG data URL per miniatura (generata client-side, salvata per performance)
+  filePath         String? // Path originale del file locale (solo se disponibile, es. File System Access API)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  pratica  Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
-  comparto Comparto @relation(fields: [compartoId], references: [id], onDelete: Cascade)
-  jobs     Job[]
+  pratica                  Pratica                    @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  comparto                 Comparto                   @relation(fields: [compartoId], references: [id], onDelete: Cascade)
+  jobs                     Job[]
+  occorrenzePersona        OccorrenzaPersona[]
+  occorrenzeEntitaGenerica OccorrenzaEntitaGenerica[]
 
   @@map("documenti")
 }
 
+/// Anagrafica canonica estratta dai documenti di una pratica.
+model Persona {
+  id               String   @id @default(cuid())
+  externalKey      String
+  praticaId        String
+  fullName         String
+  firstName        String?
+  lastName         String?
+  dateOfBirth      String?
+  placeOfBirth     String?
+  taxCode          String?
+  address          String?
+  residenceAddress String?
+  domicileAddress  String?
+  postalCode       String?
+  city             String?
+  province         String?
+  phone            String?
+  email            String?
+  profession       String?
+  titles           String   @default("[]")
+  confidence       Float
+  occurrenceCount  Int      @default(0)
+  status           String   @default("confirmed")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pratica    Pratica             @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  occorrenze OccorrenzaPersona[]
+
+  @@unique([praticaId, externalKey])
+  @@unique([praticaId, taxCode])
+  @@index([praticaId, fullName])
+  @@map("persone")
+}
+
+/// Evidenza documentale dalla quale è stata ricavata una persona.
+model OccorrenzaPersona {
+  id             String   @id @default(cuid())
+  personaId      String
+  documentoId    String?
+  sourceDocId    String
+  sourceDocTitle String
+  page           Int
+  snippet        String
+  bbox           String
+  fingerprint    String
+  createdAt      DateTime @default(now())
+
+  persona   Persona    @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  documento Documento? @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+
+  @@unique([personaId, fingerprint])
+  @@index([sourceDocId])
+  @@map("occorrenze_persone")
+}
+
+/// Entità generica canonica (persona/luogo/veicolo/…) distinta dalle anagrafiche complete.
+model EntitaGenerica {
+  id              String   @id @default(cuid())
+  externalKey     String
+  praticaId       String
+  kind            String
+  subtype         String
+  label           String
+  properties      String   @default("{}")
+  confidence      Float
+  occurrenceCount Int      @default(0)
+  reviewStatus    String   @default("ok")
+  reviewFlags     String   @default("[]")
+  needsReview     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pratica     Pratica                    @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  occorrenze  OccorrenzaEntitaGenerica[]
+  relazioniDa RelazioneEntitaGenerica[]  @relation("RelazioneEntitaFrom")
+  relazioniA  RelazioneEntitaGenerica[]  @relation("RelazioneEntitaTo")
+
+  @@unique([praticaId, kind, externalKey])
+  @@index([praticaId, kind, label])
+  @@map("entita_generiche")
+}
+
+/// Evidenza documentale di un’entità generica.
+model OccorrenzaEntitaGenerica {
+  id             String   @id @default(cuid())
+  entitaId       String
+  documentoId    String?
+  sourceDocId    String
+  sourceDocTitle String
+  page           Int
+  snippet        String
+  bbox           String
+  confidence     Float
+  propertyKeys   String   @default("[]")
+  reviewStatus   String   @default("ok")
+  reviewFlags    String   @default("[]")
+  needsReview    Boolean  @default(false)
+  fingerprint    String
+  createdAt      DateTime @default(now())
+
+  entita    EntitaGenerica @relation(fields: [entitaId], references: [id], onDelete: Cascade)
+  documento Documento?     @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+
+  @@unique([entitaId, fingerprint])
+  @@index([sourceDocId])
+  @@map("occorrenze_entita_generiche")
+}
+
+/// Relazione conservativa tra due entità generiche della stessa pratica.
+model RelazioneEntitaGenerica {
+  id                     String   @id @default(cuid())
+  praticaId              String
+  fromEntityId           String
+  toEntityId             String
+  kind                   String
+  confidence             Float
+  evidenceOccurrenceIds  String   @default("[]")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  pratica    Pratica        @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  fromEntity EntitaGenerica @relation("RelazioneEntitaFrom", fields: [fromEntityId], references: [id], onDelete: Cascade)
+  toEntity   EntitaGenerica @relation("RelazioneEntitaTo", fields: [toEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([praticaId, fromEntityId, toEntityId, kind])
+  @@index([praticaId, kind])
+  @@map("relazioni_entita_generiche")
+}
+
 model Job {
-  id          String   @id @default(cuid())
-  type        String   // OCR, CLASSIFY
-  documentId  String?  // Optional for local files without DB record
-  status      String   @default("pending") // pending, processing, completed, failed
-  progress    Int      @default(0)
-  error       String?
-  result      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  type       String // OCR, CLASSIFY
+  documentId String? // Optional for local files without DB record
+  status     String   @default("pending") // pending, processing, completed, failed
+  progress   Int      @default(0)
+  error      String?
+  result     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   documento Documento? @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -120,73 +281,73 @@ model Job {
 }
 
 model TipoDinamico {
-  id          String   @id @default(cuid())
-  label       String   @unique
-  type        String   // "testo", "numero", "data", "valuta", "booleano"
-  obbligatorio Boolean @default(false)
-  validazione String?  // JSON string delle regole di validazione
-  ordine      Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  label        String   @unique
+  type         String // "testo", "numero", "data", "valuta", "booleano"
+  obbligatorio Boolean  @default(false)
+  validazione  String? // JSON string delle regole di validazione
+  ordine       Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("tipo_dinamici")
 }
 
 model Estratto {
-  id          String   @id @default(cuid())
-  praticaId   String
-  sourceDoc   String   // Documento di origine
-  page        Int      // Pagina (1-based)
-  start       Int      // Posizione inizio nel testo
-  end         Int      // Posizione fine nel testo
-  type        String   // 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
-  parentReatoId String? // FK a estratto reato
+  id                  String  @id @default(cuid())
+  praticaId           String
+  sourceDoc           String // Documento di origine
+  page                Int // Pagina (1-based)
+  start               Int // Posizione inizio nel testo
+  end                 Int // Posizione fine nel testo
+  type                String // 'reato' | 'motivazione' | 'contromotivazione' | 'prova' | 'testimonianza' | 'altro'
+  parentReatoId       String? // FK a estratto reato
   parentMotivazioneId String? // FK a estratto motivazione
-  title       String?  // Titolo dell'estratto
-  content     String   // Contenuto testuale (IMMUTABILE)
+  title               String? // Titolo dell'estratto
+  content             String // Contenuto testuale (IMMUTABILE)
 
   // Tracciabilità documento sorgente
-  sourceDocId String?  // ID documento sorgente
+  sourceDocId    String? // ID documento sorgente
   sourceDocTitle String? // Titolo documento sorgente
 
   // Posizione nel documento (bbox)
-  bbox        String?  // JSON: {x, y, width, height}
+  bbox String? // JSON: {x, y, width, height}
 
   // Data dell'estratto (per cronologia)
   extractDate DateTime @default(now())
 
   // Note editabili dall'analista
-  notesAnalyst    String? // Note analista (EDITABILI)
+  notesAnalyst     String? // Note analista (EDITABILI)
   notesDescription String? // Descrizione (EDITABILI)
-  notesStrategy   String? // Commenti strategici (EDITABILI)
-  notesDefense    String? // Osservazioni difesa (EDITABILI)
+  notesStrategy    String? // Commenti strategici (EDITABILI)
+  notesDefense     String? // Osservazioni difesa (EDITABILI)
 
   // Metadati
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  analystId   String   // ID analista che ha creato l'estratto
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  analystId String // ID analista che ha creato l'estratto
 
-  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
-  clienti     Cliente[] @relation("EstrattoCliente")
+  pratica Pratica   @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  clienti Cliente[] @relation("EstrattoCliente")
 
-  parentReato Estratto? @relation("ReatoMotivazioni", fields: [parentReatoId], references: [id])
+  parentReato       Estratto? @relation("ReatoMotivazioni", fields: [parentReatoId], references: [id])
   parentMotivazione Estratto? @relation("MotivazioneContromotivazioni", fields: [parentMotivazioneId], references: [id])
 
-  motivazioni Estratto[] @relation("ReatoMotivazioni")
+  motivazioni       Estratto[] @relation("ReatoMotivazioni")
   contromotivazioni Estratto[] @relation("MotivazioneContromotivazioni")
 
   @@map("estratti")
 }
 
 model MemoriaDifensiva {
-  id          String   @id @default(cuid())
-  title       String
-  praticaId   String
-  structure   String?  // JSON: Struttura documento finale
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  title     String
+  praticaId String
+  structure String? // JSON: Struttura documento finale
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  pratica     Pratica  @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  pratica Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
 
   @@map("memorie_difensive")
 }

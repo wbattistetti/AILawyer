@@ -48,6 +48,15 @@ const toLocator = (input: z.infer<typeof locatorSchema>): DocumentLocator => ({
   ...(input.filename ? { filename: input.filename } : {})
 })
 
+const toArchiveLocator = (
+  input: z.infer<typeof archiveLocatorSchema>
+): DocumentLocator => ({
+  id: input.id,
+  ...(input.hash ? { hash: input.hash } : {}),
+  ...(input.storageKey ? { storageKey: input.storageKey } : {}),
+  ...(input.filename ? { filename: input.filename } : {})
+})
+
 const sendResolutionError = (
   reply: FastifyReply,
   error: unknown
@@ -62,6 +71,26 @@ const sendResolutionError = (
 }
 
 export async function documentSearchRoutes(fastify: FastifyInstance) {
+  /**
+   * Contenuto canonico completo per consumer di analisi:
+   * OCR locale → OCR database → testo PDF nativo.
+   */
+  fastify.get('/document-content', async (request, reply) => {
+    try {
+      const input = locatorSchema.parse(request.query)
+      const content = await resolveSearchableDocument(toLocator(input))
+      return reply.send(content)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Parametri contenuto documento non validi',
+          details: error.errors
+        })
+      }
+      return sendResolutionError(reply, error)
+    }
+  })
+
   fastify.get('/search/document', async (request, reply) => {
     try {
       const input = searchQuerySchema.parse(request.query)
@@ -90,16 +119,17 @@ export async function documentSearchRoutes(fastify: FastifyInstance) {
   fastify.post('/search/archive', async (request, reply) => {
     try {
       const input = archiveBodySchema.parse(request.body ?? {})
-      const matches = await searchPracticeArchive({
+      const result = await searchPracticeArchive({
         praticaId: input.praticaId,
         query: input.q,
-        locators: input.docs
+        ...(input.docs ? { locators: input.docs.map(toArchiveLocator) } : {})
       })
       return reply.send({
         query: input.q,
         praticaId: input.praticaId,
-        total: matches.length,
-        matches
+        total: result.matches.length,
+        matches: result.matches,
+        diagnostics: result.diagnostics
       })
     } catch (error) {
       if (error instanceof z.ZodError) {

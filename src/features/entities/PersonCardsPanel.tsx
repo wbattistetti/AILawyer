@@ -1,372 +1,135 @@
-import { useEffect, useMemo, useState } from 'react';
-import { PersonSearchBar, type Filters } from './PersonSearchBar';
-import { PersonAccordion } from './PersonAccordion';
+/**
+ * Pannello di consultazione delle schede anagrafiche.
+ * L'estrazione parte dalla toolbar tramite PersonExtractionHost.
+ */
+
+import { useEffect, useState } from 'react'
+import { PersonAccordion } from './PersonAccordion'
 import {
   getPendingDocs,
-  searchPersons,
   clearByPratica,
+  upsertOccurrences,
+  upsertPersons,
   type PersonRecord,
-  type OccurrenceRecord
-} from './entity-index';
-import { extractPersonsFromDocs, type DocAdapter, type ProgressCb } from './extract-orchestrator';
-
-export type DocMeta = { praticaId: string; hash: string; docId: string; title: string; pages: number };
+  type OccurrenceRecord,
+} from './entity-index'
+import { api } from '../../lib/api'
+import {
+  createDocumentSignature,
+  getPersonDraft,
+  initializePersonDraft,
+  removePersonFromDraft,
+  subscribePersonDraft,
+} from './person-draft-store'
+import {
+  findPracticeDocument,
+  listPracticeDocMeta,
+} from './practice-document-source'
 
 export function PersonCardsPanel({
-  getAllDocsMeta,
-  buildAdapters,
-  onOpenOccurrence
+  praticaId,
+  onOpenOccurrence,
 }: {
-  getAllDocsMeta: () => Promise<DocMeta[]>;
-  buildAdapters: (docs: DocMeta[]) => Promise<DocAdapter[]>;
-  onOpenOccurrence: (o: OccurrenceRecord) => void;
+  praticaId: string
+  onOpenOccurrence: (
+    o: OccurrenceRecord,
+    context?: { highlightQuery?: string; highlightTerms?: string[] }
+  ) => void
 }) {
-  const [status, setStatus] = useState<'idle' | 'pending' | 'in_progress' | 'updated'>('idle');
-  const [pending, setPending] = useState<DocMeta[]>([]);
-  const [filters, setFilters] = useState<Filters>({});
-  const [persons, setPersons] = useState<PersonRecord[]>([]);
-  // progress now tracked via docProgress
-  const setBusyDoc = (_v: any) => {};
-  const [loading, setLoading] = useState<boolean>(false);
-  const [praticaId, setPraticaId] = useState<string | null>(null);
-  const [docProgress, setDocProgress] = useState<{ total: number; done: number; current?: { docId: string; title: string; pages: number; page: number } } | null>(null)
-  const [previewPersons, setPreviewPersons] = useState<PersonRecord[] | null>(null)
-  const [autoExtractEnabled, setAutoExtractEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('personAutoExtractEnabled')
-    return saved === 'true'
-  })
+  const [persons, setPersons] = useState<PersonRecord[]>([])
+  const [occurrences, setOccurrences] = useState<OccurrenceRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [extracting, setExtracting] = useState(false)
 
-  useEffect(() => { refreshPending(); }, []);
-
-  useEffect(() => { runSearch(filters); }, [filters]);
-  // Re-run filtering when streaming preview changes
-  useEffect(() => { if (previewPersons) runSearch(filters) }, [previewPersons]);
-
-  // ✅ Salva preferenza auto-estrazione
   useEffect(() => {
-    localStorage.setItem('personAutoExtractEnabled', String(autoExtractEnabled))
-  }, [autoExtractEnabled])
+    void refreshState().catch(cause => {
+      setError(cause instanceof Error ? cause.message : 'Caricamento anagrafiche fallito')
+      setLoading(false)
+    })
+  }, [praticaId])
 
-  // ✅ Estrazione automatica se toggle ON e ci sono documenti pending
   useEffect(() => {
-    if (autoExtractEnabled && pending.length > 0 && status === 'pending') {
-      // Estrazione automatica solo per nuovi documenti
-      // Chiama onExtractClick ma evita loop infiniti controllando status
-      const timer = setTimeout(() => {
-        if (status === 'pending' && pending.length > 0) {
-          onExtractClick()
-        }
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoExtractEnabled, pending.length])
+    return subscribePersonDraft(() => {
+      const draft = getPersonDraft(praticaId)
+      if (!draft) return
+      setPersons(draft.persons)
+      setOccurrences(draft.occurrences)
+      setExtracting(draft.extracting)
+    })
+  }, [praticaId])
 
-  // ✅ Listener per aggiornamento anagrafiche da estrazione manuale
-  useEffect(() => {
-    const handlePersonsUpdated = () => {
-      // Refresh ricerca automatica quando vengono aggiunte/aggiornate persone
-      runSearch(filters);
-    };
-
-    window.addEventListener('app:persons-updated', handlePersonsUpdated);
-    return () => {
-      window.removeEventListener('app:persons-updated', handlePersonsUpdated);
-    };
-  }, [filters]);
-
-  async function refreshPending() {
-    const all = await getAllDocsMeta();
-    const pend = await getPendingDocs(all);
-    setPending(pend);
-    setPraticaId(all[0]?.praticaId ?? null);
-    setStatus(pend.length > 0 ? 'pending' : (status === 'idle' ? 'updated' : status));
-  }
-
-  async function runSearch(f: Filters) {
-    setLoading(!previewPersons);
-    try {
-      // If we have a fresh in-memory preview, filter it locally
-      if (previewPersons) {
-        let rows = [...previewPersons]
-        if (f.q) {
-          const q = f.q.toLowerCase()
-          rows = rows.filter(p =>
-            p.full_name.toLowerCase().includes(q) ||
-            (p.tax_code?.toLowerCase().includes(q) ?? false) ||
-            (p.address?.toLowerCase().includes(q) ?? false) ||
-            (p.city?.toLowerCase().includes(q) ?? false) ||
-            (p.email?.toLowerCase().includes(q) ?? false) ||
-            (p.phone?.toLowerCase().includes(q) ?? false)
-          )
-        }
-        // Ordinamento e filtri avanzati rimossi; ordina alfabeticamente
-        rows.sort((a,b)=> a.full_name.localeCompare(b.full_name))
-        setPersons(rows)
-      } else {
-        // Otherwise query IndexedDB
-        const rows = await searchPersons({ praticaId: praticaId ?? (await getAllDocsMeta())[0]?.praticaId, q: f.q, limit: 500 });
-        setPersons(rows);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const tip = useMemo(() => {
-    if (pending.length === 0) return '';
-    const names = pending.slice(0, 10).map(d => `• ${d.title}`).join('\n');
-    return pending.length > 10 ? `${names}\n… e altri ${pending.length - 10}` : names;
-  }, [pending]);
-
-  async function onExtractClick() {
-    setStatus('in_progress');
-    const toProcess = pending.length ? pending : await getAllDocsMeta();
-    const adapters = await buildAdapters(toProcess);
-    setDocProgress({ total: adapters.length, done: 0, current: undefined })
-    const onProgress: ProgressCb = ({ docId: _docId, page }) => {
-      setBusyDoc(null)
-      setDocProgress((prev: { total: number; done: number; current?: { docId: string; title: string; pages: number; page: number } } | null) => prev ? { ...prev, current: prev.current ? { ...prev.current, page } : prev.current } : prev)
-    }
-    // Non persistere finché l’utente non salva esplicitamente
-    const result = await extractPersonsFromDocs(adapters, onProgress, {
-      persist: false,
-      onOccurrence: (items: any[]) => {
-        // items are OccOut[]; map to PersonRecord preview entries and append incrementally
-        setPreviewPersons((prev) => {
-          const arr = prev ? [...prev] : []
-          for (const it of items as any[]) {
-            const pid = it.personKey
-            const normName = (it.full_name || '').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim()
-            const now = Date.now()
-            // Find best match by same normalized name and compatible fields
-            let idx = arr.findIndex(p => p.id === pid)
-            if (idx === -1) {
-              let best = -1; let bestScore = -1
-              for (let i=0;i<arr.length;i++) {
-                const p = arr[i]
-                const pNorm = (p.full_name || '').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim()
-                if (pNorm !== normName) continue
-                if (!compatiblePreview(p, it.fields || {})) continue
-                const s = previewScore(p)
-                if (s > bestScore) { bestScore = s; best = i }
-              }
-              idx = best
-            }
-            if (idx >= 0) {
-              arr[idx].confidence = Math.max(arr[idx].confidence, it.confidence)
-              arr[idx].occCount += 1
-              arr[idx].updatedAt = now
-              // hydrate missing fields from this occurrence
-              arr[idx].date_of_birth = arr[idx].date_of_birth || it.fields?.date_of_birth
-              // normalize simple dotted dates
-              if (arr[idx].date_of_birth && /\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}/.test(arr[idx].date_of_birth)) {
-                const m = arr[idx].date_of_birth.match(/([0-3]?\d)[\.\/-]([01]?\d)[\.\/-]((?:19|20)\d{2})/)
-                if (m) arr[idx].date_of_birth = `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`
-              }
-              arr[idx].place_of_birth = arr[idx].place_of_birth || it.fields?.place_of_birth
-              arr[idx].tax_code = arr[idx].tax_code || it.fields?.tax_code
-              arr[idx].address = arr[idx].address || it.fields?.address
-              arr[idx].residence_address = arr[idx].residence_address || it.fields?.address
-              arr[idx].domicile_address = arr[idx].domicile_address || (it.fields as any)?.domicile
-              arr[idx].postal_code = arr[idx].postal_code || it.fields?.postal_code
-              arr[idx].city = arr[idx].city || it.fields?.city
-              arr[idx].province = arr[idx].province || it.fields?.province
-              arr[idx].phone = arr[idx].phone || it.fields?.phone
-              arr[idx].email = arr[idx].email || it.fields?.email
-              // hydrate domicile structured parts if present
-              const dCity = (it.fields as any)?.domicile_city
-              const dCap = (it.fields as any)?.domicile_postal_code
-              const dProv = (it.fields as any)?.domicile_province
-              if (!arr[idx].city && dCity) arr[idx].city = dCity
-              if (!arr[idx].postal_code && dCap) arr[idx].postal_code = dCap
-              if (!arr[idx].province && dProv) arr[idx].province = dProv
-              if (it.title) {
-                const set = new Set(arr[idx].titles ?? [])
-                set.add(it.title)
-                arr[idx].titles = Array.from(set)
-              }
-            } else {
-              arr.push({
-                id: pid,
-                praticaId: praticaId || '',
-                full_name: it.full_name,
-                first_name: it.first_name,
-                last_name: it.last_name,
-                titles: it.title ? [it.title] : [],
-                date_of_birth: it.fields?.date_of_birth,
-                place_of_birth: it.fields?.place_of_birth,
-                tax_code: it.fields?.tax_code,
-                address: it.fields?.address,
-                residence_address: it.fields?.address,
-                domicile_address: (it.fields as any)?.domicile,
-                postal_code: it.fields?.postal_code,
-                city: it.fields?.city,
-                province: it.fields?.province,
-                phone: it.fields?.phone,
-                email: it.fields?.email,
-                confidence: it.confidence,
-                occCount: 1,
-                updatedAt: now,
-              } as any)
-            }
-          }
-          return arr
-        })
-        // no explicit runSearch here (useEffect on previewPersons will react)
-      },
-      onStartDoc: (info) => setDocProgress((prev: { total: number; done: number; current?: { docId: string; title: string; pages: number; page: number } } | null) => {
-        if (!prev) return prev
-        return { ...prev, current: { ...info, page: 0 } }
-      }),
-      onDoneDoc: () => setDocProgress((prev: { total: number; done: number; current?: { docId: string; title: string; pages: number; page: number } } | null) => {
-        if (!prev) return prev
-        const nextDone = Math.min(prev.done + 1, prev.total)
-        const nextCurrent = prev.current ? { ...prev.current, page: prev.current.pages } : prev.current
-        return { ...prev, done: nextDone, current: nextCurrent }
+  async function refreshState() {
+    setLoading(true)
+    const all = listPracticeDocMeta(praticaId)
+    let draft = getPersonDraft(praticaId)
+    if (!draft) {
+      const [remote, pendingDocuments] = await Promise.all([
+        api.getPracticePersons(praticaId),
+        getPendingDocs(all.map(document => ({ ...document, praticaId }))),
+      ])
+      await clearByPratica(praticaId)
+      await upsertPersons(remote.persons)
+      await upsertOccurrences(remote.occurrences)
+      draft = initializePersonDraft({
+        praticaId,
+        persons: remote.persons,
+        occurrences: remote.occurrences,
+        documentSignature: createDocumentSignature(
+          all.map(document => ({ id: document.docId, hash: document.hash }))
+        ),
+        hasExtracted: remote.persons.length > 0,
+        isCurrent: all.length > 0 && pendingDocuments.length === 0,
       })
-    });
-    setPreviewPersons(result.persons || [])
-    await runSearch(filters)
-    setStatus('updated');
-    setDocProgress(null)
-  }
-
-  async function onSaveClick() {
-    // Riesegue l'estrazione veloce per costruire i dati e poi persiste
-    setStatus('in_progress');
-    const toProcess = await getAllDocsMeta();
-    const adapters = await buildAdapters(toProcess);
-    const onProgress: ProgressCb = () => setBusyDoc(null);
-    await extractPersonsFromDocs(adapters, onProgress, { persist: true });
-    setPreviewPersons(null)
-    await refreshPending();
-    await runSearch(filters);
-    setStatus('updated');
-  }
-
-  async function onClearClick() {
-    if (!praticaId) return;
-    setStatus('in_progress');
-    await clearByPratica(praticaId);
-    setPreviewPersons(null)
-    setPersons([])
-    await refreshPending();
-    await runSearch(filters);
-    setStatus('updated');
+    }
+    setPersons(draft.persons)
+    setOccurrences(draft.occurrences)
+    setExtracting(draft.extracting)
+    setLoading(false)
   }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-2 border-b bg-white sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <StatusPill status={status} />
-          <button
-            className="px-3 py-1 rounded-lg border hover:bg-neutral-50"
-            onClick={onExtractClick}
-            title={tip || 'Analizza i documenti di questa pratica'}
-          >
-            Analizza
-          </button>
-          <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoExtractEnabled}
-              onChange={(e) => setAutoExtractEnabled(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <span className="text-neutral-600">Analizza automaticamente nuovi documenti</span>
-          </label>
-          <button
-            className="px-3 py-1 rounded-lg border hover:bg-neutral-50"
-            onClick={onSaveClick}
-            title="Salva risultati in questa pratica"
-          >
-            Salva
-          </button>
-          <button
-            className="px-3 py-1 rounded-lg border hover:bg-neutral-50"
-            onClick={onClearClick}
-            title="Pulisci indice (solo questa pratica)"
-          >
-            Pulisci
-          </button>
-          {pending.length > 0 && (
-            <span className="text-xs text-neutral-500 ml-1">Da analizzare: {pending.length}</span>
-          )}
-        </div>
-        {/* Progress area was on the right; we'll also show it just below for visibility */}
-      </div>
-
-      {docProgress && (
-        <div className="px-2 py-2 border-b bg-white">
-          <div className="max-w-[640px]">
-            <div className="text-xs text-neutral-500 mb-1">Documenti: {docProgress.done}/{docProgress.total}</div>
-            <div className="w-full h-2 bg-neutral-200 rounded mb-2">
-              <div className="h-2 bg-blue-500 rounded" style={{ width: `${Math.round((docProgress.done / Math.max(1, docProgress.total)) * 100)}%` }} />
-            </div>
-            {docProgress.current && (
-              <>
-                <div className="text-xs text-neutral-500 mb-1 truncate" title={docProgress.current.title}>Pagina: {docProgress.current.page}/{docProgress.current.pages} — {docProgress.current.title}</div>
-                <div className="w-full h-2 bg-neutral-200 rounded">
-                  <div className="h-2 bg-amber-500 rounded" style={{ width: `${Math.round((docProgress.current.page / Math.max(1, docProgress.current.pages)) * 100)}%` }} />
-                </div>
-              </>
-            )}
-          </div>
+      {error && (
+        <div className="px-3 py-2 border-b border-red-200 bg-red-50 text-sm text-red-700 whitespace-pre-wrap" role="alert">
+          {error}
         </div>
       )}
-
-      <PersonSearchBar value={filters} onChange={setFilters} />
 
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="p-4 text-sm text-neutral-500">Caricamento…</div>
+        ) : extracting && persons.length === 0 ? (
+          <div className="p-6 text-sm text-neutral-500">Sto estraendo le anagrafiche…</div>
         ) : (
-          <PersonAccordion persons={persons} onOpenOccurrence={onOpenOccurrence} />
+          <PersonAccordion
+            persons={persons}
+            occurrences={occurrences}
+            onOpenOccurrence={onOpenOccurrence}
+            getOccurrencePdfUrl={(occurrence) => {
+              const document = findPracticeDocument(praticaId, occurrence.docId)
+              if (!document) return undefined
+              const isPdf = document.mime?.includes('pdf')
+                || document.filename.toLowerCase().endsWith('.pdf')
+              const storageKey = document.ocrPdfKey || document.s3Key
+              return isPdf && storageKey ? api.getLocalFileUrl(storageKey) : undefined
+            }}
+            isOccurrenceScanned={occurrence =>
+              findPracticeDocument(praticaId, occurrence.docId)?.hasNativeText === false
+            }
+            onDeletePerson={(personId) => {
+              removePersonFromDraft(praticaId, personId)
+            }}
+          />
         )}
-        {!loading && persons.length === 0 && (
-          <div className="p-6 text-sm text-neutral-500">Nessuna persona trovata. Prova a estrarre o cambia filtri.</div>
+        {!loading && !extracting && persons.length === 0 && (
+          <div className="p-6">
+            <div className="text-sm text-neutral-500">Nessuna scheda anagrafica disponibile.</div>
+          </div>
         )}
       </div>
     </div>
-  );
+  )
 }
 
-function StatusPill({ status }: { status: 'idle' | 'pending' | 'in_progress' | 'updated' }) {
-  const map: Record<typeof status, { label: string; cls: string }> = {
-    idle: { label: 'Non analizzato', cls: 'bg-neutral-100 text-neutral-700' },
-    pending: { label: 'Da analizzare', cls: 'bg-amber-100 text-amber-800' },
-    in_progress: { label: 'In corso', cls: 'bg-blue-100 text-blue-800' },
-    updated: { label: 'Aggiornato', cls: 'bg-green-100 text-green-800' },
-  } as any;
-  const cfg = map[status];
-  return (
-    <span className={`px-2 py-1 rounded-full text-xs ${cfg.cls}`}>{cfg.label}</span>
-  );
-}
-
-export default PersonCardsPanel;
-
-// Helpers for preview-time dedup/merge
-function previewScore(p: any): number {
-  let s = 0
-  if (p.date_of_birth) s += 3
-  if (p.place_of_birth) s += 2
-  if (p.tax_code) s += 3
-  if (p.address || p.residence_address) s += 2
-  if (p.city) s += 1
-  if (p.province) s += 1
-  if (p.email) s += 1
-  if (p.phone) s += 1
-  return s
-}
-function compatiblePreview(p: any, f: any): boolean {
-  const keys = ['date_of_birth','place_of_birth','tax_code','city','province']
-  for (const k of keys) {
-    const a = p?.[k]
-    const b = f?.[k]
-    if (a && b && String(a).trim() !== String(b).trim()) return false
-  }
-  return true
-}
+export default PersonCardsPanel

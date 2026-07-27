@@ -4,14 +4,16 @@ import type { Viewport } from 'reactflow'
 export type SavedGraph = {
   id: string                    // ID univoco: "graph-1234567890"
   name: string                  // "Grafo", "Grafo 2", "Mappa Indagini", etc.
-  
+  /** Descrizione libera associata al grafo (opzionale). */
+  note?: string
+
   // Viewport (opzionale, per ripristinare zoom/pan)
   viewport?: {
     x: number
     y: number
     zoom: number
   }
-  
+
   // NODI - salva TUTTO
   nodes: Array<{
     id: string
@@ -33,7 +35,7 @@ export type SavedGraph = {
       style?: NodeStyle
     }
   }>
-  
+
   // EDGE - salva TUTTO
   edges: Array<{
     id: string
@@ -49,6 +51,8 @@ export type SavedGraph = {
       tooltip?: string
       dashed?: boolean
       percent?: number
+      customMiddle?: string
+      customCaption?: string
       strokeColor?: string
       strokeWidth?: number
       captionFontSizePx?: number
@@ -57,10 +61,17 @@ export type SavedGraph = {
       captionColor?: string
     }
   }>
-  
+
   // Metadata
   createdAt: string             // ISO timestamp
   updatedAt: string             // ISO timestamp
+}
+
+/** Voce menu toolbar: grafo noto e se è già aperto in una tab. */
+export type GraphMenuItem = {
+  id: string
+  name: string
+  isOpen: boolean
 }
 
 /**
@@ -72,11 +83,13 @@ export function serializeGraph(
   nodes: BuilderNode[],
   edges: BuilderEdge[],
   viewport?: Viewport,
-  createdAt?: string
+  createdAt?: string,
+  note?: string
 ): SavedGraph {
   return {
     id: graphId,
     name: graphName,
+    note: note ?? '',
     viewport: viewport ? {
       x: viewport.x,
       y: viewport.y,
@@ -110,6 +123,8 @@ export function serializeGraph(
         tooltip: e.data.tooltip,
         dashed: e.data.dashed,
         percent: e.data.percent,
+        customMiddle: e.data.customMiddle,
+        customCaption: e.data.customCaption,
         strokeColor: e.data.strokeColor,
         strokeWidth: e.data.strokeWidth,
         captionFontSizePx: e.data.captionFontSizePx,
@@ -121,6 +136,79 @@ export function serializeGraph(
     createdAt: createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
+}
+
+/**
+ * Crea un grafo vuoto pronto per il catalogo e la tab.
+ */
+export function createEmptySavedGraph(id: string, name: string): SavedGraph {
+  const now = new Date().toISOString()
+  return {
+    id,
+    name,
+    note: '',
+    nodes: [],
+    edges: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+/**
+ * Prossimo nome generico non ancora usato ("Grafo", "Grafo 2", …).
+ */
+export function nextGraphName(existingNames: string[]): string {
+  const used = new Set(existingNames)
+  if (!used.has('Grafo')) return 'Grafo'
+  let n = 2
+  while (used.has(`Grafo ${n}`)) n += 1
+  return `Grafo ${n}`
+}
+
+/**
+ * Parsa `Pratica.graphsState` in un array di SavedGraph validati in modo minimale.
+ * Fallisce in modo esplicito su JSON non array.
+ */
+export function parseGraphsState(raw: string | null | undefined): SavedGraph[] {
+  if (raw == null || raw.trim() === '') return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new Error(`graphsState non è JSON valido: ${(err as Error).message}`)
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('graphsState deve essere un array di grafi')
+  }
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Grafo all'indice ${index} non è un oggetto`)
+    }
+    const g = item as Partial<SavedGraph>
+    if (typeof g.id !== 'string' || !g.id.trim()) {
+      throw new Error(`Grafo all'indice ${index} senza id valido`)
+    }
+    if (typeof g.name !== 'string' || !g.name.trim()) {
+      throw new Error(`Grafo ${g.id} senza name valido`)
+    }
+    return {
+      id: g.id,
+      name: g.name,
+      note: typeof g.note === 'string' ? g.note : '',
+      viewport: g.viewport,
+      nodes: Array.isArray(g.nodes) ? g.nodes : [],
+      edges: Array.isArray(g.edges) ? g.edges : [],
+      createdAt: typeof g.createdAt === 'string' ? g.createdAt : new Date().toISOString(),
+      updatedAt: typeof g.updatedAt === 'string' ? g.updatedAt : new Date().toISOString(),
+    }
+  })
+}
+
+/**
+ * Serializza il catalogo grafi per `Pratica.graphsState`.
+ */
+export function serializeGraphsState(graphs: SavedGraph[]): string {
+  return JSON.stringify(graphs)
 }
 
 /**

@@ -3,7 +3,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { mergePracticeSearchLocators } from './practice-archive-search'
+import {
+  makeOcrRequiredDiagnostic,
+  mergePracticeSearchLocators
+} from './practice-archive-search'
 
 describe('mergePracticeSearchLocators', () => {
   it('mantiene i documenti DB e arricchisce con locator client', () => {
@@ -40,5 +43,30 @@ describe('mergePracticeSearchLocators', () => {
       storageKey: 'new-key',
       filename: 'A-renamed.pdf'
     })
+  })
+})
+
+describe('makeOcrRequiredDiagnostic', () => {
+  it('distingue OCR mancante, in corso e fallito', () => {
+    const base = {
+      id: 'scan-1',
+      filename: 'Verbale scansionato.pdf',
+      mime: 'application/pdf',
+      hasNativeText: false,
+      ocrText: null
+    }
+
+    expect(makeOcrRequiredDiagnostic({
+      ...base,
+      ocrStatus: 'pending'
+    }).message).toMatch(/OCR non disponibile/)
+    expect(makeOcrRequiredDiagnostic({
+      ...base,
+      ocrStatus: 'processing'
+    }).message).toMatch(/OCR in corso/)
+    expect(makeOcrRequiredDiagnostic({
+      ...base,
+      ocrStatus: 'failed'
+    }).message).toMatch(/OCR non riuscito/)
   })
 })

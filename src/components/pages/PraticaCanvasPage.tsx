@@ -8,23 +8,17 @@ import { usePageRegistry } from '../viewers/usePageRegistry'
 import { useToast } from '../../hooks/use-toast'
 import { Pratica, Comparto, Documento, Cliente } from '../../types'
 import { ArrowLeft, Upload, RefreshCw, X, FileText, Play, Pause, Square, ChevronDown, ChevronRight } from 'lucide-react'
-import { DocumentCollection } from '../../features/documents/DocumentCollection'
-import { AnalysisPanel } from './pratica-canvas/components/AnalysisPanel'
 import { SearchProvider } from '../search/SearchProvider'
-import PersonCardsPanel from '../../features/entities/PersonCardsPanel'
-import { buildPdfJsAdaptersFromDocs } from '../../features/entities/adapters/PdfJsDocAdapter'
-import { SearchPanelTree } from '../search/SearchPanelTree'
 import { EventsTab } from '../../features/events/EventsTab'
-import { extractPersonsFromDocs } from '../../features/entities/extract-orchestrator'
-import { detectContacts } from '../../features/parsers/contacts'
-import { detectVehicles } from '../../features/parsers/vehicles'
-import { extractEvents as nlpExtractEvents } from '../../services/nlp/client'
 import { ThingCardsPanel } from '../../features/cards/ThingCardsPanel'
 import { Explorer, useExplorer } from '../../features/explorer'
-import { jobSystem } from '../../analysis/jobSystem'
 import { useArchive } from './pratica-canvas/hooks/useArchive'
 import { useOcr } from './pratica-canvas/hooks/useOcr'
 import { PdfViewerShell } from '../viewers/pdf-viewer/PdfViewerShell'
+import {
+  getPdfViewerSessionPage,
+  patchPdfViewerSession,
+} from '../viewers/common/pdfViewerSessionStore'
 import { isWordDocument, isImageDocument, isVideoDocument, isAudioDocument } from '../viewers/common/utils/viewerUtils'
 import { ImageViewer } from '@/features/explorer/components/viewers/ImageViewer'
 import { MediaViewer } from '@/features/explorer/components/viewers/MediaViewer'
@@ -36,11 +30,43 @@ import { ArchiveRenderer } from './pratica-canvas/components/ArchiveRenderer';
 import { HeaderToolbar } from './pratica-canvas/components/HeaderToolbar'
 import { SearchRenderer } from './pratica-canvas/components/SearchRenderer';
 import { PersonsRenderer } from './pratica-canvas/components/PersonsRenderer';
+import { EntitiesRenderer } from './pratica-canvas/components/EntitiesRenderer';
+import { PersonExtractionHost } from './pratica-canvas/components/PersonExtractionHost';
+import { EntityExtractionHost } from './pratica-canvas/components/EntityExtractionHost';
 import { ClienteMemoriaRenderer } from './pratica-canvas/components/ClienteMemoriaRenderer';
 import { OrphanDocPanelCloser } from './pratica-canvas/components/OrphanDocPanelCloser'
 import { findDocumentByCriteria } from './pratica-canvas/hooks/useArchiveHelpers'
 import { useDocumentStore } from '../../stores/documentStore/store';
 import { ViewerSearchNavigatorProvider } from '../search/ViewerSearchNavigatorProvider'
+import type { GraphMenuItem } from '../../features/case-overview/graph-builder/graphSerialization'
+import { serializeGraphsState } from '../../features/case-overview/graph-builder/graphSerialization'
+import {
+  clearByPratica,
+  getPendingDocs,
+  setDocSnapshot,
+  upsertOccurrences,
+  upsertPersons,
+} from '../../features/entities/entity-index'
+import {
+  createDocumentSignature,
+  getPersonDraft,
+  initializePersonDraft,
+  markPersonDraftSaved,
+  requestPersonExtraction,
+  subscribePersonDraft,
+} from '../../features/entities/person-draft-store'
+import {
+  createEntityDocumentSignature,
+  getEntityDraft,
+  initializeEntityDraft,
+  markEntityDraftSaved,
+  requestEntityExtraction,
+  subscribeEntityDraft,
+} from '../../features/generic-entities/entity-draft-store'
+import {
+  getPracticeDocuments,
+  listPracticeDocMeta,
+} from '../../features/entities/practice-document-source'
 
 // ✅ Helper: calcola hash SHA-256 del file (client-side)
 async function calculateFileHash(file: File): Promise<string> {
@@ -176,10 +202,12 @@ export function PraticaCanvasPage() {
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [clienti, setClienti] = useState<Cliente[]>([])
   // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
-  const [syncPage, setSyncPage] = useState<number | null>(null)
+  // syncPage globale rimosso: la pagina è per-documento (pdfViewerSessionStore)
   const [saveFilesToDb, setSaveFilesToDb] = useState<boolean>(false) // Default: false (privacy mode)
   const [isSaving, setIsSaving] = useState<boolean>(false)
   const [explorerSelectedPath, setExplorerSelectedPath] = useState<string | undefined>(undefined)
+  const [graphMenuItems, setGraphMenuItems] = useState<GraphMenuItem[]>([])
+  const [graphsStateLoaded, setGraphsStateLoaded] = useState<string | null | undefined>(undefined)
 
   // Usa i nuovi hooks per la gestione documenti e OCR
   const {
@@ -193,6 +221,90 @@ export function PraticaCanvasPage() {
     handleConfirmMove,
     handleCancelMove
   } = useArchive(id, comparti)
+
+  const [personDraftVersion, setPersonDraftVersion] = useState(0)
+  const [entityDraftVersion, setEntityDraftVersion] = useState(0)
+
+  useEffect(() => subscribePersonDraft(() => {
+    setPersonDraftVersion(version => version + 1)
+  }), [])
+
+  useEffect(() => subscribeEntityDraft(() => {
+    setEntityDraftVersion(version => version + 1)
+  }), [])
+
+  useEffect(() => {
+    if (!id || !documentsLoaded || getPersonDraft(id)) return
+    let cancelled = false
+
+    const initializePersons = async () => {
+      const metadata = listPracticeDocMeta(id)
+      const practiceDocuments = getPracticeDocuments(id)
+      const [remote, pendingDocuments] = await Promise.all([
+        api.getPracticePersons(id),
+        getPendingDocs(metadata),
+      ])
+      if (cancelled) return
+
+      await clearByPratica(id)
+      await upsertPersons(remote.persons)
+      await upsertOccurrences(remote.occurrences)
+      const draft = initializePersonDraft({
+        praticaId: id,
+        persons: remote.persons,
+        occurrences: remote.occurrences,
+        documentSignature: createDocumentSignature(practiceDocuments),
+        // Solo schede persistite (o un'estrazione esplicita) contano come "già estratto".
+        hasExtracted: remote.persons.length > 0,
+        isCurrent: practiceDocuments.length > 0 && pendingDocuments.length === 0,
+      })
+      void draft
+    }
+
+    void initializePersons().catch(error => {
+      console.error('[PERSONS][INITIALIZE][ERROR]', error)
+      toast({
+        title: 'Errore anagrafiche',
+        description: 'Impossibile caricare le schede anagrafiche della pratica',
+        variant: 'destructive',
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, documentsLoaded])
+
+  useEffect(() => {
+    if (!id || !documentsLoaded || getEntityDraft(id)) return
+    let cancelled = false
+
+    const initializeEntities = async () => {
+      const practiceDocuments = getPracticeDocuments(id)
+      const remote = await api.getPracticeEntities(id)
+      if (cancelled) return
+      initializeEntityDraft({
+        praticaId: id,
+        entities: remote.entities,
+        occurrences: remote.occurrences,
+        relations: remote.relations,
+        documentSignature: createEntityDocumentSignature(practiceDocuments),
+        hasExtracted: remote.entities.length > 0,
+        isCurrent: practiceDocuments.length > 0,
+      })
+    }
+
+    void initializeEntities().catch(error => {
+      console.error('[ENTITIES][INITIALIZE][ERROR]', error)
+      toast({
+        title: 'Errore entità',
+        description: 'Impossibile caricare le entità tipizzate della pratica',
+        variant: 'destructive',
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, documentsLoaded])
 
   // ✅ Accesso diretto allo store per ottenere tutti i documenti in memoria (inclusi temporanei)
   const store = useDocumentStore()
@@ -225,6 +337,19 @@ export function PraticaCanvasPage() {
     dockV2Ref,
     persistViewMode
   } = useWorkspaceManager(id)
+
+  // Niente tab Anagrafiche/Entità finché non c'è stata almeno un'estrazione.
+  useEffect(() => {
+    if (!id || !documentsLoaded) return
+    const personDraftState = getPersonDraft(id)
+    if (personDraftState && !personDraftState.hasExtracted && !personDraftState.extracting) {
+      dockV2Ref.current?.closePersons()
+    }
+    const entityDraftState = getEntityDraft(id)
+    if (entityDraftState && !entityDraftState.hasExtracted && !entityDraftState.extracting) {
+      dockV2Ref.current?.closeEntities()
+    }
+  }, [id, documentsLoaded, personDraftVersion, entityDraftVersion, dockV2Ref])
 
   // ✅ Stato globale per classificazioni pendenti (in memoria, non ancora nel database)
   // Map<filePath, { compartoKey, compartoNome }>
@@ -378,6 +503,7 @@ export function PraticaCanvasPage() {
         }))
         setComparti(normalizedComparti)
         setClienti(clientiData.clienti)
+        setGraphsStateLoaded(p.graphsState ?? null)
         // ✅ Ripristina lo stato Explorer se presente
         if (p.explorerState) {
           try {
@@ -448,9 +574,9 @@ export function PraticaCanvasPage() {
       return (
         <WordViewerShell
           fileUrl={fileUrl}
-          page={syncPage || 1}
+          page={getPdfViewerSessionPage(doc.id, 1)}
           onPageChange={(page) => {
-            setSyncPage(page)
+            patchPdfViewerSession(doc.id, { page })
           }}
           docId={doc.id}
           praticaId={id || ''}
@@ -522,14 +648,14 @@ export function PraticaCanvasPage() {
     return (
       <PdfViewerShell
         fileUrl={fileUrl}
-        page={syncPage || 1}
+        page={getPdfViewerSessionPage(doc.id, 1)}
         lines={null}
         docId={doc.id}
         documentHash={doc.hash}
         storageKey={doc.s3Key}
         praticaId={id || ''}
         onPageChange={(page) => {
-          setSyncPage(page)
+          patchPdfViewerSession(doc.id, { page })
         }}
         docName={doc.filename}
         hasNativeText={doc.hasNativeText}
@@ -539,11 +665,6 @@ export function PraticaCanvasPage() {
   }
 
   // legacy alias removed
-  // ✅ AnalysisPanel è ora un componente separato importato
-
-  // REMOVED: renderArchivePane & handleOcr - now replaced by DocumentCollection and useOcr hook
-  // REMOVED: AnalysisPanel inline function - now using imported component
-
   // Event listeners gestiti dal hook useEventListeners
 
   const renderEvents = useCallback(() => <EventsTab />, [])
@@ -575,6 +696,26 @@ export function PraticaCanvasPage() {
     )
   }
 
+  const practiceDocuments = id ? getPracticeDocuments(id) : []
+  const currentDocumentSignature = createDocumentSignature(practiceDocuments)
+  const currentEntityDocumentSignature = createEntityDocumentSignature(practiceDocuments)
+  const personDraft = id ? getPersonDraft(id) : null
+  const entityDraft = id ? getEntityDraft(id) : null
+  const personAction: 'extract' | 'update' | null = !documentsLoaded
+    ? null
+    : !personDraft || !personDraft.hasExtracted
+      ? practiceDocuments.length > 0 ? 'extract' : null
+      : personDraft.extractedDocumentSignature !== currentDocumentSignature
+        ? 'update'
+        : null
+  const entityAction: 'extract' | 'update' | null = !documentsLoaded
+    ? null
+    : !entityDraft || !entityDraft.hasExtracted
+      ? practiceDocuments.length > 0 ? 'extract' : null
+      : entityDraft.extractedDocumentSignature !== currentEntityDocumentSignature
+        ? 'update'
+        : null
+
   return (
     <div className="h-screen overflow-hidden bg-background">
 
@@ -605,11 +746,13 @@ export function PraticaCanvasPage() {
             }
           }
 
+          const graphs = dockV2Ref.current?.saveAllGraphs?.() ?? []
           const dataToSave = {
             numeroRuolo: pratica.numeroRuolo,
             foro: pratica.foro,
             pmGiudice: pratica.pmGiudice || undefined,
-            explorerState
+            explorerState,
+            graphsState: serializeGraphsState(graphs),
           }
 
           // Log rimosso (troppo rumoroso)
@@ -1487,6 +1630,33 @@ export function PraticaCanvasPage() {
               await api.commitPratica(id)
             }
 
+            // Le schede anagrafiche vengono persistite soltanto dal salvataggio generale.
+            const personsToSave = getPersonDraft(id)
+            if (personsToSave?.dirty) {
+              const savedPersons = await api.savePracticePersons(id, {
+                persons: personsToSave.persons,
+                occurrences: personsToSave.occurrences,
+              })
+              await clearByPratica(id)
+              await upsertPersons(savedPersons.persons)
+              await upsertOccurrences(personsToSave.occurrences)
+              for (const snapshot of personsToSave.snapshots) {
+                await setDocSnapshot(snapshot)
+              }
+              markPersonDraftSaved(id, savedPersons.persons)
+            }
+
+            // Le entità tipizzate vengono persistite soltanto dal salvataggio generale.
+            const entitiesToSave = getEntityDraft(id)
+            if (entitiesToSave?.dirty) {
+              const savedEntities = await api.savePracticeEntities(id, {
+                entities: entitiesToSave.entities,
+                occurrences: entitiesToSave.occurrences,
+                relations: entitiesToSave.relations,
+              })
+              markEntityDraftSaved(id, savedEntities.entities)
+            }
+
             // Log rimosso (troppo rumoroso)
 
             // Ricarica i dati aggiornati
@@ -1528,13 +1698,64 @@ export function PraticaCanvasPage() {
             (dockV2Ref.current as any).openCliente()
           }
         }}
-        onOpenGraphBuilder={() => {
-          // ✅ Apri GraphBuilder tramite ref
-          if (dockV2Ref.current && 'openGraphBuilder' in dockV2Ref.current) {
-            (dockV2Ref.current as any).openGraphBuilder()
+        graphToolbar={{
+          graphs: graphMenuItems,
+          onCreateGraph: () => {
+            dockV2Ref.current?.openGraphBuilder()
+          },
+          onOpenGraph: (graphId) => {
+            dockV2Ref.current?.openGraphBuilder(graphId)
+          },
+        }}
+        onOpenPersons={() => {
+          if (dockV2Ref.current && 'openPersons' in dockV2Ref.current) {
+            dockV2Ref.current.openPersons()
           }
         }}
+        onExtractPersons={() => {
+          if (!id) return
+          // L'host montato esegue il job; la tab si apre solo a fine estrazione.
+          requestPersonExtraction(id)
+        }}
+        personAction={personAction}
+        isExtractingPersons={personDraft?.extracting ?? false}
+        personProgress={personDraft?.progress ?? null}
+        onOpenEntities={() => {
+          if (dockV2Ref.current && 'openEntities' in dockV2Ref.current) {
+            dockV2Ref.current.openEntities()
+          }
+        }}
+        onExtractEntities={() => {
+          if (!id) return
+          requestEntityExtraction(id)
+        }}
+        entityAction={entityAction}
+        isExtractingEntities={entityDraft?.extracting ?? false}
+        entityProgress={entityDraft?.progress ?? null}
       />
+
+      {id && (
+        <>
+          <PersonExtractionHost
+            praticaId={id}
+            toast={toast}
+            onCompleted={() => {
+              if (dockV2Ref.current && 'openPersons' in dockV2Ref.current) {
+                dockV2Ref.current.openPersons()
+              }
+            }}
+          />
+          <EntityExtractionHost
+            praticaId={id}
+            toast={toast}
+            onCompleted={() => {
+              if (dockV2Ref.current && 'openEntities' in dockV2Ref.current) {
+                dockV2Ref.current.openEntities()
+              }
+            }}
+          />
+        </>
+      )}
 
       {/* Spacer per l'header fisso */}
       <div style={{ height: headerH }} />
@@ -1546,6 +1767,9 @@ export function PraticaCanvasPage() {
           ref={dockV2Ref as any}
           storageKey={`ws_dock_v3_${id}`}
           headerHeight={headerH} // ✅ Passa altezza header per posizionare sidebar
+          praticaId={id}
+          graphsState={graphsStateLoaded}
+          onGraphsChange={setGraphMenuItems}
 
           // docs={documenti.map(d => ({ id: d.id, title: d.filename }))} // Removed unused prop
           renderExplorer={() => (
@@ -1563,7 +1787,6 @@ export function PraticaCanvasPage() {
           )}
           // isExplorerFullscreen removed - now handled by PanelWithFullscreenToggle
           // onLeftBorderTabChange removed - fullscreen now handled by PanelWithFullscreenToggle
-          praticaId={id} // Aggiungi questa prop
           renderSearch={() => (
             <SearchRenderer
               praticaId={id}
@@ -1574,7 +1797,14 @@ export function PraticaCanvasPage() {
           )}
           renderPersons={() => (
             <PersonsRenderer
-              documenti={documenti}
+              praticaId={id!}
+              dockV2Ref={dockV2Ref}
+              toast={toast}
+            />
+          )}
+          renderEntities={() => (
+            <EntitiesRenderer
+              praticaId={id!}
               dockV2Ref={dockV2Ref}
               toast={toast}
             />

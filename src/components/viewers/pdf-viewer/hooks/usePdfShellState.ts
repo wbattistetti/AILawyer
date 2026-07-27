@@ -19,6 +19,10 @@ import type { PersistentSelection } from '../types'
 import type { RectSelection, ExtractedContent } from '../../common/types/viewer.types'
 import { extractContentFromRect } from '../utils/extractContentFromRect'
 import { toPdfMatchItem } from '../utils/toPdfMatchItem'
+import {
+  getPdfViewerSession,
+  patchPdfViewerSession,
+} from '../../common/pdfViewerSessionStore'
 
 interface UsePdfShellStateProps {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
@@ -40,8 +44,12 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
   const viewerState = usePdfViewerState()
   const { searchQ, setSearchQ, showAdvanced, setShowAdvanced, panelW, setPanelW, resizingRef } = useDocumentSearchPanel()
   const { totalPages, setTotalPages, pageInput, setPageInput, zoomPct, setZoomPct, searchCacheRef, matches, setMatches, runSearch } = usePdfSearch(docId, fileUrl)
-  const [activeSearchMatchId, setActiveSearchMatchId] = useState<string | null>(null)
+  const restoredSession = docId ? getPdfViewerSession(docId) : undefined
+  const [activeSearchMatchId, setActiveSearchMatchId] = useState<string | null>(
+    () => restoredSession?.activeSearchMatchId ?? null
+  )
   const lastOcrMatchesRef = useRef<Array<{ page: number; x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number }>>([])
+  const restoredMatchesRef = useRef(false)
 
   // Areas state for jump-to functionality
   const [, setAreas] = useState<Array<{ id: string; pageIndex: number; left: number; top: number; width: number; height: number }>>([])
@@ -100,6 +108,15 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
   } = usePdfExtract()
 
   // Jump-to functionality
+  const persistPage = useCallback((page: number) => {
+    if (!docId?.trim()) {
+      onPageChange?.(page)
+      return
+    }
+    patchPdfViewerSession(docId, { page })
+    onPageChange?.(page)
+  }, [docId, onPageChange])
+
   const { goToMatch } = usePdfJumpTo({
     docId,
     hostRef,
@@ -109,8 +126,30 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
     ensureOverlayRootForPage,
     bumpOverlayTick: () => setSelectTick((tick) => tick + 1),
     setActiveSearchMatchId,
-    setAreas
+    setAreas,
+    onPageChange: persistPage,
   })
+
+  // Ripristina match evidenziate dopo remount (es. tab spostata in split).
+  useEffect(() => {
+    if (!docId?.trim() || restoredMatchesRef.current) return
+    const session = getPdfViewerSession(docId)
+    restoredMatchesRef.current = true
+    if (!session?.matches?.length) return
+    setMatches(session.matches)
+    if (session.activeSearchMatchId) {
+      setActiveSearchMatchId(session.activeSearchMatchId)
+    }
+  }, [docId, setMatches])
+
+  // Persiste match / highlight attivi nella sessione per-documento.
+  useEffect(() => {
+    if (!docId?.trim() || !restoredMatchesRef.current) return
+    patchPdfViewerSession(docId, {
+      matches,
+      activeSearchMatchId,
+    })
+  }, [docId, matches, activeSearchMatchId])
 
   const viewerNavigatorRegistry = useOptionalViewerSearchNavigatorRegistry()
   useEffect(() => {
@@ -121,15 +160,58 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
       kind: 'pdf',
       goToMatch: async (match) => {
         const item = toPdfMatchItem(match)
-        setMatches((previous) => (
-          previous.some((candidate) => candidate.id === item.id)
-            ? previous
-            : [...previous, item]
-        ))
+        restoredMatchesRef.current = true
+        if (item.rects.length > 0) {
+          setMatches((previous) => {
+            const next = previous.some((candidate) => candidate.id === item.id)
+              ? previous
+              : [...previous, item]
+            patchPdfViewerSession(docId, {
+              page: item.page,
+              matches: next,
+              activeSearchMatchId: item.id,
+            })
+            return next
+          })
+        } else {
+          setActiveSearchMatchId(null)
+          patchPdfViewerSession(docId, {
+            page: item.page,
+            activeSearchMatchId: null,
+          })
+        }
         await goToMatch(item)
       }
     })
-  }, [viewerNavigatorRegistry, docId, goToMatch, setMatches])
+  }, [viewerNavigatorRegistry, docId, goToMatch, setMatches, setActiveSearchMatchId])
+
+  const highlightReplayDoneRef = useRef(false)
+  // Dopo remount + viewer ready, ripeti il salto all'highlight attivo.
+  useEffect(() => {
+    if (!docId?.trim() || viewerReadyTick < 1 || highlightReplayDoneRef.current) return
+    const session = getPdfViewerSession(docId)
+    if (!session?.activeSearchMatchId || !session.matches.length) {
+      highlightReplayDoneRef.current = true
+      return
+    }
+    const active = session.matches.find(match => match.id === session.activeSearchMatchId)
+    if (!active) {
+      highlightReplayDoneRef.current = true
+      return
+    }
+    highlightReplayDoneRef.current = true
+    let cancelled = false
+    void (async () => {
+      try {
+        if (!cancelled) await goToMatch(active)
+      } catch {
+        // Il lifecycle ritenta al resize del pannello.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [docId, viewerReadyTick, goToMatch])
 
   const selectionHandledRef = useRef(false)
 

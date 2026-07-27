@@ -53,12 +53,22 @@ export interface DocumentMatch {
   ord?: number
 }
 
+/** PDF scansionato escluso dalla ricerca perché privo di testo OCR. */
+export interface SearchDiagnostic {
+  docId: string
+  docTitle: string
+  code: 'ocr-required'
+  message: string
+  ocrStatus: string
+}
+
 export interface SearchResultNode {
   id: string
   query: string
   scope: SearchScope
   total: number
   groups: Array<{ doc: DocRef; matches: DocumentMatch[] }>
+  diagnostics?: SearchDiagnostic[]
 }
 
 /**

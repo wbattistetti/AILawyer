@@ -34,6 +34,7 @@ describe('normalizeArchiveSearchResults', () => {
     expect(result.total).toBe(3)
     expect(result.groups.map((group) => group.doc.title)).toEqual(['Atto.pdf', 'Memoria.pdf'])
     expect(result.groups[0].matches.map((item) => item.page)).toEqual([1, 2])
+    expect(result.groups[0].matches.map((item) => item.ord)).toEqual([0, 1])
     expect(result.groups[0].matches[0].rects).toEqual([
       { x0Pct: 10, x1Pct: 30, y0Pct: 20, y1Pct: 25 }
     ])
@@ -56,5 +57,28 @@ describe('normalizeArchiveSearchResults', () => {
         { ...match('doc-1', 1), x1Pct: 101 }
       ])
     ).toThrow('deve essere tra 0 e 100')
+  })
+
+  it('espone solo le diagnostiche OCR restituite dal backend', () => {
+    const result = normalizeArchiveSearchResults('verbale', documents, [], [
+      {
+        docId: 'doc-1',
+        filename: 'Atto.pdf',
+        code: 'ocr-required',
+        message: 'OCR non disponibile',
+        ocrStatus: 'pending'
+      }
+    ])
+
+    expect(result.total).toBe(0)
+    expect(result.diagnostics).toEqual([
+      {
+        docId: 'doc-1',
+        docTitle: 'Atto.pdf',
+        code: 'ocr-required',
+        message: 'OCR non disponibile',
+        ocrStatus: 'pending'
+      }
+    ])
   })
 })
