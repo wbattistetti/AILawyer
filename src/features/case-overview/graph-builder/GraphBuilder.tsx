@@ -1,12 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react'
-import ReactFlow, { Background, Controls, MiniMap, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge } from 'reactflow'
+import ReactFlow, { Background, Controls, MiniMap, useEdgesState, useNodesState, Connection, Edge, Node, OnConnect, MarkerType, addEdge, type Viewport } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { getEntityDraft, subscribeEntityDraft } from '../../generic-entities/entity-draft-store'
 import { getPersonDraft, subscribePersonDraft } from '../../entities/person-draft-store'
 import { getEntityLabel } from '../../entity-visual-catalog'
 import { api } from '../../../lib/api'
 import { ToolPalette } from './ToolPalette'
-import { BuilderEdge, BuilderNode, BuilderNodeData, NodeKind, RelationKind } from './types'
+import { BuilderEdge, BuilderEdgeData, BuilderNode, BuilderNodeData, NodeKind, RelationKind } from './types'
 import EdgeWithTooltip from './EdgeWithTooltip'
 import RelationPicker, { getRelationOptions, type RelationPick } from './RelationPicker'
 import EntityPicker from './EntityPicker'
@@ -19,22 +19,50 @@ import {
 } from './graph-entity-catalog'
 import { formatRelationPhrase } from './relation-phrase'
 import NodeView from './NodeView'
-import { serializeGraph, deserializeGraph, type SavedGraph } from './graphSerialization'
+import {
+  deserializeGraph,
+  graphContentSignature,
+  serializeGraphContent,
+  type GraphContent,
+  type SavedGraph,
+} from './graphSerialization'
+
+/** Attesa dopo l'ultima modifica prima di propagare il contenuto al catalogo. */
+const CONTENT_SYNC_DEBOUNCE_MS = 400
+
+const EMPTY_GRAPH_CONTENT: GraphContent = { viewport: undefined, nodes: [], edges: [] }
 
 export type GraphBuilderProps = {
   praticaId?: string
+  /** Assente per il canvas di sola consultazione: senza id non si persiste. */
   graphId?: string
-  graphName?: string
+  /** Contenuto iniziale, letto solo alla costruzione: montare con `key={graphId}`. */
   savedGraph?: SavedGraph | null
+  /** Notifica il catalogo quando nodi/edge cambiano: è lì che il grafo vive. */
+  onGraphContentChange?: (graphId: string, content: GraphContent) => void
 }
 
 export type GraphBuilderHandle = {
-  save: () => SavedGraph | null
+  /** Contenuto corrente del canvas, senza attendere il debounce. */
+  getContent: () => GraphContent | null
 }
 
-const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ praticaId, graphId, graphName = 'Grafo', savedGraph }, ref) => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNodeData>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>([])
+const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ praticaId, graphId, savedGraph, onGraphContentChange }, ref) => {
+  const setNodesRef = useRef<((updater: (nodes: BuilderNode[]) => BuilderNode[]) => void) | null>(null)
+  const removeNodeById = useCallback((nodeId: string) => {
+    setNodesRef.current?.(nds => nds.filter(n => n.id !== nodeId))
+  }, [])
+  // Idratazione alla costruzione: il canvas nasce già con il contenuto del
+  // catalogo, quindi nessun aggiornamento successivo può azzerarlo.
+  const initialGraph = useMemo(
+    () => deserializeGraph(savedGraph ?? EMPTY_GRAPH_CONTENT, removeNodeById),
+    // Volutamente calcolato una sola volta: l'istanza è legata a un graphId fisso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNodeData>(initialGraph.nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdgeData>(initialGraph.edges)
+  setNodesRef.current = setNodes
   const [relPicker, setRelPicker] = useState<{ x:number; y:number; source: Node; target: Node; edgeId?: string } | null>(null)
   const [entityPicker, setEntityPicker] = useState<{
     x: number
@@ -60,7 +88,17 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ p
   const suppressPaneClickRef = useRef(false)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const reactFlowInstanceRef = useRef<any>(null)
-  const createdAtRef = useRef<string>(new Date().toISOString())
+  /** Viewport salvato, applicato appena ReactFlow è pronto (`onInit`). */
+  const pendingViewportRef = useRef<Viewport | null>(initialGraph.viewport ?? null)
+  /** Ultimo contenuto propagato al catalogo, per non ripubblicare lo stesso stato. */
+  const publishedSignatureRef = useRef<string>(
+    graphContentSignature(serializeGraphContent(initialGraph.nodes, initialGraph.edges, initialGraph.viewport)),
+  )
+  const liveGraphRef = useRef<{ nodes: BuilderNode[]; edges: BuilderEdge[] }>({
+    nodes: initialGraph.nodes,
+    edges: initialGraph.edges,
+  })
+  const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refreshEntityCatalog = useCallback(async () => {
     if (!praticaId) {
@@ -95,33 +133,48 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ p
     }
   }, [praticaId, refreshEntityCatalog])
   
-  // Carica grafo salvato se presente
+  /** Snapshot corrente del canvas, allineato alla forma persistita. */
+  const readContent = useCallback((): GraphContent => serializeGraphContent(
+    liveGraphRef.current.nodes,
+    liveGraphRef.current.edges,
+    reactFlowInstanceRef.current?.getViewport() ?? pendingViewportRef.current ?? undefined,
+  ), [])
+
+  /** Propaga il contenuto al catalogo, se davvero cambiato rispetto all'ultimo invio. */
+  const publishContent = useCallback(() => {
+    if (!graphId || !onGraphContentChange) return
+    const content = readContent()
+    const signature = graphContentSignature(content)
+    if (signature === publishedSignatureRef.current) return
+    publishedSignatureRef.current = signature
+    onGraphContentChange(graphId, content)
+  }, [graphId, onGraphContentChange, readContent])
+
+  const publishContentRef = useRef(publishContent)
   useEffect(() => {
-    if (savedGraph && graphId === savedGraph.id) {
-      const { nodes: loadedNodes, edges: loadedEdges, viewport } = deserializeGraph(savedGraph, (nodeId) => {
-        setNodes(nds => nds.filter(n => n.id !== nodeId))
-      })
-      setNodes(loadedNodes)
-      setEdges(loadedEdges)
-      createdAtRef.current = savedGraph.createdAt
-      
-      // Ripristina viewport se disponibile
-      if (viewport && reactFlowInstanceRef.current) {
-        setTimeout(() => {
-          reactFlowInstanceRef.current?.setViewport(viewport)
-        }, 100)
-      }
-    }
-  }, [savedGraph, graphId])
-  
-  // Esponi funzione per salvare
+    publishContentRef.current = publishContent
+  }, [publishContent])
+
+  // Debounce delle modifiche: durante il trascinamento si pubblica una volta sola.
+  useEffect(() => {
+    liveGraphRef.current = { nodes, edges }
+    if (contentSyncTimerRef.current) clearTimeout(contentSyncTimerRef.current)
+    contentSyncTimerRef.current = setTimeout(() => {
+      contentSyncTimerRef.current = null
+      publishContentRef.current()
+    }, CONTENT_SYNC_DEBOUNCE_MS)
+  }, [nodes, edges])
+
+  // Alla chiusura della tab il canvas viene smontato: l'ultimo stato deve
+  // arrivare al catalogo prima che lo state locale sparisca.
+  useEffect(() => () => {
+    if (contentSyncTimerRef.current) clearTimeout(contentSyncTimerRef.current)
+    publishContentRef.current()
+  }, [])
+
   useImperativeHandle(ref, () => ({
-    save: () => {
-      if (!graphId) return null
-      const viewport = reactFlowInstanceRef.current?.getViewport()
-      return serializeGraph(graphId, graphName, nodes, edges, viewport, createdAtRef.current)
-    }
-  }), [graphId, graphName, nodes, edges])
+    getContent: () => (graphId ? readContent() : null),
+  }), [graphId, readContent])
 
   const nodeTypes = useMemo(() => ({ builder: NodeView as any }), [])
   const edgeTypes = useMemo(() => ({ tooltip: EdgeWithTooltip }), [])
@@ -590,6 +643,10 @@ const GraphBuilderInner = forwardRef<GraphBuilderHandle, GraphBuilderProps>(({ p
           onInit={(inst:any) => {
             (window as any).__rfInstance = inst
             reactFlowInstanceRef.current = inst
+            if (pendingViewportRef.current) {
+              inst.setViewport(pendingViewportRef.current)
+              pendingViewportRef.current = null
+            }
           }}
           nodeOrigin={[0.5, 0.5]}
           onNodesDelete={(nds)=>{

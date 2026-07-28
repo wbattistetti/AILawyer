@@ -62,26 +62,48 @@ describe('practice-document-source', () => {
 
   it('costruisce adapter dai documenti live dello store', () => {
     useDocumentStore.getState().setDocuments([
-      doc({ id: '1', filename: 'atto.pdf', praticaId: 'p1', mime: 'application/pdf' }),
+      doc({
+        id: '1',
+        filename: 'atto.pdf',
+        praticaId: 'p1',
+        mime: 'application/pdf',
+        hasNativeText: true,
+        localUrl: 'blob:atto',
+      } as Documento & { localUrl: string }),
       doc({
         id: '2',
         filename: 'nota.docx',
         praticaId: 'p1',
         mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }),
+        localUrl: 'blob:nota',
+      } as Documento & { localUrl: string }),
     ])
 
     const result = buildPracticeExtractionAdapters('p1')
     expect(result.adapters).toHaveLength(2)
     expect(result.skipped).toHaveLength(0)
+    expect(result.waitingOnOcr).toHaveLength(0)
   })
 
   it('limita gli adapter ai soli documenti richiesti', () => {
     useDocumentStore.getState().setDocuments([
-      doc({ id: '1', filename: 'uno.pdf', praticaId: 'p1' }),
-      doc({ id: '2', filename: 'due.pdf', praticaId: 'p1' }),
+      doc({
+        id: '1',
+        filename: 'uno.pdf',
+        praticaId: 'p1',
+        hasNativeText: true,
+        localUrl: 'blob:uno',
+      } as Documento & { localUrl: string }),
+      doc({
+        id: '2',
+        filename: 'due.pdf',
+        praticaId: 'p1',
+        hasNativeText: true,
+        localUrl: 'blob:due',
+      } as Documento & { localUrl: string }),
     ])
 
+    // setDocuments usa s3Key come id quando hash non è SHA-256 completo
     expect(buildPracticeExtractionAdapters('p1', ['keys/due.pdf']).adapters).toHaveLength(1)
     expect(buildPracticeExtractionAdapters('p1', []).adapters).toHaveLength(0)
   })

@@ -1,5 +1,6 @@
 import React from 'react'
 import { ThumbCard } from '../../components/viewers/ThumbCard'
+import { resolveDocumentPageCount } from '../../components/viewers/common/utils/pageCountLabel'
 import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
 
 interface DrawerThumbnailsGridProps {
@@ -65,6 +66,7 @@ function ThumbCardWithLazyThumbnail({
       fileUrl={fileUrl}
       autoGenerateThumbnail={shouldAutoGenerate}
       isPdf={isPdf}
+      pageCount={resolveDocumentPageCount(doc)}
       hasOcr={doc.hasOcr}
       ocrProgressPct={ocrProgressByDoc?.[doc.id]}
       ocrEtaText={ocrEtaByDoc?.[doc.id]}
@@ -72,7 +74,6 @@ function ThumbCardWithLazyThumbnail({
       transcribedPct={transcribedPctByDoc?.[doc.id]}
       ocrCancelling={ocrCancellingByDoc?.[doc.id]}
       onPreview={() => onOpenDoc(doc)}
-      onTable={() => onOpenDoc(doc)}
       onRemove={onRemoveDoc ? () => onRemoveDoc(doc) : undefined}
       onOcr={onOcr ? () => onOcr(doc) : undefined}
       onOcrCancel={onOcrCancel ? () => onOcrCancel(doc) : undefined}

@@ -10,6 +10,8 @@ export interface UseAutoThumbnailOptions extends ThumbnailOptions {
 
 export interface UseAutoThumbnailReturn {
   thumbnail: string | null
+  /** Numero pagine del PDF, disponibile dopo generazione miniatura */
+  pageCount: number | null
   loading: boolean
   error: string | null
   generate: () => Promise<void>
@@ -38,6 +40,7 @@ export function useAutoThumbnail(
   } = options
 
   const [thumbnail, setThumbnail] = useState<string | null>(null)
+  const [pageCount, setPageCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -74,6 +77,7 @@ export function useAutoThumbnail(
       })
 
       setThumbnail(result.dataUrl)
+      setPageCount(typeof result.numPages === 'number' && result.numPages >= 1 ? result.numPages : null)
       setRetryCount(0) // Reset retry count on success
       setHasFailedPermanently(false) // Reset permanent failure on success
 
@@ -105,6 +109,7 @@ export function useAutoThumbnail(
 
   const clear = useCallback(() => {
     setThumbnail(null)
+    setPageCount(null)
     setError(null)
     setRetryCount(0)
     setHasFailedPermanently(false)
@@ -131,6 +136,7 @@ export function useAutoThumbnail(
 
   return {
     thumbnail,
+    pageCount,
     loading,
     error,
     generate,

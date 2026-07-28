@@ -265,12 +265,15 @@ export async function praticheRoutes(fastify: FastifyInstance) {
   // Update pratica
   fastify.patch<{ Params: { id: string }; Body: { numeroRuolo?: string; foro?: string; pmGiudice?: string; explorerState?: string; graphsState?: string } }>('/pratiche/:id', async (request, reply) => {
     const praticaId = request.params.id
+    // Gli stati serializzati (explorer, grafi) arrivano dal salvataggio
+    // automatico: si logga la dimensione, non il contenuto.
     console.log('[SAVE][PRATICA][START]', {
       praticaId,
-      body: request.body,
       numeroRuolo: request.body.numeroRuolo,
       foro: request.body.foro,
-      pmGiudice: request.body.pmGiudice
+      pmGiudice: request.body.pmGiudice,
+      explorerStateBytes: request.body.explorerState?.length,
+      graphsStateBytes: request.body.graphsState?.length
     })
 
     try {
@@ -307,7 +310,7 @@ export async function praticheRoutes(fastify: FastifyInstance) {
         dataToUpdate.graphsState = request.body.graphsState
       }
 
-      console.log('[SAVE][PRATICA][UPDATE-DATA]', { praticaId, dataToUpdate })
+      console.log('[SAVE][PRATICA][UPDATE-DATA]', { praticaId, campi: Object.keys(dataToUpdate) })
 
       const updated = await prisma.pratica.update({
         where: { id: praticaId },

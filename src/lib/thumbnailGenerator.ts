@@ -17,6 +17,8 @@ export interface ThumbnailResult {
   width: number
   height: number
   page: number
+  /** Totale pagine del PDF da cui è stata generata la miniatura */
+  numPages: number
 }
 
 // Cache per le miniature generate
@@ -51,6 +53,11 @@ export async function generatePdfThumbnail(
     // Carica il documento PDF
     const loadingTask = pdfjsLib.getDocument({ url: fileUrl })
     const pdf = await loadingTask.promise
+
+    const numPages = Math.floor(Number(pdf.numPages) || 0)
+    if (numPages < 1) {
+      throw new Error('PDF senza pagine')
+    }
 
     // Ottieni la prima pagina
     const page = await pdf.getPage(1)
@@ -91,7 +98,8 @@ export async function generatePdfThumbnail(
       dataUrl,
       width: scaledViewport.width,
       height: scaledViewport.height,
-      page: 1
+      page: 1,
+      numPages,
     }
 
     // Salva in cache
@@ -129,14 +137,19 @@ export async function generatePdfThumbnails(
 
     const results: ThumbnailResult[] = []
 
+    const numPages = Math.floor(Number(pdf.numPages) || 0)
+    if (numPages < 1) {
+      throw new Error('PDF senza pagine')
+    }
+
     for (const pageNum of pages) {
-      if (pageNum < 1 || pageNum > pdf.numPages) {
-        console.warn(`Pagina ${pageNum} non valida per PDF con ${pdf.numPages} pagine`)
+      if (pageNum < 1 || pageNum > numPages) {
+        console.warn(`Pagina ${pageNum} non valida per PDF con ${numPages} pagine`)
         continue
       }
 
       const page = await pdf.getPage(pageNum)
-      const result = await generateThumbnailFromPage(page, pageNum, options)
+      const result = await generateThumbnailFromPage(page, pageNum, numPages, options)
       results.push(result)
     }
 
@@ -154,6 +167,7 @@ export async function generatePdfThumbnails(
 async function generateThumbnailFromPage(
   page: any,
   pageNum: number,
+  numPages: number,
   options: ThumbnailOptions = {}
 ): Promise<ThumbnailResult> {
   const {
@@ -199,7 +213,8 @@ async function generateThumbnailFromPage(
     dataUrl,
     width: scaledViewport.width,
     height: scaledViewport.height,
-    page: pageNum
+    page: pageNum,
+    numPages,
   }
 }
 

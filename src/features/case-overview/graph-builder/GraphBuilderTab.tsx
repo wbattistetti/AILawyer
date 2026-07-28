@@ -36,8 +36,7 @@ export function GraphBuilderTabHeader({
   const graphId = (api as any).params?.graphId || tabId
   const title = graphsById.get(graphId)?.name || api.title || 'Grafo'
   const noteOpen = openNoteByGraphId.get(graphId) === true
-  const color = isActive ? TAB_COLOR_ACTIVE : TAB_COLOR_BASE
-  const opacity = isActive ? 1 : 0.4
+  const iconColor = isActive ? TAB_COLOR_ACTIVE : TAB_COLOR_BASE
 
   const [hovered, setHovered] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -80,8 +79,6 @@ export function GraphBuilderTabHeader({
           gap: 4,
           width: 'max-content',
           minWidth: 'max-content',
-          color,
-          opacity,
         }}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -90,7 +87,7 @@ export function GraphBuilderTabHeader({
           size={18}
           strokeWidth={2.5}
           fill="none"
-          style={{ color, stroke: color, opacity, flexShrink: 0 }}
+          style={{ color: iconColor, stroke: iconColor, flexShrink: 0 }}
         />
         <InlineTextEditor
           value={draftName}
@@ -102,7 +99,7 @@ export function GraphBuilderTabHeader({
           inputStyle={{
             border: '1px solid var(--ui-border)',
             background: '#ffffff',
-            color: '#0f172a',
+            color: 'hsl(var(--foreground))',
           }}
         />
       </div>
@@ -115,9 +112,6 @@ export function GraphBuilderTabHeader({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        color,
-        opacity,
-        transition: 'opacity 0.3s ease, color 0.3s ease',
         width: '100%',
       }}
       onMouseEnter={() => setHovered(true)}
@@ -130,16 +124,16 @@ export function GraphBuilderTabHeader({
         strokeWidth={2.5}
         fill="none"
         style={{
-          color,
-          stroke: color,
-          opacity,
-          transition: 'opacity 0.3s ease, color 0.3s ease, stroke 0.3s ease',
+          color: iconColor,
+          stroke: iconColor,
+          transition: 'color 0.3s ease, stroke 0.3s ease',
           flexShrink: 0,
         }}
       />
       <span
         style={{
           fontWeight: isActive ? 700 : 400,
+          color: 'hsl(var(--foreground))',
           transition: 'font-weight 0.3s ease',
           flex: 1,
           minWidth: 0,
@@ -186,7 +180,7 @@ export function GraphBuilderTabHeader({
           onMouseDown={(e) => e.stopPropagation()}
           style={{
             ...iconButtonStyle,
-            color: noteOpen ? color : 'var(--ui-text-muted)',
+            color: noteOpen ? iconColor : 'var(--ui-text-muted)',
           }}
         >
           <StickyNote size={13} />

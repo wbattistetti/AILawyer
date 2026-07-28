@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { searchDocumentContent } from './document-search-service'
 import {
+  getLocalOcrProgressByPrefix,
   getLocalOcrResultByPrefix,
   localOcrProgress
 } from './local-ocr-store'
@@ -142,5 +143,19 @@ describe('localOcrStore', () => {
       texts: ['Arnone'],
       s3Key: `${hash}.pdf`
     })
+  })
+
+  it('espone lo stato OCR in corso per prefisso hash', () => {
+    const hash = 'b'.repeat(64)
+    localOcrProgress.set(`${hash}.pdf`, {
+      progress: 35,
+      status: 'processing'
+    })
+
+    expect(getLocalOcrProgressByPrefix(hash)).toMatchObject({
+      progress: 35,
+      status: 'processing'
+    })
+    expect(getLocalOcrResultByPrefix(hash)).toBeNull()
   })
 })

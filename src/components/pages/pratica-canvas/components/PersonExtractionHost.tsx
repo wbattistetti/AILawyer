@@ -53,10 +53,11 @@ export function PersonExtractionHost({
         })
         .catch(cause => {
           const message = cause instanceof Error ? cause.message : 'Estrazione anagrafiche fallita'
+          const waitingForOcr = /OCR ancora in corso/i.test(message)
           toastRef.current?.({
-            title: 'Errore anagrafiche',
+            title: waitingForOcr ? 'OCR in corso' : 'Errore anagrafiche',
             description: message,
-            variant: 'destructive',
+            variant: waitingForOcr ? 'default' : 'destructive',
           })
         })
         .finally(() => {

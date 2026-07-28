@@ -1,8 +1,25 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useToast } from '../../../../hooks/use-toast'
 import { api } from '../../../../lib/api'
+import { useDocumentStore } from '../../../../stores/documentStore/store'
 import { Documento } from '../../../../types'
-import { loadOcrState, saveOcrState, clearDoc, type OcrState } from '../../../../utils/ocrState'
+import {
+  ensureNotificationPermission,
+  notifyOcrCompleted,
+  notifyOcrFailed,
+} from '../../../../utils/desktopNotifications'
+import { loadOcrState, saveOcrState, type OcrState } from '../../../../utils/ocrState'
+import { syncTaskProgressTitle } from '../../../../utils/taskProgressTitle'
+
+/** Allinea ocrStatus nello store documenti (fonte readiness estrazione in-memory). */
+function syncDocumentOcrStatus(
+  docId: string,
+  ocrStatus: Documento['ocrStatus']
+): void {
+  const store = useDocumentStore.getState()
+  if (!store.getDocument(docId)) return
+  store.updateDocument(docId, { ocrStatus })
+}
 
 export function useOcr(praticaId: string | undefined) {
   const { toast } = useToast()
@@ -13,6 +30,10 @@ export function useOcr(praticaId: string | undefined) {
   const [ocrCancellingByDoc, setOcrCancellingByDoc] = useState<Record<string, boolean>>({})
   const [transcribedPctByDoc, setTranscribedPctByDoc] = useState<Record<string, number>>({})
   const [ocrJobByDoc, setOcrJobByDoc] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    syncTaskProgressTitle(ocrProgressByDoc)
+  }, [ocrProgressByDoc])
 
   const loadOcrStateFromStorage = useCallback(() => {
     if (!praticaId) return
@@ -40,6 +61,9 @@ export function useOcr(praticaId: string | undefined) {
     if (!praticaId) return
 
     try {
+      // Permesso notifiche di sistema (una tantum); legato all'azione utente "avvia OCR".
+      void ensureNotificationPermission()
+
       console.log('[OCR][QUEUE-REQUEST]', {
         documentoId: documento.id,
         filename: documento.filename,
@@ -265,6 +289,7 @@ export function useOcr(praticaId: string | undefined) {
       }
 
       // Aggiorna state con documento.id (funziona sia per locali che per DB)
+      syncDocumentOcrStatus(documento.id, 'processing')
       setOcrProgressByDoc(prev => ({ ...prev, [documento.id]: 0 }))
       setOcrJobByDoc(prev => ({ ...prev, [documento.id]: job.id }))
       setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
@@ -340,8 +365,13 @@ export function useOcr(praticaId: string | undefined) {
 
           if (progress.status === 'cancelled' || progress.status === 'failed') {
             active = false
+            syncDocumentOcrStatus(
+              documento.id,
+              progress.status === 'failed' ? 'failed' : 'pending'
+            )
             if (progress.status === 'failed') {
               toast({ title: 'OCR fallito', description: progress.error || 'Errore sconosciuto', variant: 'destructive' })
+              void notifyOcrFailed(documento.filename, progress.error || 'Errore sconosciuto')
             }
             setTranscribedPctByDoc(prev => ({ ...prev, [documento.id]: percent }))
             setOcrCancellingByDoc(prev => ({ ...prev, [documento.id]: false }))
@@ -357,7 +387,9 @@ export function useOcr(praticaId: string | undefined) {
 
           if (progress.status === 'completed') {
             active = false
+            syncDocumentOcrStatus(documento.id, 'completed')
             toast({ title: 'OCR completato', description: documento.filename })
+            void notifyOcrCompleted(documento.filename)
 
             // Per file locali, il risultato è già in memoria nel backend
             // Se il documento viene salvato nel DB, il risultato OCR dovrebbe essere incluso

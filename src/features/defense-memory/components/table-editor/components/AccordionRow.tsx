@@ -3,7 +3,6 @@ import { TableRowProps, CellType } from '../../types/table.types'
 import { ObservationsCell } from './ObservationsCell'
 import { Combobox } from './Combobox'
 import { REATI_PENALI } from '../utils/reatoSuggestions'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
@@ -14,7 +13,8 @@ import { cn } from '@/lib/utils'
 import { ChevronDown, ChevronRight, Scale, FileText, AlertCircle, Calendar as CalendarIcon, MoreVertical, Plus, Trash2, Shield, Gavel, Lock, Search, MessageSquare, Users, Phone } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { getCellTypeLabel, getDateFieldsConfig, getSortedCellTypes } from '../utils/cellTypeConfig'
+import { getCellTypeLabel, getDateFieldsConfig } from '../utils/cellTypeConfig'
+import { CellTypeSelect } from './shared'
 
 // Lista di atti comuni nel sistema giudiziario
 const ATTI_COMUNI = [
@@ -456,17 +456,7 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                 )}
                 style={{ gap: '8px' }} // ✅ Gap fisso tra tutti gli elementi
             >
-                {/* Numero d'ordine */}
-                <div className={cn("flex-shrink-0 w-8 text-center text-sm font-semibold", typeConfig.textColor)}>
-                    {order}.
-                </div>
-
-                {/* Icona tipo */}
-                <div className={cn("flex-shrink-0", typeConfig.textColor)}>
-                    <IconComponent className="h-4 w-4" />
-                </div>
-
-                {/* ✅ Icona expand/collapse - AREA CLICCABILE per expand/collapse */}
+                {/* Icona expand/collapse - tutta a sinistra, prima del numero */}
                 <div
                     className="flex-shrink-0 cursor-pointer text-gray-400 hover:text-gray-600"
                     onClick={handleToggleExpand}
@@ -478,6 +468,16 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                     )}
                 </div>
 
+                {/* Numero d'ordine */}
+                <div className={cn("flex-shrink-0 w-8 text-center text-sm font-semibold", typeConfig.textColor)}>
+                    {order}.
+                </div>
+
+                {/* Icona tipo */}
+                <div className={cn("flex-shrink-0", typeConfig.textColor)}>
+                    <IconComponent className="h-4 w-4" />
+                </div>
+
                 {/* ✅ Tipo - Label o Select (edit-on-click/hover, chiusura gestita solo da onOpenChange del Select) */}
                 <div
                     ref={typeContainerRef}
@@ -485,20 +485,20 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                     className="flex-shrink-0"
                 >
                     {isTypeEditing ? (
-                        <Select
+                        <CellTypeSelect
                             value={row.cellType || ''}
                             onValueChange={(value) => {
-                                console.log('[AccordionRow] Select onValueChange:', value)
-                                handleTypeChange(value as CellType)
+                                handleTypeChange(value)
                             }}
                             disabled={readOnly}
+                            triggerRef={typeSelectRef}
+                            triggerClassName={cn(
+                                row.cellType ? typeConfig.textColor : 'text-gray-500'
+                            )}
                             onOpenChange={(open) => {
-                                console.log('[AccordionRow] Select onOpenChange:', open, 'cellType:', row.cellType)
-                                // ✅ Chiudi la modalità editing solo quando il Select si chiude
                                 if (!open && row.cellType) {
                                     setIsTypeEditing(false)
                                 }
-                                // ✅ Misura larghezza quando la Select si apre
                                 if (open && typeSelectRef.current) {
                                     setTimeout(() => {
                                         const trigger = typeSelectRef.current
@@ -509,33 +509,7 @@ export const AccordionRow: React.FC<TableRowProps> = ({
                                     }, 100)
                                 }
                             }}
-                        >
-                            <SelectTrigger
-                                ref={typeSelectRef}
-                                className={cn(
-                                    "h-8 text-xs w-auto min-w-[140px]",
-                                    row.cellType ? typeConfig.textColor : "text-gray-500"
-                                )}
-                            >
-                                <SelectValue placeholder="Seleziona tipo" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {/* ✅ Nota libera sempre prima */}
-                                <SelectItem value="nota-libera">
-                                    {getCellTypeLabel('nota-libera')}
-                                </SelectItem>
-
-                                {/* ✅ Separatore */}
-                                <SelectSeparator />
-
-                                {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
-                                {getSortedCellTypes().map(type => (
-                                    <SelectItem key={type} value={type}>
-                                        {getCellTypeLabel(type)}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        />
                     ) : (
                         <button
                             ref={typeButtonRef}

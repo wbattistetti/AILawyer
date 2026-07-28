@@ -97,11 +97,6 @@ export async function extractContentFromRect(
     if (canvas) {
       const imageDataUrl = await cropCanvasFromViewportBox(canvas, viewportBox, pageLayer)
       if (imageDataUrl) {
-        // ✅ Converti data URL in Blob
-        const response = await fetch(imageDataUrl)
-        const blob = await response.blob()
-        result.imageSnippet = blob
-        // ✅ Salva anche data URL nei metadati per retrocompatibilità
         result.metadata = {
           ...result.metadata,
           imageDataUrl

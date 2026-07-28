@@ -7,6 +7,7 @@ import { colorFor, iconFor } from '../../../../features/drawers/drawerPalette';
 import { RefreshCw } from 'lucide-react';
 import { DragAndDropService } from '../../../../services/DragAndDropService';
 import { useDocumentStore } from '../../../../stores/documentStore/store';
+import { isDockviewDrag } from '../../../../utils/dragEventUtils';
 
 // Helper per convertire HEX in RGBA con alpha
 function hexToRgba(hex: string, alpha = 0.1) {
@@ -208,26 +209,20 @@ export function ArchiveRenderer({
         onDrop: async (e: React.DragEvent) => {
             setIsDragging(false)
 
+            // SINCRONO: niente await prima di leggere dataTransfer
+            const snap = DragAndDropService.snapshotDataTransfer(e)
             console.log('[ARCHIVE-RENDERER][DROP][START] Drop ricevuto', {
                 compartoId: filteredComparti[0]?.id,
-                target: (e.target as HTMLElement)?.tagName,
-                currentTarget: (e.currentTarget as HTMLElement)?.tagName,
-                types: Array.from(e.dataTransfer?.types || [])
+                types: snap.types,
+                filesCount: snap.files.length,
             })
 
-            // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
-            const { isDockviewDrag } = await import('../../../../utils/dragEventUtils')
-            const isDockview = isDockviewDrag(e)
-            console.log('[ARCHIVE-RENDERER][DROP] isDockviewDrag result:', isDockview)
-
-            if (isDockview) {
+            if (isDockviewDrag(e)) {
                 console.log('[ARCHIVE-RENDERER][DROP] ❌ Ignorato - è drag Dockview')
-                return // Lascia che Dockview gestisca il drop del pannello
+                return
             }
 
             console.log('[ARCHIVE-RENDERER][DROP] ✅ Procedo con gestione drop')
-
-            // ✅ CRITICO: Ferma la propagazione per evitare che DocumentCollection gestisca anche il drop
             e.stopPropagation()
             e.preventDefault()
 
@@ -235,7 +230,6 @@ export function ArchiveRenderer({
                 const comparto = filteredComparti[0]
                 setHoverBody(null)
 
-                // ✅ Usa il servizio centralizzato per gestire il drop
                 await DragAndDropService.handleDrop(e, comparto.id, {
                     onExplorerFile: (fileData) => {
                         console.log('[ARCHIVE-RENDERER][DROP] File Explorer rilevato, dispatching explorer:file-drop-to-drawer', {
@@ -247,7 +241,6 @@ export function ArchiveRenderer({
                             detail: { fileData, drawerId: comparto.id }
                         })
                         window.dispatchEvent(event)
-                        console.log('[ARCHIVE-RENDERER][DROP] Evento explorer:file-drop-to-drawer emesso con drawerId:', comparto.id)
                     },
                     onDocId: async (docId) => {
                         await onDropDocIdToComparto(docId, comparto.id)
@@ -421,7 +414,10 @@ export function ArchiveRenderer({
                                             toast({ title: 'Documento aperto', description: trovato.filename });
                                         }
                                     }}
-                                    // onDrop gestito dal body dell'accordion per evitare doppi eventi
+                                    // DocumentCollection fa stopPropagation: senza onDrop i file OS venivano ignorati
+                                    onDrop={(files) => {
+                                        onDropFilesToComparto(files, comparto.id)
+                                    }}
                                     onRemove={(doc) => {
                                         handleRemoveThumb(doc.id)
                                     }}

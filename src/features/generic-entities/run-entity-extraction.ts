@@ -2,6 +2,7 @@
  * Job di estrazione entità tipizzate practice-wide, indipendente dal montaggio della tab.
  */
 
+import { loadOcrState } from '../../utils/ocrState'
 import {
   averageMs,
   computeExtractionTabProgress,
@@ -13,6 +14,7 @@ import {
   createDocumentExtractionPlan,
   updatePracticeDocumentSignature,
 } from '../entities/document-extraction-plan'
+import { formatOcrInProgressMessage } from '../entities/document-extraction-readiness'
 import {
   buildPracticeExtractionAdapters,
   listPracticeDocMeta,
@@ -101,12 +103,20 @@ export async function runEntityExtraction(
       setEntityExtractionRunning(praticaId, true)
     }
 
-    const { adapters, skipped } = buildPracticeExtractionAdapters(
+    const ocrHints = {
+      progressByDocId: loadOcrState(praticaId).progress || {},
+    }
+    const { adapters, skipped, waitingOnOcr } = buildPracticeExtractionAdapters(
       praticaId,
-      extractionPlan.documentIdsToExtract
+      extractionPlan.documentIdsToExtract,
+      ocrHints
     )
+    if (waitingOnOcr.length > 0) {
+      throw new Error(formatOcrInProgressMessage(waitingOnOcr.map(item => item.title)))
+    }
     if (adapters.length === 0) {
-      throw new Error('Nessun documento supportato per l\'estrazione entità')
+      const detail = skipped[0]?.detail
+      throw new Error(detail || 'Nessun documento supportato per l\'estrazione entità')
     }
 
     const metaSettled = await Promise.allSettled(adapters.map(adapter => adapter.getDocMeta()))

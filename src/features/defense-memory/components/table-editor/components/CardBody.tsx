@@ -7,6 +7,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { CardBodyProps, Block, ExtractBlock, ObservationBlock, ExtractData } from '../types/blocks.types'
 import { ExtractBlock as ExtractBlockComponent } from './ExtractBlock'
 import { ObservationBlock as ObservationBlockComponent } from './ObservationBlock'
+import { ExtractExpandedModal } from './ExtractExpandedModal'
 import { cn } from '@/lib/utils'
 
 export const CardBody: React.FC<CardBodyProps> = ({
@@ -20,6 +21,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
   const [isDragOver, setIsDragOver] = useState(false)
   const [targetInsertIndex, setTargetInsertIndex] = useState<number | null>(null) // ✅ Posizione target per riordino
   const [dragKind, setDragKind] = useState<'internal-reorder' | 'external-move' | null>(null) // ✅ Tipo di drag esplicito
+  const [expandedExtractId, setExpandedExtractId] = useState<string | null>(null)
 
   // Crea nuovo blocco osservazione
   const handleAddObservation = useCallback((insertIndex?: number) => {
@@ -966,6 +968,7 @@ export const CardBody: React.FC<CardBodyProps> = ({
                     onRemove={!readOnly ? () => handleRemoveBlock(block.id) : undefined}
                     onDragStart={!readOnly ? (e) => handleBlockDragStart(e, index) : undefined}
                     onDragEnd={handleDragEnd}
+                    onExpandInModal={!readOnly ? () => setExpandedExtractId(block.id) : undefined}
                     readOnly={readOnly}
                   />
                 ) : (
@@ -988,6 +991,25 @@ export const CardBody: React.FC<CardBodyProps> = ({
           )}
         </>
       )}
+
+      {expandedExtractId && (() => {
+        const expandedBlock = blocks.find(
+          (b): b is ExtractBlock => b.type === 'extract' && b.id === expandedExtractId
+        )
+        if (!expandedBlock) return null
+        return (
+          <ExtractExpandedModal
+            block={expandedBlock}
+            onClose={() => setExpandedExtractId(null)}
+            onUpdate={!readOnly ? (updatedBlock) => {
+              const newBlocks = blocks.map(b =>
+                b.id === updatedBlock.id ? updatedBlock : b
+              )
+              onBlocksChange(newBlocks)
+            } : undefined}
+          />
+        )
+      })()}
 
     </div>
   )

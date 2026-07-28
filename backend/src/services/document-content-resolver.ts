@@ -1,14 +1,18 @@
 /**
  * Risolve un riferimento documento in contenuto testuale ricercabile.
- * Nasconde ai consumer le differenze tra OCR locale, database e PDF nativo.
+ * Privilegia OCR/testo in memoria; il DB non è obbligatorio per i file locali.
  */
 
 import type { Prisma } from '@prisma/client'
+import fs from 'fs'
 import { prisma } from '../lib/database.js'
 import { extractDocxText } from '../lib/extractDocxText.js'
 import { extractNativeText } from '../lib/extractNativeText.js'
 import { storageService } from '../lib/storage.js'
-import { getLocalOcrResultByPrefix } from './local-ocr-store.js'
+import {
+  getLocalOcrProgressByPrefix,
+  getLocalOcrResultByPrefix,
+} from './local-ocr-store.js'
 
 export interface DocumentLocator {
   id: string
@@ -138,6 +142,96 @@ const resolveLocalContent = (locator: DocumentLocator): SearchableDocumentConten
   return null
 }
 
+/** Se l'OCR locale è ancora in corso, blocca con messaggio esplicito. */
+const assertLocalOcrNotInProgress = (locator: DocumentLocator): void => {
+  for (const lookupKey of localLookupKeys(locator)) {
+    const progress = getLocalOcrProgressByPrefix(lookupKey)
+    if (!progress) continue
+    if (progress.status === 'processing' || progress.status === 'pending') {
+      const label = locator.filename || locator.id
+      throw new DocumentTextUnavailableError(
+        `OCR in corso per "${label}". Attendi il completamento e riprova.`
+      )
+    }
+  }
+}
+
+const candidateStorageKeys = (locator: DocumentLocator): string[] => {
+  const keys = new Set<string>()
+  if (locator.storageKey) keys.add(locator.storageKey)
+  if (locator.hash) {
+    keys.add(locator.hash)
+    keys.add(`${locator.hash}.pdf`)
+    keys.add(`${locator.hash}.docx`)
+  }
+  if (SHA256_PATTERN.test(locator.id)) {
+    keys.add(locator.id)
+    keys.add(`${locator.id}.pdf`)
+    keys.add(`${locator.id}.docx`)
+  }
+  return Array.from(keys)
+}
+
+/** Percorso locale del file se già presente in uploads/ (anche senza riga DB). */
+const resolveExistingLocalPath = (locator: DocumentLocator): string | null => {
+  for (const key of candidateStorageKeys(locator)) {
+    const localPath = storageService.getLocalPath(key)
+    if (fs.existsSync(localPath)) return localPath
+  }
+  return null
+}
+
+const isDocxPath = (filename: string, mime?: string): boolean => {
+  const lowerName = filename.toLowerCase()
+  const lowerMime = (mime || '').toLowerCase()
+  return (
+    lowerMime === DOCX_MIME
+    || lowerName.endsWith('.docx')
+    || lowerMime.includes('wordprocessingml')
+  )
+}
+
+/**
+ * Estrae testo da un file già in uploads/ senza richiedere persistenza DB.
+ */
+const resolveFromLocalFile = async (
+  locator: DocumentLocator
+): Promise<SearchableDocumentContent | null> => {
+  const localPath = resolveExistingLocalPath(locator)
+  if (!localPath) return null
+
+  const filename = locator.filename || localPath.split(/[/\\]/).pop() || locator.id
+  if (isDocxPath(filename)) {
+    const text = await extractDocxText(localPath)
+    if (!text) {
+      throw new DocumentTextUnavailableError(
+        `Il documento Word "${filename}" non contiene testo ricercabile`
+      )
+    }
+    return {
+      requestedId: locator.id,
+      canonicalId: locator.id,
+      filename,
+      source: 'docx',
+      pages: [text],
+      layout: []
+    }
+  }
+
+  // PDF scansionato: niente testo nativo → non bloccare, lascia tentare OCR DB/memoria.
+  const nativeText = await extractNativeText(localPath)
+  if (!nativeText.trim()) return null
+
+  return {
+    requestedId: locator.id,
+    canonicalId: locator.id,
+    filename,
+    source: 'native-pdf',
+    pages: splitPages(nativeText),
+    layout: []
+  }
+}
+
 const databaseWhere = (locator: DocumentLocator): Prisma.DocumentoWhereInput => {
   const alternatives: Prisma.DocumentoWhereInput[] = [{ id: locator.id }]
   if (locator.hash) alternatives.push({ hash: locator.hash })
@@ -147,7 +241,8 @@ const databaseWhere = (locator: DocumentLocator): Prisma.DocumentoWhereInput => 
 }
 
 /**
- * Recupera il contenuto ricercabile, privilegiando l'OCR locale più recente.
+ * Recupera il contenuto ricercabile: OCR memoria → database OCR → file locale nativo.
+ * Un PDF scansionato in uploads/ non deve impedire la lettura dell'OCR già salvato in DB.
  */
 export async function resolveSearchableDocument(
   rawLocator: DocumentLocator
@@ -155,6 +250,8 @@ export async function resolveSearchableDocument(
   const locator = requireLocator(rawLocator)
   const localContent = resolveLocalContent(locator)
   if (localContent) return localContent
+
+  assertLocalOcrNotInProgress(locator)
 
   const document = await prisma.documento.findFirst({
     where: databaseWhere(locator),
@@ -170,13 +267,16 @@ export async function resolveSearchableDocument(
   })
 
   if (!document) {
-    throw new DocumentContentNotFoundError(`Documento "${locator.id}" non trovato`)
+    const fromLocalFile = await resolveFromLocalFile(locator)
+    if (fromLocalFile) return fromLocalFile
+
+    throw new DocumentContentNotFoundError(
+      `Documento "${locator.filename || locator.id}" non trovato in memoria. ` +
+      `Per i PDF scansionati attendi l'OCR; i PDF con testo nativo si elaborano dal browser.`
+    )
   }
 
-  const isDocx =
-    document.mime.toLowerCase() === DOCX_MIME
-    || document.filename.toLowerCase().endsWith('.docx')
-  if (isDocx) {
+  if (isDocxPath(document.filename, document.mime)) {
     const text = await extractDocxText(storageService.getLocalPath(document.s3Key))
     if (!text) {
       throw new DocumentTextUnavailableError(
@@ -206,7 +306,9 @@ export async function resolveSearchableDocument(
   }
 
   if (!document.hasNativeText) {
-    throw new DocumentTextUnavailableError(`Testo ricercabile non disponibile per "${document.filename}"`)
+    throw new DocumentTextUnavailableError(
+      `Testo ricercabile non disponibile per "${document.filename}". Avvia l'OCR e attendi il completamento.`
+    )
   }
 
   const nativeText = await extractNativeText(storageService.getLocalPath(document.s3Key))

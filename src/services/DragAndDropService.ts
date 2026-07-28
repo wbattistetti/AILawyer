@@ -1,12 +1,26 @@
 /**
  * Servizio centralizzato per gestire il drag-and-drop nell'applicazione.
  * Elimina duplicazioni e fornisce un'interfaccia unificata per tutti i tipi di drag-and-drop.
+ *
+ * IMPORTANTE: dataTransfer.files / getData vanno letti in modo SINCRONO nel drop handler.
+ * Qualsiasi await prima della lettura svuota i File (policy browser).
  */
+
+import { isDockviewDrag } from '../utils/dragEventUtils'
 
 export type ExplorerFileData = {
   fileId: string
   filePath: string
   fileName: string
+}
+
+/** Snapshot sincrono di dataTransfer — da catturare prima di ogni await. */
+type DropSnapshot = {
+  types: string[]
+  files: File[]
+  explorerData: string
+  docId: string
+  textPlain: string
 }
 
 export class DragAndDropService {
@@ -204,6 +218,33 @@ export class DragAndDropService {
    * @param options Callback per gestire i diversi tipi di drop
    * @returns true se il drop è stato gestito, false altrimenti
    */
+  /**
+   * Legge dataTransfer in modo sincrono. Deve essere chiamato prima di qualsiasi await.
+   */
+  static snapshotDataTransfer(e: React.DragEvent | DragEvent): DropSnapshot {
+    const dt = e.dataTransfer
+    let explorerData = ''
+    let docId = ''
+    let textPlain = ''
+    try {
+      explorerData = dt?.getData(this.EXPLORER_FILE_TYPE) || ''
+    } catch { /* ignore */ }
+    try {
+      docId = dt?.getData(this.DOC_ID_TYPE) || ''
+    } catch { /* ignore */ }
+    try {
+      textPlain = dt?.getData('text/plain') || ''
+    } catch { /* ignore */ }
+
+    return {
+      types: Array.from(dt?.types || []),
+      files: Array.from(dt?.files || []),
+      explorerData,
+      docId,
+      textPlain,
+    }
+  }
+
   static async handleDrop(
     e: React.DragEvent,
     targetCompartoId: string,
@@ -213,82 +254,65 @@ export class DragAndDropService {
       onFiles?: (files: File[], compartoId: string) => Promise<void> | void
     }
   ): Promise<boolean> {
+    // ✅ SINCRONO: cattura i file prima di qualsiasi await (altrimenti FileList diventa vuota)
+    const snap = this.snapshotDataTransfer(e)
+
     console.log('[DRAG-SERVICE][DROP][START] handleDrop chiamato', {
       targetCompartoId,
-      types: Array.from(e.dataTransfer?.types || [])
+      types: snap.types,
+      filesCount: snap.files.length,
     })
 
-    // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
-    const { isDockviewDrag } = await import('../utils/dragEventUtils')
     const isDockview = isDockviewDrag(e)
     console.log('[DRAG-SERVICE][DROP] isDockviewDrag result:', isDockview)
 
     if (isDockview) {
       console.log('[DRAG-SERVICE][DROP] ❌ Ignorato - è drag Dockview')
-      return false // Lascia che Dockview gestisca
+      return false
     }
 
     console.log('[DRAG-SERVICE][DROP] ✅ Procedo con gestione drop')
     e.preventDefault()
     e.stopPropagation()
 
-    // ✅ PROBLEMA: Durante drop, dataTransfer.types può essere vuoto per sicurezza del browser
-    // ✅ SOLUZIONE: Prova PRIMA a leggere direttamente i dati con getData(), POI usa la cache
-
-    // ✅ PRIORITÀ 1: Prova a leggere direttamente da dataTransfer (più affidabile)
-    try {
-      const explorerData = e.dataTransfer.getData(this.EXPLORER_FILE_TYPE)
-      if (explorerData) {
-        const fileData = this.parseExplorerFileData(explorerData)
-        if (fileData && options.onExplorerFile) {
-          console.log('[DRAG-SERVICE][DROP] ✅ File Explorer rilevato da getData:', fileData.fileName)
-          await options.onExplorerFile(fileData, targetCompartoId)
-          return true
-        }
-      }
-    } catch (err) {
-      console.log('[DRAG-SERVICE][DROP] Errore lettura Explorer file data:', err)
-    }
-
-    // ✅ PRIORITÀ 2: Controlla documento esistente (spostamento tra cassetti)
-    try {
-      const docId = e.dataTransfer.getData(this.DOC_ID_TYPE)
-      if (docId && options.onDocId) {
-        console.log('[DRAG-SERVICE][DROP] ✅ Doc ID rilevato da getData:', docId)
-        await options.onDocId(docId, targetCompartoId)
+    // ✅ PRIORITÀ 1: Explorer file da getData (già nello snapshot)
+    if (snap.explorerData) {
+      const fileData = this.parseExplorerFileData(snap.explorerData)
+      if (fileData && options.onExplorerFile) {
+        console.log('[DRAG-SERVICE][DROP] ✅ File Explorer rilevato da getData:', fileData.fileName)
+        await options.onExplorerFile(fileData, targetCompartoId)
         return true
       }
-    } catch (err) {
-      console.log('[DRAG-SERVICE][DROP] Errore lettura Doc ID data:', err)
     }
 
-    // ✅ PRIORITÀ 3: Se getData() non ha funzionato, usa la cache globale
-    let dragId: number | undefined = undefined
-    try {
-      const textData = e.dataTransfer.getData('text/plain')
-      if (textData && textData.startsWith('__dragId:')) {
-        dragId = parseInt(textData.replace('__dragId:', ''), 10)
-        console.log('[DRAG-SERVICE][DROP] DragId recuperato da text/plain:', dragId)
-      }
-    } catch {}
+    // ✅ PRIORITÀ 2: Doc ID
+    if (snap.docId && options.onDocId) {
+      console.log('[DRAG-SERVICE][DROP] ✅ Doc ID rilevato da getData:', snap.docId)
+      await options.onDocId(snap.docId, targetCompartoId)
+      return true
+    }
 
-    // ✅ Se non trovato, cerca l'ultimo drag attivo nella cache (più recente)
+    // ✅ PRIORITÀ 3: Cache globale (dragId in text/plain o entry più recente)
+    let dragId: number | undefined = undefined
+    if (snap.textPlain.startsWith('__dragId:')) {
+      dragId = parseInt(snap.textPlain.replace('__dragId:', ''), 10)
+      console.log('[DRAG-SERVICE][DROP] DragId recuperato da text/plain:', dragId)
+    }
+
     const cache = this.getDragDataCache()
     if (dragId === undefined && cache.size > 0) {
-      // Trova l'entry più recente (ultimo drag avviato)
       let mostRecent: { id: number; data: { type: string; data: string; timestamp: number } } | null = null
       cache.forEach((value, id) => {
         if (!mostRecent || value.timestamp > mostRecent.data.timestamp) {
           mostRecent = { id, data: value }
         }
       })
-      if (mostRecent && Date.now() - mostRecent.data.timestamp < 5000) { // Max 5 secondi fa
+      if (mostRecent && Date.now() - mostRecent.data.timestamp < 5000) {
         dragId = mostRecent.id
         console.log('[DRAG-SERVICE][DROP] DragId recuperato dalla cache (più recente):', dragId)
       }
     }
 
-    // ✅ Se abbiamo un dragId, recupera i dati dalla cache
     if (dragId !== undefined && cache.has(dragId)) {
       const cached = cache.get(dragId)!
       console.log('[DRAG-SERVICE][DROP] ✅ Dati recuperati dalla cache:', { dragId, type: cached.type })
@@ -297,7 +321,7 @@ export class DragAndDropService {
         const fileData = this.parseExplorerFileData(cached.data)
         if (fileData) {
           console.log('[DRAG-SERVICE][DROP] ✅ File Explorer rilevato dalla cache:', fileData.fileName)
-          cache.delete(dragId) // Cleanup
+          cache.delete(dragId)
           await options.onExplorerFile(fileData, targetCompartoId)
           return true
         }
@@ -305,23 +329,25 @@ export class DragAndDropService {
 
       if (cached.type === this.DOC_ID_TYPE && options.onDocId) {
         console.log('[DRAG-SERVICE][DROP] ✅ Doc ID rilevato dalla cache:', cached.data)
-        cache.delete(dragId) // Cleanup
+        cache.delete(dragId)
         await options.onDocId(cached.data, targetCompartoId)
         return true
       }
     }
 
-    // ✅ PRIORITÀ 4: Controlla file OS nativi
-    if (e.dataTransfer.types.includes('Files')) {
-      const files = Array.from(e.dataTransfer.files)
-      if (files.length && options.onFiles) {
-        console.log('[DRAG-SERVICE][DROP] ✅ File OS rilevati:', files.length)
-        await options.onFiles(files, targetCompartoId)
-        return true
-      }
+    // ✅ PRIORITÀ 4: File OS (snapshot sincrono — non rileggere dataTransfer.files dopo await)
+    const hasFilesType = snap.types.includes('Files') || snap.files.length > 0
+    if (hasFilesType && snap.files.length && options.onFiles) {
+      console.log('[DRAG-SERVICE][DROP] ✅ File OS rilevati:', snap.files.length)
+      await options.onFiles(snap.files, targetCompartoId)
+      return true
     }
 
-    console.log('[DRAG-SERVICE][DROP] ❌ Nessun tipo di drop riconosciuto')
+    console.log('[DRAG-SERVICE][DROP] ❌ Nessun tipo di drop riconosciuto', {
+      types: snap.types,
+      filesCount: snap.files.length,
+      hasOnFiles: !!options.onFiles,
+    })
     return false
   }
 

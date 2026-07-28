@@ -1,3 +1,12 @@
+/**
+ * Serializzazione del catalogo grafi di una pratica.
+ *
+ * Separa due responsabilità:
+ * - `GraphContent`: nodi, edge e viewport, posseduti dal canvas ReactFlow;
+ * - `SavedGraph`: il contenuto più i metadati (id, nome, nota, timestamp),
+ *   posseduti dal catalogo del workspace.
+ */
+
 import type { BuilderNode, BuilderEdge, NodeStyle } from './types'
 import type { Viewport } from 'reactflow'
 
@@ -67,6 +76,13 @@ export type SavedGraph = {
   updatedAt: string             // ISO timestamp
 }
 
+/**
+ * Porzione di grafo posseduta dal canvas. Il catalogo resta proprietario di
+ * id, nome, nota e timestamp, così un aggiornamento del canvas non può
+ * sovrascrivere i metadati e viceversa.
+ */
+export type GraphContent = Pick<SavedGraph, 'nodes' | 'edges' | 'viewport'>
+
 /** Voce menu toolbar: grafo noto e se è già aperto in una tab. */
 export type GraphMenuItem = {
   id: string
@@ -75,21 +91,15 @@ export type GraphMenuItem = {
 }
 
 /**
- * Serializza un grafo da ReactFlow a SavedGraph
+ * Serializza lo stato corrente del canvas ReactFlow in una forma persistibile.
+ * L'ordine delle chiavi è stabile: il risultato è confrontabile via JSON.
  */
-export function serializeGraph(
-  graphId: string,
-  graphName: string,
+export function serializeGraphContent(
   nodes: BuilderNode[],
   edges: BuilderEdge[],
-  viewport?: Viewport,
-  createdAt?: string,
-  note?: string
-): SavedGraph {
+  viewport?: Viewport
+): GraphContent {
   return {
-    id: graphId,
-    name: graphName,
-    note: note ?? '',
     viewport: viewport ? {
       x: viewport.x,
       y: viewport.y,
@@ -132,9 +142,38 @@ export function serializeGraph(
         captionItalic: e.data.captionItalic,
         captionColor: e.data.captionColor
       }
-    })),
-    createdAt: createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    }))
+  }
+}
+
+/** Estrae il contenuto di un grafo del catalogo nella forma canonica. */
+export function extractGraphContent(graph: SavedGraph): GraphContent {
+  return {
+    viewport: graph.viewport,
+    nodes: graph.nodes,
+    edges: graph.edges,
+  }
+}
+
+/**
+ * Firma stabile di un contenuto grafo, usata per riconoscere i cambiamenti
+ * reali ed evitare aggiornamenti e salvataggi a vuoto. Confrontabile solo tra
+ * contenuti prodotti da `serializeGraphContent` o `extractGraphContent`.
+ */
+export function graphContentSignature(content: GraphContent): string {
+  return JSON.stringify(content)
+}
+
+/**
+ * Sostituisce il contenuto di un grafo del catalogo preservandone i metadati.
+ */
+export function withGraphContent(graph: SavedGraph, content: GraphContent): SavedGraph {
+  return {
+    ...graph,
+    nodes: content.nodes,
+    edges: content.edges,
+    viewport: content.viewport,
+    updatedAt: new Date().toISOString(),
   }
 }
 
@@ -212,10 +251,10 @@ export function serializeGraphsState(graphs: SavedGraph[]): string {
 }
 
 /**
- * Deserializza un SavedGraph in nodi e edge per ReactFlow
+ * Deserializza un contenuto grafo in nodi ed edge pronti per ReactFlow.
  */
 export function deserializeGraph(
-  saved: SavedGraph,
+  saved: GraphContent,
   onNodeDelete: (nodeId: string) => void
 ): { nodes: BuilderNode[]; edges: BuilderEdge[]; viewport?: Viewport } {
   const nodes: BuilderNode[] = saved.nodes.map(n => ({

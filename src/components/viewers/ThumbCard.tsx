@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Eye, Table, Trash, ScanText, FileText } from 'lucide-react'
+import { Eye, Trash, ScanText, FileText } from 'lucide-react'
 import { useAutoThumbnail } from '../../hooks/useAutoThumbnail'
 import { OcrProgressOverlay } from './OcrProgressOverlay'
+import { formatPageCountLabel, normalizePageCount } from './common/utils/pageCountLabel'
+import { getPdfPageCount } from './common/utils/pdfPageCount'
 
 interface ThumbCardProps {
   title: string
@@ -11,12 +13,13 @@ interface ThumbCardProps {
   excerpt?: string
   metaDocLabel?: string
   metaPage?: number | string
+  /** Totale pagine del file (footer miniatura); omesso sugli estratti */
+  pageCount?: number | null
   onShow?: () => void
   selected?: boolean
   onSelect?: () => void
   onPreview?: () => void
   onPreviewOcr?: () => void
-  onTable?: () => void
   onRemove?: () => void
   onOcr?: () => void
   onOcrCancel?: () => void
@@ -48,12 +51,12 @@ export function ThumbCard({
   excerpt,
   metaDocLabel,
   metaPage,
+  pageCount: pageCountProp,
   onShow,
   selected,
   onSelect,
   onPreview,
   onPreviewOcr,
-  onTable,
   onRemove,
   onOcr,
   onOcrCancel,
@@ -72,6 +75,8 @@ export function ThumbCard({
   isPdf: isPdfProp
 }: ThumbCardProps) {
   const [imgError, setImgError] = useState(false)
+  const [fetchedPageCount, setFetchedPageCount] = useState<{ url: string; count: number } | null>(null)
+  const [imgLoading, setImgLoading] = useState<boolean>(false)
 
   // Log solo quando hasNativeText cambia in modo inaspettato (per debug problema specifico)
   // Rimossi log verbosi per ridurre rumore
@@ -83,7 +88,7 @@ export function ThumbCard({
   // Log OCR-DEBUG rimosso per ridurre rumore (mantenere solo se necessario per debug specifico)
 
   // Hook per generazione automatica miniature
-  const { thumbnail: generatedThumbnail, loading: thumbnailLoading, generate } = useAutoThumbnail(
+  const { thumbnail: generatedThumbnail, pageCount: generatedPageCount, loading: thumbnailLoading, generate } = useAutoThumbnail(
     autoGenerateThumbnail ? fileUrl : null,
     {
       enabled: autoGenerateThumbnail,
@@ -94,11 +99,43 @@ export function ThumbCard({
     }
   )
 
+  const isPdf = isPdfProp !== undefined
+    ? isPdfProp
+    : (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
+
+  // Estratti: non mostrare totale pagine del file (usano già metaPage)
+  const isExtractCard = Boolean(metaDocLabel)
+
+  const fetchedForCurrentUrl =
+    fileUrl && fetchedPageCount?.url === fileUrl ? fetchedPageCount.count : null
+
+  const resolvedPageCount =
+    normalizePageCount(pageCountProp) ??
+    normalizePageCount(generatedPageCount) ??
+    normalizePageCount(fetchedForCurrentUrl)
+
+  // Se manca il conteggio e abbiamo un PDF, leggilo una volta (cache in getPdfPageCount)
+  useEffect(() => {
+    if (isExtractCard) return
+    if (resolvedPageCount != null) return
+    if (!isPdf || !fileUrl) return
+
+    let cancelled = false
+    const url = fileUrl
+    getPdfPageCount(url)
+      .then((n) => {
+        if (!cancelled) setFetchedPageCount({ url, count: n })
+      })
+      .catch(() => {
+        // Metadato opzionale: senza conteggio il footer resta nascosto
+      })
+
+    return () => { cancelled = true }
+  }, [isExtractCard, resolvedPageCount, isPdf, fileUrl])
+
   // Determina quale immagine mostrare
   const displayImage = generatedThumbnail || imgSrc
 
-  // Stato di caricamento immagine (mostra spinner finché il browser non emette onLoad)
-  const [imgLoading, setImgLoading] = useState<boolean>(false)
   useEffect(() => { setImgLoading(!!displayImage) }, [displayImage])
 
   // Se cambia la sorgente effettiva dell'immagine (server → client-side o viceversa),
@@ -114,6 +151,13 @@ export function ThumbCard({
     if (generatedThumbnail || thumbnailLoading) return
     try { generate() } catch { }
   }, [imgError, fileUrl, generatedThumbnail, thumbnailLoading, generate])
+
+  const isOcrCompleted =
+    (typeof ocrProgressPct === 'number' && ocrProgressPct >= 100) ||
+    (typeof transcribedPct === 'number' && transcribedPct >= 100) ||
+    ocrStatus === 'completed'
+  const canRunOcr = !hasNativeText && !isOcrCompleted
+
   return (
     <div
       className="relative group select-none rounded-md w-48"
@@ -129,11 +173,6 @@ export function ThumbCard({
         </div>
         {/* Label stato OCR sotto l'header, allineata a destra */}
         {(() => {
-          // Usa prop esplicita se disponibile, altrimenti deduci da fileUrl o autoGenerateThumbnail
-          const isPdf = isPdfProp !== undefined
-            ? isPdfProp
-            : (fileUrl || '').toLowerCase().endsWith('.pdf') || autoGenerateThumbnail
-
           // OCR in corso (0-99%)
           if (typeof ocrProgressPct === 'number' && ocrProgressPct < 100 && !ocrCancelling) {
             return (
@@ -266,14 +305,22 @@ export function ThumbCard({
             />
           )
         })()}
+        {!isExtractCard && resolvedPageCount != null && (
+          <div className="absolute left-0 right-0 bottom-0 z-10 flex h-6 items-center justify-center border-t border-neutral-200 bg-background/95">
+            <span className="text-[10px] leading-none text-muted-foreground">
+              {formatPageCountLabel(resolvedPageCount)}
+            </span>
+          </div>
+        )}
       </div>
       {/* Hover actions - centered */}
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition">
-        <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-background/90 backdrop-blur-sm shadow px-2 py-1 rounded">
+        <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-neutral-300 shadow-md px-2 py-1 rounded-md">
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreview?.() }}
             aria-label="Anteprima"
+            title="Anteprima: apre il documento nel visualizzatore"
           >
             <Eye className="w-4 h-4" />
           </button>
@@ -282,39 +329,32 @@ export function ThumbCard({
               className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted relative"
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPreviewOcr?.() }}
               aria-label="Anteprima OCR"
-              title="Apri PDF OCR"
+              title="Anteprima OCR: apre la versione trascritta del documento"
             >
               <Eye className="w-4 h-4" />
               <span className="absolute -right-1 -top-1 text-[8px] bg-blue-500 text-white rounded px-0.5">OCR</span>
             </button>
           )}
-          {!hasNativeText && (
+          {canRunOcr && (
             <button
               className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onOcr?.() }}
               aria-label="OCR"
-              title="Esegui OCR"
+              title="Trascrivi: avvia l'OCR per estrarre il testo dal documento scansionato"
             >
               <ScanText className="w-4 h-4" />
             </button>
           )}
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onTable?.() }}
-            aria-label="Azione tabella"
-          >
-            <Table className="w-4 h-4" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-muted"
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); onRemove?.() }}
             aria-label="Rimuovi"
+            title="Elimina: rimuove il documento dalla pratica"
           >
             <Trash className="w-4 h-4" />
           </button>
         </div>
       </div>
-      {/* no filename footer for extracts */}
     </div>
   )
 }

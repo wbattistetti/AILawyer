@@ -14,10 +14,10 @@ import { usePdfNativeStyles } from './usePdfNativeStyles'
 import { usePdfOverlays } from './usePdfOverlays'
 import { usePdfExtract } from './usePdfExtract'
 import { useRectSelection, type DraftBox } from '../../common/hooks/useRectSelection'
-import { captureSelectionScreenshotWithFallback } from '../../common/utils/screenshot'
 import type { PersistentSelection } from '../types'
 import type { RectSelection, ExtractedContent } from '../../common/types/viewer.types'
 import { extractContentFromRect } from '../utils/extractContentFromRect'
+import { resolveExtractImageDataUrl } from '../../common/utils/resolveExtractImageDataUrl'
 import { toPdfMatchItem } from '../utils/toPdfMatchItem'
 import {
   getPdfViewerSession,
@@ -244,86 +244,89 @@ export function usePdfShellState({ hostRef, scrollHostRef, fileUrl, docId, onPag
         setRectangleDraft(null)
       }
     }, [ensureOverlayRootForPage, pageElsRef, overlayRootsRef]),
-    onSelection: useCallback(async (rect: RectSelection) => {
+    onSelection: useCallback((rect: RectSelection) => {
       console.log('[RECT-SEL][PDF] onSelection', {
         pageIndex: rect.pageIndex,
         rect: rect.rect,
         bbox: rect.bbox
       })
-      try {
-        // ✅ 1. Crea ExtractCard viewer-agnostica (SOLO rettangolo, senza contenuto)
-        const card: ExtractCard = {
-          id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          rect: rect.rect,
-          pageIndex: rect.pageIndex,
-          viewerId: rect.viewerId,
-          viewerType: 'pdf',
-          // ✅ content non viene incluso qui - viene estratto solo quando necessario
-          createdAt: new Date()
-        }
 
-        // ✅ 2. Estrai contenuto SOLO quando necessario (per PersistentSelection/overlay)
-        const content = await extractContentFromRectImpl(rect)
-
-        // ✅ 3. Converti ExtractCard in PersistentSelection (per retrocompatibilità con UI esistente)
-        const pageNumber = rect.pageIndex + 1 // ✅ Converti a 1-based
-        const percentCoords = rect.bbox || {
-          x0Pct: 0,
-          y0Pct: 0,
-          x1Pct: 1,
-          y1Pct: 1
-        }
-
-        // ✅ Converti imageSnippet (Blob) in imageDataUrl (string) per PersistentSelection
-        let imageDataUrl: string | undefined
-        if (content.imageSnippet) {
-          try {
-            imageDataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onloadend = () => resolve(reader.result as string)
-              reader.onerror = reject
-              reader.readAsDataURL(content.imageSnippet!)
-            })
-          } catch (error) {
-            console.warn('[PdfShellState] Errore conversione Blob in data URL:', error)
-          }
-        }
-
-        const persistentSelection: PersistentSelection = {
-          id: card.id,
-          page: pageNumber,
-          x0Pct: percentCoords.x0Pct,
-          y0Pct: percentCoords.y0Pct,
-          x1Pct: percentCoords.x1Pct,
-          y1Pct: percentCoords.y1Pct,
-          text: content.text || '',
-          viewportBox: {
-            x: rect.rect.x,
-            y: rect.rect.y,
-            w: rect.rect.width,
-            h: rect.rect.height
-          },
-          source: docId || 'Documento',
-          imageDataUrl
-        }
-
-        // ✅ 4. Salva lastSelection per ExtractBlockOverlay
-        viewerState.setLastSelection({
-          pdfPageNumber: pageNumber,
-          viewportBox: persistentSelection.viewportBox,
-          text: content.text || '',
-          imageDataUrl
-        })
-
-        // ✅ 5. Aggiungi alla lista di persistent selections
-        viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
-
-        // ✅ 6. Dispatch evento per ExtractCard (opzionale, per integrazione futura)
-        // window.dispatchEvent(new CustomEvent('app:extract-card-created', { detail: { card } }))
-
-      } catch (error) {
-        console.error('[PdfShellState] Errore in onSelection:', error)
+      const card: ExtractCard = {
+        id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        rect: rect.rect,
+        pageIndex: rect.pageIndex,
+        viewerId: rect.viewerId,
+        viewerType: 'pdf',
+        createdAt: new Date()
       }
+
+      const pageNumber = rect.pageIndex + 1
+      const percentCoords = rect.bbox || {
+        x0Pct: 0,
+        y0Pct: 0,
+        x1Pct: 1,
+        y1Pct: 1
+      }
+
+      const viewportBox = {
+        x: rect.rect.x,
+        y: rect.rect.y,
+        w: rect.rect.width,
+        h: rect.rect.height
+      }
+
+      // Optimistic UI: mount overlay immediately; extract text/screenshot in background.
+      const persistentSelection: PersistentSelection = {
+        id: card.id,
+        page: pageNumber,
+        x0Pct: percentCoords.x0Pct,
+        y0Pct: percentCoords.y0Pct,
+        x1Pct: percentCoords.x1Pct,
+        y1Pct: percentCoords.y1Pct,
+        text: '',
+        viewportBox,
+        source: docId || 'Documento',
+        contentReady: false
+      }
+
+      viewerState.setLastSelection({
+        pdfPageNumber: pageNumber,
+        viewportBox,
+        text: '',
+        imageDataUrl: undefined
+      })
+      viewerState.setPersistentSelections(prev => [...prev, persistentSelection])
+
+      void (async () => {
+        try {
+          const content = await extractContentFromRectImpl(rect)
+          const imageDataUrl = resolveExtractImageDataUrl(content)
+          const text = content.text || ''
+
+          viewerState.setLastSelection({
+            pdfPageNumber: pageNumber,
+            viewportBox,
+            text,
+            imageDataUrl
+          })
+          viewerState.setPersistentSelections(prev =>
+            prev.map(selection =>
+              selection.id === card.id
+                ? { ...selection, text, imageDataUrl, contentReady: true }
+                : selection
+            )
+          )
+        } catch (error) {
+          console.error('[PdfShellState] Errore in onSelection:', error)
+          viewerState.setPersistentSelections(prev =>
+            prev.map(selection =>
+              selection.id === card.id
+                ? { ...selection, contentReady: true }
+                : selection
+            )
+          )
+        }
+      })()
     }, [extractContentFromRectImpl, docId, viewerState]),
     isClickInsideOverlay: useCallback((target: HTMLElement) => {
       // ✅ Verifica se click è dentro overlay ExtractBlock

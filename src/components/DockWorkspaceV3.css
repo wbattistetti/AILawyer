@@ -185,3 +185,11 @@
   display: none !important;
 }
 
+/* Feedback drop file OS su tab cassetto (strip o Dockview) */
+.dockv3-root [data-drawer-drop-hover='true'],
+.dockv3-root button[data-drawer-drop-hover='true'] {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 1px;
+  background-color: hsl(var(--primary) / 0.12) !important;
+}
+

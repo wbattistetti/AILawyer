@@ -6,37 +6,42 @@
 import { ViewportBox } from '../types/viewer.types'
 
 /**
- * Converte viewportBox (pixel) in coordinate percentuali
+ * Converte viewportBox (pixel CSS relativi a `relativeTo`) in percentuali 0–1.
  */
 export function viewportBoxToPercent(
   viewportBox: ViewportBox,
-  hostElement: HTMLElement
+  relativeTo: HTMLElement
 ): { x0Pct: number; y0Pct: number; x1Pct: number; y1Pct: number } {
-  const hostRect = hostElement.getBoundingClientRect()
-  const hostWidth = hostRect.width
-  const hostHeight = hostRect.height
+  const rect = relativeTo.getBoundingClientRect()
+  const width = rect.width
+  const height = rect.height
+
+  if (width <= 0 || height <= 0) {
+    throw new Error('viewportBoxToPercent: element has zero size')
+  }
 
   return {
-    x0Pct: viewportBox.x / hostWidth,
-    y0Pct: viewportBox.y / hostHeight,
-    x1Pct: (viewportBox.x + viewportBox.w) / hostWidth,
-    y1Pct: (viewportBox.y + viewportBox.h) / hostHeight
+    x0Pct: viewportBox.x / width,
+    y0Pct: viewportBox.y / height,
+    x1Pct: (viewportBox.x + viewportBox.w) / width,
+    y1Pct: (viewportBox.y + viewportBox.h) / height
   }
 }
 
 /**
- * Calcola viewportBox da coordinate mouse (relativo a host)
+ * Calcola viewportBox da coordinate client relative a un elemento
+ * (tipicamente la pagina del documento, non lo scroll host).
  */
 export function calculateViewportBox(
   startX: number,
   startY: number,
   endX: number,
   endY: number,
-  hostElement: HTMLElement
+  relativeTo: HTMLElement
 ): ViewportBox {
-  const hostRect = hostElement.getBoundingClientRect()
-  const x = Math.min(startX, endX) - hostRect.left
-  const y = Math.min(startY, endY) - hostRect.top
+  const rect = relativeTo.getBoundingClientRect()
+  const x = Math.min(startX, endX) - rect.left
+  const y = Math.min(startY, endY) - rect.top
   const w = Math.abs(endX - startX)
   const h = Math.abs(endY - startY)
 

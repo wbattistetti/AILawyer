@@ -10,6 +10,10 @@ import { FileText, Image as ImageIcon, X, ChevronDown, ChevronUp, Plus, Trash2, 
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { NoteEditor } from './NoteEditor'
+import {
+  CellTypeQualifier,
+  type CellTypeQualification,
+} from './shared'
 
 export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   block,
@@ -24,7 +28,9 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
   onExpandInModal,
   isImageLoading = false,
   imageOverlay,
-  imageRef
+  imageRef,
+  showQualifier = false,
+  headerActions,
 }) => {
   const { extract, title, observation, hasObservation = false, collapsed = false, observations = [] } = block
   const [isCollapsed, setIsCollapsed] = useState(collapsed)
@@ -1034,19 +1040,26 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
       data-extract-block-id={block.id} // ✅ ID per il listener globale
       className={cn(
         'bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col',
+        isOverlay && 'min-w-0 w-full h-full overflow-hidden',
         !readOnly && 'cursor-move hover:shadow-md transition-all'
       )}
     >
-      {/* ✅ Header fisso (sticky) con label non editabile e titolo */}
+      {/* Header pannello estrazione (meta + azioni) e, sotto, qualificatore opzionale */}
       <div
         className={cn(
-          'flex items-center justify-between border-b border-gray-200 bg-white z-10',
-          isOverlay ? 'p-2' : 'p-3 sticky top-0', // ✅ Padding ridotto quando è overlay
-          !readOnly && 'cursor-pointer hover:bg-gray-50'
+          'border-b border-blue-200 bg-blue-100/80 z-10 sticky top-0',
+          !readOnly && !showQualifier && 'hover:bg-blue-100'
         )}
-        onClick={!readOnly ? handleToggleCollapse : undefined}
       >
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div
+        className={cn(
+          'flex items-center justify-between gap-2',
+          isOverlay || showQualifier ? 'px-2 py-2' : 'p-3',
+          !readOnly && !showQualifier && 'cursor-pointer'
+        )}
+        onClick={!readOnly && !showQualifier ? handleToggleCollapse : undefined}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           {!readOnly && (
             <button
               type="button"
@@ -1064,118 +1077,152 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
             </button>
           )}
 
-          {/* ✅ Label non editabile: Nome documento - Pag. X (font piccolo) */}
-          <span className="text-xs text-gray-600 flex-shrink-0">
-            {extract.source} - Pag. {extract.page}
-          </span>
-
-          {/* ✅ Titolo: pulsante "Aggiungi titolo" o text box o titolo con cestino */}
-          {readOnly ? (
-            <p className="text-sm font-medium text-gray-900 truncate ml-2">
-              {localTitle || 'Estratto'}
-            </p>
-          ) : (
-            <div className="flex items-center gap-2 flex-1 min-w-0 ml-2">
-              {!localTitle && !isEditingTitle ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    console.log('🟠 [ExtractBlock] Click su "Aggiungi titolo"', {
-                      target: e.target,
-                      currentTarget: e.currentTarget,
-                      isOverlay,
-                      bubbles: e.bubbles
-                    })
-                    e.stopPropagation()
-                    shouldFocusTitleRef.current = true // ✅ Imposta flag per focus
-                    setIsEditingTitle(true)
-                  }}
-                  onMouseDown={(e) => {
-                    console.log('🟠 [ExtractBlock] MouseDown su "Aggiungi titolo"', {
-                      target: e.target,
-                      currentTarget: e.currentTarget
-                    })
-                    e.stopPropagation()
-                  }}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors flex-shrink-0"
-                >
-                  Aggiungi titolo
-                </button>
-              ) : isEditingTitle ? (
+          {showQualifier ? (
+            <>
+              <span className="text-xs font-medium text-gray-500 flex-shrink-0">
+                Estratto da
+              </span>
+              <span className="text-xs text-gray-800 flex-shrink-0 truncate max-w-[40%]">
+                {extract.source} - Pag. {extract.page}
+              </span>
+              {!readOnly ? (
                 <Input
-                  ref={titleInputRef} // ✅ Aggiungi ref
+                  ref={titleInputRef}
                   value={localTitle}
                   onChange={(e) => {
                     e.stopPropagation()
-                    // ✅ Aggiorna solo localTitle, non chiamare onUpdate immediatamente
                     setLocalTitle(e.target.value)
                   }}
                   onBlur={(e) => {
                     e.stopPropagation()
-                    // ✅ Chiama onUpdate solo quando si perde il focus, usando il valore corrente
                     const currentValue = (e.target as HTMLInputElement).value
-                    setLocalTitle(currentValue) // ✅ Sincronizza localTitle
+                    setLocalTitle(currentValue)
                     if (onUpdate) {
                       onUpdate({ ...block, title: currentValue })
                     }
-                    handleTitleBlur()
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.stopPropagation()
-                      // ✅ Chiama onUpdate quando si preme Enter, usando il valore corrente
                       const currentValue = (e.target as HTMLInputElement).value
-                      setLocalTitle(currentValue) // ✅ Sincronizza localTitle
+                      setLocalTitle(currentValue)
                       if (onUpdate) {
                         onUpdate({ ...block, title: currentValue })
                       }
-                      handleTitleBlur()
+                      ;(e.target as HTMLInputElement).blur()
                     }
                   }}
-                  placeholder="Puoi inserire se vuoi un titolo qui..."
-                  className="text-sm font-medium border border-gray-300 rounded px-2 py-1 h-auto focus-visible:ring-1 focus-visible:ring-blue-500 flex-1 min-w-0 placeholder:text-gray-400"
+                  placeholder="Se vuoi, puoi aggiungere un titolo qui (opzionale)"
+                  className="h-8 text-xs border border-gray-300 rounded px-2 flex-1 min-w-[120px] placeholder:text-gray-400"
                 />
               ) : (
-                <div
-                  className="flex items-center gap-2 flex-1 min-w-0"
-                  onMouseEnter={() => setIsHoveringTitle(true)}
-                  onMouseLeave={() => setIsHoveringTitle(false)}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    // ✅ Doppio click per entrare in editing
-                    shouldFocusTitleRef.current = true
-                    setIsEditingTitle(true)
-                  }}
-                >
-                  <span className="text-sm font-medium text-gray-900 truncate cursor-text">
+                localTitle && (
+                  <span className="text-sm font-medium text-gray-900 truncate ml-1">
                     {localTitle}
                   </span>
-                  {isHoveringTitle && (
+                )
+              )}
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-gray-600 flex-shrink-0">
+                {extract.source} - Pag. {extract.page}
+              </span>
+              {readOnly ? (
+                <p className="text-sm font-medium text-gray-900 truncate ml-2">
+                  {localTitle || 'Estratto'}
+                </p>
+              ) : (
+                <div className="flex items-center gap-2 flex-1 min-w-0 ml-2">
+                  {!localTitle && !isEditingTitle ? (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteTitle()
+                        shouldFocusTitleRef.current = true
+                        setIsEditingTitle(true)
                       }}
-                      className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                      title="Elimina titolo"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors flex-shrink-0"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      Aggiungi titolo
                     </button>
+                  ) : isEditingTitle ? (
+                    <Input
+                      ref={titleInputRef}
+                      value={localTitle}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        setLocalTitle(e.target.value)
+                      }}
+                      onBlur={(e) => {
+                        e.stopPropagation()
+                        const currentValue = (e.target as HTMLInputElement).value
+                        setLocalTitle(currentValue)
+                        if (onUpdate) {
+                          onUpdate({ ...block, title: currentValue })
+                        }
+                        handleTitleBlur()
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.stopPropagation()
+                          const currentValue = (e.target as HTMLInputElement).value
+                          setLocalTitle(currentValue)
+                          if (onUpdate) {
+                            onUpdate({ ...block, title: currentValue })
+                          }
+                          handleTitleBlur()
+                        }
+                      }}
+                      placeholder="Puoi inserire se vuoi un titolo qui..."
+                      className="text-sm font-medium border border-gray-300 rounded px-2 py-1 h-auto focus-visible:ring-1 focus-visible:ring-blue-500 flex-1 min-w-0 placeholder:text-gray-400"
+                    />
+                  ) : (
+                    <div
+                      className="flex items-center gap-2 flex-1 min-w-0"
+                      onMouseEnter={() => setIsHoveringTitle(true)}
+                      onMouseLeave={() => setIsHoveringTitle(false)}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        shouldFocusTitleRef.current = true
+                        setIsEditingTitle(true)
+                      }}
+                    >
+                      <span className="text-sm font-medium text-gray-900 truncate cursor-text">
+                        {localTitle}
+                      </span>
+                      {isHoveringTitle && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteTitle()
+                          }}
+                          className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                          title="Elimina titolo"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* ✅ Icona occhio per espandere a grandezza naturale */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {headerActions}
+
           {!readOnly && onExpandInModal && (
             <button
               onClick={(e) => {
-                e.stopPropagation() // ✅ Evita di triggerare il toggle collapse
+                e.stopPropagation()
                 if (onExpandInModal) {
                   onExpandInModal()
                 }
@@ -1201,19 +1248,52 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
         </div>
       </div>
 
+      {showQualifier && !readOnly && (
+        <div
+          className={cn(
+            'border-t border-gray-100 bg-gray-50/80',
+            isOverlay ? 'px-2 py-2' : 'px-3 py-2'
+          )}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <CellTypeQualifier
+            value={{
+              cellType: extract.cellType,
+              description: extract.rowDescription ?? '',
+              contestationDate: extract.contestationDate,
+              eventDate: extract.eventDate,
+            }}
+            onChange={(next: CellTypeQualification) => {
+              if (!onUpdate) return
+              onUpdate({
+                ...block,
+                extract: {
+                  ...extract,
+                  cellType: next.cellType,
+                  rowDescription: next.description,
+                  contestationDate: next.contestationDate,
+                  eventDate: next.eventDate,
+                },
+              })
+            }}
+          />
+        </div>
+      )}
+      </div>
+
       {/* ✅ Contenuto estratto (visibile solo se non collassato, scrollabile) */}
       {!isCollapsed && (
         <div
           ref={mainContentRef}
-          className={isOverlay ? "flex-1" : "p-3 space-y-3 overflow-auto flex-1"}
+          className={isOverlay ? "flex-1 min-w-0 min-h-0 overflow-hidden" : "p-3 space-y-3 overflow-auto flex-1"}
           style={isOverlay ? {
-            // ✅ Quando è overlay, il contenuto inizia subito dopo l'header (nessun padding-top, nessun space-y)
             paddingTop: 0,
             marginTop: 0,
-            padding: 0, // ✅ Rimuovi anche padding laterale per allineare perfettamente lo screenshot
-            // ✅ Imposta altezza esatta del contenuto per mostrare tutto il rettangolo selezionato
+            padding: 0,
             minHeight: overlayContentHeight ? `${overlayContentHeight}px` : 'auto',
-            height: overlayContentHeight ? `${overlayContentHeight}px` : 'auto'
+            height: overlayContentHeight ? `${overlayContentHeight}px` : 'auto',
+            maxHeight: overlayContentHeight ? `${overlayContentHeight}px` : undefined
           } : undefined}
           onDragOver={!readOnly ? handleDragOver : undefined}
           onDrop={!readOnly ? handleDrop : undefined}
@@ -1304,32 +1384,34 @@ export const ExtractBlock: React.FC<ExtractBlockProps> = ({
           >
             {/* Immagine estratto (senza bordo interno) */}
             {hasImage && extract.imageDataUrl ? (
-              <div className={isOverlay ? "w-full m-0 p-0 relative" : "rounded overflow-hidden relative"}>
+              <div
+                className={isOverlay ? "w-full h-full m-0 p-0 relative min-w-0 overflow-hidden" : "rounded overflow-hidden relative"}
+                style={isOverlay && overlayContentHeight ? { height: `${overlayContentHeight}px` } : undefined}
+              >
                 <img
                   ref={isOverlay && imageRef ? imageRef : undefined}
                   src={extract.imageDataUrl}
                   alt="Estratto"
                   className={isOverlay
-                    ? "w-full object-contain" // ✅ Dimensione originale quando è overlay
-                    : "w-full h-auto object-contain" // ✅ Dimensione naturale quando è in drawer/table (rimossa limitazione max-h-48)
+                    ? "block w-full h-full object-fill"
+                    : "max-h-48 max-w-full h-auto object-contain"
                   }
                   style={isOverlay ? {
-                    // ✅ Quando è overlay, l'immagine deve essere mostrata esattamente alla dimensione del rettangolo
+                    // WYSIWYG: riempie esattamente il rettangolo di selezione (stessa scala del documento)
                     display: 'block',
                     margin: 0,
                     padding: 0,
                     width: '100%',
-                    height: 'auto',
-                    maxHeight: 'none' // ✅ Rimuovi qualsiasi limitazione di altezza
-                    // ✅ L'immagine mantiene le proporzioni e occupa esattamente lo spazio del rettangolo selezionato
-                    // Il container ha width = selectionWidth, quindi l'immagine avrà quella larghezza
-                    // L'altezza sarà calcolata automaticamente mantenendo le proporzioni del rettangolo selezionato
+                    height: '100%',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'fill'
                   } : {
-                    // ✅ Anche quando non è overlay, mantieni dimensioni naturali
                     display: 'block',
-                    width: '100%',
-                    height: 'auto',
-                    maxHeight: 'none' // ✅ Nessuna limitazione di altezza
+                    maxWidth: '100%',
+                    maxHeight: '12rem',
+                    width: 'auto',
+                    height: 'auto'
                   }}
                 />
                 {/* ✅ Overlay opzionale sopra l'immagine (per highlight) */}

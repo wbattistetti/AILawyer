@@ -5,8 +5,11 @@
 
 import { useDocumentStore } from '../../stores/documentStore/store'
 import type { Documento } from '../../types'
-import { createDocAdapters } from './adapters/create-doc-adapters'
-import type { AdapterBuildResult } from './adapters/types'
+import {
+  createDocAdapters,
+  type CreateDocAdaptersResult,
+} from './adapters/create-doc-adapters'
+import type { OcrUiHints } from './document-extraction-readiness'
 
 export type PracticeDocMeta = {
   praticaId: string
@@ -58,14 +61,15 @@ export function listPracticeDocMeta(praticaId: string): PracticeDocMeta[] {
  */
 export function buildPracticeExtractionAdapters(
   praticaId: string,
-  docIds?: string[]
-): AdapterBuildResult {
+  docIds?: string[],
+  ocrHints?: OcrUiHints
+): CreateDocAdaptersResult {
   let documents = getPracticeDocuments(praticaId)
   if (docIds !== undefined) {
     const allowed = new Set(docIds)
     documents = documents.filter(document => allowed.has(document.id))
   }
-  return createDocAdapters(documents)
+  return createDocAdapters(documents, ocrHints)
 }
 
 /** Risolve un documento della pratica dallo store (apertura occorrenza, ecc.). */

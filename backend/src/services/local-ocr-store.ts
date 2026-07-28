@@ -42,19 +42,36 @@ export function getLocalOcrResult(s3Key: string): LocalOcrResult | null {
 }
 
 /**
- * Risolve un risultato OCR tramite chiave esatta o prefisso hash.
+ * Trova la chiave OCR locale per match esatto o prefisso hash.
  */
-export function getLocalOcrResultByPrefix(keyPrefix: string): LocalOcrResult | null {
+export function findLocalOcrKey(keyPrefix: string): string | null {
   const normalizedPrefix = keyPrefix.trim()
   if (!normalizedPrefix) {
     throw new Error('Il prefisso OCR locale non può essere vuoto')
   }
 
-  const exact = getLocalOcrResult(normalizedPrefix)
-  if (exact) return exact
+  if (localOcrProgress.has(normalizedPrefix)) return normalizedPrefix
 
   const matchingKey = Array.from(localOcrProgress.keys()).find((key) =>
     key.startsWith(normalizedPrefix)
   )
-  return matchingKey ? getLocalOcrResult(matchingKey) : null
+  return matchingKey ?? null
+}
+
+/**
+ * Restituisce lo stato OCR in memoria (anche in corso / fallito), se presente.
+ */
+export function getLocalOcrProgressByPrefix(keyPrefix: string): LocalOcrProgress | null {
+  const key = findLocalOcrKey(keyPrefix)
+  if (!key) return null
+  return localOcrProgress.get(key) ?? null
+}
+
+/**
+ * Risolve un risultato OCR tramite chiave esatta o prefisso hash.
+ */
+export function getLocalOcrResultByPrefix(keyPrefix: string): LocalOcrResult | null {
+  const key = findLocalOcrKey(keyPrefix)
+  if (!key) return null
+  return getLocalOcrResult(key)
 }

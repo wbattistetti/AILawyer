@@ -4,16 +4,23 @@
  */
 
 import React, { createContext, useContext } from 'react'
-import type { SavedGraph } from './graphSerialization'
+import type { GraphContent, SavedGraph } from './graphSerialization'
 
 export type GraphWorkspaceContextValue = {
-  graphsById: Map<string, SavedGraph>
-  openNoteByGraphId: Map<string, boolean>
+  /** Catalogo dei grafi: fonte di verità di contenuto e metadati. */
+  graphsById: ReadonlyMap<string, SavedGraph>
+  /** False finché lo stato salvato della pratica non è stato letto. */
+  isCatalogLoaded: boolean
+  /** Messaggio di errore se lo stato salvato è illeggibile. */
+  catalogLoadError: string | null
+  openNoteByGraphId: ReadonlyMap<string, boolean>
   renameGraph: (graphId: string, name: string) => void
   setGraphNote: (graphId: string, note: string) => void
   toggleGraphNote: (graphId: string) => void
   closeGraphNote: (graphId: string) => void
   deleteGraph: (graphId: string) => void
+  /** Riversa nel catalogo nodi/edge/viewport correnti di un canvas. */
+  updateGraphContent: (graphId: string, content: GraphContent) => void
 }
 
 const GraphWorkspaceContext = createContext<GraphWorkspaceContextValue | null>(null)

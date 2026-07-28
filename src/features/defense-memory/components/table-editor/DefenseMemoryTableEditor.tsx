@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils'
 import { ExtractDrawer } from './components/ExtractDrawer'
 import { ExtractData, ObservationBlock, ExtractBlock } from './types/blocks.types'
 import { getVerbaliTypes, getMainCellTypes } from './utils/cellTypeConfig'
+import { createReportRowFromQualifiedExtract } from './utils/createReportRowFromQualifiedExtract'
+import { canAddQualifiedExtractToReport } from './components/shared'
 
 export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> = ({
     praticaId,
@@ -281,6 +283,57 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
             })
         }
     }, [rows, addRowAt])
+
+    /**
+     * Estratto già tipizzato nel cassetto → nuova riga nel Riporto, poi rimozione dal cassetto.
+     */
+    const handleAddExtractToReport = useCallback((extract: ExtractData) => {
+        const qualification = {
+            cellType: extract.cellType,
+            description: extract.rowDescription ?? '',
+            contestationDate: extract.contestationDate,
+            eventDate: extract.eventDate,
+        }
+        if (!canAddQualifiedExtractToReport(qualification) || !extract.cellType) {
+            throw new Error(
+                'Qualifica incompleta: seleziona un tipo prima di aggiungere l\'estratto al Riporto generale'
+            )
+        }
+
+        const newRow = createReportRowFromQualifiedExtract({
+            extract,
+            cellType: extract.cellType,
+            description: extract.rowDescription ?? '',
+            contestationDate: extract.contestationDate,
+            eventDate: extract.eventDate,
+        })
+        addRow(newRow)
+        setExtracts((prev) => prev.filter((e) => e.id !== extract.id))
+    }, [addRow])
+
+    // Estratto già tipizzato dall'overlay sul documento → riga nel Riporto
+    useEffect(() => {
+        const handleQualifiedExtractToReport = (event: Event) => {
+            const { extract } = (event as CustomEvent<{ extract: ExtractData }>).detail
+            if (!extract?.cellType) {
+                throw new Error(
+                    'app:qualified-extract-to-report: extract.cellType is required'
+                )
+            }
+            handleAddExtractToReport(extract)
+        }
+
+        window.addEventListener(
+            'app:qualified-extract-to-report',
+            handleQualifiedExtractToReport
+        )
+        return () => {
+            window.removeEventListener(
+                'app:qualified-extract-to-report',
+                handleQualifiedExtractToReport
+            )
+        }
+    }, [handleAddExtractToReport])
 
     const handleSave = useCallback(() => {
         const validation = validateAll()
@@ -618,7 +671,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                         setExtracts(prev => [...prev, extract])
                     }}
                     onExtractUpdate={(updatedExtract) => {
-                        // ✅ Aggiorna l'estratto con i nuovi metadati (titolo, osservazione, etc.)
+                        // ✅ Aggiorna l'estratto con i nuovi metadati (titolo, osservazione, qualifica, etc.)
                         setExtracts(prev => prev.map(e =>
                             e.id === updatedExtract.id ? updatedExtract : e
                         ))
@@ -634,6 +687,7 @@ export const DefenseMemoryTableEditor: React.FC<DefenseMemoryTableEditorProps> =
                             return newExtracts
                         })
                     }}
+                    onAddToReport={readOnly ? undefined : handleAddExtractToReport}
                 />
             </div>
 

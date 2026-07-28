@@ -1,7 +1,34 @@
 /**
- * ✅ Utility per catturare screenshot di selezioni HTML
- * Usato principalmente per Word viewer e documenti OCR
+ * Utility per catturare screenshot di selezioni HTML
+ * Usato principalmente per Word viewer e documenti OCR.
+ * L'output viene normalizzato alla dimensione CSS della selezione (niente zoom fantasma).
  */
+
+/**
+ * Ridimensiona un canvas alla dimensione CSS della selezione.
+ * html2canvas con scale>1 produce pixel HiDPI; senza questo l'<img> appare ingrandita.
+ */
+function toDisplaySizedDataUrl(
+  source: HTMLCanvasElement,
+  displayW: number,
+  displayH: number,
+  quality = 0.95
+): string {
+  const w = Math.max(1, Math.round(displayW))
+  const h = Math.max(1, Math.round(displayH))
+  if (source.width === w && source.height === h) {
+    return source.toDataURL('image/png', quality)
+  }
+  const out = document.createElement('canvas')
+  out.width = w
+  out.height = h
+  const ctx = out.getContext('2d')
+  if (!ctx) {
+    throw new Error('toDisplaySizedDataUrl: cannot get 2d context')
+  }
+  ctx.drawImage(source, 0, 0, w, h)
+  return out.toDataURL('image/png', quality)
+}
 
 /**
  * Cattura uno screenshot VELOCE (scale: 1) per mostrare subito qualcosa
@@ -33,17 +60,17 @@ export async function captureElementScreenshotFast(
       const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
       return bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
     })(),
-    scale: 1, // ✅ VELOCE: scale 1 invece di 2 (4x meno pixel da processare)
+    scale: 1,
     logging: false,
-    // ✅ RIMOSSO removeContainer: true - può causare problemi con Word e altri viewer
     allowTaint: false,
     ignoreElements: (el) => {
-      // ✅ Ignora solo overlay che potrebbero interferire
       return el.classList?.contains('extract-block-overlay') || false
     }
   })
 
-  return canvas.toDataURL('image/png', 0.9) // ✅ Qualità leggermente ridotta per velocità
+  const displayW = options?.width ?? canvas.width
+  const displayH = options?.height ?? canvas.height
+  return toDisplaySizedDataUrl(canvas, displayW, displayH, 0.9)
 }
 
 /**
@@ -74,15 +101,16 @@ export async function captureElementScreenshot(
       const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
       return bgValue ? `hsl(${bgValue})` : '#ffffff' // Fallback a bianco se non disponibile
     })(),
-    scale: 2, // ✅ Alta risoluzione per screenshot
+    scale: 2,
     logging: false,
     ignoreElements: (el) => {
-      // ✅ Ignora solo overlay che potrebbero interferire
       return el.classList?.contains('extract-block-overlay') || false
     }
   })
 
-  return canvas.toDataURL('image/png', 1.0)
+  const displayW = options?.width ?? canvas.width
+  const displayH = options?.height ?? canvas.height
+  return toDisplaySizedDataUrl(canvas, displayW, displayH, 1.0)
 }
 
 /**
@@ -131,18 +159,16 @@ async function captureWordScreenshot(
     width: viewportBox.w,
     height: viewportBox.h,
     useCORS: true,
-    backgroundColor: backgroundColor, // ✅ Usa il colore reale
-    scale: 1.5, // ✅ Compromesso: 1.5 invece di 2 (circa 2x più veloce, qualità ancora buona)
+    backgroundColor: backgroundColor,
+    scale: 1.5,
     logging: false,
-    // ✅ NON rimuovere container - Word ha bisogno di tutti gli elementi
     allowTaint: false,
     ignoreElements: (el) => {
-      // ✅ Ignora solo overlay che potrebbero interferire
       return el.classList?.contains('extract-block-overlay') || false
     }
   })
 
-  return canvas.toDataURL('image/png', 0.95) // ✅ Qualità leggermente ridotta per velocità
+  return toDisplaySizedDataUrl(canvas, viewportBox.w, viewportBox.h, 0.95)
 }
 
 /**

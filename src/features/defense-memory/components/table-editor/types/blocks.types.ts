@@ -26,6 +26,12 @@ export interface ExtractData {
   observation?: string               // Campo osservazione editabile
   hasObservation?: boolean           // Se true, mostra il campo osservazione
   collapsed?: boolean                // Stato collassato/espanso
+  /** Qualifica verso una riga del Riporto (assente = estratto sciolto). */
+  cellType?: CellType
+  /** Descrizione della futura riga (non confondere con observation dell'estratto). */
+  rowDescription?: string
+  contestationDate?: string
+  eventDate?: string
 }
 
 /**
@@ -100,6 +106,8 @@ export interface ExtractDrawerProps {
   onExtractUpdate?: (extract: ExtractData) => void  // ✅ Callback per aggiornare metadati (titolo, osservazione)
   onExtractRemove: (extractId: string) => void
   onExtractReorder?: (fromIndex: number, toIndex: number) => void
+  /** Qualifica completa → crea riga nel Riporto e rimuove l'estratto dal cassetto. */
+  onAddToReport?: (extract: ExtractData) => void
   className?: string
 }
 
@@ -132,6 +140,10 @@ export interface ExtractBlockProps {
   isImageLoading?: boolean  // ✅ Se true, mostra spinner mentre l'immagine viene generata
   imageOverlay?: React.ReactNode  // ✅ Overlay opzionale da renderizzare sopra l'immagine (per highlight)
   imageRef?: React.RefObject<HTMLImageElement>  // ✅ Ref opzionale per l'immagine (per highlight overlay)
+  /** Mostra header estrazione + qualificatore (overlay e cassetto). */
+  showQualifier?: boolean
+  /** Azioni contestuali a destra nell'header (es. Annulla / Salva). */
+  headerActions?: React.ReactNode
 }
 
 /**

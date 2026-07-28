@@ -27,14 +27,13 @@ export function useEventListeners({
         }
 
         const onUpload = async (e: any) => {
-            try {
-                const files: File[] = e?.detail?.files || []
-                const target = e?.detail?.target || null
-                const sourceFilePath = e?.detail?.sourceFilePath // ✅ Estrai filePath originale se presente
-                if (!files || files.length === 0) return
-                // ✅ CORRETTO: Passa target.id come compartoId invece di null, così il documento viene salvato nel comparto corretto
-                await handleFileDrop(files, target?.id, { ...target, sourceFilePath })
-            } catch { }
+            const files: File[] = e?.detail?.files || []
+            const target = e?.detail?.target || null
+            const sourceFilePath = e?.detail?.sourceFilePath
+            if (!files || files.length === 0) {
+                throw new Error('[app:upload-files] Nessun file nel dettaglio evento')
+            }
+            await handleFileDrop(files, target?.id, { ...target, sourceFilePath })
         }
 
         const broadcastDocs = () => {

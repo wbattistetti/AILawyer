@@ -15,6 +15,7 @@ export function isDockviewDrag(e: DragEvent | React.DragEvent): boolean {
   const types = Array.from(e.dataTransfer?.types || [])
   const hasExplorerFile = types.includes('application/x-explorer-file')
   const hasDocId = types.includes('application/x-doc-id')
+  const hasOsFiles = types.includes('Files')
 
   // ✅ PROBLEMA: Durante drop, dataTransfer.types può essere vuoto
   // ✅ SOLUZIONE: Prova anche a leggere direttamente i dati
@@ -54,6 +55,7 @@ export function isDockviewDrag(e: DragEvent | React.DragEvent): boolean {
     types,
     hasExplorerFile,
     hasDocId,
+    hasOsFiles,
     hasExplorerFileData,
     hasDocIdData,
     hasCustomDragInCache,
@@ -61,11 +63,10 @@ export function isDockviewDrag(e: DragEvent | React.DragEvent): boolean {
     targetClasses: (e.target as HTMLElement)?.className
   })
 
-  // ✅ PRIORITÀ ASSOLUTA: Se ha marker custom (Explorer file o Doc ID), NON è Dockview
-  // Verifica sia types che dati diretti che cache (per gestire tutti i casi)
-  if (hasExplorerFile || hasDocId || hasExplorerFileData || hasDocIdData || hasCustomDragInCache) {
-    console.log('[DRAG-UTILS][isDockviewDrag] ❌ NON è Dockview - ha marker custom')
-    return false // Non è un drag Dockview, è un drag nostro
+  // ✅ PRIORITÀ ASSOLUTA: file OS o marker custom → NON è un drag di pannello Dockview
+  if (hasOsFiles || hasExplorerFile || hasDocId || hasExplorerFileData || hasDocIdData || hasCustomDragInCache) {
+    console.log('[DRAG-UTILS][isDockviewDrag] ❌ NON è Dockview - ha file OS o marker custom')
+    return false
   }
 
   const target = e.target as HTMLElement

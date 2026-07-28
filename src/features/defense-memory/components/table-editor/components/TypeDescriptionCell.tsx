@@ -1,10 +1,9 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { CellType, ValidationError } from '../../types/table.types'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from '@/components/ui/select'
 import { Combobox } from './Combobox'
 import { REATI_PENALI } from '../utils/reatoSuggestions'
 import { getDrawerOptionsSorted } from '@/features/drawers/drawerRegistry'
@@ -12,7 +11,8 @@ import { cn } from '@/lib/utils'
 import { Calendar as CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { getCellTypeLabel, getDateFieldsConfig, getSortedCellTypes } from '../utils/cellTypeConfig'
+import { getCellTypeLabel, getDateFieldsConfig } from '../utils/cellTypeConfig'
+import { CellTypeSelect } from './shared'
 
 // Lista di atti comuni nel sistema giudiziario
 const ATTI_COMUNI = [
@@ -153,8 +153,6 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     readOnly = false,
     className = ''
 }) => {
-    console.log('[TypeDescriptionCell] Renderizzato con:', { cellType, description, isTypeEditingInitial: !cellType })
-
     const [contestationDateOpen, setContestationDateOpen] = useState(false)
     const [eventDateOpen, setEventDateOpen] = useState(false)
     // Stati per modalità edit/view
@@ -168,43 +166,6 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
     const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
     const comboboxRowRef = useRef<HTMLDivElement>(null)
     const typeSelectRef = useRef<HTMLButtonElement>(null)
-    const typeMeasureRef = useRef<HTMLSpanElement>(null)
-    const [typeSelectWidth, setTypeSelectWidth] = useState<number>(140)
-
-    // Calcola larghezza dinamica del SelectTrigger basata sul contenuto
-    useLayoutEffect(() => {
-        if (cellType && typeMeasureRef.current && typeSelectRef.current) {
-            const label = getCellTypeLabel(cellType)
-            typeMeasureRef.current.textContent = label
-
-            const selectStyle = window.getComputedStyle(typeSelectRef.current)
-            typeMeasureRef.current.style.font = selectStyle.font
-            typeMeasureRef.current.style.fontSize = selectStyle.fontSize
-            typeMeasureRef.current.style.fontWeight = selectStyle.fontWeight
-            typeMeasureRef.current.style.fontFamily = selectStyle.fontFamily
-            typeMeasureRef.current.style.letterSpacing = selectStyle.letterSpacing
-            typeMeasureRef.current.style.padding = selectStyle.padding
-
-            const textWidth = typeMeasureRef.current.getBoundingClientRect().width
-            // Aggiungi spazio per l'icona chevron (circa 24px) + padding (circa 16px)
-            const newWidth = Math.max(textWidth + 40, 100)
-            setTypeSelectWidth(newWidth)
-        } else if (!cellType && typeMeasureRef.current) {
-            // Calcola larghezza per placeholder
-            typeMeasureRef.current.textContent = "Seleziona tipo"
-            // Usa stili di default se il SelectTrigger non è ancora disponibile
-            const defaultFont = '12px system-ui, -apple-system, sans-serif'
-            typeMeasureRef.current.style.font = defaultFont
-            typeMeasureRef.current.style.fontSize = '12px'
-            typeMeasureRef.current.style.padding = '8px 12px'
-
-            const textWidth = typeMeasureRef.current.getBoundingClientRect().width
-            const newWidth = Math.max(textWidth + 40, 140)
-            setTypeSelectWidth(newWidth)
-        }
-    }, [cellType])
-
-    // Sincronizza stati edit/view con i props
     useEffect(() => {
         if (!cellType) {
             setIsTypeEditing(true)
@@ -291,9 +252,7 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 
     // Handler per click sulla label tipo
     const handleTypeLabelClick = () => {
-        console.log('[TypeDescriptionCell] handleTypeLabelClick chiamato, readOnly:', readOnly, 'cellType:', cellType)
         if (!readOnly) {
-            console.log('[TypeDescriptionCell] Imposto isTypeEditing a true')
             setIsTypeEditing(true)
         }
     }
@@ -355,109 +314,37 @@ export const TypeDescriptionCell: React.FC<TypeDescriptionCellProps> = ({
 
     // Se non c'è ancora un tipo, mostra solo il dropdown
     if (!cellType) {
-        console.log('[TypeDescriptionCell] Rendering dropdown iniziale (!cellType)')
         return (
             <div className={cn("p-2", className)}>
-                {/* Elemento nascosto per misurare la larghezza del placeholder */}
-                <span
-                    ref={typeMeasureRef}
-                    className="absolute invisible whitespace-nowrap"
-                    style={{ position: 'absolute', visibility: 'hidden', top: '-9999px' }}
-                />
-                <Select
+                <CellTypeSelect
                     value=""
-                    onValueChange={(value) => {
-                        console.log('[TypeDescriptionCell] Select onValueChange (!cellType):', value)
-                        handleTypeChange(value as CellType)
-                    }}
+                    onValueChange={handleTypeChange}
                     disabled={readOnly}
-                    onOpenChange={(open) => {
-                        console.log('[TypeDescriptionCell] Select onOpenChange (!cellType):', open)
-                        // ✅ Nessuna azione necessaria: il Select gestisce la sua chiusura
-                    }}
-                >
-                    <SelectTrigger
-                        ref={typeSelectRef}
-                        className="h-8 text-xs flex-shrink-0"
-                        style={{ width: `${typeSelectWidth}px` }}
-                    >
-                        <SelectValue placeholder="Seleziona tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {/* ✅ Nota libera sempre prima */}
-                        <SelectItem value="nota-libera">
-                            {getCellTypeLabel('nota-libera')}
-                        </SelectItem>
-
-                        {/* ✅ Separatore */}
-                        <SelectSeparator />
-
-                        {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
-                        {getSortedCellTypes().map(type => (
-                            <SelectItem key={type} value={type}>
-                                {getCellTypeLabel(type)}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                    triggerRef={typeSelectRef}
+                    triggerClassName="flex-shrink-0"
+                />
             </div>
         )
     }
 
-    console.log('[TypeDescriptionCell] Rendering main return, isTypeEditing:', isTypeEditing, 'cellType:', cellType)
-
     return (
         <div className={cn("p-2 space-y-1", className)}>
-            {/* Elemento nascosto per misurare la larghezza del testo */}
-            <span
-                ref={typeMeasureRef}
-                className="absolute invisible whitespace-nowrap"
-                style={{ position: 'absolute', visibility: 'hidden', top: '-9999px' }}
-            />
-
             {/* Tipo e Descrizione - stessa riga */}
             <div ref={comboboxRowRef} className="flex items-center gap-3 flex-nowrap">
                 {/* Tipo: Label o Select in base a isTypeEditing */}
                 {isTypeEditing ? (
-                    <Select
+                    <CellTypeSelect
                         value={cellType}
-                        onValueChange={(value) => {
-                            console.log('[TypeDescriptionCell] Select onValueChange (cellType exists):', value)
-                            handleTypeChange(value as CellType)
-                        }}
+                        onValueChange={handleTypeChange}
                         disabled={readOnly}
+                        triggerRef={typeSelectRef}
+                        triggerClassName="flex-shrink-0"
                         onOpenChange={(open) => {
-                            console.log('[TypeDescriptionCell] Select onOpenChange (cellType exists):', open)
-                            // ✅ Chiudi la modalità editing solo quando il Select si chiude
                             if (!open) {
                                 setIsTypeEditing(false)
                             }
                         }}
-                    >
-                        <SelectTrigger
-                            ref={typeSelectRef}
-                            className="h-8 text-xs flex-shrink-0"
-                            style={{ width: `${typeSelectWidth}px` }}
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {/* ✅ Nota libera sempre prima */}
-                            <SelectItem value="nota-libera">
-                                {getCellTypeLabel('nota-libera')}
-                            </SelectItem>
-
-                            {/* ✅ Separatore */}
-                            <SelectSeparator />
-
-                            {/* ✅ Tutte le altre opzioni in ordine alfabetico (usando funzione centralizzata) */}
-                            {getSortedCellTypes().map(type => (
-                                <SelectItem key={type} value={type}>
-                                    {getCellTypeLabel(type)}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    />
                 ) : (
                     <button
                         onClick={handleTypeLabelClick}

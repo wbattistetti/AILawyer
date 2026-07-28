@@ -5,6 +5,7 @@ import type { Documento, Comparto } from '../../types'
 import './DrawerTabStrip.css'
 import { DragAndDropService } from '../../services/DragAndDropService'
 import { useDocumentStore } from '../../stores/documentStore/store'
+import { isDockviewDrag } from '../../utils/dragEventUtils'
 
 // ✅ Componente helper per applicare il colore all'icona SVG
 function IconWithColor({ icon, color, size }: { icon: React.ReactNode; color: string; size: number }) {
@@ -316,36 +317,24 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
   const handleDrop = async (e: React.DragEvent, drawerId: string) => {
     setDraggedOverId(null)
 
+    // SINCRONO: niente await prima di leggere dataTransfer (altrimenti FileList vuota)
+    const snap = DragAndDropService.snapshotDataTransfer(e)
     console.log('[DRAWER-TAB-STRIP][DROP][START] Drop ricevuto', {
       drawerId,
       target: (e.target as HTMLElement)?.tagName,
       currentTarget: (e.currentTarget as HTMLElement)?.tagName,
-      types: Array.from(e.dataTransfer?.types || [])
+      types: snap.types,
+      filesCount: snap.files.length,
     })
 
-    // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
-    const { isDockviewDrag } = await import('../../utils/dragEventUtils')
-    const isDockview = isDockviewDrag(e)
-    console.log('[DRAWER-TAB-STRIP][DROP] isDockviewDrag result:', isDockview)
-
-    if (isDockview) {
+    if (isDockviewDrag(e)) {
       console.log('[DRAWER-TAB-STRIP][DROP] ❌ Ignorato - è drag Dockview')
-      return // Lascia che Dockview gestisca il drop del pannello
+      return
     }
 
     console.log('[DRAWER-TAB-STRIP][DROP] ✅ Procedo con gestione drop')
-
-    // ✅ CRITICO: Ferma la propagazione per evitare gestione duplicata
     e.stopPropagation()
     e.preventDefault()
-
-    console.log('[DRAWER-TAB-STRIP][DROP] Start', {
-      drawerId,
-      types: Array.from(e.dataTransfer.types),
-      hasDocId: DragAndDropService.isDocId(e),
-      hasExplorerFile: DragAndDropService.isExplorerFile(e),
-      hasFiles: DragAndDropService.isFiles(e)
-    })
 
     // ✅ Usa il servizio centralizzato per gestire il drop
     // drawerId può essere una chiave o un ID - il servizio lo gestirà
@@ -389,10 +378,12 @@ export function DrawerTabStrip({ items, selectedId, onSelect, className, onDrop,
         }
       },
       onFiles: (files) => {
-        // Gestione normale per file dal filesystem
-        if (onDrop) {
-          onDrop(files, drawerId)
+        if (!onDrop) {
+          throw new Error(
+            `[DRAWER-TAB-STRIP] Drop file OS su cassetto ${drawerId} senza handler onDrop (wiring mancante nel parent)`
+          )
         }
+        onDrop(files, drawerId)
       }
     })
 

@@ -351,12 +351,25 @@ export function useRectSelection({
       return
     }
 
+    // viewportBox/rect devono essere relativi alla PAGINA (stesso spazio di bbox %),
+    // non allo scroll host — altrimenti crop e overlay scalano male.
+    const pageEl =
+      startPageRef.current?.pageEl ??
+      _pageElsRef?.current.get(draftBox.page) ??
+      null
+
+    if (!pageEl) {
+      log('pointerup: pageEl assente → reset')
+      resetState()
+      return
+    }
+
     const viewportBox = calculateViewportBox(
       startPosRef.current.x,
       startPosRef.current.y,
       e.clientX,
       e.clientY,
-      host
+      pageEl
     )
 
     if (viewportBox.w < minSize || viewportBox.h < minSize) {

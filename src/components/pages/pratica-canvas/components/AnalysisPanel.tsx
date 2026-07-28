@@ -144,7 +144,10 @@ export function AnalysisPanel({ documenti, handleOcr }: AnalysisPanelProps) {
             return adapterCacheRef.current.get(doc.id) as any[]
         }
         dbg('adapters:build', { docId: doc.id, title: doc.filename });
-        const { adapters, skipped } = createDocAdapters([doc]);
+        const { adapters, skipped, waitingOnOcr } = createDocAdapters([doc]);
+        if (waitingOnOcr.length > 0) {
+            throw new Error(`OCR in corso per "${doc.filename}". Attendi il completamento e riprova.`)
+        }
         if (adapters.length === 0) {
             const detail = skipped[0]?.detail || `Documento non supportato: ${doc.filename}`
             throw new Error(detail)

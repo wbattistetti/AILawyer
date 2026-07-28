@@ -17,6 +17,7 @@ import { DraftOverlay } from './components/DraftOverlay'
 import type { DraftBox } from '../common/hooks/useRectSelection'
 import type { RectSelection, ExtractedContent, ExtractCard } from '../common/types/viewer.types'
 import { extractContentFromRect } from './utils/extractContentFromRect'
+import { resolveExtractImageDataUrl } from '../common/utils/resolveExtractImageDataUrl'
 import { useCleanPdfZoom } from '../../../hooks/useCleanPdfZoom'
 import { createWordSearchAdapter } from './wordSearchAdapter'
 import { useOptionalViewerSearchNavigatorRegistry } from '../../search/ViewerSearchNavigatorProvider'
@@ -96,69 +97,83 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
     hostRef,
     onDraftChange: setDraft,
     pageElsRef,
-    onSelection: async (rect: RectSelection) => {
-      try {
-        const card: ExtractCard = {
-          id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          rect: rect.rect,
-          pageIndex: rect.pageIndex,
-          viewerId: rect.viewerId,
-          viewerType: 'word',
-          createdAt: new Date()
-        }
-
-        const content = await extractContentFromRectImpl(rect)
-        const pageNumber = rect.pageIndex + 1
-        const percentCoords = rect.bbox || {
-          x0Pct: 0,
-          y0Pct: 0,
-          x1Pct: 1,
-          y1Pct: 1
-        }
-
-        let imageDataUrl: string | undefined
-        if (content.imageSnippet) {
-          try {
-            imageDataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onloadend = () => resolve(reader.result as string)
-              reader.onerror = reject
-              reader.readAsDataURL(content.imageSnippet!)
-            })
-          } catch (error) {
-            console.warn('[WordViewerShell] Errore conversione Blob in data URL:', error)
-          }
-        }
-
-        const persistentSelection: PersistentSelection = {
-          id: card.id,
-          page: pageNumber,
-          x0Pct: percentCoords.x0Pct,
-          y0Pct: percentCoords.y0Pct,
-          x1Pct: percentCoords.x1Pct,
-          y1Pct: percentCoords.y1Pct,
-          text: content.text || '',
-          viewportBox: {
-            x: rect.rect.x,
-            y: rect.rect.y,
-            w: rect.rect.width,
-            h: rect.rect.height
-          },
-          source: docName || 'Documento Word',
-          imageDataUrl
-        }
-
-        setLastSelection({
-          pdfPageNumber: pageNumber,
-          viewportBox: persistentSelection.viewportBox,
-          text: content.text || '',
-          imageDataUrl
-        })
-
-        setPersistentSelections(prev => [...prev, persistentSelection])
-      } catch (error) {
-        console.error('[WordViewerShell] Errore in onSelection:', error)
+    onSelection: (rect: RectSelection) => {
+      const card: ExtractCard = {
+        id: `extract-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        rect: rect.rect,
+        pageIndex: rect.pageIndex,
+        viewerId: rect.viewerId,
+        viewerType: 'word',
+        createdAt: new Date()
       }
+
+      const pageNumber = rect.pageIndex + 1
+      const percentCoords = rect.bbox || {
+        x0Pct: 0,
+        y0Pct: 0,
+        x1Pct: 1,
+        y1Pct: 1
+      }
+
+      const viewportBox = {
+        x: rect.rect.x,
+        y: rect.rect.y,
+        w: rect.rect.width,
+        h: rect.rect.height
+      }
+
+      // Optimistic UI: mount ExtractBlockOverlay immediately with geometry only.
+      const persistentSelection: PersistentSelection = {
+        id: card.id,
+        page: pageNumber,
+        x0Pct: percentCoords.x0Pct,
+        y0Pct: percentCoords.y0Pct,
+        x1Pct: percentCoords.x1Pct,
+        y1Pct: percentCoords.y1Pct,
+        text: '',
+        viewportBox,
+        source: docName || 'Documento Word',
+        contentReady: false
+      }
+
+      setLastSelection({
+        pdfPageNumber: pageNumber,
+        viewportBox,
+        text: '',
+        imageDataUrl: undefined
+      })
+      setPersistentSelections(prev => [...prev, persistentSelection])
+
+      void (async () => {
+        try {
+          const content = await extractContentFromRectImpl(rect)
+          const imageDataUrl = resolveExtractImageDataUrl(content)
+          const text = content.text || ''
+
+          setLastSelection({
+            pdfPageNumber: pageNumber,
+            viewportBox,
+            text,
+            imageDataUrl
+          })
+          setPersistentSelections(prev =>
+            prev.map(selection =>
+              selection.id === card.id
+                ? { ...selection, text, imageDataUrl, contentReady: true }
+                : selection
+            )
+          )
+        } catch (error) {
+          console.error('[WordViewerShell] Errore estrazione contenuto:', error)
+          setPersistentSelections(prev =>
+            prev.map(selection =>
+              selection.id === card.id
+                ? { ...selection, contentReady: true }
+                : selection
+            )
+          )
+        }
+      })()
     }
   })
 
@@ -306,7 +321,7 @@ export const WordViewerShell: React.FC<ViewerShellProps> = ({
               }}
               setPersistentSelections={setPersistentSelections}
               docName={docName}
-              hasNativeText={false}
+              hasNativeText={hasNativeText ?? true}
               praticaId={praticaId}
             />
           )}

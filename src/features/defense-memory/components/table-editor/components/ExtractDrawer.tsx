@@ -21,6 +21,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
   onExtractUpdate,
   onExtractRemove,
   onExtractReorder,
+  onAddToReport,
   className
 }) => {
   const [isDragOver, setIsDragOver] = useState(false)
@@ -265,10 +266,10 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
             )}
           >
             <p className="text-sm text-gray-500">
-              ✅ Gli estratti copiati vengono aggiunti automaticamente qui
+              Gli estratti non qualificati restano qui come sciolti
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              (Puoi eliminarli se non ti servono)
+              Qualifica e premi Salva per crearli come riga nel Riporto, oppure trascinali in una riga
             </p>
           </div>
         ) : (
@@ -299,15 +300,36 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
                 <ExtractBlock
                   key={extract.id}
                   block={extractBlock}
+                  showQualifier
+                  headerActions={
+                    onAddToReport ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onAddToReport(extract)
+                        }}
+                        disabled={!extract.cellType}
+                        className="px-2 py-1 bg-primary text-primary-foreground hover:bg-primary/90 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={
+                          extract.cellType
+                            ? 'Crea la riga nel Riporto generale'
+                            : 'Seleziona un tipo per aggiungere al Riporto, oppure lascia sciolto'
+                        }
+                      >
+                        Salva
+                      </button>
+                    ) : undefined
+                  }
                   onUpdate={(updatedBlock) => {
-                    // ✅ Aggiorna l'estratto con i nuovi metadati
                     if (onExtractUpdate) {
                       const updatedExtract: ExtractData = {
                         ...extract,
+                        ...updatedBlock.extract,
                         title: updatedBlock.title,
                         observation: updatedBlock.observation,
                         hasObservation: updatedBlock.hasObservation,
-                        collapsed: updatedBlock.collapsed
+                        collapsed: updatedBlock.collapsed,
                       }
                       onExtractUpdate(updatedExtract)
                     }
@@ -315,7 +337,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
                   onRemove={() => onExtractRemove(extract.id)}
                   onDragStart={(e) => handleExtractDragStart(e, index)}
                   onDragEnd={handleExtractDragEnd}
-                  onExpandInModal={() => setExpandedExtractId(extract.id)} // ✅ Nuova prop per espandere in modal
+                  onExpandInModal={() => setExpandedExtractId(extract.id)}
                   readOnly={false}
                 />
               )
@@ -349,6 +371,7 @@ export const ExtractDrawer: React.FC<ExtractDrawerProps> = ({
               if (onExtractUpdate) {
                 const updatedExtract: ExtractData = {
                   ...expandedExtract,
+                  ...updatedBlock.extract,
                   title: updatedBlock.title,
                   observation: updatedBlock.observation,
                   hasObservation: updatedBlock.hasObservation,

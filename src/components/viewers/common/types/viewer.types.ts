@@ -59,7 +59,8 @@ export type ViewerType = 'pdf' | 'word' | 'image'
  */
 export interface RectSelection {
   /**
-   * ✅ Rettangolo in pixel (coordinate assolute viewport)
+   * Rettangolo in pixel CSS relativi alla pagina del documento
+   * (stesso spazio di bbox percentuali e del crop canvas).
    */
   rect: {
     x: number

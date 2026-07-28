@@ -9,10 +9,12 @@ import {
   formatDurationMs,
   pushPageSample,
 } from './extract-progress'
+import { loadOcrState } from '../../utils/ocrState'
 import {
   createDocumentExtractionPlan,
   updatePracticeDocumentSignature,
 } from './document-extraction-plan'
+import { formatOcrInProgressMessage } from './document-extraction-readiness'
 import { extractPersonsFromDocs } from './extract-orchestrator'
 import { formatZeroExtractionDiagnostics } from './extraction-diagnostics'
 import { formatExtractionWarnings } from './extraction-warnings'
@@ -100,10 +102,17 @@ export async function runPersonExtraction(
       setPersonExtractionRunning(praticaId, true)
     }
 
-    const { adapters, skipped } = buildPracticeExtractionAdapters(
+    const ocrHints = {
+      progressByDocId: loadOcrState(praticaId).progress || {},
+    }
+    const { adapters, skipped, waitingOnOcr } = buildPracticeExtractionAdapters(
       praticaId,
-      extractionPlan.documentIdsToExtract
+      extractionPlan.documentIdsToExtract,
+      ocrHints
     )
+    if (waitingOnOcr.length > 0) {
+      throw new Error(formatOcrInProgressMessage(waitingOnOcr.map(item => item.title)))
+    }
     if (adapters.length === 0) {
       const warningMessage = formatExtractionWarnings(skipped)
       throw new Error(warningMessage || 'Nessun documento supportato per l\'estrazione')

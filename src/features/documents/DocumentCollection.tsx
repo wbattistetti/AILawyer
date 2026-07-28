@@ -10,6 +10,8 @@ import { useDocumentThumbnail } from '../../hooks/useDocumentThumbnail'
 import { DragAndDropService } from '../../services/DragAndDropService'
 import { useDocumentStore } from '../../stores/documentStore/store'
 import { resolveDocumentHeaderStyle } from '../../components/viewers/common/utils/documentHeaderStyle'
+import { resolveDocumentPageCount } from '../../components/viewers/common/utils/pageCountLabel'
+import { isDockviewDrag } from '../../utils/dragEventUtils'
 
 type DocItem = {
   id: string
@@ -342,40 +344,24 @@ export function DocumentCollection({
 
   // ✅ Handler unificato per drop: gestisce sia file Explorer che file normali
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    // SINCRONO: niente await prima di leggere dataTransfer (altrimenti FileList vuota)
+    const snap = DragAndDropService.snapshotDataTransfer(e)
     console.log('[DOCUMENT-COLLECTION][DROP][START] Drop ricevuto', {
       compartoId,
       target: (e.target as HTMLElement)?.tagName,
       currentTarget: (e.currentTarget as HTMLElement)?.tagName,
-      types: Array.from(e.dataTransfer?.types || [])
+      types: snap.types,
+      filesCount: snap.files.length,
     })
 
-    // ✅ CRITICO: Se è un drag Dockview, NON gestire - lascia che Dockview gestisca
-    const { isDockviewDrag } = await import('../../utils/dragEventUtils')
-    const isDockview = isDockviewDrag(e)
-    console.log('[DOCUMENT-COLLECTION][DROP] isDockviewDrag result:', isDockview)
-
-    if (isDockview) {
+    if (isDockviewDrag(e)) {
       console.log('[DOCUMENT-COLLECTION][DROP] ❌ Ignorato - è drag Dockview')
-      return // Lascia che Dockview gestisca il drop del pannello
+      return
     }
 
     console.log('[DOCUMENT-COLLECTION][DROP] ✅ Procedo con gestione drop')
-
-    // ✅ CRITICO: Ferma la propagazione per evitare gestione duplicata
     e.stopPropagation()
     e.preventDefault()
-
-    console.log('[DOCUMENT-COLLECTION] handleDrop chiamato', {
-      compartoId,
-      compartoIdType: typeof compartoId,
-      compartoIdLength: compartoId?.length,
-      dataTransferTypes: Array.from(e.dataTransfer.types),
-      hasExplorerFile: DragAndDropService.isExplorerFile(e),
-      hasDocId: DragAndDropService.isDocId(e),
-      hasFiles: DragAndDropService.isFiles(e),
-      target: e.target,
-      currentTarget: e.currentTarget
-    })
 
     if (!compartoId) {
       // ✅ Se non c'è compartoId ma è un file Explorer, prova comunque a emettere l'evento
@@ -441,12 +427,12 @@ export function DocumentCollection({
         }
       },
       onFiles: (files) => {
-        // ✅ Gestisci file OS normali
-        if (onDrop) {
-          onDrop(files)
-        } else {
-          onDropCb(files)
+        if (!onDrop) {
+          throw new Error(
+            `[DOCUMENT-COLLECTION] Drop file OS su comparto ${compartoId} senza handler onDrop (wiring mancante nel parent)`
+          )
         }
+        onDrop(files)
       }
     })
 
@@ -904,6 +890,7 @@ function ThumbCardWithLazyThumbnail({
                     fileUrl={computedFileUrl}
                     autoGenerateThumbnail={finalShouldAutoGenerate}
                     isPdf={isPdf}
+                    pageCount={isExtract ? null : resolveDocumentPageCount(doc)}
                     headerIcon={headerIcon}
                     headerColorClass={headerColorClass}
                     excerpt={isExtract ? excerpt : undefined}
@@ -913,7 +900,6 @@ function ThumbCardWithLazyThumbnail({
                     selected={selectedId === doc.id}
                     onSelect={() => setSelectedId(doc.id)}
                     onPreview={() => onOpen(doc)}
-                    onTable={() => onOpen(doc)}
                     onRemove={() => onRemove?.(doc)}
                     onOcr={() => onOcr?.(doc)}
                     onOcrCancel={() => onOcrCancel?.(doc)}

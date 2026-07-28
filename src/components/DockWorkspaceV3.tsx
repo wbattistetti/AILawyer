@@ -7,13 +7,11 @@ import { GraphBuilderPanelContent } from '../features/case-overview/graph-builde
 import { GraphBuilderTabHeader } from '../features/case-overview/graph-builder/GraphBuilderTab'
 import { GraphWorkspaceProvider } from '../features/case-overview/graph-builder/graph-workspace-context'
 import {
-  createEmptySavedGraph,
-  nextGraphName,
-  parseGraphsState,
-  serializeGraphsState,
+  withGraphContent,
   type GraphMenuItem,
   type SavedGraph,
 } from '../features/case-overview/graph-builder/graphSerialization'
+import { useGraphCatalog } from '../features/case-overview/graph-builder/use-graph-catalog'
 import { DrawerViewer } from '../features/drawers/DrawerViewer'
 import { DrawerTabStrip, DrawerTabItem } from '../features/drawers/DrawerTabStrip'
 import { colorFor, iconFor } from '../features/drawers/drawerPalette'
@@ -37,6 +35,10 @@ import {
   subscribeEntityDraft,
 } from '../features/generic-entities/entity-draft-store'
 import { resolveDocumentHeaderStyle } from './viewers/common/utils/documentHeaderStyle'
+import {
+  bindDrawerOsFileDrop,
+  uploadOsFilesToDrawer,
+} from '../features/drawers/drawerOsFileDrop'
 
 /** Fill di progresso estrazione sulla tab anagrafiche/entità. */
 function ExtractionTabFill({
@@ -176,8 +178,12 @@ export type Props = {
   clienti?: Array<{ id: string; nome: string; cognome: string }>
   renderClienteMemoria?: (clienteId: string) => React.ReactNode
   headerHeight?: number
-  /** JSON `Pratica.graphsState` da ripristinare al mount. */
-  graphsState?: string | null
+  /**
+   * JSON `Pratica.graphsState` da ripristinare.
+   * `undefined` = catalogo ancora in caricamento (i canvas restano in attesa),
+   * `null` = pratica senza grafi salvati.
+   */
+  graphsState: string | null | undefined
   /** Notifica il catalogo grafi (toolbar multi-grafo). */
   onGraphsChange?: (graphs: GraphMenuItem[]) => void
 }
@@ -198,8 +204,8 @@ export type DockWorkspaceV3Handle = {
   openEntities: () => void
   /** Chiude il pannello entità se presente. */
   closeEntities: () => void
+  /** Catalogo grafi allineato al contenuto vivo dei canvas montati. */
   saveAllGraphs: () => SavedGraph[]
-  loadGraphs: (graphs: SavedGraph[]) => void
 }
 
 // Componente wrapper per pannelli con fullscreen toggle
@@ -283,7 +289,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     clienti = [],
     renderClienteMemoria,
     headerHeight = 0,
-    graphsState: graphsStateProp = null,
+    graphsState: graphsStateProp,
     onGraphsChange,
   } = props
 
@@ -298,34 +304,38 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   // State per i cassetti (comparti)
   const [comparti, setComparti] = useState<Comparto[]>([])
   const [selectedDrawerId, setSelectedDrawerId] = useState<string | undefined>(undefined)
+  const dockRootRef = useRef<HTMLDivElement | null>(null)
   const [isDrawerStripVisible, setIsDrawerStripVisible] = useState(false)
   const [isDrawerStripPinned, setIsDrawerStripPinned] = useState(false) // ✅ PIN per fissare i cassetti
   const [drawerPanelsUpdateTrigger, setDrawerPanelsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i pannelli cambiano
   const [documentsUpdateTrigger, setDocumentsUpdateTrigger] = useState(0) // ✅ Trigger per aggiornare drawerTabs quando i documenti cambiano
 
-  // Catalogo grafi persistente (id → SavedGraph) + tab note aperte
-  const [graphsById, setGraphsById] = useState<Map<string, SavedGraph>>(new Map())
-  const [openNoteByGraphId, setOpenNoteByGraphId] = useState<Map<string, boolean>>(new Map())
+  // Catalogo grafi: unica fonte di verità del contenuto. I canvas montati vi
+  // riversano le modifiche, così una tab chiusa o nascosta non perde nulla.
+  const persistGraphsState = useCallback((graphsState: string) => {
+    if (!praticaId) return
+    api.updatePratica(praticaId, { graphsState }).catch((err: unknown) => {
+      console.error('[DOCK-V3] Errore salvataggio graphsState:', err)
+    })
+  }, [praticaId])
+  const graphCatalog = useGraphCatalog({
+    graphsState: graphsStateProp,
+    onPersist: persistGraphsState,
+  })
   const [openGraphIds, setOpenGraphIds] = useState<Set<string>>(new Set())
   const graphBuilderRefs = useRef<Map<string, GraphBuilderHandle>>(new Map())
-  const graphsByIdRef = useRef(graphsById)
-  const graphsLoadedFromPropRef = useRef(false)
-  const graphsPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    graphsByIdRef.current = graphsById
-  }, [graphsById])
+  const {
+    graphsById,
+    listGraphs,
+    createGraph: createGraphInCatalog,
+    renameGraph: renameGraphInCatalog,
+    removeGraph: removeGraphFromCatalog,
+  } = graphCatalog
 
-  const scheduleGraphsPersist = useCallback((catalog: Map<string, SavedGraph>) => {
-    if (!praticaId || !graphsLoadedFromPropRef.current) return
-    if (graphsPersistTimeoutRef.current) clearTimeout(graphsPersistTimeoutRef.current)
-    graphsPersistTimeoutRef.current = setTimeout(() => {
-      const payload = serializeGraphsState(Array.from(catalog.values()))
-      api.updatePratica(praticaId, { graphsState: payload }).catch((err: unknown) => {
-        console.error('[DOCK-V3] Errore salvataggio graphsState:', err)
-      })
-    }, 500)
-  }, [praticaId])
+  // Il listener dockview vive fuori dal ciclo di render: accede via ref.
+  const ensureGraphRef = useRef(graphCatalog.ensureGraph)
+  ensureGraphRef.current = graphCatalog.ensureGraph
 
   useEffect(() => {
     if (!onGraphsChange) return
@@ -338,60 +348,14 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   }, [graphsById, openGraphIds, onGraphsChange])
 
   const renameGraph = useCallback((graphId: string, name: string) => {
-    setGraphsById((prev) => {
-      const current = prev.get(graphId)
-      if (!current) return prev
-      const next = new Map(prev)
-      next.set(graphId, { ...current, name, updatedAt: new Date().toISOString() })
-      scheduleGraphsPersist(next)
-      return next
-    })
+    renameGraphInCatalog(graphId, name)
     const panel = dockviewApiRef.current?.getPanel(graphId)
     if (panel?.api?.setTitle) panel.api.setTitle(name)
     else if (typeof panel?.api?.updateTitle === 'function') panel.api.updateTitle(name)
-  }, [scheduleGraphsPersist])
-
-  const setGraphNote = useCallback((graphId: string, note: string) => {
-    setGraphsById((prev) => {
-      const current = prev.get(graphId)
-      if (!current) return prev
-      const next = new Map(prev)
-      next.set(graphId, { ...current, note, updatedAt: new Date().toISOString() })
-      scheduleGraphsPersist(next)
-      return next
-    })
-  }, [scheduleGraphsPersist])
-
-  const toggleGraphNote = useCallback((graphId: string) => {
-    setOpenNoteByGraphId((prev) => {
-      const next = new Map(prev)
-      next.set(graphId, !prev.get(graphId))
-      return next
-    })
-  }, [])
-
-  const closeGraphNote = useCallback((graphId: string) => {
-    setOpenNoteByGraphId((prev) => {
-      const next = new Map(prev)
-      next.set(graphId, false)
-      return next
-    })
-  }, [])
+  }, [renameGraphInCatalog])
 
   const deleteGraph = useCallback((graphId: string) => {
-    setGraphsById((prev) => {
-      if (!prev.has(graphId)) return prev
-      const next = new Map(prev)
-      next.delete(graphId)
-      scheduleGraphsPersist(next)
-      return next
-    })
-    setOpenNoteByGraphId((prev) => {
-      if (!prev.has(graphId)) return prev
-      const next = new Map(prev)
-      next.delete(graphId)
-      return next
-    })
+    removeGraphFromCatalog(graphId)
     setOpenGraphIds((prev) => {
       if (!prev.has(graphId)) return prev
       const next = new Set(prev)
@@ -401,7 +365,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     graphBuilderRefs.current.delete(graphId)
     const panel = dockviewApiRef.current?.getPanel(graphId)
     if (panel?.api?.close) panel.api.close()
-  }, [scheduleGraphsPersist])
+  }, [removeGraphFromCatalog])
 
   const openGraphPanel = useCallback((graphId: string, graphName: string) => {
     if (!dockviewApiRef.current) return
@@ -424,6 +388,8 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       },
       title: graphName,
       closeable: true,
+      // Senza questo dockview smonta il canvas quando la tab non è visibile.
+      renderer: 'always',
     })
     if (newPanel?.group?.locked) {
       newPanel.group.locked = false
@@ -431,54 +397,22 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
   }, [])
 
   const createGraph = useCallback(() => {
-    const graphId = `graph-${Date.now()}`
-    const graphName = nextGraphName(
-      Array.from(graphsByIdRef.current.values()).map((g) => g.name),
-    )
-    const empty = createEmptySavedGraph(graphId, graphName)
-    setGraphsById((prev) => {
-      const next = new Map(prev)
-      next.set(graphId, empty)
-      scheduleGraphsPersist(next)
-      return next
-    })
-    openGraphPanel(graphId, graphName)
-  }, [openGraphPanel, scheduleGraphsPersist])
+    const graph = createGraphInCatalog()
+    openGraphPanel(graph.id, graph.name)
+  }, [createGraphInCatalog, openGraphPanel])
 
   const graphWorkspaceValue = useMemo(() => ({
-    graphsById,
-    openNoteByGraphId,
+    graphsById: graphCatalog.graphsById,
+    isCatalogLoaded: graphCatalog.isLoaded,
+    catalogLoadError: graphCatalog.loadError,
+    openNoteByGraphId: graphCatalog.openNoteByGraphId,
+    setGraphNote: graphCatalog.setGraphNote,
+    toggleGraphNote: graphCatalog.toggleGraphNote,
+    closeGraphNote: graphCatalog.closeGraphNote,
+    updateGraphContent: graphCatalog.updateGraphContent,
     renameGraph,
-    setGraphNote,
-    toggleGraphNote,
-    closeGraphNote,
     deleteGraph,
-  }), [
-    graphsById,
-    openNoteByGraphId,
-    renameGraph,
-    setGraphNote,
-    toggleGraphNote,
-    closeGraphNote,
-    deleteGraph,
-  ])
-
-  // Idra catalogo da Pratica.graphsState (senza forzare l'apertura di tutte le tab)
-  useEffect(() => {
-    if (graphsLoadedFromPropRef.current) return
-    if (graphsStateProp === undefined || graphsStateProp === null) {
-      if (graphsStateProp === null) graphsLoadedFromPropRef.current = true
-      return
-    }
-    try {
-      const graphs = parseGraphsState(graphsStateProp)
-      setGraphsById(new Map(graphs.map((g) => [g.id, { ...g, note: g.note ?? '' }])))
-    } catch (err) {
-      console.error('[DOCK-V3] graphsState non valido:', err)
-    } finally {
-      graphsLoadedFromPropRef.current = true
-    }
-  }, [graphsStateProp])
+  }), [graphCatalog, renameGraph, deleteGraph])
 
   // ✅ Listener per aggiornare drawerTabs quando cambiano i documenti
   useEffect(() => {
@@ -689,6 +623,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     <div className="relative w-full h-full">{children}</div>
   )
 
+  /** Identità stabile: il canvas non deve ri-registrarsi a ogni render del workspace. */
+  const registerGraphHandle = useCallback((graphId: string, handle: GraphBuilderHandle | null) => {
+    if (handle) graphBuilderRefs.current.set(graphId, handle)
+    else graphBuilderRefs.current.delete(graphId)
+  }, [])
+
   // Render callback live: evita di ricostruire la mappa `components` a ogni render del parent
   // (ricostruire i componenti Dockview remounta i viewer → pane bianco / pagina 1).
   const panelRenderersRef = useRef({
@@ -702,10 +642,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     renderDoc,
     praticaId,
     comparti,
-    registerGraphHandle: (graphId: string, handle: GraphBuilderHandle | null) => {
-      if (handle) graphBuilderRefs.current.set(graphId, handle)
-      else graphBuilderRefs.current.delete(graphId)
-    },
+    registerGraphHandle,
   })
   panelRenderersRef.current = {
     renderExplorer,
@@ -718,10 +655,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     renderDoc,
     praticaId,
     comparti,
-    registerGraphHandle: (graphId: string, handle: GraphBuilderHandle | null) => {
-      if (handle) graphBuilderRefs.current.set(graphId, handle)
-      else graphBuilderRefs.current.delete(graphId)
-    },
+    registerGraphHandle,
   }
 
   // ✅ RIMOSSO: State e ref per activePanelId - ogni viewer gestisce la propria attivazione via props.api.onDidActiveChange
@@ -1015,14 +949,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
         </span>
       )
 
-      // ✅ Renderizza con layout orizzontale (numero + icona + testo) come in V2
+      // ✅ Marker per bindDrawerOsFileDrop (capture nativo — React onDrop non è affidabile su tab Dockview)
       return (
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '2px',
-          width: '100%'
-        }}>
+        <div
+          data-drawer-drop-id={drawerId}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '2px',
+            width: '100%',
+            minHeight: '100%',
+          }}
+        >
           {tabParts.length > 0 && (
             <span style={{
               display: 'inline-flex',
@@ -1166,11 +1104,12 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     }
 
     // ✅ Tab con configurazione (explorer, graph, persons, etc.)
+    // Titolo sempre con lo stesso colore di testo delle tab documento (es. PDF),
+    // per contrasto leggibile; solo l'icona resta colorata per tipo.
     const config = TAB_CONFIGS[component]
     if (config) {
       const Icon = config.icon
-      const color = isActive ? config.colorActive : config.colorBase
-      const opacity = isActive ? 1 : 0.4
+      const iconColor = isActive ? config.colorActive : config.colorBase
       const tabTitle = component === 'persons'
         ? 'Schede anagrafiche'
         : component === 'entities'
@@ -1185,15 +1124,16 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
             fill="none"
             style={{
               position: 'relative',
-              color: color,
-              stroke: color,
-              opacity: opacity,
-              transition: 'opacity 0.3s ease, color 0.3s ease, stroke 0.3s ease'
+              color: iconColor,
+              stroke: iconColor,
+              flexShrink: 0,
+              transition: 'color 0.3s ease, stroke 0.3s ease'
             }}
           />
           <span style={{
             position: 'relative',
             fontWeight: isActive ? 700 : 400,
+            color: 'hsl(var(--foreground))',
             transition: 'font-weight 0.3s ease',
             flex: 1
           }}>
@@ -1235,12 +1175,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
 
       if ((component === 'persons' || component === 'entities') && praticaId) {
         return (
-          <div style={{
-            color,
-            opacity,
-            transition: 'opacity 0.3s ease, color 0.3s ease',
-            width: '100%',
-          }}>
+          <div style={{ width: '100%' }}>
             <ExtractionTabFill
               praticaId={praticaId}
               kind={component}
@@ -1259,9 +1194,6 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          color: color,
-          opacity: opacity,
-          transition: 'opacity 0.3s ease, color 0.3s ease',
           width: '100%'
         }}>
           {tabBody}
@@ -1367,18 +1299,18 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
           (panel as any).params?.graphName
           || (panel as any).title
           || 'Grafo'
+        // Vale anche per i pannelli ripristinati dal layout salvato: il canvas
+        // non deve mai essere smontato al cambio tab.
+        if (panel.api.renderer !== 'always') {
+          panel.api.setRenderer('always')
+        }
         setOpenGraphIds((prev) => {
           if (prev.has(graphId)) return prev
           const next = new Set(prev)
           next.add(graphId)
           return next
         })
-        setGraphsById((prev) => {
-          if (prev.has(graphId)) return prev
-          const next = new Map(prev)
-          next.set(graphId, createEmptySavedGraph(graphId, graphName))
-          return next
-        })
+        ensureGraphRef.current(graphId, graphName)
       }
       setDrawerPanelsUpdateTrigger(prev => prev + 1) // ✅ Aggiorna trigger quando viene aggiunto un pannello
     })
@@ -1685,6 +1617,35 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       }
   }, [comparti])
 
+  /**
+   * Drop file OS sulla strip cassetti (path React).
+   * Le tab Dockview usano invece bindDrawerOsFileDrop (capture nativo).
+   */
+  const handleDrawerTabDrop = useCallback((files: File[], drawerId: string) => {
+    void uploadOsFilesToDrawer(files, drawerId).then(() => {
+      const comparto = comparti.find(c => c.id === drawerId)
+      if (!comparto) {
+        throw new Error(`[DRAWER-TAB-DROP] Comparto non trovato per id: ${drawerId}`)
+      }
+      handleDrawerTabClick(comparto.chiave, comparto.id)
+    })
+  }, [comparti, handleDrawerTabClick])
+
+  // Drop OS su tab cassetto: capture nativo (Dockview intercetta il bubble sulle .dv-tab)
+  useEffect(() => {
+    const root = dockRootRef.current
+    if (!root) return
+    return bindDrawerOsFileDrop(root, {
+      onAfterUpload: (drawerId) => {
+        const comparto = comparti.find(c => c.id === drawerId)
+        if (!comparto) {
+          throw new Error(`[DRAWER-OS-DROP] Comparto non trovato dopo upload: ${drawerId}`)
+        }
+        handleDrawerTabClick(comparto.chiave, comparto.id)
+      },
+    })
+  }, [comparti, handleDrawerTabClick])
+
   // Handler per click su archive tab (sidebar)
   const handleArchiveTabClick = useCallback((component: string, tabId: string, title?: string) => {
     if (!dockviewApiRef.current) return
@@ -1845,7 +1806,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
     openGraphBuilder: (graphId?: string) => {
       if (!dockviewApiRef.current) return
       if (graphId) {
-        const existing = graphsByIdRef.current.get(graphId)
+        const existing = listGraphs().find((graph) => graph.id === graphId)
         if (!existing) {
           throw new Error(`Grafo non trovato nel catalogo: ${graphId}`)
         }
@@ -1854,43 +1815,20 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
       }
       createGraph()
     },
-    saveAllGraphs: () => {
-      const graphs: SavedGraph[] = []
-      graphsByIdRef.current.forEach((stored, id) => {
-        const handle = graphBuilderRefs.current.get(id)
-        if (handle) {
-          const live = handle.save()
-          if (live) {
-            graphs.push({
-              ...live,
-              name: stored.name,
-              note: stored.note ?? '',
-            })
-            return
-          }
-        }
-        graphs.push(stored)
-      })
-      return graphs
-    },
-    loadGraphs: (graphs: SavedGraph[]) => {
-      const graphsMap = new Map<string, SavedGraph>()
-      graphs.forEach((g) => {
-        graphsMap.set(g.id, {
-          ...g,
-          note: g.note ?? '',
-        })
-      })
-      setGraphsById(graphsMap)
-      graphs.forEach((graph) => {
-        openGraphPanel(graph.id, graph.name)
-      })
-    }
-  }), [handleArchiveTabClick, clienti, createGraph, openGraphPanel])
+    // Il catalogo è già allineato dai canvas, ma sui grafi montati si legge il
+    // contenuto vivo per non perdere le modifiche ancora dentro il debounce.
+    saveAllGraphs: () => listGraphs().map((stored) => {
+      const live = graphBuilderRefs.current.get(stored.id)?.getContent()
+      return live ? withGraphContent(stored, live) : stored
+    }),
+  }), [handleArchiveTabClick, clienti, createGraph, openGraphPanel, listGraphs])
 
   return (
     <GraphWorkspaceProvider value={graphWorkspaceValue}>
-    <div className={`dockv3-root w-full h-full relative flex ${isDragActiveRef.current ? 'drag-active' : ''}`}>
+    <div
+      ref={dockRootRef}
+      className={`dockv3-root w-full h-full relative flex ${isDragActiveRef.current ? 'drag-active' : ''}`}
+    >
       {/* Area documenti: si restringe quando il pannello cerca globale è aperto */}
       <div
         className="relative min-h-0 min-w-0 flex-1 transition-all duration-300"
@@ -2124,6 +2062,7 @@ function DockWorkspaceV3Component(props: Props, ref: React.Ref<DockWorkspaceV3Ha
                   handleDrawerTabClick(comparto.chiave, comparto.id)
                 }
               }}
+              onDrop={handleDrawerTabDrop}
               orientation={DRAWER_STRIP_POSITION === 'top' || DRAWER_STRIP_POSITION === 'bottom' ? 'horizontal' : 'vertical'}
               position={DRAWER_STRIP_POSITION}
             />
